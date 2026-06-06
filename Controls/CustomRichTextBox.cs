@@ -74,6 +74,17 @@ public class CustomRichTextBox : Control
         set => SetValue(DocumentProperty, value);
     }
 
+    public static readonly StyledProperty<bool> IsReadOnlyProperty =
+        AvaloniaProperty.Register<CustomRichTextBox, bool>(nameof(IsReadOnly));
+
+    // When true: text input, edits, paste, and resizing are blocked; selection/copy still work and
+    // the caret is hidden. Used by NativeEditor's ReadOnly mode.
+    public bool IsReadOnly
+    {
+        get => GetValue(IsReadOnlyProperty);
+        set => SetValue(IsReadOnlyProperty, value);
+    }
+
     static CustomRichTextBox()
     {
         AffectsRender<CustomRichTextBox>(DocumentProperty);
@@ -90,6 +101,11 @@ public class CustomRichTextBox : Control
         // Enable IME (Korean/Japanese/Chinese) composition by advertising a text-input client.
         _imClient = new RtbInputMethodClient(this);
         AddHandler(Avalonia.Input.InputElement.TextInputMethodClientRequestedEvent, OnTextInputMethodClientRequested);
+
+        // Drag & drop images onto the editor.
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
 
         _caretTimer = new DispatcherTimer
         {
@@ -138,6 +154,7 @@ public class CustomRichTextBox : Control
             return;
         }
 
+        if (!IsReadOnly)
         foreach (var h in _imageHandles)
         {
             if (h.rect.Contains(point))
@@ -154,6 +171,7 @@ public class CustomRichTextBox : Control
             }
         }
 
+        if (!IsReadOnly)
         foreach (var b in _columnBoundaries)
         {
             if (b.rect.Contains(point))
@@ -171,6 +189,7 @@ public class CustomRichTextBox : Control
             }
         }
 
+        if (!IsReadOnly)
         foreach (var b in _rowBoundaries)
         {
             if (b.rect.Contains(point))
@@ -526,6 +545,7 @@ public class CustomRichTextBox : Control
     protected override void OnTextInput(TextInputEventArgs e)
     {
         base.OnTextInput(e);
+        if (IsReadOnly) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         _selectedBlock = null;
         if (Document != null) _undoManager.PushState(Document, _caretPosition);
@@ -538,6 +558,14 @@ public class CustomRichTextBox : Control
         base.OnKeyDown(e);
         bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+        if (IsReadOnly)
+        {
+            // Allow caret movement and copy/select-all; block everything that edits.
+            bool nav = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown;
+            bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A);
+            if (!nav && !copyOrAll) { e.Handled = true; return; }
+        }
 
         // Any key other than the deletion keys cancels a block-image selection.
         if (_selectedBlock != null && e.Key != Key.Back && e.Key != Key.Delete)
@@ -1344,12 +1372,97 @@ public class CustomRichTextBox : Control
             catch { /* fall back to plain text */ }
         }
 
-        // 3. Plain text fallback.
+        // 3. Bitmap image on the clipboard (e.g. a screenshot or copied picture).
+        var clipImage = await TryGetImageAsync(clipboard);
+        if (clipImage != null)
+        {
+            InsertImage(Downscale(clipImage));
+            return;
+        }
+
+        // 4. Plain text fallback.
         if (!string.IsNullOrEmpty(text))
         {
             _undoManager.PushState(Document, _caretPosition);
             InsertText(text);
         }
+    }
+
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = (!IsReadOnly && e.DataTransfer.Contains(DataFormat.File)) ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    private void OnDrop(object? sender, DragEventArgs e)
+    {
+        if (IsReadOnly) return;
+        var files = e.DataTransfer.TryGetFiles();
+        if (files == null) return;
+        foreach (var f in files)
+        {
+            var path = f.Path?.LocalPath;
+            if (string.IsNullOrEmpty(path)) continue;
+            try
+            {
+                using var st = System.IO.File.OpenRead(path);
+                var bmp = new Avalonia.Media.Imaging.Bitmap(st);
+                InsertImage(Downscale(bmp));
+            }
+            catch { }
+        }
+    }
+
+    // Scales an image down to fit within maxW x maxH (keeping aspect), matching Jodit's image cap.
+    private static Avalonia.Media.Imaging.Bitmap Downscale(Avalonia.Media.Imaging.Bitmap bmp, int maxW = 1920, int maxH = 1080)
+    {
+        var ps = bmp.PixelSize;
+        if (ps.Width <= maxW && ps.Height <= maxH) return bmp;
+        double ratio = Math.Min((double)maxW / ps.Width, (double)maxH / ps.Height);
+        var size = new PixelSize(Math.Max(1, (int)(ps.Width * ratio)), Math.Max(1, (int)(ps.Height * ratio)));
+        try { return bmp.CreateScaledBitmap(size, Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality); }
+        catch { return bmp; }
+    }
+
+    private static async Task<Avalonia.Media.Imaging.Bitmap?> TryGetImageAsync(IClipboard clipboard)
+    {
+        Avalonia.Input.IAsyncDataTransfer? dt;
+        try { dt = await clipboard.TryGetDataAsync(); }
+        catch { return null; }
+        if (dt == null) return null;
+
+        try
+        {
+            foreach (var item in dt.Items)
+            {
+                foreach (var fmt in item.Formats)
+                {
+                    var id = fmt.ToString() ?? "";
+                    bool looksImage = id.IndexOf("png", StringComparison.OrdinalIgnoreCase) >= 0
+                        || id.IndexOf("image", StringComparison.OrdinalIgnoreCase) >= 0
+                        || id.IndexOf("bitmap", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!looksImage) continue;
+
+                    object? raw;
+                    try { raw = await item.TryGetRawAsync(fmt); }
+                    catch { continue; }
+
+                    byte[]? bytes = raw as byte[];
+                    if (bytes == null && raw is System.IO.Stream s)
+                    {
+                        using var ms = new System.IO.MemoryStream();
+                        s.CopyTo(ms);
+                        bytes = ms.ToArray();
+                    }
+                    if (bytes is { Length: > 0 })
+                    {
+                        try { using var ms = new System.IO.MemoryStream(bytes); return new Avalonia.Media.Imaging.Bitmap(ms); }
+                        catch { }
+                    }
+                }
+            }
+        }
+        finally { (dt as IDisposable)?.Dispose(); }
+        return null;
     }
 
     private static async Task<string?> TryGetHtmlAsync(IClipboard clipboard)
@@ -1898,6 +2011,15 @@ public class CustomRichTextBox : Control
 
         bool hasSelection = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
             && _selectionStart.CompareTo(_selectionEnd) != 0;
+
+        if (IsReadOnly)
+        {
+            var roItems = new List<Control> { Mi("복사", CopySelectionToClipboard, hasSelection), Mi("모두 선택", SelectAll) };
+            var roMenu = new ContextMenu { Placement = PlacementMode.Pointer };
+            roMenu.ItemsSource = roItems;
+            roMenu.Open(this);
+            return;
+        }
 
         var items = new List<Control>();
         var block = GetBlockAtPoint(point);
@@ -2483,7 +2605,7 @@ public class CustomRichTextBox : Control
         if (caretPoint.HasValue)
         {
             _lastCaretPoint = caretPoint.Value;
-            if (_isCaretVisible && IsFocused)
+            if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
                 context.DrawLine(new Pen(Brushes.Black, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + 20));
             }
