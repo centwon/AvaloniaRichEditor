@@ -56,5 +56,14 @@
 - **❗ 미해결 문제 (보류)**:
   1. **블록 여백(Margin) 조정**: 현재 `Paragraph`는 `MarginTop/Bottom` 속성이 있으나 렌더에는 `MarginBottom`만 반영되고 조정 UI 없음. `ImageBlock`/`TableBlock`은 여백 속성 자체가 없고 고정 10px 간격·들여쓰기 사용. 구현하려면 (1) `Block`에 상하좌우 여백 속성 추가, (2) 렌더에서 고정값 대신 반영(`MarginTop` 포함), (3) 툴바 입력 또는 드래그 핸들 UI 필요. (보류)
 
+### 🟢 [완료] Phase 6: 우클릭 메뉴·찾기/바꾸기 + Jodit 파리티(SaemDesk 대체 준비)
+- **완료**: 우클릭 컨텍스트 메뉴(텍스트/이미지/표/빈 곳), 찾기/바꾸기(Ctrl+F), 표 안 Tab 이동, 서식 단축키(Ctrl+B/I/U)·밑줄.
+- **완료**: 완전한 JSON 저장/불러오기(표·이미지·서식·정렬·여백·열폭·행높이, 비트맵 base64).
+- **완료**: HTML 무손실 왕복 강화 — 글꼴/임의색/배경/크기(px·pt)/밑줄·취소선/이미지(data:)/번호목록(ol)/제목(h1~6)/구분선(hr)/셀배경/들여쓰기. 모델 확장(`Run.FontFamily/Background`, `Paragraph.ListType/HeadingLevel/Background/Indent`, `DividerBlock`).
+- **완료**: 편집 UI(툴바·메뉴) 파리티, ReadOnly 모드, 이미지 붙여넣기/드래그드롭(+다운스케일), 인쇄 우회.
+- **완료**: `NativeEditor` 호환 래퍼(JoditEditor 동일 API) — **SaemDesk 통합 가능 수준**. AOT 퍼블리시 확인 통과. 왕복 검증 하네스(`--roundtrip`)+코퍼스.
+- **상세 계획/현황**: [`Jodit_Parity_Plan.md`](Jodit_Parity_Plan.md).
+- **보류**: SaemDesk 실통합(기능 플래그 롤아웃), HWP/XLS 붙여넣기, 정밀 인쇄(페이지네이션/PDF), blockquote/중첩목록 깊이.
+
 ---
-**마지막 업데이트**: 2026년 6월 6일 (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME, 표 행 높이 수동 조절. 블록 여백 조정만 보류)
+**마지막 업데이트**: 2026년 6월 7일 (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME, 표 행 높이 수동 조절. 블록 여백 조정만 보류)
