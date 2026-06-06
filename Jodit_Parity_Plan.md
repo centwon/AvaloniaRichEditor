@@ -103,31 +103,23 @@
 - [ ] **XLS/엑셀 붙여넣기**: 표 형태(CF_HTML 또는 탭 구분 텍스트)를 `TableBlock`으로.
 
 ### Phase 3 — 편집 기능 파리티 (UI/상호작용)
-- [ ] ul/ol 토글, **들여쓰기/내어쓰기**.
-- [ ] 글꼴 패밀리 선택, **제목 드롭다운**, 배경색(형광펜), hr 삽입 — 툴바 + 컨텍스트 메뉴.
-- [ ] **이미지 붙여넣기(클립보드 비트맵)** + **드래그&드롭** + 선택적 다운스케일/압축(Jodit과 동일 1920×1080/≈500KB).
-- [ ] **ReadOnly 모드**: 입력 차단·캐럿 숨김·툴바 비표시.
-- 검증: 각 기능 수동 시연 + undo 복원.
+- [x] ul/ol 토글, **들여쓰기/내어쓰기**(`Paragraph.Indent`, margin-left 왕복).
+- [x] 글꼴 패밀리 선택, **제목 드롭다운(H1~H3/본문)**, 배경색(형광펜), hr 삽입 — 툴바 + 컨텍스트 메뉴.
+- [x] **이미지 붙여넣기(클립보드 비트맵)** + **드래그&드롭** + 다운스케일(최대 1920×1080).
+- [x] **ReadOnly 모드**: 입력/리사이즈/붙여넣기 차단·캐럿 숨김·메뉴 축소, 선택/복사 허용.
+- *(생략: blockquote/nested-list 깊이/블록정렬 흡수 — 실데이터 시각 영향 없는 count 잔여)*
 
-### Phase 4 — 인쇄 (난점)
-- Avalonia에 1급 크로스플랫폼 인쇄 API가 없음. 옵션:
-  - (a) **렌더 페이지네이션 → OS 인쇄**(Windows print). 충실하나 구현 큼.
-  - (b) 임시 HTML 생성 → 기본 브라우저로 인쇄(WebView 제거 취지엔 어긋나는 임시책).
-  - (c) PDF 생성(예: 자체 렌더 → PDF) 후 인쇄.
-- [ ] 요구 충실도에 맞춰 방식 결정 후 구현.
-- 검증: 표/이미지 포함 문서 인쇄 출력 확인.
+### Phase 4 — 인쇄 (우회 채택)
+- [x] **(b) 임시 HTML → OS 기본 브라우저 인쇄**로 우회(`NativeEditor.PrintAsync`). 정밀 페이지네이션/PDF는 향후.
 
 ### Phase 5 — 호환 래퍼 & SaemDesk 통합
-- [ ] `NativeEditor : UserControl` — `JoditEditor`와 동일 API:
-  - `Mode`(ReadOnly/Simple/Full → 편집가능/툴바표시 매핑), `Text`(get=`ToHtml`, set=`ParseHtml`), `TextChanged`(편집 시 디바운스 발화), `GetHtmlAsync`, `InsertHtmlAsync`, `PrintAsync`.
-  - WebView 자동 높이(`contentHeight`) 대응 = `Measure`/`DesiredSize`.
-- [ ] SaemDesk에서 **기능 플래그**로 한 화면(예: 게시글 보기)만 교체 → 검증 → 점진 확대.
-- 검증: 호출부 무변경으로 동작, 기존 글 열람/수정/저장 정상.
+- [x] `NativeEditor : UserControl` — `JoditEditor` 동일 API: `Mode`(ReadOnly/Simple/Full), `Text`(HTML 양방향), `TextChanged`(LostFocus), `GetHtmlAsync`/`InsertHtmlAsync`/`PrintAsync`, Full 모드 내장 툴바.
+- [ ] **SaemDesk 실통합** — 의도적으로 보류(현재 목표 = "통합 가능 수준"). 기능 플래그로 한 화면부터 교체는 추후.
 
 ### Phase 6 — 하드닝
-- [ ] 대용량 문서/큰 base64 이미지 성능·메모리.
-- [ ] **Native AOT 퍼블리시** 확인(소스젠 직렬화·리플렉션 회피).
-- [ ] 회귀 테스트(코퍼스 + 기능 체크리스트) 상시화.
+- [x] **Native AOT 퍼블리시 확인 통과**(소스젠 JSON·무리플렉션, win-x64 네이티브 exe 생성). 잔여 경고는 기존 ViewLocator 트림 경고뿐.
+- [x] 회귀 하네스 상시화(`--roundtrip`), 변경마다 확인.
+- [ ] 대용량 base64 성능 정밀 측정 — 추후(현재 1.7MB 글도 동작).
 
 ---
 

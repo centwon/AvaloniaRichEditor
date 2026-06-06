@@ -33,7 +33,7 @@ public static class RoundTripHarness
         ("align",           Rx("text-align\\s*:")),
     };
 
-    private static Regex Rx(string p) => new(p, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static Regex Rx(string p) => new(p, RegexOptions.IgnoreCase);
 
     public static void Run(string inDir, string outDir)
     {
