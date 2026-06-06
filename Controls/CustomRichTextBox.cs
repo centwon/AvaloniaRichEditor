@@ -1326,6 +1326,31 @@ public class CustomRichTextBox : Control
         return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) : new TextPointer(Document.Blocks[0] as Paragraph, 0);
     }
 
+    // ---- HTML interop (used by NativeEditor / external hosts) ----
+
+    public string GetHtml() => Document != null ? Formatters.HtmlDocumentFormatter.ToHtml(Document) : "";
+
+    public void SetHtml(string? html)
+    {
+        var doc = string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html);
+        Document = doc; // OnPropertyChanged runs UpdateParents/NormalizeBlocks
+        var first = GetAllParagraphsInOrder().FirstOrDefault();
+        _caretPosition = new TextPointer(first, 0);
+        CollapseSelectionToCaret();
+        _undoManager = new UndoManager();
+        InvalidateVisual();
+    }
+
+    public void InsertHtml(string html)
+    {
+        if (Document == null || string.IsNullOrEmpty(html)) return;
+        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html);
+        if (parsed.Blocks.Count == 0) return;
+        _undoManager.PushState(Document, _caretPosition);
+        InsertParsedDocument(parsed);
+        InvalidateVisual();
+    }
+
     public async Task PasteFromClipboardAsync()
     {
         if (Document == null) return;
@@ -2386,7 +2411,10 @@ public class CustomRichTextBox : Control
         catch { }
     }
 
-    private async Task InsertImageFromFileAsync()
+    public void Undo() => DoUndo();
+    public void Redo() => DoRedo();
+
+    public async Task InsertImageFromFileAsync()
     {
         var top = TopLevel.GetTopLevel(this);
         if (top == null) return;
