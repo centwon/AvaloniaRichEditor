@@ -1,34 +1,28 @@
-using Avalonia;
 using Avalonia.Media;
 
 namespace AvaloniaRichTextBoxPort.Documents;
 
 public class Run : Inline
 {
-    public static readonly StyledProperty<string> TextProperty =
-        AvaloniaProperty.Register<Run, string>(nameof(Text), string.Empty);
+    public string? Text { get; set; }
+    public FontWeight FontWeight { get; set; } = FontWeight.Normal;
+    public FontStyle FontStyle { get; set; } = FontStyle.Normal;
+    public IBrush? Foreground { get; set; }
+    public double FontSize { get; set; } = 14;
+    public string? NavigateUri { get; set; }
+    public TextDecorationCollection? TextDecorations { get; set; }
 
-    public string Text
+    public override TextElement Clone()
     {
-        get => GetValue(TextProperty);
-        set => SetValue(TextProperty, value);
-    }
-
-    public static readonly StyledProperty<FontWeight> FontWeightProperty =
-        AvaloniaProperty.Register<Run, FontWeight>(nameof(FontWeight), FontWeight.Normal);
-
-    public FontWeight FontWeight
-    {
-        get => GetValue(FontWeightProperty);
-        set => SetValue(FontWeightProperty, value);
-    }
-
-    public static readonly StyledProperty<IBrush> ForegroundProperty =
-        AvaloniaProperty.Register<Run, IBrush>(nameof(Foreground), Brushes.Black);
-
-    public IBrush Foreground
-    {
-        get => GetValue(ForegroundProperty);
-        set => SetValue(ForegroundProperty, value);
+        return new Run
+        {
+            Text = this.Text,
+            FontWeight = this.FontWeight,
+            FontStyle = this.FontStyle,
+            Foreground = this.Foreground,
+            FontSize = this.FontSize,
+            NavigateUri = this.NavigateUri,
+            TextDecorations = this.TextDecorations
+        };
     }
 }

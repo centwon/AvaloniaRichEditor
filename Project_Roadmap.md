@@ -6,40 +6,50 @@
 
 ---
 
-## 🗺️ 구현 로드맵 및 단계별 계획 (Implementation Plan)
+## 🗺️ 구현 로드맵 및 상태 (Implementation Status)
 
-### [완료] Phase 1: 기반 모델 및 렌더링 엔진 구축
-- **작업 내용**: WPF의 문서 객체 모델(Document Object Model)을 모방하고, 이를 화면에 그려내는 뷰어(Viewer) 역할 구현.
-- **구현 항목**:
-  - `TextElement`, `Block`, `Paragraph`, `Inline`, `Run`, `FlowDocument` 구조 설계.
-  - `CustomRichTextBox` 컨트롤 생성 및 `Render(DrawingContext)` 메서드 오버라이드.
-  - Avalonia `FormattedText`를 이용해 글꼴 굵기(Bold), 색상(Foreground) 등 다중 서식 렌더링 성공.
+### 🟢 [완료] Phase 1: 기반 모델 및 렌더링 엔진 구축
+- **완료된 내용**: `TextElement`, `Block`, `Paragraph`, `Inline`, `Run`, `FlowDocument` 데이터 구조 설계 완료.
+- **완료된 내용**: Avalonia `FormattedText`를 이용해 글꼴 크기, 굵기, 색상, 밑줄, **취소선(Strikethrough)** 등 다중 서식 렌더링 적용 성공.
 
-### [진행 예정] Phase 2: 에디터 상호작용 (커서 및 키보드 입력)
-- **작업 내용**: 단순히 문서를 보여주는 것을 넘어, 커서(Caret)를 표시하고 글자를 입력/삭제할 수 있는 에디터로 발전.
-- **구현 항목**:
-  - 화면 상의 좌표(X, Y)를 문서 내의 글자 인덱스로 변환하는 히트 테스트(Hit-Testing) 구현.
-  - 깜빡이는 커서(Caret) 렌더링.
-  - `KeyDown` 및 `TextInput` 이벤트를 캡처하여 `FlowDocument` 데이터 모델 업데이트 로직 작성.
+### 🟢 [완료] Phase 2: 에디터 상호작용 (커서 및 키보드 입력)
+- **완료된 내용**: 화면 상의 X, Y 픽셀 좌표를 문서 내의 글자 인덱스로 변환하는 정밀한 히트 테스트(Hit-Testing) 구축 완료. (일반 문단 및 **표(Table) 내부 셀 진입 완벽 지원**)
+- **완료된 내용**: `KeyDown` 이벤트를 통한 커서 이동(상/하/좌/우/Home/End) 및 텍스트 입력 로직 구현 완료.
+- **완료된 내용**: `DeleteLocalText` 역순 반복 버그 수정. 문단 경계 Backspace/Delete 시 이전/다음 문단 병합 로직 추가.
 
-### [진행 예정] Phase 3: 텍스트 선택 및 서식 변경 (Text Selection & Formatting)
-- **작업 내용**: 마우스 드래그를 통한 텍스트 블록 선택 기능 및 선택 영역에 서식 부여 기능.
-- **구현 항목**:
-  - `TextPointer`, `TextRange`, `TextSelection` 클래스 포팅 및 구현.
-  - 선택 영역(Selection)의 배경색 하이라이팅 렌더링.
-  - `Ctrl+B`, `Ctrl+I` 등의 단축키 입력 시 선택된 `TextRange`의 서식 데이터 변경 알고리즘 작성.
+### 🟢 [완료] Phase 3: 텍스트 선택 및 부분 서식 변경
+- **완료된 내용**: 마우스 드래그를 이용한 텍스트 범위 선택(Selection) 시각화 기능 (`DrawSelectionHighlight`로 반투명 파란색 하이라이트 렌더링).
+- **완료된 내용**: `TextRange.Delete()` — 다중 문단 선택 삭제 완벽 지원 (중간 문단 삭제 + 시작/끝 문단 병합, 테이블 셀 지원).
+- **완료된 내용**: `SplitRunAtOffset` 알고리즘을 통한 부분 서식(Bold, Italic 등) 적용 — 선택한 단어/범위 단위로 `Run`을 분할하여 개별 서식 적용 가능.
+- **완료된 내용**: `TextRange.ApplyPropertyValue()` — 다중 문단 걸친 서식 적용 시 중간 문단 포함 전체 적용.
+- **완료된 내용**: Ctrl+A(전체 선택), Ctrl+C(복사), Ctrl+X(잘라내기), Ctrl+V(붙여넣기) 키보드 단축키 지원.
+- **완료된 내용**: `TextRange.GetText()` 메서드 추가 — 다중 문단 걸친 텍스트 추출 지원.
+- **완료된 내용**: 히트 테스트/커서/선택 영역을 단일 `TextLayout`(per-run `ITextSource`) 기반으로 전환하여 글자 단위 off-by-one 오차 제거. (부가 효과: 텍스트 정렬 Center/Right 실제 적용)
+- **완료된 내용**: 앱 내부 리치 클립보드(`GetRichRuns`/`InsertRuns`) — Ctrl+C/V 시 서식 유지 복사/붙여넣기.
+- **완료된 내용**: 표(Table) 셀 선택 하이라이트 — 선택 범위에 포함된 셀을 시각적으로 표시(완전 선택 셀은 셀 전체 채움, 빈 셀 포함).
+- **완료된 내용**: 표 구조(행/열) 복사·붙여넣기 보존 — 선택이 표/이미지를 통째로 포함하거나 여러 최상위 블록에 걸치면 내부 클립보드가 블록 구조를 클론 저장(`CaptureBlockStructure`)하고, 붙여넣기 시 `InsertBlocks`로 표를 재구성. 일반 인라인 선택은 기존 Run 기반 유지.
 
-### [진행 예정] Phase 4: 포맷 파서 및 클립보드 (Format Parsers & Clipboard)
-- **작업 내용**: 문서를 파일로 입출력하고 운영체제 클립보드와 연동.
-- **구현 항목**:
-  - RTF, HTML, XAML 포맷 파서 구현.
-  - OS 클립보드 복사/붙여넣기 시 서식 유지 로직.
+### 🟢 [완료] Phase 4: 클립보드 및 포맷 파서
+- **완료된 내용**: 자체 커스텀 JSON 포맷으로 저장 및 불러오기 동작.
+- **완료된 내용**: 클립보드에서 텍스트(Plain Text)를 붙여넣기하는 기본 기능 연동 완료.
+- **완료된 내용**: 외부 앱(웹/워드 등) HTML 붙여넣기 — Avalonia 12 신규 클립보드 API(`TryGetDataAsync`→`IAsyncDataTransfer`)로 HTML 포맷 읽기, Windows CF_HTML 헤더 제거(`ExtractHtmlFragment`), `HtmlDocumentFormatter.ParseHtml`로 FlowDocument 변환 후 커서 위치에 삽입(`InsertParsedDocument`). Ctrl+V·Paste HTML 버튼 모두 적용(내부 리치 → 외부 HTML → 평문 순서 폴백).
+- **완료된 내용**: HTML 파서 재작성 — 중첩 `<div>`/레이아웃을 재귀 순회(`WalkBlocks`)하여 표/이미지/문단/제목(h1~h6)/리스트/`<br>` 보존. 인라인 서식(굵게·기울임·색상 rgb()/#hex/이름·글자크기 px), 공백 정리. 하이퍼링크: 카드형 `<a href>`가 블록을 감싸도 링크 컨텍스트를 전파(`WalkBlocks`/`ParseInlines` `linkUri`)하여 파란+밑줄로 인식. 작은 아이콘/로고/이모지 이미지(≤64px)는 생략(`IconMaxSize`)하여 줄 깨짐 방지. `file://` 이미지 지원.
+- **완료된 내용**: 하이퍼링크 상호작용 — 링크 위 호버 시 손모양 커서, 클릭 시 기본 브라우저로 열기(`GetLinkRunAtPoint`/`OpenUrl`, http/https만 허용).
+- **완료된 내용**: 인라인 이미지 지원 — `InlineImage`(Inline) + `DrawableTextRun`(`ImageTextRun`)로 작은 아이콘/로고를 텍스트 줄 안에 배치. 오프셋 모델 전반을 "이미지=1글자(U+FFFC)"로 일관화(`InlineLen`/`BuildPlain`, `BuildTextLayout` 세그먼트화, `DeleteLocalText`/`TryInsertTextCore`/`SplitInlinesAt`/`RunAtOffset` 및 `TextRange`의 split/delete/style/text 추출). HTML 파서는 작은 img(<64px)는 `InlineImage`(인라인), 큰 img는 `ImageBlock`(블록)로 분기.
+- **완료된 내용**: 그림·표 삭제 — (1) 인접 캐럿: 앞 문단 끝 Delete / 뒤 문단 시작 Backspace, `NormalizeBlocks`로 항상 인접 문단 보장. (2) 드래그 선택: `TextRange.Delete`가 시작~끝 사이의 모든 최상위 블록(그림/표/문단)을 제거(`TopLevelBlockOf`). (3) 클릭 선택: 이미지/표를 클릭하면 파란 테두리로 선택(`_selectedBlock`, `GetBlockAtPoint`)되고 Delete/Backspace로 삭제. 표는 단일 클릭=전체 선택, 더블클릭(또는 편집 중 클릭)=셀 편집. 작은 인라인 아이콘은 HTML 파싱 시 바로 앞 줄(제목 문단)에 붙도록 휴리스틱 적용.
+- **완료된 내용**: 화살표 키 블록 횡단 — `이전 문단 끝(표앞) → 첫 셀 → … → 마지막 셀 → 다음 문단 시작(표뒤) → 다음 문단` 순서(역방향 대칭)로 표/이미지를 가로질러 이동. `NormalizeBlocks`는 빈 줄을 강제하지 않고(문서 처음/끝·연속 블록 사이에만 문단 보장) "표앞/표뒤"를 인접 텍스트 줄의 끝/시작으로 처리.
+- **참고(한계)**: 워드의 그림은 표준 `<img>`가 아니라 VML(`<v:shape>`/WMF/EMF base64)로 내보내므로 가져오지 못함.
 
-### [진행 예정] Phase 5: 고급 레이아웃 및 최적화
-- **작업 내용**: 다양한 인라인 요소 지원 및 대용량 문서 성능 최적화.
-- **구현 항목**:
-  - 이미지 삽입(`InlineUIContainer`), 표(`Table`), 목록(`List`) 지원.
-  - 화면에 보이는 영역만 렌더링하는 UI 가상화(Virtualization) 로직 추가.
+### 🟡 [진행 중] Phase 5: 고급 레이아웃 요소 지원
+- **완료된 내용**: 이미지 블록 삽입 및 렌더링 기능.
+- **완료된 내용**: 동적 `TableBlock` 렌더링 엔진 도입 완료. 텍스트 크기 증가나 줄바꿈에 따른 **셀 높이 동적 연장 문제 완벽 해결**.
+- **완료된 내용**: 표 열(Column) 크기 조절 — Render에서 각 열 오른쪽 경계에 6px 드래그 핸들(`_columnBoundaries`)을 생성해 배선 완료. 내부 경계는 전체 폭 고정 + 인접 열 비율 재분배, 맨 오른쪽 바깥 경계는 해당 열만 늘려 전체 폭 확장. 경계 호버 시 좌우 화살표 커서, 최소 20px, Undo 1회 복원. `InsertTable`이 `ColumnWidths`를 열 개수만큼 채우고 `UpdateParents` 호출하도록 수정.
+- **완료된 내용**: 한글/IME 입력 지원 — `TextInputMethodClient` 연결로 조합 입력 활성화 + 조합 중 글자를 커서 위치에 밑줄과 함께 인라인 표시(preedit, `BuildTextLayout`에 `SplicePreedit` 주입). 한 박자 늦게 보이던 문제 해결.
+- **완료된 내용**: 이미지 크기 조절 — 이미지 오른쪽 아래 드래그 핸들(`_imageHandles`)로 종횡비 유지 리사이즈, 대각선 커서, Undo 1회 복원.
+- **완료된 내용**: 이미지/표 삽입 위치 개선 — 항상 문서 끝이 아니라 커서가 위치한 블록 다음에 삽입(`InsertBlockAtCaret`).
+- **❗ 미해결 문제 (보류)**:
+  1. **표 행(Row) 높이 수동 조절**: 현재 행 높이는 셀 내용에 맞춰 자동 계산만 됨(`rowMaxHeight`). 수동 조절하려면 `TableBlock.RowHeights`(사용자 지정 최소 높이) 필드 추가 + `rowMaxHeight = Max(내용 높이, 지정 높이)` + 행 하단 가로 드래그 핸들(`_rowBoundaries`)·상하 화살표 커서 필요. (사용자 요청으로 보류)
+  2. **블록 여백(Margin) 조정**: 현재 `Paragraph`는 `MarginTop/Bottom` 속성이 있으나 렌더에는 `MarginBottom`만 반영되고 조정 UI 없음. `ImageBlock`/`TableBlock`은 여백 속성 자체가 없고 고정 10px 간격·들여쓰기 사용. 구현하려면 (1) `Block`에 상하좌우 여백 속성 추가, (2) 렌더에서 고정값 대신 반영(`MarginTop` 포함), (3) 툴바 입력 또는 드래그 핸들 UI 필요. (보류)
 
 ---
-**마지막 업데이트**: 2026년 6월 (Phase 1 완료 및 VS 소스 저장소 이관)
+**마지막 업데이트**: 2026년 6월 6일 (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME. 행 높이 조절만 보류)

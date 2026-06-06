@@ -4,12 +4,16 @@ using AvaloniaRichTextBoxPort.Documents;
 
 namespace AvaloniaRichTextBoxPort.Formatters;
 
+[JsonSerializable(typeof(FlowDocumentDto))]
+internal partial class DocumentJsonContext : JsonSerializerContext { }
+
 public static class DocumentSerializer
 {
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        TypeInfoResolver = DocumentJsonContext.Default
     };
 
     // A very simplistic DTO mapping for Phase 4 PoC
@@ -37,12 +41,12 @@ public static class DocumentSerializer
                 dto.Paragraphs.Add(pDto);
             }
         }
-        return JsonSerializer.Serialize(dto, Options);
+        return JsonSerializer.Serialize(dto, DocumentJsonContext.Default.FlowDocumentDto);
     }
 
     public static FlowDocument Deserialize(string json)
     {
-        var dto = JsonSerializer.Deserialize<FlowDocumentDto>(json, Options);
+        var dto = JsonSerializer.Deserialize(json, DocumentJsonContext.Default.FlowDocumentDto);
         var doc = new FlowDocument();
         if (dto != null)
         {
