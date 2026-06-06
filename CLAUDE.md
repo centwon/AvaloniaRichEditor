@@ -4,7 +4,27 @@ WPF의 `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 
 PTS(비관리형 C++) 엔진을 못 쓰므로 렌더링/레이아웃/히트테스트를 직접 구현한다.
 
 - **현재 진행 상황과 보류 항목은 항상 [`Project_Roadmap.md`](Project_Roadmap.md)를 먼저 확인**할 것. 작업 후 이 파일을 갱신한다.
-- 스택: .NET 10, Avalonia 12.0.1, `WinExe`, `PublishAot`. 의존성: CommunityToolkit.Mvvm, HtmlAgilityPack.
+
+## 기술 기반 (Tech Stack)
+
+- **런타임/언어**: .NET 10, C# (`Nullable` enable). 출력 `WinExe`(Windows 데스크톱), `PublishAot`(Native AOT), 컴파일된 바인딩 기본(`AvaloniaUseCompiledBindingsByDefault`).
+- **UI 프레임워크**: Avalonia **12.0.1** — `Avalonia`, `Avalonia.Desktop`, `Avalonia.Themes.Fluent`, `Avalonia.Fonts.Inter`. 디버그 전용 `AvaloniaUI.DiagnosticsSupport`.
+- **NuGet 의존성**:
+  | 패키지 | 버전 | 용도 |
+  |---|---|---|
+  | Avalonia(.Desktop/.Themes.Fluent/.Fonts.Inter) | 12.0.1 | UI·렌더링·텍스트 레이아웃 |
+  | CommunityToolkit.Mvvm | 8.4.1 | ViewModel(`ViewModelBase` 등) |
+  | HtmlAgilityPack | 1.12.4 | 외부 HTML 붙여넣기 파싱(`HtmlDocumentFormatter`) |
+
+- **핵심 Avalonia API 사용처** (직접 구현 엔진이라 의존도가 높음):
+  - `Avalonia.Media.TextFormatting`: `TextLayout`(+ `ITextSource`), `TextCharacters`, `DrawableTextRun`(인라인 이미지), `GenericTextRunProperties`/`GenericTextParagraphProperties`. → 렌더·커서·히트테스트·선택의 단일 출처.
+  - 렌더링: `Control.Render(DrawingContext)` 직접 오버라이드. `DrawingContext.DrawText/DrawImage/DrawRectangle/FillRectangle`.
+  - 입력: `OnPointerPressed/Moved/Released`, `OnKeyDown`, `OnTextInput`. IME: `TextInputMethodClient` + `TextInputMethodClientRequestedEvent`.
+  - 클립보드(Avalonia 12 신 API): `IClipboard.TryGetDataAsync()` → `IAsyncDataTransfer`/`IAsyncDataTransferItem.TryGetRawAsync(DataFormat)`. (구 `GetFormatsAsync/GetDataAsync` 없음.)
+  - 파일: `TopLevel.StorageProvider`(저장/열기 피커).
+- **플랫폼/주의**: 현재 Windows 타깃. 클립보드 HTML은 Windows **CF_HTML**(헤더 제거 필요), 워드 그림은 **VML**(미지원). JSON 직렬화는 AOT 대비 Source-Generated 컨텍스트(`DocumentJsonContext`) 사용.
+
+> API 사용상의 함정(예: `FormattedText`엔 히트테스트가 없어 `TextLayout` 사용)은 아래 **비자명한 핵심 규칙** 참고.
 
 ## 빌드 / 실행
 
