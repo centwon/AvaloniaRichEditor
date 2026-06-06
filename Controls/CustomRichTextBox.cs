@@ -48,6 +48,14 @@ public class CustomRichTextBox : Control
     private double _initialNextColumnWidth;
     private bool _resizingLastColumn;
 
+    // Row resize state (mirrors column resize; dragging a row's bottom edge sets its min height).
+    private List<(Avalonia.Rect rect, TableBlock tb, int rowIndex, double height)> _rowBoundaries = new();
+    private bool _isResizingRow;
+    private TableBlock? _resizingRowTable;
+    private int _resizingRowIndex;
+    private double _initialMouseY;
+    private double _initialRowHeight;
+
     // Image resize state
     private List<(Avalonia.Rect rect, ImageBlock img)> _imageHandles = new();
     private bool _isResizingImage;
@@ -156,6 +164,21 @@ public class CustomRichTextBox : Control
             }
         }
 
+        foreach (var b in _rowBoundaries)
+        {
+            if (b.rect.Contains(point))
+            {
+                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                _isResizingRow = true;
+                _resizingRowTable = b.tb;
+                _resizingRowIndex = b.rowIndex;
+                _initialMouseY = point.Y;
+                _initialRowHeight = b.height; // current rendered row height (content- or user-driven)
+                e.Pointer.Capture(this);
+                return;
+            }
+        }
+
         // Click on a hyperlink opens it in the default browser instead of placing the caret.
         var linkRun = GetLinkRunAtPoint(point);
         if (linkRun != null && !string.IsNullOrEmpty(linkRun.NavigateUri))
@@ -238,6 +261,7 @@ public class CustomRichTextBox : Control
                         var l = BuildTextLayout(cell, Math.Max(10, cw - 10));
                         if (l.Height + 10 > rowMaxHeight) rowMaxHeight = l.Height + 10;
                     }
+                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
                     double currentX = 10;
                     for (int c = 0; c < tb.Columns; c++)
                     {
@@ -310,6 +334,7 @@ public class CustomRichTextBox : Control
                         var l = BuildTextLayout(cell, Math.Max(10, cw - 10));
                         if (l.Height + 10 > rowMaxHeight) rowMaxHeight = l.Height + 10;
                     }
+                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
                     yOffset += rowMaxHeight;
                 }
                 if (p.X >= 10 && p.X <= 10 + tableWidth && p.Y >= tableTop && p.Y <= yOffset) return tb;
@@ -391,6 +416,17 @@ public class CustomRichTextBox : Control
             return;
         }
 
+        if (_isResizingRow && _resizingRowTable != null)
+        {
+            double diff = point.Y - _initialMouseY;
+            while (_resizingRowTable.RowHeights.Count <= _resizingRowIndex)
+                _resizingRowTable.RowHeights.Add(0);
+            // Renderer clamps up to content height, so 20 is just a hard floor for the stored value.
+            _resizingRowTable.RowHeights[_resizingRowIndex] = Math.Max(20, _initialRowHeight + diff);
+            InvalidateVisual();
+            return;
+        }
+
         if (_isSelecting)
         {
             _selectionEnd = GetPositionFromPoint(point);
@@ -413,6 +449,15 @@ public class CustomRichTextBox : Control
             if (b.rect.Contains(point))
             {
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeWestEast);
+                return;
+            }
+        }
+
+        foreach (var b in _rowBoundaries)
+        {
+            if (b.rect.Contains(point))
+            {
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
                 return;
             }
         }
@@ -442,6 +487,15 @@ public class CustomRichTextBox : Control
             // the original width in a single step. Don't push the post-resize state here.
             _isResizingColumn = false;
             _resizingTable = null;
+            e.Pointer.Capture(null);
+            return;
+        }
+
+        if (_isResizingRow)
+        {
+            // Pre-resize state pushed on press; undo restores the original height in one step.
+            _isResizingRow = false;
+            _resizingRowTable = null;
             e.Pointer.Capture(null);
             return;
         }
@@ -775,8 +829,9 @@ public class CustomRichTextBox : Control
         }
     }
 
-    private int GetParagraphLength(Paragraph p)
+    private int GetParagraphLength(Paragraph? p)
     {
+        if (p == null) return 0;
         int len = 0;
         foreach (var inline in p.Inlines) len += InlineLen(inline);
         return len;
@@ -792,7 +847,7 @@ public class CustomRichTextBox : Control
         }
         else
         {
-            Paragraph next = GetNextParagraph(_caretPosition.Paragraph);
+            Paragraph? next = GetNextParagraph(_caretPosition.Paragraph);
             if (next != null)
             {
                 _caretPosition.Paragraph = next;
@@ -810,7 +865,7 @@ public class CustomRichTextBox : Control
         }
         else
         {
-            Paragraph prev = GetPreviousParagraph(_caretPosition.Paragraph);
+            Paragraph? prev = GetPreviousParagraph(_caretPosition.Paragraph);
             if (prev != null)
             {
                 _caretPosition.Paragraph = prev;
@@ -819,8 +874,9 @@ public class CustomRichTextBox : Control
         }
     }
 
-    private Paragraph GetNextParagraph(Paragraph current)
+    private Paragraph? GetNextParagraph(Paragraph current)
     {
+        if (Document == null) return null;
         bool found = false;
         foreach (var block in Document.Blocks)
         {
@@ -839,9 +895,10 @@ public class CustomRichTextBox : Control
         return null;
     }
 
-    private Paragraph GetPreviousParagraph(Paragraph current)
+    private Paragraph? GetPreviousParagraph(Paragraph current)
     {
-        Paragraph prev = null;
+        if (Document == null) return null;
+        Paragraph? prev = null;
         foreach (var block in Document.Blocks)
         {
             if (block is Paragraph p) { if (p == current) return prev; prev = p; }
@@ -886,8 +943,9 @@ public class CustomRichTextBox : Control
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
     }
 
-    private void DeleteLocalText(Paragraph p, int index, int length)
+    private void DeleteLocalText(Paragraph? p, int index, int length)
     {
+        if (p == null) return;
         int currentIndex = 0;
         for (int i = 0; i < p.Inlines.Count; i++)
         {
@@ -1137,6 +1195,7 @@ public class CustomRichTextBox : Control
                         var cft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
                         if (cft.Height + 10 > rowMaxHeight) rowMaxHeight = cft.Height + 10;
                     }
+                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
 
                     double currentX = startX;
                     for (int c = 0; c < tb.Columns; c++)
@@ -1229,15 +1288,21 @@ public class CustomRichTextBox : Control
         string? html = await TryGetHtmlAsync(clipboard);
         if (!string.IsNullOrEmpty(html))
         {
-            string fragment = ExtractHtmlFragment(html!);
-            var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(fragment);
-            if (parsed.Blocks.Count > 0)
+            // Malformed/exotic HTML can make the parser throw; fall through to the plain-text
+            // fallback below instead of letting the exception escape this fire-and-forget task.
+            try
             {
-                _undoManager.PushState(Document, _caretPosition);
-                InsertParsedDocument(parsed);
-                InvalidateVisual();
-                return;
+                string fragment = ExtractHtmlFragment(html!);
+                var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(fragment);
+                if (parsed.Blocks.Count > 0)
+                {
+                    _undoManager.PushState(Document, _caretPosition);
+                    InsertParsedDocument(parsed);
+                    InvalidateVisual();
+                    return;
+                }
             }
+            catch { /* fall back to plain text */ }
         }
 
         // 3. Plain text fallback.
@@ -1607,6 +1672,7 @@ public class CustomRichTextBox : Control
 
         // Recomputed every render so resize handles track the current layout.
         _columnBoundaries.Clear();
+        _rowBoundaries.Clear();
         _imageHandles.Clear();
 
         TextPointer? selStart = null, selEnd = null;
@@ -1650,6 +1716,10 @@ public class CustomRichTextBox : Control
                         var ft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
                         if (ft.Height + 10 > rowMaxHeight) rowMaxHeight = ft.Height + 10;
                     }
+                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
+
+                    // Grab handle on the row's bottom edge (6px band) to drag its height.
+                    _rowBoundaries.Add((new Rect(startX, yOffset + rowMaxHeight - 3, tableWidth, 6), tb, r, rowMaxHeight));
 
                     double currentX = startX;
                     for (int c = 0; c < tb.Columns; c++)

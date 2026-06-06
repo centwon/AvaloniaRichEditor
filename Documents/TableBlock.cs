@@ -7,6 +7,9 @@ public class TableBlock : Block
     public int Rows { get; set; } = 2;
     public int Columns { get; set; } = 2;
     public List<double> ColumnWidths { get; set; } = new();
+    // User-specified minimum row heights (parallel to rows). Empty/0 means "auto" (content-driven);
+    // the renderer uses Max(content height, this) so a manually dragged row can't shrink below its text.
+    public List<double> RowHeights { get; set; } = new();
     public List<List<Paragraph>> Cells { get; set; } = new();
 
     public TableBlock()
@@ -44,6 +47,7 @@ public class TableBlock : Block
         tb.Cells.Clear();
         tb.ColumnWidths.Clear();
         foreach(var w in ColumnWidths) tb.ColumnWidths.Add(w);
+        foreach(var h in RowHeights) tb.RowHeights.Add(h);
 
         for (int r = 0; r < Rows; r++)
         {
