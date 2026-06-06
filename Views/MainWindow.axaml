@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AvaloniaRichTextBoxPort.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:controls="using:AvaloniaRichTextBoxPort.Controls"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="AvaloniaRichTextBoxPort.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="AvaloniaRichTextBoxPort">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto, Auto, *">
+        <Border Grid.Row="0" Background="#EEEEEE" Padding="10">
+            <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
+        </Border>
+        
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="10" Background="#DDDDDD">
+            <Button Name="SaveButton" Content="Save to JSON" Click="SaveButton_Click" />
+            <Button Name="LoadButton" Content="Load from JSON" Click="LoadButton_Click" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="2" Padding="20">
+            <controls:CustomRichTextBox x:Name="RichTextBox" />
+        </ScrollViewer>
+    </Grid>
+</Window>
