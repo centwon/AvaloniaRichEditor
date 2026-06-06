@@ -16,6 +16,8 @@ public class Paragraph : Block
     public int HeadingLevel { get; set; } = 0; // 0 = body text, 1..6 = h1..h6
     public IBrush? Background { get; set; } // paragraph / table-cell background fill
     public double Indent { get; set; } = 0; // left indent in px
+    public bool IsQuote { get; set; } = false; // <blockquote>
+    public int ListLevel { get; set; } = 0; // nested list depth (0 = top level)
 
     // Convenience: any list item (bullet or numbered).
     public bool IsListItem => ListType != ListKind.None;
@@ -31,7 +33,9 @@ public class Paragraph : Block
             ListType = this.ListType,
             HeadingLevel = this.HeadingLevel,
             Background = this.Background,
-            Indent = this.Indent
+            Indent = this.Indent,
+            IsQuote = this.IsQuote,
+            ListLevel = this.ListLevel
         };
         foreach (var inline in Inlines)
         {

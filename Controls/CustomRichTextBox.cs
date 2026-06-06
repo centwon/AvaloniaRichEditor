@@ -313,7 +313,7 @@ public class CustomRichTextBox : Control
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
-                double plink = listIndent + paragraph.Indent;
+                double plink = listIndent + paragraph.Indent + paragraph.ListLevel * 20;
                 var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - plink));
                 double height = layout.Height;
                 if (p.Y >= yOffset && p.Y <= yOffset + height)
@@ -378,7 +378,7 @@ public class CustomRichTextBox : Control
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent - paragraph.Indent));
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent - paragraph.Indent - paragraph.ListLevel * 20));
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
             else if (block is DividerBlock)
@@ -1300,7 +1300,7 @@ public class CustomRichTextBox : Control
                     continue;
                 }
 
-                double ppos = listIndent + paragraph.Indent;
+                double ppos = listIndent + paragraph.Indent + paragraph.ListLevel * 20;
                 var ft = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ppos));
                 double height = ft.Height;
 
@@ -1405,12 +1405,60 @@ public class CustomRichTextBox : Control
             return;
         }
 
-        // 4. Plain text fallback.
+        // 4. Tab-separated text (e.g. Excel/HWP cells copied without HTML) -> rebuild as a table.
+        if (!string.IsNullOrEmpty(text) && LooksTabular(text))
+        {
+            _undoManager.PushState(Document, _caretPosition);
+            InsertTableFromTsv(text);
+            InvalidateVisual();
+            return;
+        }
+
+        // 5. Plain text fallback.
         if (!string.IsNullOrEmpty(text))
         {
             _undoManager.PushState(Document, _caretPosition);
             InsertText(text);
         }
+    }
+
+    // Heuristic: a tab plus at least one row that splits into 2+ columns => tabular paste.
+    private static bool LooksTabular(string text)
+    {
+        if (!text.Contains('\t')) return false;
+        foreach (var line in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            if (line.Split('\t').Length >= 2) return true;
+        return false;
+    }
+
+    private void InsertTableFromTsv(string text)
+    {
+        if (Document == null) return;
+        var lines = new List<string>(text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'));
+        while (lines.Count > 1 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+
+        int cols = 1;
+        foreach (var l in lines) cols = Math.Max(cols, l.Split('\t').Length);
+
+        var tb = new TableBlock(lines.Count, cols);
+        tb.Cells.Clear();
+        tb.ColumnWidths.Clear();
+        for (int c = 0; c < cols; c++) tb.ColumnWidths.Add(100);
+        foreach (var l in lines)
+        {
+            var parts = l.Split('\t');
+            var row = new List<Paragraph>();
+            for (int c = 0; c < cols; c++)
+            {
+                var pp = new Paragraph();
+                pp.Inlines.Add(new Run { Text = c < parts.Length ? parts[c] : "" });
+                row.Add(pp);
+            }
+            tb.Cells.Add(row);
+        }
+        tb.Rows = lines.Count;
+        tb.Columns = cols;
+        InsertBlockAtCaret(tb);
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)
@@ -2556,7 +2604,7 @@ public class CustomRichTextBox : Control
 
                 bool hasPreedit = _caretPosition != null && _caretPosition.Paragraph == paragraph && !string.IsNullOrEmpty(_preeditText);
 
-                double px = listIndent + paragraph.Indent;
+                double px = listIndent + paragraph.Indent + paragraph.ListLevel * 20;
 
                 if (fullText == "" && !hasPreedit)
                 {
@@ -2576,6 +2624,9 @@ public class CustomRichTextBox : Control
 
                 if (paragraph.Background != null)
                     context.FillRectangle(paragraph.Background, new Rect(px, yOffset, pWidth, layout.Height));
+
+                if (paragraph.IsQuote)
+                    context.FillRectangle(Brushes.Silver, new Rect(Math.Max(0, px - 10), yOffset, 3, layout.Height));
 
                 if (selectedParagraphs?.Contains(paragraph) == true)
                 {
