@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -12,15 +13,49 @@ using AvaloniaRichTextBoxPort.Documents;
 
 namespace AvaloniaRichTextBoxPort.Controls;
 
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
 public class CustomRichTextBox : Control
 {
+
     private DispatcherTimer _caretTimer;
+    private UndoManager _undoManager = new UndoManager();
     private bool _isCaretVisible;
-    private int _caretIndex;
-    
-    private int _selectionStart = -1;
-    private int _selectionEnd = -1;
+    private TextPointer _caretPosition = new TextPointer(null, 0);
+    private TextPointer _selectionStart = new TextPointer(null, 0);
+    private TextPointer _selectionEnd = new TextPointer(null, 0);
     private bool _isSelecting = false;
+    private Point _lastCaretPoint;
+    private Block? _selectedBlock; // a block (image/table) selected by clicking it (deletable with Del/Backspace)
+
+    // Internal rich clipboard: preserves run formatting for copy/paste within the app.
+    // The plain text put on the system clipboard is mirrored here; on paste we use the rich
+    // version only when the system clipboard text still matches what we copied.
+    private static List<Run>? _internalClipboard;
+    private static string? _internalClipboardText;
+    // When the copied selection spans whole tables/images or multiple top-level blocks, we also
+    // keep cloned block structure so paste can rebuild tables instead of flattening to text.
+    private static List<Block>? _internalClipboardBlocks;
+
+    // Resizing state
+    private List<(Avalonia.Rect rect, TableBlock tb, int colIndex)> _columnBoundaries = new();
+    private bool _isResizingColumn;
+    private TableBlock? _resizingTable;
+    private int _resizingColumnIndex;
+    private double _initialMouseX;
+    private double _initialColumnWidth;
+    private double _initialNextColumnWidth;
+    private bool _resizingLastColumn;
+
+    // Image resize state
+    private List<(Avalonia.Rect rect, ImageBlock img)> _imageHandles = new();
+    private bool _isResizingImage;
+    private ImageBlock? _resizingImage;
+    private double _initialImageWidth;
+    private double _initialImageHeight;
+    private double _initialImageMouseX;
+    private double _imageAspect;
 
     public static readonly StyledProperty<FlowDocument?> DocumentProperty =
         AvaloniaProperty.Register<CustomRichTextBox, FlowDocument?>(nameof(Document));
@@ -36,10 +71,17 @@ public class CustomRichTextBox : Control
         AffectsRender<CustomRichTextBox>(DocumentProperty);
     }
 
+    private readonly RtbInputMethodClient _imClient;
+    private string? _preeditText; // IME composition text shown inline at the caret while composing.
+
     public CustomRichTextBox()
     {
         Focusable = true;
         Cursor = new Cursor(StandardCursorType.Ibeam);
+
+        // Enable IME (Korean/Japanese/Chinese) composition by advertising a text-input client.
+        _imClient = new RtbInputMethodClient(this);
+        AddHandler(Avalonia.Input.InputElement.TextInputMethodClientRequestedEvent, OnTextInputMethodClientRequested);
 
         _caretTimer = new DispatcherTimer
         {
@@ -55,6 +97,10 @@ public class CustomRichTextBox : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == DocumentProperty && Document != null)
+        {
+            UpdateParents(Document);
+        }
         if (change.Property == IsFocusedProperty)
         {
             if (IsFocused)
@@ -76,34 +122,330 @@ public class CustomRichTextBox : Control
         base.OnPointerPressed(e);
         Focus();
         var point = e.GetPosition(this);
-        int idx = GetIndexFromPoint(point);
-        _caretIndex = idx;
-        _selectionStart = idx;
-        _selectionEnd = idx;
-        _isSelecting = true;
+
+        foreach (var h in _imageHandles)
+        {
+            if (h.rect.Contains(point))
+            {
+                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                _isResizingImage = true;
+                _resizingImage = h.img;
+                _initialImageWidth = h.img.Width > 0 ? h.img.Width : 200;
+                _initialImageHeight = h.img.Height > 0 ? h.img.Height : 200;
+                _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
+                _initialImageMouseX = point.X;
+                e.Pointer.Capture(this);
+                return;
+            }
+        }
+
+        foreach (var b in _columnBoundaries)
+        {
+            if (b.rect.Contains(point))
+            {
+                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                _isResizingColumn = true;
+                _resizingTable = b.tb;
+                _resizingColumnIndex = b.colIndex;
+                _resizingLastColumn = b.colIndex >= b.tb.Columns - 1;
+                _initialMouseX = point.X;
+                _initialColumnWidth = (b.colIndex < b.tb.ColumnWidths.Count) ? b.tb.ColumnWidths[b.colIndex] : 100;
+                _initialNextColumnWidth = (b.colIndex + 1 < b.tb.ColumnWidths.Count) ? b.tb.ColumnWidths[b.colIndex + 1] : 100;
+                e.Pointer.Capture(this);
+                return;
+            }
+        }
+
+        // Click on a hyperlink opens it in the default browser instead of placing the caret.
+        var linkRun = GetLinkRunAtPoint(point);
+        if (linkRun != null && !string.IsNullOrEmpty(linkRun.NavigateUri))
+        {
+            OpenUrl(linkRun.NavigateUri!);
+            return;
+        }
+
+        // Clicking a block image/table selects it (so it can be deleted with Delete/Backspace).
+        // Images: single click selects. Tables: single click selects, double-click (or a click
+        // while already editing that table) enters cell editing.
+        var clickedBlock = GetBlockAtPoint(point);
+        if (clickedBlock is ImageBlock)
+        {
+            _selectedBlock = clickedBlock;
+            _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink();
+            InvalidateVisual();
+            return;
+        }
+        if (clickedBlock is TableBlock table)
+        {
+            bool editingThisTable = _caretPosition.Paragraph != null && IsCellOf(table, _caretPosition.Paragraph);
+            if (e.ClickCount < 2 && !editingThisTable)
+            {
+                _selectedBlock = table;
+                _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                ResetCaretBlink();
+                InvalidateVisual();
+                return;
+            }
+            // double-click or already editing -> fall through to place the caret in a cell
+        }
+        _selectedBlock = null;
+
+        _caretPosition = GetPositionFromPoint(point);
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+
         ResetCaretBlink();
         e.Pointer.Capture(this);
+        _isSelecting = true;
+    }
+
+    private static void OpenUrl(string url)
+    {
+        // Only launch web links from pasted content; never arbitrary schemes (file:, etc.).
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    // Returns the Run directly under the point if the point lands on rendered text, else null.
+    // Used for hyperlink hover/click detection.
+    private Run? GetLinkRunAtPoint(Point p)
+    {
+        if (Document == null) return null;
+        double yOffset = 0;
+        double listIndent = 10;
+        double maxWidth = Bounds.Width;
+
+        foreach (var block in Document.Blocks)
+        {
+            if (block is TableBlock tb)
+            {
+                for (int r = 0; r < tb.Rows; r++)
+                {
+                    double rowMaxHeight = 20;
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        double cw = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                        var l = BuildTextLayout(cell, Math.Max(10, cw - 10));
+                        if (l.Height + 10 > rowMaxHeight) rowMaxHeight = l.Height + 10;
+                    }
+                    double currentX = 10;
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        double cw = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                        if (p.X >= currentX && p.X <= currentX + cw && p.Y >= yOffset && p.Y <= yOffset + rowMaxHeight)
+                        {
+                            var layout = BuildTextLayout(cell, Math.Max(10, cw - 10));
+                            var hit = layout.HitTestPoint(new Point(p.X - (currentX + 5), p.Y - (yOffset + 5)));
+                            return hit.IsInside ? RunAtOffset(cell, hit.TextPosition) : null;
+                        }
+                        currentX += cw;
+                    }
+                    yOffset += rowMaxHeight;
+                }
+                yOffset += 10;
+            }
+            else if (block is Paragraph paragraph)
+            {
+                string fullText = BuildPlain(paragraph);
+                if (fullText == "")
+                {
+                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
+                    continue;
+                }
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent));
+                double height = layout.Height;
+                if (p.Y >= yOffset && p.Y <= yOffset + height)
+                {
+                    var hit = layout.HitTestPoint(new Point(p.X - listIndent, p.Y - yOffset));
+                    return hit.IsInside ? RunAtOffset(paragraph, hit.TextPosition) : null;
+                }
+                yOffset += height + paragraph.MarginBottom;
+            }
+            else if (block is ImageBlock img)
+            {
+                yOffset += (img.Height > 0 ? img.Height : 200) + 10;
+            }
+        }
+        return null;
+    }
+
+    private static bool IsCellOf(TableBlock tb, Paragraph p)
+    {
+        for (int r = 0; r < tb.Rows; r++)
+            for (int c = 0; c < tb.Columns; c++)
+                if (tb.Cells[r][c] == p) return true;
+        return false;
+    }
+
+    // The block (image or table) whose rendered rectangle contains the point, or null.
+    private Block? GetBlockAtPoint(Point p)
+    {
+        if (Document == null) return null;
+        double yOffset = 0, listIndent = 10, maxWidth = Bounds.Width;
+        foreach (var block in Document.Blocks)
+        {
+            if (block is TableBlock tb)
+            {
+                double tableTop = yOffset;
+                double tableWidth = 0;
+                for (int c = 0; c < tb.Columns; c++) tableWidth += (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                for (int r = 0; r < tb.Rows; r++)
+                {
+                    double rowMaxHeight = 20;
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        double cw = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                        var l = BuildTextLayout(cell, Math.Max(10, cw - 10));
+                        if (l.Height + 10 > rowMaxHeight) rowMaxHeight = l.Height + 10;
+                    }
+                    yOffset += rowMaxHeight;
+                }
+                if (p.X >= 10 && p.X <= 10 + tableWidth && p.Y >= tableTop && p.Y <= yOffset) return tb;
+                yOffset += 10;
+            }
+            else if (block is Paragraph paragraph)
+            {
+                if (BuildPlain(paragraph) == "")
+                {
+                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
+                    continue;
+                }
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent));
+                yOffset += layout.Height + paragraph.MarginBottom;
+            }
+            else if (block is ImageBlock img)
+            {
+                double w = img.Width > 0 ? img.Width : 200;
+                double h = img.Height > 0 ? img.Height : 200;
+                if (p.X >= listIndent && p.X <= listIndent + w && p.Y >= yOffset && p.Y <= yOffset + h) return img;
+                yOffset += h + 10;
+            }
+        }
+        return null;
+    }
+
+    private static Run? RunAtOffset(Paragraph p, int offset)
+    {
+        int idx = 0;
+        foreach (var inl in p.Inlines)
+        {
+            int len = InlineLen(inl);
+            if (inl is Run run && offset >= idx && offset < idx + len) return run;
+            idx += len;
+        }
+        return null;
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        var point = e.GetPosition(this);
+        
+        if (_isResizingImage && _resizingImage != null)
+        {
+            double diff = point.X - _initialImageMouseX;
+            double newW = Math.Max(20, _initialImageWidth + diff);
+            _resizingImage.Width = newW;
+            _resizingImage.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingImage.Height; // keep aspect ratio
+            InvalidateVisual();
+            return;
+        }
+
+        if (_isResizingColumn && _resizingTable != null)
+        {
+            const double minW = 20;
+            double diff = point.X - _initialMouseX;
+
+            if (_resizingLastColumn)
+            {
+                // Outer-right edge: grow/shrink this column, changing the table's total width.
+                while (_resizingTable.ColumnWidths.Count <= _resizingColumnIndex)
+                    _resizingTable.ColumnWidths.Add(100);
+                _resizingTable.ColumnWidths[_resizingColumnIndex] = Math.Max(minW, _initialColumnWidth + diff);
+            }
+            else
+            {
+                // Internal edge: redistribute between the two adjacent columns, total fixed.
+                while (_resizingTable.ColumnWidths.Count <= _resizingColumnIndex + 1)
+                    _resizingTable.ColumnWidths.Add(100);
+                double minDiff = -(_initialColumnWidth - minW);
+                double maxDiff = _initialNextColumnWidth - minW;
+                diff = Math.Clamp(diff, minDiff, maxDiff);
+                _resizingTable.ColumnWidths[_resizingColumnIndex] = _initialColumnWidth + diff;
+                _resizingTable.ColumnWidths[_resizingColumnIndex + 1] = _initialNextColumnWidth - diff;
+            }
+
+            InvalidateVisual();
+            return;
+        }
+
         if (_isSelecting)
         {
-            var point = e.GetPosition(this);
-            int idx = GetIndexFromPoint(point);
-            if (_selectionEnd != idx)
+            _selectionEnd = GetPositionFromPoint(point);
+            _caretPosition = new TextPointer(_selectionEnd.Paragraph, _selectionEnd.Offset);
+            InvalidateVisual();
+            return;
+        }
+
+        foreach (var h in _imageHandles)
+        {
+            if (h.rect.Contains(point))
             {
-                _selectionEnd = idx;
-                _caretIndex = idx;
-                InvalidateVisual();
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.BottomRightCorner);
+                return;
             }
         }
+
+        foreach (var b in _columnBoundaries)
+        {
+            if (b.rect.Contains(point))
+            {
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeWestEast);
+                return;
+            }
+        }
+
+        var hoverLink = GetLinkRunAtPoint(point);
+        Cursor = (hoverLink != null && !string.IsNullOrEmpty(hoverLink.NavigateUri))
+            ? new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+            : new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Ibeam);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        
+        if (_isResizingImage)
+        {
+            // Pre-resize state already pushed on press; undo restores original size in one step.
+            _isResizingImage = false;
+            _resizingImage = null;
+            e.Pointer.Capture(null);
+            return;
+        }
+
+        if (_isResizingColumn)
+        {
+            // Pre-resize state was already pushed on pointer-press, so undo restores
+            // the original width in a single step. Don't push the post-resize state here.
+            _isResizingColumn = false;
+            _resizingTable = null;
+            e.Pointer.Capture(null);
+            return;
+        }
+
         if (_isSelecting)
         {
             _isSelecting = false;
@@ -114,15 +456,11 @@ public class CustomRichTextBox : Control
     protected override void OnTextInput(TextInputEventArgs e)
     {
         base.OnTextInput(e);
-        if (Document == null || string.IsNullOrEmpty(e.Text)) return;
-
-        DeleteSelection();
+        if (string.IsNullOrEmpty(e.Text)) return;
+        _selectedBlock = null;
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
         InsertText(e.Text);
-        _caretIndex += e.Text.Length;
-        _selectionStart = _caretIndex;
-        _selectionEnd = _caretIndex;
-        
-        ResetCaretBlink();
+        e.Handled = true;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -131,68 +469,221 @@ public class CustomRichTextBox : Control
         bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
 
-        if (ctrl && e.Key == Key.B)
+        // Any key other than the deletion keys cancels a block-image selection.
+        if (_selectedBlock != null && e.Key != Key.Back && e.Key != Key.Delete)
         {
-            ApplyStyleToSelection(r => r.FontWeight = r.FontWeight == FontWeight.Bold ? FontWeight.Normal : FontWeight.Bold);
-            e.Handled = true;
+            _selectedBlock = null;
             InvalidateVisual();
-            return;
         }
-        
-        if (ctrl && e.Key == Key.I)
+
+        if (e.Key == Key.Z && ctrl)
         {
-            ApplyStyleToSelection(r => r.Foreground = r.Foreground == Brushes.Red ? Brushes.Black : Brushes.Red); 
+            if (Document != null)
+            {
+                var state = _undoManager.Undo(Document, _caretPosition);
+                if (state != null)
+                {
+                    Document = state.Value.Document;
+                    UpdateParents(Document);
+                    _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
+                    _caretPosition.Offset = state.Value.CaretOffset;
+                    _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    InvalidateVisual();
+                }
+            }
             e.Handled = true;
-            InvalidateVisual();
             return;
         }
 
-        if (ctrl && e.Key == Key.C)
+        if (e.Key == Key.Y && ctrl)
         {
-            CopyToClipboard();
+            if (Document != null)
+            {
+                var state = _undoManager.Redo(Document, _caretPosition);
+                if (state != null)
+                {
+                    Document = state.Value.Document;
+                    UpdateParents(Document);
+                    _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
+                    _caretPosition.Offset = state.Value.CaretOffset;
+                    _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    InvalidateVisual();
+                }
+            }
             e.Handled = true;
             return;
         }
 
-        if (ctrl && e.Key == Key.V)
+        if (e.Key == Key.A && ctrl)
         {
-            PasteFromClipboard();
+            SelectAll();
             e.Handled = true;
             return;
+        }
+
+        if (e.Key == Key.C && ctrl)
+        {
+            CopySelectionToClipboard();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.X && ctrl)
+        {
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            CopySelectionToClipboard();
+            DeleteSelection();
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.V && ctrl)
+        {
+            _ = PasteFromClipboardAsync();
+            e.Handled = true;
+            return;
+        }
+
+        // Push state before destructive keys
+        if (e.Key == Key.Back || e.Key == Key.Delete || e.Key == Key.Enter)
+        {
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
         }
 
         if (e.Key == Key.Left)
         {
-            if (_caretIndex > 0) _caretIndex--;
-            if (!shift) { _selectionStart = _caretIndex; _selectionEnd = _caretIndex; }
-            else _selectionEnd = _caretIndex;
+            MoveCaretLeft();
+            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink();
             e.Handled = true;
+            return;
         }
         else if (e.Key == Key.Right)
         {
-            int maxLen = GetTotalLength();
-            if (_caretIndex < maxLen) _caretIndex++;
-            if (!shift) { _selectionStart = _caretIndex; _selectionEnd = _caretIndex; }
-            else _selectionEnd = _caretIndex;
+            MoveCaretRight();
+            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink();
             e.Handled = true;
+            return;
+        }
+        else if (e.Key == Key.Up)
+        {
+            _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - 20)));
+            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink();
+            e.Handled = true;
+            return;
+        }
+        else if (e.Key == Key.Down)
+        {
+            _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, _lastCaretPoint.Y + 30));
+            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink();
+            e.Handled = true;
+            return;
+        }
+        else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedBlock != null && Document != null)
+        {
+            // A block image is selected -> delete it.
+            Document.Blocks.Remove(_selectedBlock);
+            _selectedBlock = null;
+            NormalizeBlocks(Document);
+            ResetCaretBlink(); e.Handled = true;
+            return;
         }
         else if (e.Key == Key.Back)
         {
-            if (_selectionStart != _selectionEnd)
+            if (_selectionStart != _selectionEnd) DeleteSelection();
+            else if (_caretPosition.Offset > 0)
             {
-                DeleteSelection();
+                DeleteLocalText(_caretPosition.Paragraph, _caretPosition.Offset - 1, 1);
+                _caretPosition.Offset--;
             }
-            else if (_caretIndex > 0)
+            else if (_caretPosition.Paragraph?.Parent is FlowDocument && Document != null)
             {
-                DeleteText(_caretIndex - 1, 1);
-                _caretIndex--;
+                int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
+                var prevBlock = idx > 0 ? Document.Blocks[idx - 1] : null;
+                if (prevBlock is ImageBlock || prevBlock is TableBlock)
+                {
+                    // Caret at start of paragraph, previous block is an image/table -> delete it.
+                    Document.Blocks.RemoveAt(idx - 1);
+                }
+                else if (prevBlock is Paragraph prev)
+                {
+                    int prevLen = GetParagraphLength(prev);
+                    foreach (var inline in _caretPosition.Paragraph.Inlines)
+                    {
+                        inline.Parent = prev;
+                        prev.Inlines.Add(inline);
+                    }
+                    Document.Blocks.Remove(_caretPosition.Paragraph);
+                    _caretPosition.Paragraph = prev;
+                    _caretPosition.Offset = prevLen;
+                }
             }
-            _selectionStart = _caretIndex;
-            _selectionEnd = _caretIndex;
-            ResetCaretBlink();
-            e.Handled = true;
+            _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink(); e.Handled = true;
+        }
+        else if (e.Key == Key.Delete)
+        {
+            if (_selectionStart != _selectionEnd) DeleteSelection();
+            else if (_caretPosition.Offset < GetParagraphLength(_caretPosition.Paragraph))
+                DeleteLocalText(_caretPosition.Paragraph, _caretPosition.Offset, 1);
+            else if (_caretPosition.Paragraph?.Parent is FlowDocument && Document != null)
+            {
+                int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
+                var nextBlock = (idx >= 0 && idx + 1 < Document.Blocks.Count) ? Document.Blocks[idx + 1] : null;
+                if (nextBlock is ImageBlock || nextBlock is TableBlock)
+                {
+                    // Caret at end of paragraph, next block is an image/table -> delete it.
+                    Document.Blocks.RemoveAt(idx + 1);
+                }
+                else if (nextBlock is Paragraph next)
+                {
+                    foreach (var inline in next.Inlines)
+                    {
+                        inline.Parent = _caretPosition.Paragraph;
+                        _caretPosition.Paragraph.Inlines.Add(inline);
+                    }
+                    Document.Blocks.Remove(next);
+                }
+            }
+            _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink(); e.Handled = true;
+        }
+        else if (e.Key == Key.Home)
+        {
+            _caretPosition = GetPositionFromPoint(new Point(0, _lastCaretPoint.Y));
+            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink(); e.Handled = true; return;
+        }
+        else if (e.Key == Key.End)
+        {
+            _caretPosition = GetPositionFromPoint(new Point(Bounds.Width, _lastCaretPoint.Y));
+            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink(); e.Handled = true; return;
+        }
+        else if (e.Key == Key.Enter)
+        {
+            if (_caretPosition.Paragraph != null)
+            {
+                TryInsertTextCore(_caretPosition.Paragraph, "\n", _caretPosition.Offset);
+                _caretPosition.Offset++;
+                _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                ResetCaretBlink(); e.Handled = true; return;
+            }
         }
     }
 
@@ -201,353 +692,1100 @@ public class CustomRichTextBox : Control
         _isCaretVisible = true;
         _caretTimer.Stop();
         _caretTimer.Start();
+        _imClient.NotifyCaretChanged();
         InvalidateVisual();
     }
 
-    private int GetTotalLength()
+    private void OnTextInputMethodClientRequested(object? sender, Avalonia.Input.TextInput.TextInputMethodClientRequestedEventArgs e)
     {
-        if (Document == null) return 0;
-        int len = 0;
-        foreach (var block in Document.Blocks)
+        e.Client = _imClient;
+    }
+
+    // Caret position in this control's coordinate space, used to place the IME candidate window.
+    private Rect GetCaretRectangle() => new Rect(_lastCaretPoint.X, _lastCaretPoint.Y, 1, 20);
+
+    private void SetPreedit(string? text)
+    {
+        _preeditText = text;
+        InvalidateVisual();
+    }
+
+    private sealed class RtbInputMethodClient : Avalonia.Input.TextInput.TextInputMethodClient
+    {
+        private readonly CustomRichTextBox _owner;
+        public RtbInputMethodClient(CustomRichTextBox owner) => _owner = owner;
+
+        public override Visual TextViewVisual => _owner;
+        public override bool SupportsPreedit => true;
+        public override bool SupportsSurroundingText => false;
+        public override string SurroundingText => string.Empty;
+        public override Rect CursorRectangle => _owner.GetCaretRectangle();
+        public override Avalonia.Input.TextInput.TextSelection Selection { get; set; }
+
+        public override void SetPreeditText(string? preeditText) => _owner.SetPreedit(preeditText);
+
+        public void NotifyCaretChanged()
         {
+            RaiseCursorRectangleChanged();
+        }
+    }
+
+    // Guarantees the caret can always sit next to any image/table: the document starts and ends
+    // with a paragraph, and no two non-paragraph blocks are adjacent without a paragraph between.
+    // Without this, an image/table at the very start/end (or two in a row) is impossible to reach
+    // or delete with the keyboard.
+    private void NormalizeBlocks(FlowDocument doc)
+    {
+        // Keep a paragraph at the very start/end and between any two adjacent non-paragraph blocks,
+        // so the caret can always reach a position before/after every image/table WITHOUT inserting
+        // extra blank lines around blocks that already sit next to text paragraphs. "Before a table"
+        // is then the end of the preceding text line; "after a table" is the start of the next line.
+        var blocks = doc.Blocks;
+        if (blocks.Count == 0 || blocks[0] is not Paragraph)
+            blocks.Insert(0, new Paragraph { Parent = doc });
+        if (blocks[blocks.Count - 1] is not Paragraph)
+            blocks.Add(new Paragraph { Parent = doc });
+        for (int i = 0; i < blocks.Count - 1; i++)
+        {
+            if (blocks[i] is not Paragraph && blocks[i + 1] is not Paragraph)
+                blocks.Insert(i + 1, new Paragraph { Parent = doc });
+        }
+    }
+
+    private void UpdateParents(FlowDocument doc)
+    {
+        NormalizeBlocks(doc);
+        foreach(var block in doc.Blocks)
+        {
+            block.Parent = doc;
             if (block is Paragraph p)
             {
-                foreach (var inline in p.Inlines)
+                foreach(var inline in p.Inlines) inline.Parent = p;
+            }
+            else if (block is TableBlock tb)
+            {
+                for(int r=0; r<tb.Rows; r++)
+                for(int c=0; c<tb.Columns; c++)
                 {
-                    if (inline is Run r && r.Text != null) len += r.Text.Length;
+                    var cell = tb.Cells[r][c];
+                    cell.Parent = tb;
+                    foreach(var inline in cell.Inlines) inline.Parent = cell;
                 }
             }
         }
+    }
+
+    private int GetParagraphLength(Paragraph p)
+    {
+        int len = 0;
+        foreach (var inline in p.Inlines) len += InlineLen(inline);
         return len;
     }
 
-    private void ApplyStyleToSelection(Action<Run> styleAction)
+    private void MoveCaretRight()
     {
-        int min = Math.Min(_selectionStart, _selectionEnd);
-        int max = Math.Max(_selectionStart, _selectionEnd);
-        if (min == max) return;
-
-        int currentIndex = 0;
-        if (Document == null) return;
-        foreach (var block in Document.Blocks)
+        if (_caretPosition.Paragraph == null) return;
+        int pLen = GetParagraphLength(_caretPosition.Paragraph);
+        if (_caretPosition.Offset < pLen)
         {
-            if (block is Paragraph p)
+            _caretPosition.Offset++;
+        }
+        else
+        {
+            Paragraph next = GetNextParagraph(_caretPosition.Paragraph);
+            if (next != null)
             {
-                foreach (var inline in p.Inlines)
-                {
-                    if (inline is Run run)
-                    {
-                        int runLen = run.Text?.Length ?? 0;
-                        if (max > currentIndex && min < currentIndex + runLen)
-                        {
-                            styleAction(run);
-                        }
-                        currentIndex += runLen;
-                    }
-                }
+                _caretPosition.Paragraph = next;
+                _caretPosition.Offset = 0;
             }
         }
+    }
+
+    private void MoveCaretLeft()
+    {
+        if (_caretPosition.Paragraph == null) return;
+        if (_caretPosition.Offset > 0)
+        {
+            _caretPosition.Offset--;
+        }
+        else
+        {
+            Paragraph prev = GetPreviousParagraph(_caretPosition.Paragraph);
+            if (prev != null)
+            {
+                _caretPosition.Paragraph = prev;
+                _caretPosition.Offset = GetParagraphLength(prev);
+            }
+        }
+    }
+
+    private Paragraph GetNextParagraph(Paragraph current)
+    {
+        bool found = false;
+        foreach (var block in Document.Blocks)
+        {
+            if (block is Paragraph p) { if (found) return p; if (p == current) found = true; }
+            else if (block is TableBlock tb)
+            {
+                for (int r = 0; r < tb.Rows; r++)
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        if (found) return cell;
+                        if (cell == current) found = true;
+                    }
+            }
+        }
+        return null;
+    }
+
+    private Paragraph GetPreviousParagraph(Paragraph current)
+    {
+        Paragraph prev = null;
+        foreach (var block in Document.Blocks)
+        {
+            if (block is Paragraph p) { if (p == current) return prev; prev = p; }
+            else if (block is TableBlock tb)
+            {
+                for (int r = 0; r < tb.Rows; r++)
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        if (cell == current) return prev;
+                        prev = cell;
+                    }
+            }
+        }
+        return null;
+    }
+
+    public void InsertText(string text)
+    {
+        if (Document == null || _caretPosition.Paragraph == null) return;
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+
+        TryInsertTextCore(_caretPosition.Paragraph, text, _caretPosition.Offset);
+        _caretPosition.Offset += text.Length;
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        InvalidateVisual();
     }
 
     private void DeleteSelection()
     {
-        int min = Math.Min(_selectionStart, _selectionEnd);
-        int max = Math.Max(_selectionStart, _selectionEnd);
-        if (min == max) return;
-        
-        DeleteText(min, max - min);
-        _caretIndex = min;
-        _selectionStart = _caretIndex;
-        _selectionEnd = _caretIndex;
-    }
-
-    private string GetSelectedText()
-    {
-        int min = Math.Min(_selectionStart, _selectionEnd);
-        int max = Math.Max(_selectionStart, _selectionEnd);
-        if (min == max) return "";
-
-        string fullText = "";
-        if (Document != null)
+        if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
-            foreach (var block in Document.Blocks)
-            {
-                if (block is Paragraph p)
-                {
-                    foreach (var inline in p.Inlines)
-                    {
-                        if (inline is Run run && !string.IsNullOrEmpty(run.Text))
-                        {
-                            fullText += run.Text;
-                        }
-                    }
-                }
-            }
+            var range = new TextRange(_selectionStart, _selectionEnd);
+            range.Delete();
+
+            _caretPosition = new TextPointer(range.Start.Paragraph, range.Start.Offset);
+            if (Document != null) NormalizeBlocks(Document);
         }
         
-        if (min >= 0 && max <= fullText.Length)
-        {
-            return fullText.Substring(min, max - min);
-        }
-        return "";
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
     }
 
-    private async void CopyToClipboard()
+    private void DeleteLocalText(Paragraph p, int index, int length)
     {
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard != null)
-        {
-            string text = GetSelectedText();
-            if (!string.IsNullOrEmpty(text))
-            {
-                await clipboard.SetTextAsync(text);
-            }
-        }
-    }
-
-    private async void PasteFromClipboard()
-    {
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard != null)
-        {
-            string? text = await clipboard.TryGetTextAsync();
-            if (!string.IsNullOrEmpty(text))
-            {
-                DeleteSelection();
-                InsertText(text);
-                _caretIndex += text.Length;
-                _selectionStart = _caretIndex;
-                _selectionEnd = _caretIndex;
-                ResetCaretBlink();
-            }
-        }
-    }
-
-    private void InsertText(string text)
-    {
-        if (Document == null || Document.Blocks.Count == 0) return;
         int currentIndex = 0;
+        for (int i = 0; i < p.Inlines.Count; i++)
+        {
+            int len = InlineLen(p.Inlines[i]);
+            if (p.Inlines[i] is Run run && index >= currentIndex && index < currentIndex + len)
+            {
+                int localOffset = index - currentIndex;
+                int deleteLen = Math.Min(length, len - localOffset);
+                run.Text = run.Text!.Remove(localOffset, deleteLen);
+                if (string.IsNullOrEmpty(run.Text)) p.Inlines.RemoveAt(i);
+                return;
+            }
+            if (p.Inlines[i] is InlineImage && index == currentIndex)
+            {
+                // The single position occupied by an inline image -> remove the image.
+                p.Inlines.RemoveAt(i);
+                return;
+            }
+            currentIndex += len;
+        }
+    }
+
+    private void TryInsertTextCore(Paragraph p, string text, int localIndex)
+    {
+        int currentIndex = 0;
+        for (int i = 0; i < p.Inlines.Count; i++)
+        {
+            int len = InlineLen(p.Inlines[i]);
+            if (p.Inlines[i] is Run run && localIndex >= currentIndex && localIndex <= currentIndex + len)
+            {
+                run.Text = (run.Text ?? "").Insert(localIndex - currentIndex, text);
+                return;
+            }
+            // Insertion point sits exactly before an inline image -> insert a new run there.
+            if (p.Inlines[i] is InlineImage && localIndex == currentIndex)
+            {
+                p.Inlines.Insert(i, new Run { Text = text, Parent = p });
+                return;
+            }
+            currentIndex += len;
+        }
+        p.Inlines.Add(new Run { Text = text, Parent = p });
+    }
+
+    // The object-replacement character represents one inline image in the logical text stream.
+    private const char ObjChar = '￼';
+
+    // Logical length of an inline: a Run's text length, or 1 for an inline image.
+    private static int InlineLen(Inline inline) =>
+        inline is Run r ? (r.Text?.Length ?? 0) : (inline is InlineImage ? 1 : 0);
+
+    // The paragraph's logical text, with each inline image collapsed to one ObjChar so that
+    // character offsets line up with the TextLayout produced by BuildTextLayout.
+    private static string BuildPlain(Paragraph p)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var inline in p.Inlines)
+        {
+            if (inline is Run r && r.Text != null) sb.Append(r.Text);
+            else if (inline is InlineImage) sb.Append(ObjChar);
+        }
+        return sb.ToString();
+    }
+
+    // A layout segment is either text (Text != null) or an inline image (Image != null, length 1).
+    private struct LayoutSeg
+    {
+        public string? Text;
+        public Avalonia.Media.TextFormatting.TextRunProperties Props;
+        public Avalonia.Media.Imaging.Bitmap? Image;
+        public Size ImageSize;
+    }
+
+    // Draws an inline image inside a text line; occupies one character position (U+FFFC).
+    private sealed class ImageTextRun : Avalonia.Media.TextFormatting.DrawableTextRun
+    {
+        private static readonly ReadOnlyMemory<char> _obj = "￼".AsMemory();
+        private readonly Avalonia.Media.Imaging.Bitmap? _bmp;
+        private readonly Size _size;
+        private readonly Avalonia.Media.TextFormatting.TextRunProperties _props;
+
+        public ImageTextRun(Avalonia.Media.Imaging.Bitmap? bmp, Size size, Avalonia.Media.TextFormatting.TextRunProperties props)
+        { _bmp = bmp; _size = size; _props = props; }
+
+        public override ReadOnlyMemory<char> Text => _obj;
+        public override int Length => 1;
+        public override Avalonia.Media.TextFormatting.TextRunProperties Properties => _props;
+        public override Size Size => _size;
+        public override double Baseline => _size.Height;
+
+        public override void Draw(DrawingContext context, Point origin)
+        {
+            if (_bmp != null)
+                context.DrawImage(_bmp, new Rect(origin.X, origin.Y, _size.Width, _size.Height));
+        }
+    }
+
+    // Feeds a paragraph's runs/images to Avalonia's text formatter so a single TextLayout drives
+    // rendering, caret geometry, hit-testing and selection rects.
+    private sealed class ParagraphTextSource : Avalonia.Media.TextFormatting.ITextSource
+    {
+        private readonly List<LayoutSeg> _segs;
+        public ParagraphTextSource(List<LayoutSeg> segs) => _segs = segs;
+
+        public Avalonia.Media.TextFormatting.TextRun? GetTextRun(int textSourceIndex)
+        {
+            int pos = 0;
+            foreach (var seg in _segs)
+            {
+                int len = seg.Text != null ? seg.Text.Length : 1;
+                if (textSourceIndex < pos + len)
+                {
+                    if (seg.Text != null)
+                    {
+                        int start = textSourceIndex - pos;
+                        return new Avalonia.Media.TextFormatting.TextCharacters(seg.Text.Substring(start).AsMemory(), seg.Props);
+                    }
+                    return new ImageTextRun(seg.Image, seg.ImageSize, seg.Props);
+                }
+                pos += len;
+            }
+            return null;
+        }
+    }
+
+    private Avalonia.Media.TextFormatting.TextLayout BuildTextLayout(Paragraph p, double maxWidth,
+        int preeditOffset = -1, string? preeditText = null)
+    {
+        var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
+            Typeface.Default, 14, null, Brushes.Black);
+
+        var segs = new List<LayoutSeg>();
+        foreach (var inline in p.Inlines)
+        {
+            if (inline is Run r && !string.IsNullOrEmpty(r.Text))
+            {
+                var typeface = new Typeface(FontFamily.Default, r.FontStyle, r.FontWeight);
+                TextDecorationCollection? decos = r.TextDecorations;
+                if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
+                var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
+                    typeface,
+                    r.FontSize <= 0 ? 14 : r.FontSize,
+                    decos,
+                    r.Foreground ?? Brushes.Black);
+                segs.Add(new LayoutSeg { Text = r.Text, Props = props });
+            }
+            else if (inline is InlineImage img)
+            {
+                segs.Add(new LayoutSeg
+                {
+                    Image = img.Image,
+                    ImageSize = new Size(img.Width > 0 ? img.Width : 16, img.Height > 0 ? img.Height : 16),
+                    Props = defaultProps
+                });
+            }
+        }
+
+        if (!string.IsNullOrEmpty(preeditText) && preeditOffset >= 0)
+        {
+            var preeditProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
+                Typeface.Default, 14, TextDecorations.Underline, Brushes.Black);
+            SplicePreedit(segs, preeditOffset, preeditText!, preeditProps);
+        }
+
+        double lh = !double.IsNaN(p.LineHeight) ? p.LineHeight : double.NaN;
+        var paraProps = new Avalonia.Media.TextFormatting.GenericTextParagraphProperties(
+            FlowDirection.LeftToRight,
+            p.TextAlignment,
+            true,
+            false,
+            defaultProps,
+            TextWrapping.Wrap,
+            lh,
+            0,
+            0);
+
+        return new Avalonia.Media.TextFormatting.TextLayout(
+            new ParagraphTextSource(segs), paraProps, null, Math.Max(1, maxWidth));
+    }
+
+    private int HitTestIndex(Avalonia.Media.TextFormatting.TextLayout layout, Point localPoint)
+    {
+        var hit = layout.HitTestPoint(localPoint);
+        return hit.TextPosition + (hit.IsTrailing ? 1 : 0);
+    }
+
+    // Inserts the IME preedit text at a character offset, splitting a text segment if needed.
+    private static void SplicePreedit(List<LayoutSeg> segs, int offset, string preedit,
+        Avalonia.Media.TextFormatting.TextRunProperties preeditProps)
+    {
+        int idx = 0;
+        for (int i = 0; i < segs.Count; i++)
+        {
+            int len = segs[i].Text != null ? segs[i].Text!.Length : 1;
+            if (offset <= idx + len)
+            {
+                int local = offset - idx;
+                var pre = new LayoutSeg { Text = preedit, Props = preeditProps };
+                if (segs[i].Text != null && local > 0 && local < len)
+                {
+                    var left = new LayoutSeg { Text = segs[i].Text!.Substring(0, local), Props = segs[i].Props };
+                    var right = new LayoutSeg { Text = segs[i].Text!.Substring(local), Props = segs[i].Props };
+                    segs[i] = left;
+                    segs.Insert(i + 1, pre);
+                    segs.Insert(i + 2, right);
+                }
+                else if (local <= 0)
+                {
+                    segs.Insert(i, pre);
+                }
+                else
+                {
+                    segs.Insert(i + 1, pre);
+                }
+                return;
+            }
+            idx += len;
+        }
+        segs.Add(new LayoutSeg { Text = preedit, Props = preeditProps });
+    }
+
+    private TextPointer GetPositionFromPoint(Point p)
+    {
+        if (Document == null || Document.Blocks.Count == 0)
+            return new TextPointer(null, 0);
+
+        double yOffset = 0;
+        double listIndent = 10;
+        double maxWidth = Bounds.Width;
+        double bestDistY = double.MaxValue;
+        Paragraph? bestPara = null;
+        int bestLocalIndex = 0;
+
         foreach (var block in Document.Blocks)
         {
-            if (block is Paragraph p)
+            if (block is TableBlock tb)
             {
-                foreach (var inline in p.Inlines)
+                double startX = 10;
+
+                for (int r = 0; r < tb.Rows; r++)
                 {
-                    if (inline is Run run)
+                    double rowMaxHeight = 20;
+                    for (int c = 0; c < tb.Columns; c++)
                     {
-                        int runLen = run.Text?.Length ?? 0;
-                        if (_caretIndex >= currentIndex && _caretIndex <= currentIndex + runLen)
-                        {
-                            int localIndex = _caretIndex - currentIndex;
-                            run.Text = (run.Text ?? "").Insert(localIndex, text);
-                            return;
-                        }
-                        currentIndex += runLen;
+                        var cell = tb.Cells[r][c];
+                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                        var cft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
+                        if (cft.Height + 10 > rowMaxHeight) rowMaxHeight = cft.Height + 10;
                     }
+
+                    double currentX = startX;
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                        var cell = tb.Cells[r][c];
+                        bool lastCol = c == tb.Columns - 1;
+                        bool xInside = (p.X >= currentX && p.X <= currentX + cellWidth) || (lastCol && p.X > currentX + cellWidth);
+                        if (xInside && p.Y >= yOffset && p.Y <= yOffset + rowMaxHeight)
+                        {
+                            var cft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
+                            int idx = HitTestIndex(cft, new Point(p.X - (currentX + 5), p.Y - (yOffset + 5)));
+                            return new TextPointer(cell, idx);
+                        }
+                        currentX += cellWidth;
+                    }
+
+                    double distY = p.Y < yOffset ? yOffset - p.Y : (p.Y > yOffset + rowMaxHeight ? p.Y - (yOffset + rowMaxHeight) : 0);
+                    if (distY < bestDistY)
+                    {
+                        bestDistY = distY;
+                        bestPara = tb.Cells[r][0];
+                        bestLocalIndex = GetParagraphLength(bestPara);
+                    }
+
+                    yOffset += rowMaxHeight;
                 }
+                yOffset += 10;
+            }
+            else if (block is Paragraph paragraph)
+            {
+                string fullText = BuildPlain(paragraph);
+
+                if (fullText == "")
+                {
+                    double lh = !double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20;
+                    double dY = p.Y < yOffset ? yOffset - p.Y : (p.Y > yOffset + lh ? p.Y - (yOffset + lh) : 0);
+                    if (dY < bestDistY) { bestDistY = dY; bestPara = paragraph; bestLocalIndex = 0; }
+                    yOffset += paragraph.MarginBottom + lh;
+                    continue;
+                }
+
+                var ft = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent));
+                double height = ft.Height;
+
+                double distY2 = p.Y < yOffset ? yOffset - p.Y : (p.Y > yOffset + height ? p.Y - (yOffset + height) : 0);
+                if (distY2 < bestDistY)
+                {
+                    bestDistY = distY2;
+                    bestPara = paragraph;
+                    bestLocalIndex = HitTestIndex(ft, new Point(p.X - listIndent, p.Y - yOffset));
+                }
+                yOffset += height + paragraph.MarginBottom;
+            }
+            else if (block is ImageBlock img)
+            {
+                double height = img.Height > 0 ? img.Height : 200;
+                yOffset += height + 10;
             }
         }
+        return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) : new TextPointer(Document.Blocks[0] as Paragraph, 0);
     }
 
-    private void DeleteText(int index, int length)
+    public async Task PasteFromClipboardAsync()
     {
         if (Document == null) return;
-        int currentIndex = 0;
-        foreach (var block in Document.Blocks)
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) return;
+        string? text = await clipboard.TryGetTextAsync();
+
+        // 1. Internal rich clipboard: if the system text still matches what we last copied
+        //    in-app, paste the formatted version (blocks/tables when available, else runs).
+        if (_internalClipboardText != null && text == _internalClipboardText &&
+            (_internalClipboardBlocks != null || _internalClipboard != null))
         {
-            if (block is Paragraph p)
+            _undoManager.PushState(Document, _caretPosition);
+            if (_internalClipboardBlocks != null)
             {
-                foreach (var inline in p.Inlines)
+                InsertBlocks(_internalClipboardBlocks);
+                InvalidateVisual();
+            }
+            else
+            {
+                InsertRuns(_internalClipboard!);
+            }
+            return;
+        }
+
+        // 2. External HTML (from browsers, Word, etc.): parse and insert with formatting.
+        string? html = await TryGetHtmlAsync(clipboard);
+        if (!string.IsNullOrEmpty(html))
+        {
+            string fragment = ExtractHtmlFragment(html!);
+            var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(fragment);
+            if (parsed.Blocks.Count > 0)
+            {
+                _undoManager.PushState(Document, _caretPosition);
+                InsertParsedDocument(parsed);
+                InvalidateVisual();
+                return;
+            }
+        }
+
+        // 3. Plain text fallback.
+        if (!string.IsNullOrEmpty(text))
+        {
+            _undoManager.PushState(Document, _caretPosition);
+            InsertText(text);
+        }
+    }
+
+    private static async Task<string?> TryGetHtmlAsync(IClipboard clipboard)
+    {
+        Avalonia.Input.IAsyncDataTransfer? dt;
+        try { dt = await clipboard.TryGetDataAsync(); }
+        catch { return null; }
+        if (dt == null) return null;
+
+        try
+        {
+            foreach (var item in dt.Items)
+            {
+                foreach (var fmt in item.Formats)
                 {
-                    if (inline is Run run)
+                    if (fmt.ToString()?.IndexOf("html", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        int runLen = run.Text?.Length ?? 0;
-                        if (index >= currentIndex && index < currentIndex + runLen)
-                        {
-                            int localIndex = index - currentIndex;
-                            int deleteLen = Math.Min(length, runLen - localIndex);
-                            run.Text = (run.Text ?? "").Remove(localIndex, deleteLen);
-                            return; 
-                        }
-                        currentIndex += runLen;
+                        object? raw;
+                        try { raw = await item.TryGetRawAsync(fmt); }
+                        catch { continue; }
+                        if (raw is string s && !string.IsNullOrWhiteSpace(s)) return s;
+                        if (raw is byte[] b) return System.Text.Encoding.UTF8.GetString(b);
                     }
                 }
             }
         }
+        finally
+        {
+            (dt as IDisposable)?.Dispose();
+        }
+        return null;
     }
 
-    private double GetXForIndex(int localIndex, string fullText, Paragraph paragraph)
+    // Strips the Windows CF_HTML ("HTML Format") header/fragment markers down to the markup.
+    private static string ExtractHtmlFragment(string raw)
     {
-        if (localIndex == 0) return 0;
-        var caretText = new FormattedText(
-            fullText.Substring(0, localIndex),
-            CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight,
-            Typeface.Default,
-            14,
-            Brushes.Black)
-        {
-            MaxTextWidth = double.PositiveInfinity,
-            TextAlignment = TextAlignment.Left
-        };
+        const string startTag = "<!--StartFragment-->";
+        const string endTag = "<!--EndFragment-->";
+        int sf = raw.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
+        int ef = raw.IndexOf(endTag, StringComparison.OrdinalIgnoreCase);
+        if (sf >= 0 && ef > sf)
+            return raw.Substring(sf + startTag.Length, ef - (sf + startTag.Length));
 
-        int localIdx2 = 0;
+        if (raw.StartsWith("Version:", StringComparison.OrdinalIgnoreCase))
+        {
+            int lt = raw.IndexOf('<');
+            if (lt >= 0) return raw.Substring(lt);
+        }
+        return raw;
+    }
+
+    private Block? FindTopLevelBlock(Paragraph p)
+    {
+        if (Document == null) return null;
+        foreach (var b in Document.Blocks)
+        {
+            if (b == p) return b;
+            if (b is TableBlock tb)
+                for (int r = 0; r < tb.Rows; r++)
+                    for (int c = 0; c < tb.Columns; c++)
+                        if (tb.Cells[r][c] == p) return tb;
+        }
+        return null;
+    }
+
+    private void InsertParsedDocument(FlowDocument parsed)
+    {
+        if (Document == null) return;
+
+        // Inline-only single paragraph: paste inline at the caret to keep the current line's flow.
+        if (parsed.Blocks.Count == 1 && parsed.Blocks[0] is Paragraph sp && _caretPosition.Paragraph != null)
+        {
+            var runs = new List<Run>();
+            foreach (var inl in sp.Inlines) if (inl is Run r) runs.Add((Run)r.Clone());
+            if (runs.Count > 0) { InsertRuns(runs); return; }
+        }
+
+        // Otherwise splice the parsed blocks in after the caret's top-level block.
+        int insertIndex = Document.Blocks.Count;
+        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
+        if (caretBlock != null)
+        {
+            int i = Document.Blocks.IndexOf(caretBlock);
+            if (i >= 0) insertIndex = i + 1;
+        }
+
+        Paragraph? lastPara = null;
+        foreach (var b in parsed.Blocks.ToList())
+        {
+            Document.Blocks.Insert(insertIndex++, b);
+            if (b is Paragraph bp) lastPara = bp;
+            else if (b is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
+        }
+        UpdateParents(Document);
+
+        if (lastPara != null)
+        {
+            _caretPosition = new TextPointer(lastPara, GetParagraphLength(lastPara));
+            _selectionStart = new TextPointer(lastPara, _caretPosition.Offset);
+            _selectionEnd = new TextPointer(lastPara, _caretPosition.Offset);
+        }
+    }
+
+    // Inserts a top-level block immediately after the caret's current block (or at the end
+    // when the caret isn't in a normal paragraph), instead of always appending to the document.
+    private void InsertBlockAtCaret(Block b)
+    {
+        if (Document == null) return;
+        int insertIndex = Document.Blocks.Count;
+        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
+        if (caretBlock != null)
+        {
+            int i = Document.Blocks.IndexOf(caretBlock);
+            if (i >= 0) insertIndex = i + 1;
+        }
+        Document.Blocks.Insert(insertIndex, b);
+        UpdateParents(Document);
+    }
+
+    public void InsertImage(Avalonia.Media.Imaging.Bitmap image)
+    {
+        if (Document == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        var ib = new ImageBlock { Image = image, Width = image.Size.Width, Height = image.Size.Height };
+        InsertBlockAtCaret(ib);
+        InvalidateVisual();
+    }
+
+    public void InsertTable(int rows, int cols)
+    {
+        if (Document == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        var tb = new TableBlock { Rows = rows, Columns = cols, Cells = new List<List<Paragraph>>(), ColumnWidths = new List<double>() };
+        for (int c = 0; c < cols; c++) tb.ColumnWidths.Add(100);
+        for (int r = 0; r < rows; r++)
+        {
+            var rowList = new List<Paragraph>();
+            for (int c = 0; c < cols; c++) rowList.Add(new Paragraph());
+            tb.Cells.Add(rowList);
+        }
+        InsertBlockAtCaret(tb);
+        InvalidateVisual();
+    }
+
+    public void ToggleBold() { ApplyStyleToSelection(r => r.FontWeight = r.FontWeight == FontWeight.Bold ? FontWeight.Normal : FontWeight.Bold); }
+    public void ToggleItalic() { ApplyStyleToSelection(r => r.FontStyle = r.FontStyle == FontStyle.Italic ? FontStyle.Normal : FontStyle.Italic); }
+    public void SetFontSize(double size) { ApplyStyleToSelection(r => r.FontSize = size); }
+    public void SetForeground(IBrush brush) { ApplyStyleToSelection(r => r.Foreground = brush); }
+    public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
+    public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
+    public void ToggleBullet() { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.IsListItem = !_caretPosition.Paragraph.IsListItem; InvalidateVisual(); } }
+
+    public void ToggleStrikethrough() { ApplyStyleToSelection(r => r.TextDecorations = r.TextDecorations == TextDecorations.Strikethrough ? null : TextDecorations.Strikethrough); }
+
+    private void ApplyStyleToSelection(Action<Run> styleAction)
+    {
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
+        {
+            var range = new TextRange(_selectionStart, _selectionEnd);
+            range.ApplyPropertyValue(styleAction);
+        }
+        else if (_caretPosition.Paragraph != null)
+        {
+            foreach (var inline in _caretPosition.Paragraph.Inlines)
+                if (inline is Run r) styleAction(r);
+        }
+        InvalidateVisual();
+    }
+
+    private void ApplyInlinesToFormattedText(FormattedText formattedText, Paragraph paragraph)
+    {
+        int localIndex = 0;
         foreach (var inline in paragraph.Inlines)
         {
             if (inline is Run run && !string.IsNullOrEmpty(run.Text))
             {
                 int length = run.Text.Length;
-                int start = Math.Max(localIdx2, 0);
-                int end = Math.Min(localIdx2 + length, localIndex);
-                if (end > start)
-                {
-                    if (run.FontWeight != FontWeight.Normal)
-                        caretText.SetFontWeight(run.FontWeight, start, end - start);
-                    if (run.Foreground != null)
-                        caretText.SetForegroundBrush(run.Foreground, start, end - start);
-                }
-                localIdx2 += length;
+                if (run.FontWeight != FontWeight.Normal)
+                    formattedText.SetFontWeight(run.FontWeight, localIndex, length);
+                if (run.FontStyle != FontStyle.Normal)
+                    formattedText.SetFontStyle(run.FontStyle, localIndex, length);
+                if (run.FontSize != 14)
+                    formattedText.SetFontSize(run.FontSize, localIndex, length);
+                if (run.Foreground != null)
+                    formattedText.SetForegroundBrush(run.Foreground, localIndex, length);
+                if (!string.IsNullOrEmpty(run.NavigateUri))
+                    formattedText.SetTextDecorations(TextDecorations.Underline, localIndex, length);
+                if (run.TextDecorations != null)
+                    formattedText.SetTextDecorations(run.TextDecorations, localIndex, length);
+                localIndex += length;
             }
         }
-
-        return caretText.WidthIncludingTrailingWhitespace;
     }
 
-    private int GetIndexFromPoint(Point p)
+    private List<Paragraph> GetAllParagraphsInOrder()
     {
-        if (Document == null) return 0;
-        double yOffset = 0;
-        int globalIndex = 0;
+        var result = new List<Paragraph>();
+        if (Document == null) return result;
         foreach (var block in Document.Blocks)
         {
-            if (block is Paragraph paragraph)
+            if (block is Paragraph p) result.Add(p);
+            else if (block is TableBlock tb)
             {
-                string fullText = "";
-                foreach (var inline in paragraph.Inlines) { if (inline is Run r) fullText += r.Text; }
-                
-                double height = 20; 
-                if (p.Y >= yOffset && p.Y <= yOffset + height)
-                {
-                    for (int i = 0; i <= fullText.Length; i++)
-                    {
-                        double x = GetXForIndex(i, fullText, paragraph);
-                        if (x >= p.X) return globalIndex + Math.Max(0, i - 1); 
-                    }
-                    return globalIndex + fullText.Length;
-                }
-                globalIndex += fullText.Length;
-                yOffset += height + 10;
+                for (int r = 0; r < tb.Rows; r++)
+                    for (int c = 0; c < tb.Columns; c++)
+                        result.Add(tb.Cells[r][c]);
             }
         }
-        return globalIndex;
+        return result;
+    }
+
+    private void SelectAll()
+    {
+        var allParas = GetAllParagraphsInOrder();
+        if (allParas.Count == 0) return;
+        _selectionStart = new TextPointer(allParas[0], 0);
+        var lastPara = allParas[allParas.Count - 1];
+        _selectionEnd = new TextPointer(lastPara, GetParagraphLength(lastPara));
+        _caretPosition = new TextPointer(_selectionEnd.Paragraph, _selectionEnd.Offset);
+        InvalidateVisual();
+    }
+
+    private async void CopySelectionToClipboard()
+    {
+        if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null || _selectionStart.CompareTo(_selectionEnd) == 0) return;
+        var range = new TextRange(_selectionStart, _selectionEnd);
+        string text = range.GetText();
+        // Capture the rich fragment synchronously (cloned) before any await / later edits.
+        _internalClipboard = range.GetRichRuns();
+        _internalClipboardText = text;
+        _internalClipboardBlocks = CaptureBlockStructure(range);
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard != null && !string.IsNullOrEmpty(text))
+            await clipboard.SetTextAsync(text);
+    }
+
+    // If the selection spans whole tables/images or crosses multiple top-level blocks, clone the
+    // full top-level blocks so paste can reproduce table structure. Returns null for plain inline
+    // selections (those use the run-based clipboard instead).
+    private List<Block>? CaptureBlockStructure(TextRange range)
+    {
+        if (Document == null) return null;
+        var startTop = range.Start.Paragraph != null ? FindTopLevelBlock(range.Start.Paragraph) : null;
+        var endTop = range.End.Paragraph != null ? FindTopLevelBlock(range.End.Paragraph) : null;
+        if (startTop == null || endTop == null) return null;
+
+        int si = Document.Blocks.IndexOf(startTop);
+        int ei = Document.Blocks.IndexOf(endTop);
+        if (si < 0 || ei < 0 || si > ei) return null;
+
+        bool spansMultiple = si != ei;
+        bool hasNonParagraph = false;
+        for (int k = si; k <= ei; k++)
+            if (!(Document.Blocks[k] is Paragraph)) { hasNonParagraph = true; break; }
+
+        if (!spansMultiple && !hasNonParagraph) return null; // plain inline selection
+
+        var blocks = new List<Block>();
+        for (int k = si; k <= ei; k++)
+            if (Document.Blocks[k].Clone() is Block cl) blocks.Add(cl);
+        return blocks.Count > 0 ? blocks : null;
+    }
+
+    // Inserts cloned blocks (e.g. tables) after the caret's block, preserving structure.
+    private void InsertBlocks(List<Block> blocks)
+    {
+        if (Document == null || blocks.Count == 0) return;
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+
+        int insertIndex = Document.Blocks.Count;
+        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
+        if (caretBlock != null)
+        {
+            int i = Document.Blocks.IndexOf(caretBlock);
+            if (i >= 0) insertIndex = i + 1;
+        }
+
+        Paragraph? lastPara = null;
+        foreach (var b in blocks)
+        {
+            if (b.Clone() is not Block cl) continue; // clone again so repeated pastes stay independent
+            Document.Blocks.Insert(insertIndex++, cl);
+            if (cl is Paragraph bp) lastPara = bp;
+            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
+        }
+        UpdateParents(Document);
+
+        if (lastPara != null)
+        {
+            _caretPosition = new TextPointer(lastPara, GetParagraphLength(lastPara));
+            _selectionStart = new TextPointer(lastPara, _caretPosition.Offset);
+            _selectionEnd = new TextPointer(lastPara, _caretPosition.Offset);
+        }
+    }
+
+    // Inserts a list of formatted Runs at the current caret, splitting the run under the caret.
+    private void InsertRuns(List<Run> runs)
+    {
+        if (Document == null || _caretPosition.Paragraph == null || runs.Count == 0) return;
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+
+        var p = _caretPosition.Paragraph;
+        int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
+        int added = 0;
+        foreach (var r in runs)
+        {
+            var clone = (Run)r.Clone();
+            clone.Parent = p;
+            p.Inlines.Insert(insertAt++, clone);
+            added += clone.Text?.Length ?? 0;
+        }
+        _caretPosition.Offset += added;
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        InvalidateVisual();
+    }
+
+    // Splits the run straddling the given character offset and returns the inline index
+    // at which new content should be inserted.
+    private int SplitInlinesAt(Paragraph p, int offset)
+    {
+        int currentIndex = 0;
+        for (int i = 0; i < p.Inlines.Count; i++)
+        {
+            int len = InlineLen(p.Inlines[i]);
+            if (offset <= currentIndex) return i;
+            if (p.Inlines[i] is Run run && offset < currentIndex + len)
+            {
+                int local = offset - currentIndex;
+                string t1 = run.Text!.Substring(0, local);
+                string t2 = run.Text!.Substring(local);
+                run.Text = t1;
+                var nr = (Run)run.Clone();
+                nr.Text = t2;
+                nr.Parent = p;
+                p.Inlines.Insert(i + 1, nr);
+                return i + 1;
+            }
+            currentIndex += len;
+        }
+        return p.Inlines.Count;
+    }
+
+    private void DrawSelectionHighlight(DrawingContext context, Avalonia.Media.TextFormatting.TextLayout layout,
+        int startOffset, int endOffset, double originX, double originY)
+    {
+        if (endOffset <= startOffset) return;
+        var brush = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
+        foreach (var rect in layout.HitTestTextRange(startOffset, endOffset - startOffset))
+            context.FillRectangle(brush, new Rect(originX + rect.X, originY + rect.Y, rect.Width, rect.Height));
     }
 
     public override void Render(DrawingContext context)
     {
-        base.Render(context);
+        context.FillRectangle(Brushes.Transparent, new Rect(0, 0, Bounds.Width, 2000));
         if (Document == null) return;
 
-        double yOffset = 0;
-        double maxWidth = Bounds.Width;
-        int globalCharIndex = 0;
-        
-        Point? caretPoint = null;
-        double caretHeight = 16; 
+        // Recomputed every render so resize handles track the current layout.
+        _columnBoundaries.Clear();
+        _imageHandles.Clear();
 
-        int selMin = Math.Min(_selectionStart, _selectionEnd);
-        int selMax = Math.Max(_selectionStart, _selectionEnd);
-
-        foreach (var block in Document.Blocks)
+        TextPointer? selStart = null, selEnd = null;
+        HashSet<Paragraph>? selectedParagraphs = null;
+        if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
-            if (block is Paragraph paragraph)
+            if (_selectionStart.CompareTo(_selectionEnd) < 0) { selStart = _selectionStart; selEnd = _selectionEnd; }
+            else { selStart = _selectionEnd; selEnd = _selectionStart; }
+            var allParas = GetAllParagraphsInOrder();
+            int si = allParas.IndexOf(selStart.Paragraph);
+            int ei = allParas.IndexOf(selEnd.Paragraph);
+            if (si >= 0 && ei >= 0)
             {
-                string fullText = "";
-                foreach (var inline in paragraph.Inlines)
-                {
-                    if (inline is Run r && !string.IsNullOrEmpty(r.Text))
-                    {
-                        fullText += r.Text;
-                    }
-                }
-
-                if (fullText == "") 
-                {
-                    if (_caretIndex == globalCharIndex)
-                    {
-                        caretPoint = new Point(0, yOffset);
-                    }
-                    yOffset += 20; 
-                    continue;
-                }
-
-                if (selMin != selMax)
-                {
-                    int pStart = globalCharIndex;
-                    int pEnd = globalCharIndex + fullText.Length;
-                    
-                    int overlapStart = Math.Max(selMin, pStart);
-                    int overlapEnd = Math.Min(selMax, pEnd);
-
-                    if (overlapStart < overlapEnd)
-                    {
-                        int localStart = overlapStart - pStart;
-                        int localEnd = overlapEnd - pStart;
-
-                        double x1 = GetXForIndex(localStart, fullText, paragraph);
-                        double x2 = GetXForIndex(localEnd, fullText, paragraph);
-
-                        var rect = new Rect(x1, yOffset, x2 - x1, caretHeight);
-                        context.FillRectangle(new SolidColorBrush(Color.FromArgb(100, 0, 120, 215)), rect);
-                    }
-                }
-
-                var formattedText = new FormattedText(
-                    fullText,
-                    CultureInfo.CurrentCulture,
-                    FlowDirection.LeftToRight,
-                    Typeface.Default,
-                    14,
-                    Brushes.Black)
-                {
-                    MaxTextWidth = maxWidth > 0 ? maxWidth : double.PositiveInfinity,
-                    TextAlignment = TextAlignment.Left
-                };
-
-                int localIndex = 0;
-                foreach (var inline in paragraph.Inlines)
-                {
-                    if (inline is Run run && !string.IsNullOrEmpty(run.Text))
-                    {
-                        int length = run.Text.Length;
-                        if (run.FontWeight != FontWeight.Normal)
-                        {
-                            formattedText.SetFontWeight(run.FontWeight, localIndex, length);
-                        }
-                        if (run.Foreground != null)
-                        {
-                            formattedText.SetForegroundBrush(run.Foreground, localIndex, length);
-                        }
-                        localIndex += length;
-                    }
-                }
-
-                if (_caretIndex >= globalCharIndex && _caretIndex <= globalCharIndex + fullText.Length)
-                {
-                    int caretLocalIndex = _caretIndex - globalCharIndex;
-                    double x = GetXForIndex(caretLocalIndex, fullText, paragraph);
-                    caretPoint = new Point(x, yOffset);
-                }
-
-                context.DrawText(formattedText, new Point(0, yOffset));
-                globalCharIndex += fullText.Length;
-                yOffset += formattedText.Height + 10;
+                selectedParagraphs = new HashSet<Paragraph>();
+                for (int idx = si; idx <= ei; idx++)
+                    selectedParagraphs.Add(allParas[idx]);
             }
         }
 
-        if (_isCaretVisible && caretPoint.HasValue && IsFocused && selMin == selMax)
+        double yOffset = 0;
+        double maxWidth = Bounds.Width;
+        double listIndent = 10;
+        Point? caretPoint = null;
+
+        foreach (var block in Document.Blocks)
         {
-            var pen = new Pen(Brushes.Black, 1.5);
-            context.DrawLine(pen, caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + caretHeight));
+            if (block is TableBlock tb)
+            {
+                double startX = 10;
+                double tableTop = yOffset;
+                double tableWidth = 0;
+                for (int c = 0; c < tb.Columns; c++) tableWidth += (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+
+                for (int r = 0; r < tb.Rows; r++)
+                {
+                    double rowMaxHeight = 20;
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                        var ft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
+                        if (ft.Height + 10 > rowMaxHeight) rowMaxHeight = ft.Height + 10;
+                    }
+
+                    double currentX = startX;
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                        double cellX = currentX;
+                        currentX += cellWidth;
+
+                        context.DrawRectangle(null, new Pen(Brushes.Gray, 1), new Rect(cellX, yOffset, cellWidth, rowMaxHeight));
+
+                        // Grab handle on each column's right edge (6px band). Internal edges
+                        // redistribute width with the next column (total fixed); the outer-right
+                        // edge grows/shrinks the last column, changing the table's total width.
+                        _columnBoundaries.Add((new Rect(currentX - 3, yOffset, 6, rowMaxHeight), tb, c));
+
+                        bool cellHasPreedit = _caretPosition != null && _caretPosition.Paragraph == cell && !string.IsNullOrEmpty(_preeditText);
+                        var layout = cellHasPreedit
+                            ? BuildTextLayout(cell, Math.Max(10, cellWidth - 10), _caretPosition!.Offset, _preeditText)
+                            : BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
+
+                        if (selectedParagraphs?.Contains(cell) == true)
+                        {
+                            int cellLen = GetParagraphLength(cell);
+                            int hlStart = (cell == selStart!.Paragraph) ? selStart.Offset : 0;
+                            int hlEnd = (cell == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
+                            bool fullCell = hlStart <= 0 && hlEnd >= cellLen;
+                            if (fullCell)
+                            {
+                                // Fill the whole cell so fully-selected (incl. empty) cells are visibly selected.
+                                var cellBrush = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
+                                context.FillRectangle(cellBrush, new Rect(cellX, yOffset, cellWidth, rowMaxHeight));
+                            }
+                            else if (hlEnd > hlStart)
+                            {
+                                DrawSelectionHighlight(context, layout, hlStart, hlEnd, cellX + 5, yOffset + 5);
+                            }
+                        }
+
+                        if (_caretPosition != null && _caretPosition.Paragraph == cell)
+                        {
+                            int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
+                            var cr = layout.HitTestTextPosition(caretDisp);
+                            caretPoint = new Point(cellX + 5 + cr.X, yOffset + 5 + cr.Y);
+                            _lastCaretPoint = caretPoint.Value;
+                        }
+
+                        layout.Draw(context, new Point(cellX + 5, yOffset + 5));
+                    }
+                    yOffset += rowMaxHeight;
+                }
+                if (ReferenceEquals(tb, _selectedBlock))
+                {
+                    var tableRect = new Rect(startX, tableTop, tableWidth, yOffset - tableTop);
+                    context.FillRectangle(new SolidColorBrush(Color.FromArgb(50, 0, 120, 215)), tableRect);
+                    context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)), 2), tableRect);
+                }
+                yOffset += 10;
+            }
+            else if (block is Paragraph paragraph)
+            {
+                string fullText = BuildPlain(paragraph);
+
+                bool hasPreedit = _caretPosition != null && _caretPosition.Paragraph == paragraph && !string.IsNullOrEmpty(_preeditText);
+
+                if (fullText == "" && !hasPreedit)
+                {
+                    if (_caretPosition != null && _caretPosition.Paragraph == paragraph)
+                    {
+                        caretPoint = new Point(listIndent, yOffset);
+                        _lastCaretPoint = caretPoint.Value;
+                    }
+                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
+                    continue;
+                }
+
+                double pWidth = Math.Max(10, maxWidth - 20 - listIndent);
+                var layout = hasPreedit
+                    ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
+                    : BuildTextLayout(paragraph, pWidth);
+
+                if (selectedParagraphs?.Contains(paragraph) == true)
+                {
+                    int hlStart = (paragraph == selStart!.Paragraph) ? selStart.Offset : 0;
+                    int hlEnd = (paragraph == selEnd!.Paragraph) ? selEnd.Offset : fullText.Length;
+                    if (hlEnd > hlStart)
+                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, listIndent, yOffset);
+                }
+
+                if (_caretPosition != null && _caretPosition.Paragraph == paragraph)
+                {
+                    int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
+                    var cr = layout.HitTestTextPosition(caretDisp);
+                    caretPoint = new Point(listIndent + cr.X, yOffset + cr.Y);
+                    _lastCaretPoint = caretPoint.Value;
+                }
+
+                layout.Draw(context, new Point(listIndent, yOffset));
+                yOffset += layout.Height + paragraph.MarginBottom;
+            }
+            else if (block is ImageBlock img)
+            {
+                if (img.Image != null)
+                {
+                    double width = img.Width > 0 ? img.Width : 200;
+                    double height = img.Height > 0 ? img.Height : 200;
+                    var imgRect = new Rect(listIndent, yOffset, width, height);
+                    context.DrawImage(img.Image, imgRect);
+
+                    bool imgSelected = ReferenceEquals(img, _selectedBlock);
+                    if (imgSelected)
+                    {
+                        // Selection: translucent overlay + bold border.
+                        context.FillRectangle(new SolidColorBrush(Color.FromArgb(60, 0, 120, 215)), imgRect);
+                        context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)), 2), imgRect);
+                    }
+                    // Thin border + bottom-right resize handle.
+                    context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(120, 0, 120, 215)), 1), imgRect);
+                    var handle = new Rect(listIndent + width - 6, yOffset + height - 6, 12, 12);
+                    context.FillRectangle(new SolidColorBrush(Color.FromArgb(230, 0, 120, 215)), handle);
+                    // Slightly larger hit area than the visual handle for easier grabbing.
+                    _imageHandles.Add((new Rect(listIndent + width - 9, yOffset + height - 9, 18, 18), img));
+
+                    yOffset += height + 10;
+                }
+            }
+        }
+
+        if (caretPoint.HasValue)
+        {
+            _lastCaretPoint = caretPoint.Value;
+            if (_isCaretVisible && IsFocused)
+            {
+                context.DrawLine(new Pen(Brushes.Black, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + 20));
+            }
         }
     }
 }
+

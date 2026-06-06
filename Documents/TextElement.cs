@@ -4,5 +4,8 @@ namespace AvaloniaRichTextBoxPort.Documents;
 
 public abstract class TextElement : AvaloniaObject
 {
-    // Base class for all document elements
+    [System.Text.Json.Serialization.JsonIgnore]
+    public object? Parent { get; internal set; }
+
+    public abstract TextElement Clone();
 }

@@ -1,0 +1,9 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio
+.vs/
+
+# Scratch / test artifacts
+test.html

@@ -19,13 +19,55 @@
             <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
         </Border>
         
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="10" Background="#DDDDDD">
-            <Button Name="SaveButton" Content="Save to JSON" Click="SaveButton_Click" />
-            <Button Name="LoadButton" Content="Load from JSON" Click="LoadButton_Click" />
+        <StackPanel Grid.Row="1" Orientation="Vertical" Background="#DDDDDD">
+            <!-- File Operations -->
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="10,10,10,5">
+                <Button Name="SaveButton" Content="Save to JSON" Click="SaveButton_Click" />
+                <Button Name="LoadButton" Content="Load from JSON" Click="LoadButton_Click" />
+                <Button Name="ExportHtmlButton" Content="Export HTML" Click="ExportHtmlButton_Click" Foreground="Green"/>
+                <Button Name="PasteHtmlButton" Content="Paste HTML" Click="PasteHtmlButton_Click" Foreground="Green"/>
+                <Button Name="InsertImageButton" Content="Insert Image" Click="InsertImageButton_Click" Foreground="Orange"/>
+            </StackPanel>
+            
+            <!-- Formatting Toolbar -->
+            <StackPanel Orientation="Horizontal" Spacing="5" Margin="10,0,10,10">
+                <Button Content="B" FontWeight="Bold" Click="BoldButton_Click"/>
+                <Button Content="I" FontStyle="Italic" Click="ItalicButton_Click"/>
+                <Button Click="StrikethroughButton_Click">
+                    <TextBlock Text="S" TextDecorations="Strikethrough"/>
+                </Button>
+                
+                <TextBlock Text="Size:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <ComboBox Name="FontSizeComboBox" SelectedIndex="1" SelectionChanged="FontSizeComboBox_SelectionChanged">
+                    <ComboBoxItem>12</ComboBoxItem>
+                    <ComboBoxItem>14</ComboBoxItem>
+                    <ComboBoxItem>18</ComboBoxItem>
+                    <ComboBoxItem>24</ComboBoxItem>
+                    <ComboBoxItem>32</ComboBoxItem>
+                </ComboBox>
+
+                <TextBlock Text="Color:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <Button Content="⬛" Click="ColorBlack_Click"/>
+                <Button Content="🟥" Foreground="Red" Click="ColorRed_Click"/>
+                <Button Content="🟦" Foreground="Blue" Click="ColorBlue_Click"/>
+
+                <TextBlock Text="Align:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <Button Content="Left" Click="AlignLeft_Click"/>
+                <Button Content="Center" Click="AlignCenter_Click"/>
+                <Button Content="Right" Click="AlignRight_Click"/>
+
+                <TextBlock Text="Spacing:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <Button Content="1.0" Click="Spacing10_Click"/>
+                <Button Content="1.5" Click="Spacing15_Click"/>
+                <Button Content="2.0" Click="Spacing20_Click"/>
+
+                <Button Content="• List" Click="BulletButton_Click" Margin="10,0,0,0"/>
+                <Button Content="Table" Click="InsertTableButton_Click" Margin="10,0,0,0"/>
+            </StackPanel>
         </StackPanel>
 
         <ScrollViewer Grid.Row="2" Padding="20">
-            <controls:CustomRichTextBox x:Name="RichTextBox" />
+            <controls:CustomRichTextBox x:Name="RichTextBox" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinHeight="1000"/>
         </ScrollViewer>
     </Grid>
 </Window>
