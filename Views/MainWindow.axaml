@@ -66,7 +66,37 @@
                 <Button Content="2.0" Click="Spacing20_Click"/>
 
                 <Button Content="• List" Click="BulletButton_Click" Margin="10,0,0,0"/>
+                <Button Content="1. List" Click="NumberingButton_Click"/>
                 <Button Content="Table" Click="InsertTableButton_Click" Margin="10,0,0,0"/>
+            </StackPanel>
+
+            <!-- Font / heading / highlight / indent -->
+            <StackPanel Orientation="Horizontal" Spacing="5" Margin="10,0,10,10">
+                <TextBlock Text="Font:" VerticalAlignment="Center"/>
+                <ComboBox Name="FontFamilyComboBox" SelectedIndex="0" SelectionChanged="FontFamilyComboBox_SelectionChanged">
+                    <ComboBoxItem>Malgun Gothic</ComboBoxItem>
+                    <ComboBoxItem>Gulim</ComboBoxItem>
+                    <ComboBoxItem>Batang</ComboBoxItem>
+                    <ComboBoxItem>Dotum</ComboBoxItem>
+                    <ComboBoxItem>Arial</ComboBoxItem>
+                    <ComboBoxItem>Times New Roman</ComboBoxItem>
+                </ComboBox>
+
+                <TextBlock Text="Heading:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <Button Content="H1" Click="Heading1_Click"/>
+                <Button Content="H2" Click="Heading2_Click"/>
+                <Button Content="H3" Click="Heading3_Click"/>
+                <Button Content="본문" Click="HeadingBody_Click"/>
+
+                <TextBlock Text="Highlight:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <Button Content="🟨" Click="HighlightYellow_Click"/>
+                <Button Content="✕" Click="HighlightNone_Click"/>
+
+                <TextBlock Text="Indent:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <Button Content="→|" Click="IndentInc_Click"/>
+                <Button Content="|←" Click="IndentDec_Click"/>
+
+                <Button Content="― HR" Click="DividerButton_Click" Margin="10,0,0,0"/>
             </StackPanel>
         </StackPanel>
 

@@ -91,7 +91,8 @@ public static class DocumentSerializer
             MarginBottom = p.MarginBottom,
             ListType = p.ListType.ToString(),
             HeadingLevel = p.HeadingLevel,
-            Background = BrushToString(p.Background)
+            Background = BrushToString(p.Background),
+            Indent = p.Indent
         };
         foreach (var inline in p.Inlines)
         {
@@ -168,6 +169,7 @@ public static class DocumentSerializer
             MarginBottom = d.MarginBottom,
             HeadingLevel = d.HeadingLevel,
             Background = StringToBrush(d.Background),
+            Indent = d.Indent,
             ListType = Enum.TryParse<ListKind>(d.ListType, out var lk) ? lk : (d.IsListItem ? ListKind.Bullet : ListKind.None)
         };
         if (Enum.TryParse<TextAlignment>(d.TextAlignment, out var ta)) p.TextAlignment = ta;
@@ -270,6 +272,7 @@ public class BlockDto
     public string? ListType { get; set; }
     public int HeadingLevel { get; set; }
     public string? Background { get; set; }
+    public double Indent { get; set; }
 
     // Image block
     public string? ImageBase64 { get; set; }

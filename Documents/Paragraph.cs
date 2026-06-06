@@ -15,6 +15,7 @@ public class Paragraph : Block
     public ListKind ListType { get; set; } = ListKind.None;
     public int HeadingLevel { get; set; } = 0; // 0 = body text, 1..6 = h1..h6
     public IBrush? Background { get; set; } // paragraph / table-cell background fill
+    public double Indent { get; set; } = 0; // left indent in px
 
     // Convenience: any list item (bullet or numbered).
     public bool IsListItem => ListType != ListKind.None;
@@ -29,7 +30,8 @@ public class Paragraph : Block
             LineHeight = this.LineHeight,
             ListType = this.ListType,
             HeadingLevel = this.HeadingLevel,
-            Background = this.Background
+            Background = this.Background,
+            Indent = this.Indent
         };
         foreach (var inline in Inlines)
         {

@@ -152,7 +152,7 @@ namespace AvaloniaRichTextBoxPort.Formatters
                     // Block-level element with only inline content -> its own paragraph.
                     Flush();
                     int hl = (name.Length == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') ? name[1] - '0' : 0;
-                    var p = new Paragraph { HeadingLevel = hl, Background = ReadBackground(child) };
+                    var p = new Paragraph { HeadingLevel = hl, Background = ReadBackground(child), Indent = ReadIndentPx(child) };
                     double size = HeadingSize(name, out var headingWeight);
                     ParseInlines(child, p, headingWeight, FontStyle.Normal, null, childLink, size, hasLink);
                     if (p.Inlines.Count > 0) flow.Blocks.Add(p);
@@ -391,6 +391,17 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 size = fm.Groups[2].Value == "pt" ? val * 96.0 / 72.0 : val;
         }
 
+        // Left indent (px) from style margin-left / padding-left (px or pt).
+        private static double ReadIndentPx(HtmlNode node)
+        {
+            var style = node.GetAttributeValue("style", "").ToLowerInvariant();
+            var m = System.Text.RegularExpressions.Regex.Match(style, "margin-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+            if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(style, "padding-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+            if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0)
+                return m.Groups[2].Value == "pt" ? v * 96.0 / 72.0 : v;
+            return 0;
+        }
+
         // Background color from a node's style="background[-color]:..." or legacy bgcolor="..." attr.
         private static IBrush? ReadBackground(HtmlNode node)
         {
@@ -464,6 +475,7 @@ namespace AvaloniaRichTextBoxPort.Formatters
                     string align = p.TextAlignment switch { TextAlignment.Center => "center", TextAlignment.Right => "right", _ => "left" };
                     string pStyle = $"text-align:{align};";
                     if (p.Background is ISolidColorBrush pbg) pStyle += $"background-color:{CssColor(pbg.Color)};";
+                    if (p.Indent > 0) pStyle += $"margin-left:{p.Indent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;";
                     sb.Append($"<{tag} style='{pStyle}'>");
                     foreach (var inline in p.Inlines) EmitInline(sb, inline);
                     sb.Append($"</{tag}>\n");

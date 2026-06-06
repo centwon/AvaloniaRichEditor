@@ -294,11 +294,12 @@ public class CustomRichTextBox : Control
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent));
+                double plink = listIndent + paragraph.Indent;
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - plink));
                 double height = layout.Height;
                 if (p.Y >= yOffset && p.Y <= yOffset + height)
                 {
-                    var hit = layout.HitTestPoint(new Point(p.X - listIndent, p.Y - yOffset));
+                    var hit = layout.HitTestPoint(new Point(p.X - plink, p.Y - yOffset));
                     return hit.IsInside ? RunAtOffset(paragraph, hit.TextPosition) : null;
                 }
                 yOffset += height + paragraph.MarginBottom;
@@ -358,7 +359,7 @@ public class CustomRichTextBox : Control
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent));
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent - paragraph.Indent));
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
             else if (block is DividerBlock)
@@ -1271,7 +1272,8 @@ public class CustomRichTextBox : Control
                     continue;
                 }
 
-                var ft = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent));
+                double ppos = listIndent + paragraph.Indent;
+                var ft = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ppos));
                 double height = ft.Height;
 
                 double distY2 = p.Y < yOffset ? yOffset - p.Y : (p.Y > yOffset + height ? p.Y - (yOffset + height) : 0);
@@ -1279,7 +1281,7 @@ public class CustomRichTextBox : Control
                 {
                     bestDistY = distY2;
                     bestPara = paragraph;
-                    bestLocalIndex = HitTestIndex(ft, new Point(p.X - listIndent, p.Y - yOffset));
+                    bestLocalIndex = HitTestIndex(ft, new Point(p.X - ppos, p.Y - yOffset));
                 }
                 yOffset += height + paragraph.MarginBottom;
             }
@@ -1496,6 +1498,17 @@ public class CustomRichTextBox : Control
     public void ToggleItalic() { ApplyStyleToSelection(r => r.FontStyle = r.FontStyle == FontStyle.Italic ? FontStyle.Normal : FontStyle.Italic); }
     public void SetFontSize(double size) { ApplyStyleToSelection(r => r.FontSize = size); }
     public void SetForeground(IBrush brush) { ApplyStyleToSelection(r => r.Foreground = brush); }
+    public void SetFontFamily(string family) { ApplyStyleToSelection(r => r.FontFamily = family); }
+    public void SetHighlight(IBrush? brush) { ApplyStyleToSelection(r => r.Background = brush); }
+
+    public void Indent(double delta)
+    {
+        if (_caretPosition.Paragraph == null) return;
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        var p = _caretPosition.Paragraph;
+        p.Indent = Math.Clamp(p.Indent + delta, 0, 400);
+        InvalidateVisual();
+    }
     public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
     public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
@@ -1969,6 +1982,22 @@ public class CustomRichTextBox : Control
             Mi("제목 2", () => SetHeading(2)),
             Mi("제목 3", () => SetHeading(3)),
             Mi("본문", () => SetHeading(0))));
+        items.Add(Sub("글꼴",
+            Mi("맑은 고딕", () => SetFontFamily("Malgun Gothic"), hasSelection),
+            Mi("굴림", () => SetFontFamily("Gulim"), hasSelection),
+            Mi("바탕", () => SetFontFamily("Batang"), hasSelection),
+            Mi("돋움", () => SetFontFamily("Dotum"), hasSelection),
+            Mi("Arial", () => SetFontFamily("Arial"), hasSelection),
+            Mi("Times New Roman", () => SetFontFamily("Times New Roman"), hasSelection)));
+        items.Add(Sub("형광펜",
+            Mi("노랑", () => SetHighlight(Brushes.Yellow), hasSelection),
+            Mi("연두", () => SetHighlight(Brushes.LightGreen), hasSelection),
+            Mi("분홍", () => SetHighlight(Brushes.Pink), hasSelection),
+            Mi("하늘", () => SetHighlight(Brushes.LightBlue), hasSelection),
+            Mi("없음", () => SetHighlight(null), hasSelection)));
+        items.Add(Sub("들여쓰기",
+            Mi("들여쓰기 +", () => Indent(20)),
+            Mi("내어쓰기 -", () => Indent(-20))));
     }
 
     public void InsertDivider()
@@ -2377,42 +2406,44 @@ public class CustomRichTextBox : Control
 
                 bool hasPreedit = _caretPosition != null && _caretPosition.Paragraph == paragraph && !string.IsNullOrEmpty(_preeditText);
 
+                double px = listIndent + paragraph.Indent;
+
                 if (fullText == "" && !hasPreedit)
                 {
                     if (_caretPosition != null && _caretPosition.Paragraph == paragraph)
                     {
-                        caretPoint = new Point(listIndent, yOffset);
+                        caretPoint = new Point(px, yOffset);
                         _lastCaretPoint = caretPoint.Value;
                     }
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
 
-                double pWidth = Math.Max(10, maxWidth - 20 - listIndent);
+                double pWidth = Math.Max(10, maxWidth - 20 - px);
                 var layout = hasPreedit
                     ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
                     : BuildTextLayout(paragraph, pWidth);
 
                 if (paragraph.Background != null)
-                    context.FillRectangle(paragraph.Background, new Rect(listIndent, yOffset, pWidth, layout.Height));
+                    context.FillRectangle(paragraph.Background, new Rect(px, yOffset, pWidth, layout.Height));
 
                 if (selectedParagraphs?.Contains(paragraph) == true)
                 {
                     int hlStart = (paragraph == selStart!.Paragraph) ? selStart.Offset : 0;
                     int hlEnd = (paragraph == selEnd!.Paragraph) ? selEnd.Offset : fullText.Length;
                     if (hlEnd > hlStart)
-                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, listIndent, yOffset);
+                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, px, yOffset);
                 }
 
                 if (_caretPosition != null && _caretPosition.Paragraph == paragraph)
                 {
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
                     var cr = layout.HitTestTextPosition(caretDisp);
-                    caretPoint = new Point(listIndent + cr.X, yOffset + cr.Y);
+                    caretPoint = new Point(px + cr.X, yOffset + cr.Y);
                     _lastCaretPoint = caretPoint.Value;
                 }
 
-                layout.Draw(context, new Point(listIndent, yOffset));
+                layout.Draw(context, new Point(px, yOffset));
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
             else if (block is ImageBlock img)
