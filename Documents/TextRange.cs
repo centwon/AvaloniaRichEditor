@@ -31,24 +31,27 @@ public class TextRange
     public void Delete()
     {
         if (IsEmpty) return;
+        var sp = _start.Paragraph;
+        var ep = _end.Paragraph;
+        if (sp == null || ep == null) return;
 
-        if (ReferenceEquals(_start.Paragraph, _end.Paragraph))
+        if (ReferenceEquals(sp, ep))
         {
-            DeleteInParagraph(_start.Paragraph, _start.Offset, _end.Offset);
+            DeleteInParagraph(sp, _start.Offset, _end.Offset);
         }
         else
         {
-            var doc = GetFlowDocument(_start.Paragraph);
+            var doc = GetFlowDocument(sp);
             if (doc == null) return;
 
-            int p1Len = GetParagraphLength(_start.Paragraph);
-            DeleteInParagraph(_start.Paragraph, _start.Offset, p1Len);
+            int p1Len = GetParagraphLength(sp);
+            DeleteInParagraph(sp, _start.Offset, p1Len);
 
             // Remove every top-level block (paragraphs, images, tables) strictly between the
             // start and end paragraphs' top-level blocks, so a drag selection that spans an
             // image or table deletes those too.
-            var startTop = TopLevelBlockOf(doc, _start.Paragraph);
-            var endTop = TopLevelBlockOf(doc, _end.Paragraph);
+            var startTop = TopLevelBlockOf(doc, sp);
+            var endTop = TopLevelBlockOf(doc, ep);
             int si = startTop != null ? doc.Blocks.IndexOf(startTop) : -1;
             int ei = endTop != null ? doc.Blocks.IndexOf(endTop) : -1;
             if (si >= 0 && ei >= 0 && ei > si)
@@ -56,33 +59,36 @@ public class TextRange
                 for (int i = ei - 1; i > si; i--) doc.Blocks.RemoveAt(i);
             }
 
-            DeleteInParagraph(_end.Paragraph, 0, _end.Offset);
+            DeleteInParagraph(ep, 0, _end.Offset);
 
-            MergeParagraphs(_start.Paragraph, _end.Paragraph, doc);
+            MergeParagraphs(sp, ep, doc);
         }
 
-        _end = new TextPointer(_start.Paragraph, _start.Offset);
+        _end = new TextPointer(sp, _start.Offset);
     }
 
     public string GetText()
     {
         if (IsEmpty) return "";
+        var sp = _start.Paragraph;
+        var ep = _end.Paragraph;
+        if (sp == null || ep == null) return "";
 
-        if (ReferenceEquals(_start.Paragraph, _end.Paragraph))
+        if (ReferenceEquals(sp, ep))
         {
-            return GetParagraphText(_start.Paragraph, _start.Offset, _end.Offset);
+            return GetParagraphText(sp, _start.Offset, _end.Offset);
         }
 
-        var doc = GetFlowDocument(_start.Paragraph);
+        var doc = GetFlowDocument(sp);
         if (doc == null) return "";
 
         var allParagraphs = GetAllParagraphsInOrder(doc);
-        int startIdx = allParagraphs.IndexOf(_start.Paragraph);
-        int endIdx = allParagraphs.IndexOf(_end.Paragraph);
+        int startIdx = allParagraphs.IndexOf(sp);
+        int endIdx = allParagraphs.IndexOf(ep);
 
         var sb = new StringBuilder();
-        int p1Len = GetParagraphLength(_start.Paragraph);
-        sb.Append(GetParagraphText(_start.Paragraph, _start.Offset, p1Len));
+        int p1Len = GetParagraphLength(sp);
+        sb.Append(GetParagraphText(sp, _start.Offset, p1Len));
 
         for (int i = startIdx + 1; i < endIdx; i++)
         {
@@ -92,7 +98,7 @@ public class TextRange
         }
 
         sb.Append('\n');
-        sb.Append(GetParagraphText(_end.Paragraph, 0, _end.Offset));
+        sb.Append(GetParagraphText(ep, 0, _end.Offset));
 
         return sb.ToString();
     }
@@ -104,28 +110,31 @@ public class TextRange
     {
         var result = new List<Run>();
         if (IsEmpty) return result;
+        var sp = _start.Paragraph;
+        var ep = _end.Paragraph;
+        if (sp == null || ep == null) return result;
 
-        if (ReferenceEquals(_start.Paragraph, _end.Paragraph))
+        if (ReferenceEquals(sp, ep))
         {
-            result.AddRange(GetParagraphRuns(_start.Paragraph, _start.Offset, _end.Offset));
+            result.AddRange(GetParagraphRuns(sp, _start.Offset, _end.Offset));
             return result;
         }
 
-        var doc = GetFlowDocument(_start.Paragraph);
+        var doc = GetFlowDocument(sp);
         if (doc == null) return result;
 
         var allParagraphs = GetAllParagraphsInOrder(doc);
-        int startIdx = allParagraphs.IndexOf(_start.Paragraph);
-        int endIdx = allParagraphs.IndexOf(_end.Paragraph);
+        int startIdx = allParagraphs.IndexOf(sp);
+        int endIdx = allParagraphs.IndexOf(ep);
 
-        result.AddRange(GetParagraphRuns(_start.Paragraph, _start.Offset, GetParagraphLength(_start.Paragraph)));
+        result.AddRange(GetParagraphRuns(sp, _start.Offset, GetParagraphLength(sp)));
         for (int i = startIdx + 1; i < endIdx; i++)
         {
             result.Add(new Run { Text = "\n" });
             result.AddRange(GetParagraphRuns(allParagraphs[i], 0, GetParagraphLength(allParagraphs[i])));
         }
         result.Add(new Run { Text = "\n" });
-        result.AddRange(GetParagraphRuns(_end.Paragraph, 0, _end.Offset));
+        result.AddRange(GetParagraphRuns(ep, 0, _end.Offset));
 
         return result;
     }
@@ -156,22 +165,25 @@ public class TextRange
     public void ApplyPropertyValue(Action<Run> styleAction)
     {
         if (IsEmpty) return;
+        var sp = _start.Paragraph;
+        var ep = _end.Paragraph;
+        if (sp == null || ep == null) return;
 
-        if (ReferenceEquals(_start.Paragraph, _end.Paragraph))
+        if (ReferenceEquals(sp, ep))
         {
-            ApplyStyleToParagraph(_start.Paragraph, _start.Offset, _end.Offset, styleAction);
+            ApplyStyleToParagraph(sp, _start.Offset, _end.Offset, styleAction);
         }
         else
         {
-            var doc = GetFlowDocument(_start.Paragraph);
+            var doc = GetFlowDocument(sp);
             if (doc == null) return;
 
             var allParagraphs = GetAllParagraphsInOrder(doc);
-            int startIdx = allParagraphs.IndexOf(_start.Paragraph);
-            int endIdx = allParagraphs.IndexOf(_end.Paragraph);
+            int startIdx = allParagraphs.IndexOf(sp);
+            int endIdx = allParagraphs.IndexOf(ep);
 
-            int p1Len = GetParagraphLength(_start.Paragraph);
-            ApplyStyleToParagraph(_start.Paragraph, _start.Offset, p1Len, styleAction);
+            int p1Len = GetParagraphLength(sp);
+            ApplyStyleToParagraph(sp, _start.Offset, p1Len, styleAction);
 
             for (int i = startIdx + 1; i < endIdx; i++)
             {
@@ -179,7 +191,7 @@ public class TextRange
                 ApplyStyleToParagraph(allParagraphs[i], 0, pLen, styleAction);
             }
 
-            ApplyStyleToParagraph(_end.Paragraph, 0, _end.Offset, styleAction);
+            ApplyStyleToParagraph(ep, 0, _end.Offset, styleAction);
         }
     }
 

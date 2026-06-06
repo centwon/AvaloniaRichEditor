@@ -4,10 +4,10 @@ namespace AvaloniaRichTextBoxPort.Documents;
 
 public class TextPointer : IComparable<TextPointer>
 {
-    public Paragraph Paragraph { get; set; }
+    public Paragraph? Paragraph { get; set; }
     public int Offset { get; set; }
 
-    public TextPointer(Paragraph paragraph, int offset)
+    public TextPointer(Paragraph? paragraph, int offset)
     {
         Paragraph = paragraph;
         Offset = offset;
@@ -37,7 +37,7 @@ public class TextPointer : IComparable<TextPointer>
         return thisIdx.CompareTo(otherIdx);
     }
 
-    private FlowDocument? GetFlowDocument(TextElement element)
+    private FlowDocument? GetFlowDocument(TextElement? element)
     {
         object? current = element;
         while (current != null)
@@ -49,7 +49,7 @@ public class TextPointer : IComparable<TextPointer>
         return null;
     }
 
-    private int GetGlobalIndex(FlowDocument doc, Paragraph target)
+    private int GetGlobalIndex(FlowDocument doc, Paragraph? target)
     {
         int index = 0;
         bool found = false;

@@ -47,9 +47,9 @@
 - **완료된 내용**: 한글/IME 입력 지원 — `TextInputMethodClient` 연결로 조합 입력 활성화 + 조합 중 글자를 커서 위치에 밑줄과 함께 인라인 표시(preedit, `BuildTextLayout`에 `SplicePreedit` 주입). 한 박자 늦게 보이던 문제 해결.
 - **완료된 내용**: 이미지 크기 조절 — 이미지 오른쪽 아래 드래그 핸들(`_imageHandles`)로 종횡비 유지 리사이즈, 대각선 커서, Undo 1회 복원.
 - **완료된 내용**: 이미지/표 삽입 위치 개선 — 항상 문서 끝이 아니라 커서가 위치한 블록 다음에 삽입(`InsertBlockAtCaret`).
+- **완료된 내용**: 표 행(Row) 높이 수동 조절 — 열 조절 코드를 대칭 적용. `TableBlock.RowHeights`(사용자 지정 최소 높이, 빈/0=자동) 추가, Render에서 행 하단 6px 가로 드래그 핸들(`_rowBoundaries`) 생성 + `rowMaxHeight = Max(내용 높이, RowHeights[r])`, 상하 화살표 커서(`SizeNorthSouth`), 최소 20px, Undo 1회 복원. 렌더-히트 일치를 위해 히트테스트 3곳(`GetPositionFromPoint`/`GetBlockAtPoint`/`GetLinkRunAtPoint`)에도 동일 클램프 적용. `Clone`이 `RowHeights` 복사.
 - **❗ 미해결 문제 (보류)**:
-  1. **표 행(Row) 높이 수동 조절**: 현재 행 높이는 셀 내용에 맞춰 자동 계산만 됨(`rowMaxHeight`). 수동 조절하려면 `TableBlock.RowHeights`(사용자 지정 최소 높이) 필드 추가 + `rowMaxHeight = Max(내용 높이, 지정 높이)` + 행 하단 가로 드래그 핸들(`_rowBoundaries`)·상하 화살표 커서 필요. (사용자 요청으로 보류)
-  2. **블록 여백(Margin) 조정**: 현재 `Paragraph`는 `MarginTop/Bottom` 속성이 있으나 렌더에는 `MarginBottom`만 반영되고 조정 UI 없음. `ImageBlock`/`TableBlock`은 여백 속성 자체가 없고 고정 10px 간격·들여쓰기 사용. 구현하려면 (1) `Block`에 상하좌우 여백 속성 추가, (2) 렌더에서 고정값 대신 반영(`MarginTop` 포함), (3) 툴바 입력 또는 드래그 핸들 UI 필요. (보류)
+  1. **블록 여백(Margin) 조정**: 현재 `Paragraph`는 `MarginTop/Bottom` 속성이 있으나 렌더에는 `MarginBottom`만 반영되고 조정 UI 없음. `ImageBlock`/`TableBlock`은 여백 속성 자체가 없고 고정 10px 간격·들여쓰기 사용. 구현하려면 (1) `Block`에 상하좌우 여백 속성 추가, (2) 렌더에서 고정값 대신 반영(`MarginTop` 포함), (3) 툴바 입력 또는 드래그 핸들 UI 필요. (보류)
 
 ---
-**마지막 업데이트**: 2026년 6월 6일 (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME. 행 높이 조절만 보류)
+**마지막 업데이트**: 2026년 6월 6일 (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME, 표 행 높이 수동 조절. 블록 여백 조정만 보류)
