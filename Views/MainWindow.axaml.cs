@@ -251,4 +251,22 @@ public partial class MainWindow : Window
     private void BulletButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleBullet();
 
     private void InsertTableButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.InsertTable(3, 3);
+
+    private void NumberingButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleNumbering();
+    private void Heading1_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(1);
+    private void Heading2_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(2);
+    private void Heading3_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(3);
+    private void HeadingBody_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(0);
+    private void HighlightYellow_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHighlight(Avalonia.Media.Brushes.Yellow);
+    private void HighlightNone_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHighlight(null);
+    private void IndentInc_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.Indent(20);
+    private void IndentDec_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.Indent(-20);
+    private void DividerButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.InsertDivider();
+
+    private void FontFamilyComboBox_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        if ((sender as Avalonia.Controls.ComboBox)?.SelectedItem is Avalonia.Controls.ComboBoxItem item && item.Content is string fam)
+            this.FindControl<CustomRichTextBox>("RichTextBox")?.SetFontFamily(fam);
+    }
 }
