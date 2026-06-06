@@ -3,6 +3,8 @@ using Avalonia.Media;
 
 namespace AvaloniaRichTextBoxPort.Documents;
 
+public enum ListKind { None, Bullet, Ordered }
+
 public class Paragraph : Block
 {
     public List<Inline> Inlines { get; set; } = new();
@@ -10,7 +12,12 @@ public class Paragraph : Block
     public double LineHeight { get; set; } = double.NaN;
     public double MarginTop { get; set; } = 0;
     public double MarginBottom { get; set; } = 10;
-    public bool IsListItem { get; set; } = false;
+    public ListKind ListType { get; set; } = ListKind.None;
+    public int HeadingLevel { get; set; } = 0; // 0 = body text, 1..6 = h1..h6
+    public IBrush? Background { get; set; } // paragraph / table-cell background fill
+
+    // Convenience: any list item (bullet or numbered).
+    public bool IsListItem => ListType != ListKind.None;
 
     public override TextElement Clone()
     {
@@ -20,7 +27,9 @@ public class Paragraph : Block
             MarginBottom = this.MarginBottom,
             TextAlignment = this.TextAlignment,
             LineHeight = this.LineHeight,
-            IsListItem = this.IsListItem
+            ListType = this.ListType,
+            HeadingLevel = this.HeadingLevel,
+            Background = this.Background
         };
         foreach (var inline in Inlines)
         {

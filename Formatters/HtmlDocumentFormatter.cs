@@ -105,12 +105,18 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 else if (name == "ul" || name == "ol")
                 {
                     Flush();
+                    var kind = name == "ol" ? ListKind.Ordered : ListKind.Bullet;
                     foreach (var li in child.Elements("li"))
                     {
-                        var p = new Paragraph { IsListItem = true };
+                        var p = new Paragraph { ListType = kind };
                         ParseInlines(li, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
                         if (p.Inlines.Count > 0) flow.Blocks.Add(p);
                     }
+                }
+                else if (name == "hr")
+                {
+                    Flush();
+                    flow.Blocks.Add(new DividerBlock());
                 }
                 else if (name == "br")
                 {
@@ -145,7 +151,8 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 {
                     // Block-level element with only inline content -> its own paragraph.
                     Flush();
-                    var p = new Paragraph();
+                    int hl = (name.Length == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') ? name[1] - '0' : 0;
+                    var p = new Paragraph { HeadingLevel = hl, Background = ReadBackground(child) };
                     double size = HeadingSize(name, out var headingWeight);
                     ParseInlines(child, p, headingWeight, FontStyle.Normal, null, childLink, size, hasLink);
                     if (p.Inlines.Count > 0) flow.Blocks.Add(p);
@@ -201,6 +208,7 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 {
                     tb.Cells[r][c].Inlines.Clear();
                     ParseInlines(cells[c], tb.Cells[r][c]);
+                    tb.Cells[r][c].Background = ReadBackground(cells[c]);
                     if (tb.Cells[r][c].Inlines.Count == 0)
                         tb.Cells[r][c].Inlines.Add(new Run { Text = "" });
                 }
@@ -265,7 +273,7 @@ namespace AvaloniaRichTextBoxPort.Formatters
             return double.NaN;
         }
 
-        private static void ParseInlines(HtmlNode node, Paragraph p, FontWeight weight = FontWeight.Normal, FontStyle style = FontStyle.Normal, IBrush? color = null, string? uri = null, double baseSize = 14, bool inLink = false)
+        private static void ParseInlines(HtmlNode node, Paragraph p, FontWeight weight = FontWeight.Normal, FontStyle style = FontStyle.Normal, IBrush? color = null, string? uri = null, double baseSize = 14, bool inLink = false, IBrush? background = null, string? family = null, bool underline = false, bool strike = false)
         {
             foreach (var child in node.ChildNodes)
             {
@@ -274,6 +282,10 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 var cc = color;
                 var cu = uri;
                 double sz = baseSize;
+                var cbg = background;
+                var cfam = family;
+                bool cunder = underline;
+                bool cstrike = strike;
 
                 string name = child.Name.ToLowerInvariant();
 
@@ -281,6 +293,8 @@ namespace AvaloniaRichTextBoxPort.Formatters
 
                 if (name == "b" || name == "strong") cw = FontWeight.Bold;
                 if (name == "i" || name == "em") cs = FontStyle.Italic;
+                if (name == "u") cunder = true;
+                if (name == "s" || name == "strike" || name == "del") cstrike = true;
                 if (name == "h1") { cw = FontWeight.Bold; sz = 24; }
                 if (name == "h2") { cw = FontWeight.Bold; sz = 20; }
                 if (name == "h3") { cw = FontWeight.Bold; sz = 16; }
@@ -292,7 +306,7 @@ namespace AvaloniaRichTextBoxPort.Formatters
                     if (!string.IsNullOrEmpty(href)) cu = href;
                 }
 
-                ApplyInlineStyle(child.GetAttributeValue("style", ""), ref cw, ref cs, ref cc, ref sz);
+                ApplyInlineStyle(child.GetAttributeValue("style", ""), ref cw, ref cs, ref cc, ref sz, ref cbg, ref cfam, ref cunder, ref cstrike);
 
                 // Links stay visually distinct (blue) regardless of the site's own inline color
                 // (e.g. dark anchors or white button text), and get underlined via NavigateUri.
@@ -309,7 +323,7 @@ namespace AvaloniaRichTextBoxPort.Formatters
                             p.Inlines.Add(new Run { Text = " " });
                         continue;
                     }
-                    p.Inlines.Add(new Run { Text = CollapseWhitespace(text), FontWeight = cw, FontStyle = cs, Foreground = cc, FontSize = sz, NavigateUri = cu });
+                    p.Inlines.Add(new Run { Text = CollapseWhitespace(text), FontWeight = cw, FontStyle = cs, Foreground = cc, FontSize = sz, NavigateUri = cu, Background = cbg, FontFamily = cfam, TextDecorations = MakeDecorations(cunder, cstrike) });
                 }
                 else if (name == "img")
                 {
@@ -318,12 +332,21 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 }
                 else
                 {
-                    ParseInlines(child, p, cw, cs, cc, cu, sz, childInLink);
+                    ParseInlines(child, p, cw, cs, cc, cu, sz, childInLink, cbg, cfam, cunder, cstrike);
                 }
             }
         }
 
-        private static void ApplyInlineStyle(string styleAttr, ref FontWeight weight, ref FontStyle style, ref IBrush? color, ref double size)
+        private static TextDecorationCollection? MakeDecorations(bool underline, bool strike)
+        {
+            if (!underline && !strike) return null;
+            var c = new TextDecorationCollection();
+            if (underline) c.Add(new TextDecoration { Location = TextDecorationLocation.Underline });
+            if (strike) c.Add(new TextDecoration { Location = TextDecorationLocation.Strikethrough });
+            return c;
+        }
+
+        private static void ApplyInlineStyle(string styleAttr, ref FontWeight weight, ref FontStyle style, ref IBrush? color, ref double size, ref IBrush? background, ref string? family, ref bool underline, ref bool strike)
         {
             if (string.IsNullOrEmpty(styleAttr)) return;
             string s = styleAttr.ToLowerInvariant();
@@ -334,6 +357,8 @@ namespace AvaloniaRichTextBoxPort.Formatters
                     weight = FontWeight.Bold;
             }
             if (s.Contains("font-style:italic") || s.Contains("font-style: italic")) style = FontStyle.Italic;
+            if (System.Text.RegularExpressions.Regex.IsMatch(s, "text-decoration[^;]*underline")) underline = true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(s, "text-decoration[^;]*line-through")) strike = true;
 
             // color: (but not background-color)
             var m = System.Text.RegularExpressions.Regex.Match(s, "(?<!background-)color\\s*:\\s*([^;]+)");
@@ -343,9 +368,44 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 if (brush != null) color = brush;
             }
 
-            var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px");
-            if (fm.Success && double.TryParse(fm.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out double px) && px > 0)
-                size = px;
+            var bm = System.Text.RegularExpressions.Regex.Match(s, "background(?:-color)?\\s*:\\s*([^;]+)");
+            if (bm.Success)
+            {
+                var brush = ParseCssColor(bm.Groups[1].Value.Trim());
+                if (brush != null) background = brush;
+            }
+
+            // font-family: read from the original (non-lowercased) attribute to preserve casing.
+            var famMatch = System.Text.RegularExpressions.Regex.Match(styleAttr, "font-family\\s*:\\s*([^;]+)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (famMatch.Success)
+            {
+                // Take the first family from a fallback list and strip quotes, e.g. "'Times New Roman', serif" -> Times New Roman.
+                string fam = famMatch.Groups[1].Value.Split(',')[0].Trim().Trim('\'', '"').Trim();
+                if (!string.IsNullOrEmpty(fam)) family = fam;
+            }
+
+            // Accept px and pt (Jodit/HWP paste often uses pt); convert pt -> px (96/72).
+            var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+            if (fm.Success && double.TryParse(fm.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out double val) && val > 0)
+                size = fm.Groups[2].Value == "pt" ? val * 96.0 / 72.0 : val;
+        }
+
+        // Background color from a node's style="background[-color]:..." or legacy bgcolor="..." attr.
+        private static IBrush? ReadBackground(HtmlNode node)
+        {
+            var style = node.GetAttributeValue("style", "");
+            if (!string.IsNullOrEmpty(style))
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(style.ToLowerInvariant(), "background(?:-color)?\\s*:\\s*([^;]+)");
+                if (m.Success)
+                {
+                    var b = ParseCssColor(m.Groups[1].Value.Trim());
+                    if (b != null) return b;
+                }
+            }
+            var bg = node.GetAttributeValue("bgcolor", "");
+            return string.IsNullOrEmpty(bg) ? null : ParseCssColor(bg.Trim());
         }
 
         private static IBrush? ParseCssColor(string value)
@@ -379,73 +439,134 @@ namespace AvaloniaRichTextBoxPort.Formatters
         public static string ToHtml(FlowDocument doc)
         {
             var sb = new StringBuilder();
-            bool inList = false;
+            ListKind curList = ListKind.None;
+
+            void CloseList()
+            {
+                if (curList == ListKind.Bullet) sb.Append("</ul>\n");
+                else if (curList == ListKind.Ordered) sb.Append("</ol>\n");
+                curList = ListKind.None;
+            }
+
             foreach (var block in doc.Blocks)
             {
                 if (block is Paragraph p)
                 {
-                    if (p.IsListItem && !inList)
+                    if (p.ListType != curList)
                     {
-                        sb.Append("<ul>\n");
-                        inList = true;
+                        CloseList();
+                        if (p.ListType == ListKind.Bullet) { sb.Append("<ul>\n"); curList = ListKind.Bullet; }
+                        else if (p.ListType == ListKind.Ordered) { sb.Append("<ol>\n"); curList = ListKind.Ordered; }
                     }
-                    else if (!p.IsListItem && inList)
-                    {
-                        sb.Append("</ul>\n");
-                        inList = false;
-                    }
-                    string tag = p.IsListItem ? "li" : "p";
+
+                    string tag = p.IsListItem ? "li"
+                        : (p.HeadingLevel >= 1 && p.HeadingLevel <= 6 ? $"h{p.HeadingLevel}" : "p");
                     string align = p.TextAlignment switch { TextAlignment.Center => "center", TextAlignment.Right => "right", _ => "left" };
-                    sb.Append($"<{tag} style='text-align:{align};'>");
-                    foreach(var inline in p.Inlines)
-                    {
-                        if (inline is Run r && r.Text != null)
-                        {
-                            string t = HtmlEntity.Entitize(r.Text);
-                            if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
-                            if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
-                            if (r.Foreground == Brushes.Red) t = $"<span style='color:red'>{t}</span>";
-                            else if (r.Foreground == Brushes.Blue) t = $"<span style='color:blue'>{t}</span>";
-                            if (r.FontSize > 14) t = $"<span style='font-size:{r.FontSize}px'>{t}</span>";
-                            if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href='{r.NavigateUri}'>{t}</a>";
-                            sb.Append(t);
-                        }
-                    }
+                    string pStyle = $"text-align:{align};";
+                    if (p.Background is ISolidColorBrush pbg) pStyle += $"background-color:{CssColor(pbg.Color)};";
+                    sb.Append($"<{tag} style='{pStyle}'>");
+                    foreach (var inline in p.Inlines) EmitInline(sb, inline);
                     sb.Append($"</{tag}>\n");
+                }
+                else if (block is DividerBlock)
+                {
+                    CloseList();
+                    sb.Append("<hr/>\n");
                 }
                 else if (block is TableBlock tb)
                 {
-                    if (inList) { sb.Append("</ul>\n"); inList = false; }
+                    CloseList();
                     sb.Append("<table border='1' style='border-collapse:collapse; width:100%;'>\n");
                     for (int r = 0; r < tb.Rows; r++)
                     {
                         sb.Append("<tr>\n");
                         for (int c = 0; c < tb.Columns; c++)
                         {
-                            sb.Append("<td>");
-                            foreach(var inline in tb.Cells[r][c].Inlines)
-                            {
-                                if (inline is Run run && run.Text != null)
-                                {
-                                    string t = HtmlEntity.Entitize(run.Text);
-                                    if (run.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
-                                    if (run.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
-                                    if (run.Foreground == Brushes.Red) t = $"<span style='color:red'>{t}</span>";
-                                    else if (run.Foreground == Brushes.Blue) t = $"<span style='color:blue'>{t}</span>";
-                                    if (run.FontSize > 14) t = $"<span style='font-size:{run.FontSize}px'>{t}</span>";
-                                    if (!string.IsNullOrEmpty(run.NavigateUri)) t = $"<a href='{run.NavigateUri}'>{t}</a>";
-                                    sb.Append(t);
-                                }
-                            }
+                            var cell = tb.Cells[r][c];
+                            if (cell.Background is ISolidColorBrush cbg)
+                                sb.Append($"<td style='background-color:{CssColor(cbg.Color)}'>");
+                            else
+                                sb.Append("<td>");
+                            foreach (var inline in cell.Inlines) EmitInline(sb, inline);
                             sb.Append("</td>\n");
                         }
                         sb.Append("</tr>\n");
                     }
                     sb.Append("</table>\n");
                 }
+                else if (block is ImageBlock ib && ib.Image != null)
+                {
+                    CloseList();
+                    sb.Append($"<p>{ImgTag(ib.Image, ib.Width, ib.Height)}</p>\n");
+                }
             }
-            if (inList) sb.Append("</ul>\n");
+            CloseList();
             return sb.ToString();
+        }
+
+        // Emits a single inline (Run with all its styling, or an inline image) as HTML.
+        private static void EmitInline(StringBuilder sb, Inline inline)
+        {
+            if (inline is InlineImage im && im.Image != null)
+            {
+                sb.Append(ImgTag(im.Image, im.Width, im.Height));
+                return;
+            }
+            if (inline is not Run r || r.Text == null) return;
+
+            string t = HtmlEntity.Entitize(r.Text);
+
+            var styles = new System.Collections.Generic.List<string>();
+            if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:{r.FontFamily}");
+            if (r.FontSize > 0 && System.Math.Abs(r.FontSize - 14) > 0.01)
+                styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px");
+            if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
+            if (r.Background is ISolidColorBrush bg) styles.Add($"background-color:{CssColor(bg.Color)}");
+            bool u = HasDecoration(r.TextDecorations, TextDecorationLocation.Underline);
+            bool s = HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough);
+            string? deco = (u, s) switch
+            {
+                (true, true) => "underline line-through",
+                (true, false) => "underline",
+                (false, true) => "line-through",
+                _ => null
+            };
+            if (deco != null) styles.Add($"text-decoration:{deco}");
+
+            if (styles.Count > 0) t = $"<span style='{string.Join(";", styles)}'>{t}</span>";
+            if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
+            if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
+            if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href='{r.NavigateUri}'>{t}</a>";
+            sb.Append(t);
+        }
+
+        private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
+        {
+            if (decos == null) return false;
+            foreach (var d in decos) if (d.Location == loc) return true;
+            return false;
+        }
+
+        // CSS-safe color: #RRGGBB when opaque, else rgba(). (Avalonia's Color.ToString() is #AARRGGBB, invalid in CSS.)
+        private static string CssColor(Color c) =>
+            c.A == 255
+                ? $"#{c.R:X2}{c.G:X2}{c.B:X2}"
+                : $"rgba({c.R},{c.G},{c.B},{(c.A / 255.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)})";
+
+        private static string ImgTag(Avalonia.Media.Imaging.Bitmap bmp, double w, double h)
+        {
+            string b64;
+            try
+            {
+                using var ms = new System.IO.MemoryStream();
+                bmp.Save(ms);
+                b64 = System.Convert.ToBase64String(ms.ToArray());
+            }
+            catch { return ""; }
+            string size = "";
+            if (!double.IsNaN(w) && w > 0) size += $" width='{(int)w}'";
+            if (!double.IsNaN(h) && h > 0) size += $" height='{(int)h}'";
+            return $"<img src='data:image/png;base64,{b64}'{size}/>";
         }
     }
 }

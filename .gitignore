@@ -7,3 +7,9 @@ obj/
 
 # Scratch / test artifacts
 test.html
+
+# Round-trip harness output
+tests/roundtrip-out/
+
+# Real document corpus extracted from SaemDesk DB — contains personal data, never commit.
+tests/corpus/real_*.html
