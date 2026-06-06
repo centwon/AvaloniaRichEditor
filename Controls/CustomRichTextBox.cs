@@ -131,6 +131,13 @@ public class CustomRichTextBox : Control
         Focus();
         var point = e.GetPosition(this);
 
+        if (e.GetCurrentPoint(this).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
+        {
+            ShowContextMenu(point);
+            e.Handled = true;
+            return;
+        }
+
         foreach (var h in _imageHandles)
         {
             if (h.rect.Contains(point))
@@ -300,6 +307,10 @@ public class CustomRichTextBox : Control
             {
                 yOffset += (img.Height > 0 ? img.Height : 200) + 10;
             }
+            else if (block is DividerBlock)
+            {
+                yOffset += DividerHeight;
+            }
         }
         return null;
     }
@@ -349,6 +360,10 @@ public class CustomRichTextBox : Control
                 }
                 var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent));
                 yOffset += layout.Height + paragraph.MarginBottom;
+            }
+            else if (block is DividerBlock)
+            {
+                yOffset += DividerHeight;
             }
             else if (block is ImageBlock img)
             {
@@ -532,40 +547,14 @@ public class CustomRichTextBox : Control
 
         if (e.Key == Key.Z && ctrl)
         {
-            if (Document != null)
-            {
-                var state = _undoManager.Undo(Document, _caretPosition);
-                if (state != null)
-                {
-                    Document = state.Value.Document;
-                    UpdateParents(Document);
-                    _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
-                    _caretPosition.Offset = state.Value.CaretOffset;
-                    _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                    _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                    InvalidateVisual();
-                }
-            }
+            DoUndo();
             e.Handled = true;
             return;
         }
 
         if (e.Key == Key.Y && ctrl)
         {
-            if (Document != null)
-            {
-                var state = _undoManager.Redo(Document, _caretPosition);
-                if (state != null)
-                {
-                    Document = state.Value.Document;
-                    UpdateParents(Document);
-                    _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
-                    _caretPosition.Offset = state.Value.CaretOffset;
-                    _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                    _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                    InvalidateVisual();
-                }
-            }
+            DoRedo();
             e.Handled = true;
             return;
         }
@@ -597,6 +586,17 @@ public class CustomRichTextBox : Control
         if (e.Key == Key.V && ctrl)
         {
             _ = PasteFromClipboardAsync();
+            e.Handled = true;
+            return;
+        }
+
+        if (ctrl && e.Key == Key.B) { ToggleBold(); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.I) { ToggleItalic(); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.U) { ToggleUnderline(); e.Handled = true; return; }
+
+        if (e.Key == Key.Tab)
+        {
+            HandleTab(shift);
             e.Handled = true;
             return;
         }
@@ -664,9 +664,9 @@ public class CustomRichTextBox : Control
             {
                 int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
                 var prevBlock = idx > 0 ? Document.Blocks[idx - 1] : null;
-                if (prevBlock is ImageBlock || prevBlock is TableBlock)
+                if (prevBlock is ImageBlock || prevBlock is TableBlock || prevBlock is DividerBlock)
                 {
-                    // Caret at start of paragraph, previous block is an image/table -> delete it.
+                    // Caret at start of paragraph, previous block is an image/table/divider -> delete it.
                     Document.Blocks.RemoveAt(idx - 1);
                 }
                 else if (prevBlock is Paragraph prev)
@@ -695,9 +695,9 @@ public class CustomRichTextBox : Control
             {
                 int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
                 var nextBlock = (idx >= 0 && idx + 1 < Document.Blocks.Count) ? Document.Blocks[idx + 1] : null;
-                if (nextBlock is ImageBlock || nextBlock is TableBlock)
+                if (nextBlock is ImageBlock || nextBlock is TableBlock || nextBlock is DividerBlock)
                 {
-                    // Caret at end of paragraph, next block is an image/table -> delete it.
+                    // Caret at end of paragraph, next block is an image/table/divider -> delete it.
                     Document.Blocks.RemoveAt(idx + 1);
                 }
                 else if (nextBlock is Paragraph next)
@@ -739,6 +739,34 @@ public class CustomRichTextBox : Control
                 ResetCaretBlink(); e.Handled = true; return;
             }
         }
+    }
+
+    private void DoUndo()
+    {
+        if (Document == null) return;
+        var state = _undoManager.Undo(Document, _caretPosition);
+        if (state == null) return;
+        Document = state.Value.Document;
+        UpdateParents(Document);
+        _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
+        _caretPosition.Offset = state.Value.CaretOffset;
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        InvalidateVisual();
+    }
+
+    private void DoRedo()
+    {
+        if (Document == null) return;
+        var state = _undoManager.Redo(Document, _caretPosition);
+        if (state == null) return;
+        Document = state.Value.Document;
+        UpdateParents(Document);
+        _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
+        _caretPosition.Offset = state.Value.CaretOffset;
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        InvalidateVisual();
     }
 
     private void ResetCaretBlink()
@@ -990,6 +1018,9 @@ public class CustomRichTextBox : Control
         p.Inlines.Add(new Run { Text = text, Parent = p });
     }
 
+    // Vertical space a horizontal-rule (DividerBlock) occupies when laid out.
+    private const double DividerHeight = 18;
+
     // The object-replacement character represents one inline image in the logical text stream.
     private const char ObjChar = '￼';
 
@@ -1082,14 +1113,16 @@ public class CustomRichTextBox : Control
         {
             if (inline is Run r && !string.IsNullOrEmpty(r.Text))
             {
-                var typeface = new Typeface(FontFamily.Default, r.FontStyle, r.FontWeight);
+                var family = string.IsNullOrEmpty(r.FontFamily) ? FontFamily.Default : new FontFamily(r.FontFamily);
+                var typeface = new Typeface(family, r.FontStyle, r.FontWeight);
                 TextDecorationCollection? decos = r.TextDecorations;
                 if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,
                     r.FontSize <= 0 ? 14 : r.FontSize,
                     decos,
-                    r.Foreground ?? Brushes.Black);
+                    r.Foreground ?? Brushes.Black,
+                    r.Background);
                 segs.Add(new LayoutSeg { Text = r.Text, Props = props });
             }
             else if (inline is InlineImage img)
@@ -1254,6 +1287,10 @@ public class CustomRichTextBox : Control
             {
                 double height = img.Height > 0 ? img.Height : 200;
                 yOffset += height + 10;
+            }
+            else if (block is DividerBlock)
+            {
+                yOffset += DividerHeight;
             }
         }
         return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) : new TextPointer(Document.Blocks[0] as Paragraph, 0);
@@ -1461,9 +1498,50 @@ public class CustomRichTextBox : Control
     public void SetForeground(IBrush brush) { ApplyStyleToSelection(r => r.Foreground = brush); }
     public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
     public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
-    public void ToggleBullet() { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.IsListItem = !_caretPosition.Paragraph.IsListItem; InvalidateVisual(); } }
+    public void ToggleBullet() { SetListType(ListKind.Bullet); }
+    public void ToggleNumbering() { SetListType(ListKind.Ordered); }
 
-    public void ToggleStrikethrough() { ApplyStyleToSelection(r => r.TextDecorations = r.TextDecorations == TextDecorations.Strikethrough ? null : TextDecorations.Strikethrough); }
+    private void SetListType(ListKind kind)
+    {
+        if (_caretPosition.Paragraph == null) return;
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        var p = _caretPosition.Paragraph;
+        p.ListType = p.ListType == kind ? ListKind.None : kind;
+        InvalidateVisual();
+    }
+
+    // Applies a heading level (0 = body) to the caret's paragraph and resizes its runs so it
+    // renders in-editor; the level is also kept for HTML round-trip (<h1>..<h6>).
+    public void SetHeading(int level)
+    {
+        if (_caretPosition.Paragraph == null) return;
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        var p = _caretPosition.Paragraph;
+        p.HeadingLevel = level;
+        double size = level switch { 1 => 24, 2 => 20, 3 => 16, 4 => 14, 5 => 13, 6 => 12, _ => 14 };
+        var weight = level is >= 1 and <= 6 ? FontWeight.Bold : FontWeight.Normal;
+        foreach (var inl in p.Inlines) if (inl is Run r) { r.FontSize = size; r.FontWeight = weight; }
+        InvalidateVisual();
+    }
+
+    public void ToggleStrikethrough() { ApplyStyleToSelection(r => r.TextDecorations = ToggleDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)); }
+    public void ToggleUnderline() { ApplyStyleToSelection(r => r.TextDecorations = ToggleDecoration(r.TextDecorations, TextDecorationLocation.Underline)); }
+
+    // Toggles a single decoration (underline/strikethrough) while preserving the other, so the two
+    // can coexist on the same run instead of overwriting each other.
+    private static TextDecorationCollection? ToggleDecoration(TextDecorationCollection? current, TextDecorationLocation loc)
+    {
+        var result = new TextDecorationCollection();
+        bool had = false;
+        if (current != null)
+            foreach (var d in current)
+            {
+                if (d.Location == loc) { had = true; continue; }
+                result.Add(d);
+            }
+        if (!had) result.Add(new TextDecoration { Location = loc });
+        return result.Count > 0 ? result : null;
+    }
 
     private void ApplyStyleToSelection(Action<Run> styleAction)
     {
@@ -1665,6 +1743,518 @@ public class CustomRichTextBox : Control
             context.FillRectangle(brush, new Rect(originX + rect.X, originY + rect.Y, rect.Width, rect.Height));
     }
 
+    // ---------------- Find / Replace ----------------
+
+    public bool FindNext(string query, bool matchCase)
+    {
+        if (Document == null || string.IsNullOrEmpty(query)) return false;
+        var paras = GetAllParagraphsInOrder();
+        int pi = _selectionEnd.Paragraph != null ? paras.IndexOf(_selectionEnd.Paragraph) : -1;
+        return FindCore(query, matchCase, backwards: false, wrap: true, fromPi: pi, fromOff: _selectionEnd.Offset);
+    }
+
+    public bool FindPrev(string query, bool matchCase)
+    {
+        if (Document == null || string.IsNullOrEmpty(query)) return false;
+        var paras = GetAllParagraphsInOrder();
+        int pi = _selectionStart.Paragraph != null ? paras.IndexOf(_selectionStart.Paragraph) : -1;
+        return FindCore(query, matchCase, backwards: true, wrap: true, fromPi: pi, fromOff: _selectionStart.Offset);
+    }
+
+    // Replaces the current selection if it equals the query, then advances to the next match.
+    public bool ReplaceNext(string query, string replacement, bool matchCase)
+    {
+        if (Document == null || string.IsNullOrEmpty(query)) return false;
+        var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        bool selMatches = _selectionStart.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0
+            && string.Equals(new TextRange(_selectionStart, _selectionEnd).GetText(), query, cmp);
+        if (selMatches)
+        {
+            _undoManager.PushState(Document, _caretPosition);
+            ReplaceSelectionText(replacement);
+            InvalidateVisual();
+        }
+        return FindNext(query, matchCase);
+    }
+
+    public int ReplaceAll(string query, string replacement, bool matchCase)
+    {
+        if (Document == null || string.IsNullOrEmpty(query)) return 0;
+        var paras = GetAllParagraphsInOrder();
+        if (paras.Count == 0) return 0;
+        _undoManager.PushState(Document, _caretPosition);
+        _caretPosition = new TextPointer(paras[0], 0);
+        CollapseSelectionToCaret();
+        int count = 0;
+        while (count <= 1_000_000)
+        {
+            var cur = GetAllParagraphsInOrder();
+            int pi = _caretPosition.Paragraph != null ? cur.IndexOf(_caretPosition.Paragraph) : -1;
+            if (!FindCore(query, matchCase, backwards: false, wrap: false, fromPi: pi, fromOff: _caretPosition.Offset)) break;
+            ReplaceSelectionText(replacement);
+            count++;
+        }
+        InvalidateVisual();
+        return count;
+    }
+
+    private bool FindCore(string query, bool matchCase, bool backwards, bool wrap, int fromPi, int fromOff)
+    {
+        var paras = GetAllParagraphsInOrder();
+        if (paras.Count == 0) return false;
+        var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
+        var matches = new List<(int pi, int idx, Paragraph p)>();
+        for (int pi = 0; pi < paras.Count; pi++)
+        {
+            string text = BuildPlain(paras[pi]);
+            int from = 0;
+            while (from <= text.Length)
+            {
+                int idx = text.IndexOf(query, from, cmp);
+                if (idx < 0) break;
+                matches.Add((pi, idx, paras[pi]));
+                from = idx + 1;
+            }
+        }
+        if (matches.Count == 0) return false;
+
+        if (!backwards)
+        {
+            foreach (var m in matches)
+                if (m.pi > fromPi || (m.pi == fromPi && m.idx >= fromOff)) { SelectMatch(m.p, m.idx, query.Length); return true; }
+            if (wrap) { SelectMatch(matches[0].p, matches[0].idx, query.Length); return true; }
+        }
+        else
+        {
+            for (int i = matches.Count - 1; i >= 0; i--)
+            {
+                var m = matches[i];
+                if (m.pi < fromPi || (m.pi == fromPi && m.idx < fromOff)) { SelectMatch(m.p, m.idx, query.Length); return true; }
+            }
+            if (wrap) { var m = matches[^1]; SelectMatch(m.p, m.idx, query.Length); return true; }
+        }
+        return false;
+    }
+
+    private void SelectMatch(Paragraph p, int start, int length)
+    {
+        _selectionStart = new TextPointer(p, start);
+        _selectionEnd = new TextPointer(p, start + length);
+        _caretPosition = new TextPointer(p, start + length);
+        ResetCaretBlink();
+        InvalidateVisual();
+    }
+
+    private void ReplaceSelectionText(string replacement)
+    {
+        DeleteSelection();
+        if (!string.IsNullOrEmpty(replacement) && _caretPosition.Paragraph != null)
+        {
+            TryInsertTextCore(_caretPosition.Paragraph, replacement, _caretPosition.Offset);
+            _caretPosition.Offset += replacement.Length;
+        }
+        CollapseSelectionToCaret();
+    }
+
+    // ---------------- Context menu (right-click) ----------------
+
+    private static MenuItem Mi(string header, Action action, bool enabled = true)
+    {
+        var mi = new MenuItem { Header = header, IsEnabled = enabled };
+        mi.Click += (_, _) => action();
+        return mi;
+    }
+
+    private static MenuItem Sub(string header, params Control[] children)
+    {
+        var mi = new MenuItem { Header = header };
+        mi.ItemsSource = children;
+        return mi;
+    }
+
+    private void CollapseSelectionToCaret()
+    {
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+    }
+
+    private void ShowContextMenu(Point point)
+    {
+        if (Document == null) return;
+
+        bool hasSelection = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
+            && _selectionStart.CompareTo(_selectionEnd) != 0;
+
+        var items = new List<Control>();
+        var block = GetBlockAtPoint(point);
+
+        if (block is ImageBlock ib)
+        {
+            _selectedBlock = ib;
+            CollapseSelectionToCaret();
+            BuildImageMenu(items, ib);
+        }
+        else if (block is TableBlock tbk)
+        {
+            _selectedBlock = null;
+            var tp = GetPositionFromPoint(point);
+            _caretPosition = tp;
+            if (!hasSelection) CollapseSelectionToCaret();
+            BuildTableMenu(items, tbk, tp.Paragraph, hasSelection);
+        }
+        else
+        {
+            _selectedBlock = null;
+            if (!hasSelection)
+            {
+                _caretPosition = GetPositionFromPoint(point);
+                CollapseSelectionToCaret();
+            }
+            var link = GetLinkRunAtPoint(point);
+            BuildTextMenu(items, hasSelection, link);
+        }
+
+        ResetCaretBlink();
+        InvalidateVisual();
+
+        if (items.Count == 0) return;
+        var menu = new ContextMenu { Placement = PlacementMode.Pointer };
+        menu.ItemsSource = items;
+        menu.Open(this);
+    }
+
+    private void AddClipboardItems(List<Control> items, bool hasSelection)
+    {
+        items.Add(Mi("잘라내기", () =>
+        {
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            CopySelectionToClipboard();
+            DeleteSelection();
+            InvalidateVisual();
+        }, hasSelection));
+        items.Add(Mi("복사", CopySelectionToClipboard, hasSelection));
+        items.Add(Mi("붙여넣기", () => { _ = PasteFromClipboardAsync(); }));
+        items.Add(Mi("삭제", () =>
+        {
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            DeleteSelection();
+            InvalidateVisual();
+        }, hasSelection));
+    }
+
+    private void AddFormatItems(List<Control> items, bool hasSelection)
+    {
+        items.Add(Mi("굵게", ToggleBold, hasSelection));
+        items.Add(Mi("기울임", ToggleItalic, hasSelection));
+        items.Add(Mi("밑줄", ToggleUnderline, hasSelection));
+        items.Add(Mi("취소선", ToggleStrikethrough, hasSelection));
+        items.Add(Sub("글자 크기",
+            Mi("10", () => SetFontSize(10)), Mi("12", () => SetFontSize(12)), Mi("14", () => SetFontSize(14)),
+            Mi("18", () => SetFontSize(18)), Mi("24", () => SetFontSize(24)), Mi("36", () => SetFontSize(36))));
+        items.Add(Sub("글자 색",
+            Mi("검정", () => SetForeground(Brushes.Black)), Mi("빨강", () => SetForeground(Brushes.Red)),
+            Mi("파랑", () => SetForeground(Brushes.Blue)), Mi("초록", () => SetForeground(Brushes.Green)),
+            Mi("회색", () => SetForeground(Brushes.Gray))));
+        items.Add(Sub("정렬",
+            Mi("왼쪽", () => SetTextAlignment(TextAlignment.Left)),
+            Mi("가운데", () => SetTextAlignment(TextAlignment.Center)),
+            Mi("오른쪽", () => SetTextAlignment(TextAlignment.Right))));
+        items.Add(Mi("서식 지우기", ClearFormatting, hasSelection));
+        items.Add(Sub("목록",
+            Mi("글머리표", ToggleBullet),
+            Mi("번호 매기기", ToggleNumbering)));
+        items.Add(Sub("제목",
+            Mi("제목 1", () => SetHeading(1)),
+            Mi("제목 2", () => SetHeading(2)),
+            Mi("제목 3", () => SetHeading(3)),
+            Mi("본문", () => SetHeading(0))));
+    }
+
+    public void InsertDivider()
+    {
+        if (Document == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        InsertBlockAtCaret(new DividerBlock());
+        InvalidateVisual();
+    }
+
+    private void BuildTextMenu(List<Control> items, bool hasSelection, Run? link)
+    {
+        AddClipboardItems(items, hasSelection);
+        items.Add(new Separator());
+        AddFormatItems(items, hasSelection);
+        items.Add(new Separator());
+        if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
+        {
+            items.Add(Mi("링크 열기", () => OpenUrl(link.NavigateUri!)));
+            items.Add(Mi("링크 편집...", () => { _ = EditHyperlinkAsync(link.NavigateUri, link); }));
+            items.Add(Mi("링크 제거", () => SetHyperlink(null, link)));
+        }
+        else
+        {
+            items.Add(Mi("링크 삽입...", () => { _ = EditHyperlinkAsync(null, null); }, hasSelection));
+        }
+        items.Add(new Separator());
+        items.Add(Mi("모두 선택", SelectAll));
+        items.Add(Mi("실행 취소", DoUndo));
+        items.Add(Mi("다시 실행", DoRedo));
+        items.Add(new Separator());
+        items.Add(Mi("표 삽입 (2x2)", () => InsertTable(2, 2)));
+        items.Add(Mi("이미지 삽입...", () => { _ = InsertImageFromFileAsync(); }));
+        items.Add(Mi("구분선 삽입", InsertDivider));
+    }
+
+    private void BuildImageMenu(List<Control> items, ImageBlock img)
+    {
+        items.Add(Mi("삭제", () => DeleteBlock(img)));
+        items.Add(new Separator());
+        items.Add(Mi("원본 크기로", () => ResetImageSize(img), img.Image != null));
+        items.Add(Mi("이미지 교체...", () => { _ = ReplaceImageAsync(img); }));
+        items.Add(Mi("다른 이름으로 저장...", () => { _ = SaveImageAsync(img); }, img.Image != null));
+    }
+
+    private void BuildTableMenu(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
+    {
+        AddClipboardItems(items, hasSelection);
+        items.Add(new Separator());
+        var loc = cell != null ? FindCell(cell) : null;
+        int r = loc?.r ?? -1;
+        int c = loc?.c ?? -1;
+        items.Add(Mi("위에 행 삽입", () => TableInsertRow(tb, r), r >= 0));
+        items.Add(Mi("아래에 행 삽입", () => TableInsertRow(tb, r + 1), r >= 0));
+        items.Add(Mi("행 삭제", () => TableDeleteRow(tb, r), r >= 0 && tb.Rows > 1));
+        items.Add(new Separator());
+        items.Add(Mi("왼쪽에 열 삽입", () => TableInsertColumn(tb, c), c >= 0));
+        items.Add(Mi("오른쪽에 열 삽입", () => TableInsertColumn(tb, c + 1), c >= 0));
+        items.Add(Mi("열 삭제", () => TableDeleteColumn(tb, c), c >= 0 && tb.Columns > 1));
+        items.Add(new Separator());
+        AddFormatItems(items, hasSelection);
+        items.Add(new Separator());
+        items.Add(Mi("표 삭제", () => DeleteBlock(tb)));
+    }
+
+    private (TableBlock tb, int r, int c)? FindCell(Paragraph p)
+    {
+        if (Document == null) return null;
+        foreach (var b in Document.Blocks)
+            if (b is TableBlock tb)
+                for (int r = 0; r < tb.Rows; r++)
+                    for (int c = 0; c < tb.Columns; c++)
+                        if (tb.Cells[r][c] == p) return (tb, r, c);
+        return null;
+    }
+
+    // Tab moves to the next table cell (Shift+Tab to the previous); Tab in the last cell appends a
+    // new row. Outside a table it inserts spaces so focus doesn't leave the editor.
+    private void HandleTab(bool shift)
+    {
+        var loc = _caretPosition.Paragraph != null ? FindCell(_caretPosition.Paragraph) : null;
+        if (loc == null)
+        {
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            InsertText("    ");
+            return;
+        }
+
+        var (tb, r, c) = loc.Value;
+        if (shift)
+        {
+            if (c > 0) FocusCell(tb.Cells[r][c - 1]);
+            else if (r > 0) FocusCell(tb.Cells[r - 1][tb.Columns - 1]);
+        }
+        else
+        {
+            if (c + 1 < tb.Columns) FocusCell(tb.Cells[r][c + 1]);
+            else if (r + 1 < tb.Rows) FocusCell(tb.Cells[r + 1][0]);
+            else
+            {
+                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                tb.InsertRow(tb.Rows);
+                if (Document != null) UpdateParents(Document);
+                FocusCell(tb.Cells[tb.Rows - 1][0]);
+            }
+        }
+    }
+
+    private void FocusCell(Paragraph cell)
+    {
+        int len = GetParagraphLength(cell);
+        _caretPosition = new TextPointer(cell, len);
+        _selectionStart = new TextPointer(cell, 0);
+        _selectionEnd = new TextPointer(cell, len);
+        ResetCaretBlink();
+        InvalidateVisual();
+    }
+
+    private void DeleteBlock(Block b)
+    {
+        if (Document == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        Document.Blocks.Remove(b);
+        _selectedBlock = null;
+        NormalizeBlocks(Document);
+        InvalidateVisual();
+    }
+
+    private void TableInsertRow(TableBlock tb, int at)
+    {
+        if (Document == null || at < 0) return;
+        _undoManager.PushState(Document, _caretPosition);
+        tb.InsertRow(at);
+        UpdateParents(Document);
+        int ar = Math.Clamp(at, 0, tb.Rows - 1);
+        _caretPosition = new TextPointer(tb.Cells[ar][0], 0);
+        CollapseSelectionToCaret();
+        InvalidateVisual();
+    }
+
+    private void TableDeleteRow(TableBlock tb, int at)
+    {
+        if (Document == null || tb.Rows <= 1 || at < 0) return;
+        _undoManager.PushState(Document, _caretPosition);
+        tb.DeleteRow(at);
+        UpdateParents(Document);
+        int nr = Math.Clamp(at, 0, tb.Rows - 1);
+        _caretPosition = new TextPointer(tb.Cells[nr][0], 0);
+        CollapseSelectionToCaret();
+        InvalidateVisual();
+    }
+
+    private void TableInsertColumn(TableBlock tb, int at)
+    {
+        if (Document == null || at < 0) return;
+        _undoManager.PushState(Document, _caretPosition);
+        tb.InsertColumn(at);
+        UpdateParents(Document);
+        int ac = Math.Clamp(at, 0, tb.Columns - 1);
+        _caretPosition = new TextPointer(tb.Cells[0][ac], 0);
+        CollapseSelectionToCaret();
+        InvalidateVisual();
+    }
+
+    private void TableDeleteColumn(TableBlock tb, int at)
+    {
+        if (Document == null || tb.Columns <= 1 || at < 0) return;
+        _undoManager.PushState(Document, _caretPosition);
+        tb.DeleteColumn(at);
+        UpdateParents(Document);
+        int nc = Math.Clamp(at, 0, tb.Columns - 1);
+        _caretPosition = new TextPointer(tb.Cells[0][nc], 0);
+        CollapseSelectionToCaret();
+        InvalidateVisual();
+    }
+
+    private void ClearFormatting()
+    {
+        ApplyStyleToSelection(r =>
+        {
+            r.FontWeight = FontWeight.Normal;
+            r.FontStyle = FontStyle.Normal;
+            r.FontSize = 14;
+            r.Foreground = Brushes.Black;
+            r.TextDecorations = null;
+            r.NavigateUri = null;
+        });
+    }
+
+    // Applies (or clears, when url is null) a hyperlink. Uses the selection if there is one;
+    // otherwise falls back to the single run that was right-clicked.
+    private void SetHyperlink(string? url, Run? targetRun)
+    {
+        if (Document == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        if (_selectionStart.CompareTo(_selectionEnd) != 0)
+        {
+            var range = new TextRange(_selectionStart, _selectionEnd);
+            range.ApplyPropertyValue(r => r.NavigateUri = url);
+        }
+        else if (targetRun != null)
+        {
+            targetRun.NavigateUri = url;
+        }
+        InvalidateVisual();
+    }
+
+    private async Task EditHyperlinkAsync(string? current, Run? targetRun)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        string? url = await InputDialog.ShowAsync(owner, "하이퍼링크", current ?? "https://");
+        if (string.IsNullOrWhiteSpace(url)) return;
+        SetHyperlink(url, targetRun);
+    }
+
+    private void ResetImageSize(ImageBlock img)
+    {
+        if (Document == null || img.Image == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        img.Width = img.Image.Size.Width;
+        img.Height = img.Image.Size.Height;
+        InvalidateVisual();
+    }
+
+    private async Task ReplaceImageAsync(ImageBlock img)
+    {
+        var top = TopLevel.GetTopLevel(this);
+        if (top == null) return;
+        var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "이미지 선택",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { Avalonia.Platform.Storage.FilePickerFileTypes.ImageAll }
+        });
+        if (files.Count == 0) return;
+        try
+        {
+            await using var s = await files[0].OpenReadAsync();
+            var bmp = new Avalonia.Media.Imaging.Bitmap(s);
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            img.Image = bmp;
+            InvalidateVisual();
+        }
+        catch { }
+    }
+
+    private async Task SaveImageAsync(ImageBlock img)
+    {
+        if (img.Image == null) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top == null) return;
+        var file = await top.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title = "이미지 저장",
+            DefaultExtension = "png",
+            SuggestedFileName = "image.png"
+        });
+        if (file == null) return;
+        try
+        {
+            await using var s = await file.OpenWriteAsync();
+            img.Image.Save(s);
+        }
+        catch { }
+    }
+
+    private async Task InsertImageFromFileAsync()
+    {
+        var top = TopLevel.GetTopLevel(this);
+        if (top == null) return;
+        var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "이미지 선택",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { Avalonia.Platform.Storage.FilePickerFileTypes.ImageAll }
+        });
+        if (files.Count == 0) return;
+        try
+        {
+            await using var s = await files[0].OpenReadAsync();
+            var bmp = new Avalonia.Media.Imaging.Bitmap(s);
+            InsertImage(bmp);
+        }
+        catch { }
+    }
+
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(Brushes.Transparent, new Rect(0, 0, Bounds.Width, 2000));
@@ -1729,6 +2319,8 @@ public class CustomRichTextBox : Control
                         double cellX = currentX;
                         currentX += cellWidth;
 
+                        if (cell.Background != null)
+                            context.FillRectangle(cell.Background, new Rect(cellX, yOffset, cellWidth, rowMaxHeight));
                         context.DrawRectangle(null, new Pen(Brushes.Gray, 1), new Rect(cellX, yOffset, cellWidth, rowMaxHeight));
 
                         // Grab handle on each column's right edge (6px band). Internal edges
@@ -1801,6 +2393,9 @@ public class CustomRichTextBox : Control
                     ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
                     : BuildTextLayout(paragraph, pWidth);
 
+                if (paragraph.Background != null)
+                    context.FillRectangle(paragraph.Background, new Rect(listIndent, yOffset, pWidth, layout.Height));
+
                 if (selectedParagraphs?.Contains(paragraph) == true)
                 {
                     int hlStart = (paragraph == selStart!.Paragraph) ? selStart.Offset : 0;
@@ -1845,6 +2440,12 @@ public class CustomRichTextBox : Control
 
                     yOffset += height + 10;
                 }
+            }
+            else if (block is DividerBlock)
+            {
+                double y = yOffset + DividerHeight / 2;
+                context.DrawLine(new Pen(Brushes.Gray, 1), new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
+                yOffset += DividerHeight;
             }
         }
 

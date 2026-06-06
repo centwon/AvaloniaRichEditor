@@ -148,6 +148,83 @@ public partial class MainWindow : Window
     private void BoldButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleBold();
     private void ItalicButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleItalic();
     private void StrikethroughButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleStrikethrough();
+    private void UnderlineButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleUnderline();
+
+    // ---- Find / Replace bar ----
+
+    private void Window_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.F && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control))
+        {
+            ShowFindBar();
+            e.Handled = true;
+        }
+        else if (e.Key == Avalonia.Input.Key.Escape)
+        {
+            var bar = this.FindControl<Border>("FindBar");
+            if (bar is { IsVisible: true })
+            {
+                bar.IsVisible = false;
+                this.FindControl<CustomRichTextBox>("RichTextBox")?.Focus();
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void ShowFindBar()
+    {
+        var bar = this.FindControl<Border>("FindBar");
+        if (bar != null) bar.IsVisible = true;
+        var box = this.FindControl<TextBox>("FindBox");
+        box?.Focus();
+        box?.SelectAll();
+    }
+
+    private bool MatchCase => this.FindControl<CheckBox>("MatchCaseBox")?.IsChecked == true;
+    private string FindText => this.FindControl<TextBox>("FindBox")?.Text ?? "";
+    private string ReplaceText => this.FindControl<TextBox>("ReplaceBox")?.Text ?? "";
+
+    private void SetFindStatus(string text)
+    {
+        var status = this.FindControl<TextBlock>("FindStatus");
+        if (status != null) status.Text = text;
+    }
+
+    private void FindNext_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var rtb = this.FindControl<CustomRichTextBox>("RichTextBox");
+        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
+        SetFindStatus(rtb.FindNext(FindText, MatchCase) ? "" : "찾을 수 없음");
+    }
+
+    private void FindPrev_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var rtb = this.FindControl<CustomRichTextBox>("RichTextBox");
+        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
+        SetFindStatus(rtb.FindPrev(FindText, MatchCase) ? "" : "찾을 수 없음");
+    }
+
+    private void ReplaceNext_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var rtb = this.FindControl<CustomRichTextBox>("RichTextBox");
+        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
+        SetFindStatus(rtb.ReplaceNext(FindText, ReplaceText, MatchCase) ? "" : "찾을 수 없음");
+    }
+
+    private void ReplaceAll_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var rtb = this.FindControl<CustomRichTextBox>("RichTextBox");
+        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
+        int n = rtb.ReplaceAll(FindText, ReplaceText, MatchCase);
+        SetFindStatus($"{n}개 바꿈");
+    }
+
+    private void CloseFind_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var bar = this.FindControl<Border>("FindBar");
+        if (bar != null) bar.IsVisible = false;
+        this.FindControl<CustomRichTextBox>("RichTextBox")?.Focus();
+    }
     
     private void FontSizeComboBox_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
     {

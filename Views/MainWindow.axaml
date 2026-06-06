@@ -8,13 +8,14 @@
         x:Class="AvaloniaRichTextBoxPort.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
+        KeyDown="Window_KeyDown"
         Title="AvaloniaRichTextBoxPort">
 
     <Design.DataContext>
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto, Auto, *">
+    <Grid RowDefinitions="Auto, Auto, Auto, *">
         <Border Grid.Row="0" Background="#EEEEEE" Padding="10">
             <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
         </Border>
@@ -33,6 +34,9 @@
             <StackPanel Orientation="Horizontal" Spacing="5" Margin="10,0,10,10">
                 <Button Content="B" FontWeight="Bold" Click="BoldButton_Click"/>
                 <Button Content="I" FontStyle="Italic" Click="ItalicButton_Click"/>
+                <Button Click="UnderlineButton_Click">
+                    <TextBlock Text="U" TextDecorations="Underline"/>
+                </Button>
                 <Button Click="StrikethroughButton_Click">
                     <TextBlock Text="S" TextDecorations="Strikethrough"/>
                 </Button>
@@ -66,7 +70,23 @@
             </StackPanel>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="2" Padding="20">
+        <Border Grid.Row="2" Name="FindBar" IsVisible="False" Background="#F5F5F5" Padding="10,6" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="찾기:" VerticalAlignment="Center"/>
+                <TextBox Name="FindBox" Width="160"/>
+                <Button Content="이전" Click="FindPrev_Click"/>
+                <Button Content="다음" Click="FindNext_Click"/>
+                <TextBlock Text="바꾸기:" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                <TextBox Name="ReplaceBox" Width="160"/>
+                <Button Content="바꾸기" Click="ReplaceNext_Click"/>
+                <Button Content="모두 바꾸기" Click="ReplaceAll_Click"/>
+                <CheckBox Name="MatchCaseBox" Content="대소문자 구분" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                <TextBlock Name="FindStatus" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="Gray"/>
+                <Button Content="✕" Click="CloseFind_Click" Margin="8,0,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="3" Padding="20">
             <controls:CustomRichTextBox x:Name="RichTextBox" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinHeight="1000"/>
         </ScrollViewer>
     </Grid>

@@ -41,6 +41,45 @@ public class TableBlock : Block
         }
     }
 
+    private Paragraph NewCell() => new Paragraph { Inlines = { new Run { Text = "" } }, Parent = this };
+
+    // Structural edits used by the context menu. Each keeps Rows/Columns, Cells, ColumnWidths and
+    // (sparse) RowHeights consistent. RowHeights may be shorter than Rows (trailing = auto), so we
+    // only shift entries that actually exist.
+    public void InsertRow(int at)
+    {
+        at = System.Math.Clamp(at, 0, Rows);
+        var row = new List<Paragraph>();
+        for (int c = 0; c < Columns; c++) row.Add(NewCell());
+        Cells.Insert(at, row);
+        if (at < RowHeights.Count) RowHeights.Insert(at, 0);
+        Rows++;
+    }
+
+    public void DeleteRow(int at)
+    {
+        if (Rows <= 1 || at < 0 || at >= Rows) return;
+        Cells.RemoveAt(at);
+        if (at < RowHeights.Count) RowHeights.RemoveAt(at);
+        Rows--;
+    }
+
+    public void InsertColumn(int at)
+    {
+        at = System.Math.Clamp(at, 0, Columns);
+        for (int r = 0; r < Rows; r++) Cells[r].Insert(at, NewCell());
+        ColumnWidths.Insert(System.Math.Clamp(at, 0, ColumnWidths.Count), 100);
+        Columns++;
+    }
+
+    public void DeleteColumn(int at)
+    {
+        if (Columns <= 1 || at < 0 || at >= Columns) return;
+        for (int r = 0; r < Rows; r++) Cells[r].RemoveAt(at);
+        if (at < ColumnWidths.Count) ColumnWidths.RemoveAt(at);
+        Columns--;
+    }
+
     public override TextElement Clone()
     {
         var tb = new TableBlock(Rows, Columns);
