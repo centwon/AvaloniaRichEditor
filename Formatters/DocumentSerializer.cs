@@ -92,7 +92,9 @@ public static class DocumentSerializer
             ListType = p.ListType.ToString(),
             HeadingLevel = p.HeadingLevel,
             Background = BrushToString(p.Background),
-            Indent = p.Indent
+            Indent = p.Indent,
+            IsQuote = p.IsQuote,
+            ListLevel = p.ListLevel
         };
         foreach (var inline in p.Inlines)
         {
@@ -170,6 +172,8 @@ public static class DocumentSerializer
             HeadingLevel = d.HeadingLevel,
             Background = StringToBrush(d.Background),
             Indent = d.Indent,
+            IsQuote = d.IsQuote,
+            ListLevel = d.ListLevel,
             ListType = Enum.TryParse<ListKind>(d.ListType, out var lk) ? lk : (d.IsListItem ? ListKind.Bullet : ListKind.None)
         };
         if (Enum.TryParse<TextAlignment>(d.TextAlignment, out var ta)) p.TextAlignment = ta;
@@ -273,6 +277,8 @@ public class BlockDto
     public int HeadingLevel { get; set; }
     public string? Background { get; set; }
     public double Indent { get; set; }
+    public bool IsQuote { get; set; }
+    public int ListLevel { get; set; }
 
     // Image block
     public string? ImageBase64 { get; set; }

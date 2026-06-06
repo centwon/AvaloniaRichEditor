@@ -97,17 +97,18 @@
 - [ ] 코퍼스 왕복이 **시각 손실 없음** 될 때까지 반복.
 - 검증: Phase 0 하네스에서 코퍼스 통과율 목표치(예: 100% 시각 동등).
 
-### Phase 3.5 — 외부 붙여넣기 (향후)
+### Phase 3.5 — 외부 붙여넣기
 > 실데이터가 복잡한 이유 = **HWP 문서에서 복사·붙여넣기**한 콘텐츠(셀 배경·pt 폰트·촘촘한 인라인 스타일).
-- [ ] **HWP 클립보드 붙여넣기**: 한글 클립보드 포맷(HTML Format/자체 포맷) 파싱. 현재 CF_HTML 경로로 일부 들어오나 HWP 특유 마크업 보강 필요.
-- [ ] **XLS/엑셀 붙여넣기**: 표 형태(CF_HTML 또는 탭 구분 텍스트)를 `TableBlock`으로.
+- [x] **HWP/Excel HTML 경로**: CF_HTML로 들어오는 콘텐츠를 강화된 `ParseHtml`로 처리(글꼴/색/배경/크기pt/표/정렬 등). HWP 붙여넣기는 이 경로로 동작.
+- [x] **Excel TSV 폴백**: HTML이 없을 때 탭 구분 텍스트를 감지(`LooksTabular`)해 `TableBlock`으로 변환(`InsertTableFromTsv`).
+- [ ] (향후) HWP 자체 클립보드 포맷·VML 그림 등 특수 마크업 — 보류.
 
 ### Phase 3 — 편집 기능 파리티 (UI/상호작용)
 - [x] ul/ol 토글, **들여쓰기/내어쓰기**(`Paragraph.Indent`, margin-left 왕복).
 - [x] 글꼴 패밀리 선택, **제목 드롭다운(H1~H3/본문)**, 배경색(형광펜), hr 삽입 — 툴바 + 컨텍스트 메뉴.
 - [x] **이미지 붙여넣기(클립보드 비트맵)** + **드래그&드롭** + 다운스케일(최대 1920×1080).
 - [x] **ReadOnly 모드**: 입력/리사이즈/붙여넣기 차단·캐럿 숨김·메뉴 축소, 선택/복사 허용.
-- *(생략: blockquote/nested-list 깊이/블록정렬 흡수 — 실데이터 시각 영향 없는 count 잔여)*
+- [x] **잔여 정리(Phase 2)**: blockquote(`Paragraph.IsQuote`, 좌측 바 렌더, `<blockquote>` 왕복), 중첩 목록 깊이(`Paragraph.ListLevel`, 재귀 `ParseList`/스택 기반 emit, 들여쓰기 렌더), **블록 정렬 읽기**(`ReadAlign` — `<p style=text-align>`가 소실되던 실버그 수정). 합성 코퍼스 01/02/03 완전 통과.
 
 ### Phase 4 — 인쇄 (우회 채택)
 - [x] **(b) 임시 HTML → OS 기본 브라우저 인쇄**로 우회(`NativeEditor.PrintAsync`). 정밀 페이지네이션/PDF는 향후.

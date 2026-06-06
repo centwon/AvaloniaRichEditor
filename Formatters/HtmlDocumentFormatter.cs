@@ -105,13 +105,7 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 else if (name == "ul" || name == "ol")
                 {
                     Flush();
-                    var kind = name == "ol" ? ListKind.Ordered : ListKind.Bullet;
-                    foreach (var li in child.Elements("li"))
-                    {
-                        var p = new Paragraph { ListType = kind };
-                        ParseInlines(li, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
-                        if (p.Inlines.Count > 0) flow.Blocks.Add(p);
-                    }
+                    ParseList(child, flow, name == "ol" ? ListKind.Ordered : ListKind.Bullet, 0, linkUri);
                 }
                 else if (name == "hr")
                 {
@@ -152,7 +146,14 @@ namespace AvaloniaRichTextBoxPort.Formatters
                     // Block-level element with only inline content -> its own paragraph.
                     Flush();
                     int hl = (name.Length == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') ? name[1] - '0' : 0;
-                    var p = new Paragraph { HeadingLevel = hl, Background = ReadBackground(child), Indent = ReadIndentPx(child) };
+                    var p = new Paragraph
+                    {
+                        HeadingLevel = hl,
+                        Background = ReadBackground(child),
+                        Indent = ReadIndentPx(child),
+                        IsQuote = name == "blockquote",
+                        TextAlignment = ReadAlign(child)
+                    };
                     double size = HeadingSize(name, out var headingWeight);
                     ParseInlines(child, p, headingWeight, FontStyle.Normal, null, childLink, size, hasLink);
                     if (p.Inlines.Count > 0) flow.Blocks.Add(p);
@@ -166,6 +167,30 @@ namespace AvaloniaRichTextBoxPort.Formatters
             }
 
             Flush();
+        }
+
+        // Recursively flattens a <ul>/<ol> into list-item paragraphs tagged with their nesting level.
+        private static void ParseList(HtmlNode listNode, FlowDocument flow, ListKind kind, int level, string? linkUri)
+        {
+            foreach (var li in listNode.ChildNodes.Where(n => n.Name.Equals("li", StringComparison.OrdinalIgnoreCase)))
+            {
+                var p = new Paragraph { ListType = kind, ListLevel = level };
+                ParseInlines(li, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
+                if (p.Inlines.Count > 0) flow.Blocks.Add(p);
+
+                foreach (var nested in li.ChildNodes.Where(n => n.Name.Equals("ul", StringComparison.OrdinalIgnoreCase) || n.Name.Equals("ol", StringComparison.OrdinalIgnoreCase)))
+                    ParseList(nested, flow, nested.Name.Equals("ol", StringComparison.OrdinalIgnoreCase) ? ListKind.Ordered : ListKind.Bullet, level + 1, linkUri);
+            }
+        }
+
+        // Paragraph text alignment from a node's align attr or style text-align.
+        private static TextAlignment ReadAlign(HtmlNode node)
+        {
+            string a = node.GetAttributeValue("align", "").ToLowerInvariant();
+            var style = node.GetAttributeValue("style", "").ToLowerInvariant();
+            var m = System.Text.RegularExpressions.Regex.Match(style, "text-align\\s*:\\s*(left|center|right|justify)");
+            if (m.Success) a = m.Groups[1].Value;
+            return a switch { "center" => TextAlignment.Center, "right" => TextAlignment.Right, _ => TextAlignment.Left };
         }
 
         private static double HeadingSize(string name, out FontWeight weight)
@@ -290,6 +315,8 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 string name = child.Name.ToLowerInvariant();
 
                 if (name == "br") { p.Inlines.Add(new Run { Text = "\n" }); continue; }
+                // Nested lists are block-level (handled by ParseList) — don't fold their text inline.
+                if (name == "ul" || name == "ol") continue;
 
                 if (name == "b" || name == "strong") cw = FontWeight.Bold;
                 if (name == "i" || name == "em") cs = FontStyle.Italic;
@@ -450,27 +477,30 @@ namespace AvaloniaRichTextBoxPort.Formatters
         public static string ToHtml(FlowDocument doc)
         {
             var sb = new StringBuilder();
-            ListKind curList = ListKind.None;
+            var listStack = new System.Collections.Generic.List<ListKind>(); // open <ul>/<ol> per nesting level
 
-            void CloseList()
+            void CloseOne()
             {
-                if (curList == ListKind.Bullet) sb.Append("</ul>\n");
-                else if (curList == ListKind.Ordered) sb.Append("</ol>\n");
-                curList = ListKind.None;
+                sb.Append(listStack[^1] == ListKind.Ordered ? "</ol>\n" : "</ul>\n");
+                listStack.RemoveAt(listStack.Count - 1);
+            }
+            void CloseAll() { while (listStack.Count > 0) CloseOne(); }
+            void SyncList(ListKind kind, int level)
+            {
+                while (listStack.Count > level + 1) CloseOne();
+                if (listStack.Count == level + 1 && listStack[^1] != kind) CloseOne();
+                while (listStack.Count < level + 1) { sb.Append(kind == ListKind.Ordered ? "<ol>\n" : "<ul>\n"); listStack.Add(kind); }
             }
 
             foreach (var block in doc.Blocks)
             {
                 if (block is Paragraph p)
                 {
-                    if (p.ListType != curList)
-                    {
-                        CloseList();
-                        if (p.ListType == ListKind.Bullet) { sb.Append("<ul>\n"); curList = ListKind.Bullet; }
-                        else if (p.ListType == ListKind.Ordered) { sb.Append("<ol>\n"); curList = ListKind.Ordered; }
-                    }
+                    if (p.IsListItem) SyncList(p.ListType, p.ListLevel);
+                    else CloseAll();
 
                     string tag = p.IsListItem ? "li"
+                        : p.IsQuote ? "blockquote"
                         : (p.HeadingLevel >= 1 && p.HeadingLevel <= 6 ? $"h{p.HeadingLevel}" : "p");
                     string align = p.TextAlignment switch { TextAlignment.Center => "center", TextAlignment.Right => "right", _ => "left" };
                     string pStyle = $"text-align:{align};";
@@ -482,12 +512,12 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 }
                 else if (block is DividerBlock)
                 {
-                    CloseList();
+                    CloseAll();
                     sb.Append("<hr/>\n");
                 }
                 else if (block is TableBlock tb)
                 {
-                    CloseList();
+                    CloseAll();
                     sb.Append("<table border='1' style='border-collapse:collapse; width:100%;'>\n");
                     for (int r = 0; r < tb.Rows; r++)
                     {
@@ -508,11 +538,11 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 }
                 else if (block is ImageBlock ib && ib.Image != null)
                 {
-                    CloseList();
+                    CloseAll();
                     sb.Append($"<p>{ImgTag(ib.Image, ib.Width, ib.Height)}</p>\n");
                 }
             }
-            CloseList();
+            CloseAll();
             return sb.ToString();
         }
 
