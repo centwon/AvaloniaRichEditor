@@ -52,9 +52,7 @@
                 </ComboBox>
 
                 <TextBlock Text="Color:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Content="⬛" Click="ColorBlack_Click"/>
-                <Button Content="🟥" Foreground="Red" Click="ColorRed_Click"/>
-                <Button Content="🟦" Foreground="Blue" Click="ColorBlue_Click"/>
+                <Button Name="TextColorButton" Content="글자색 ▾"/>
 
                 <TextBlock Text="Align:" VerticalAlignment="Center" Margin="10,0,0,0"/>
                 <Button Content="Left" Click="AlignLeft_Click"/>
@@ -90,8 +88,7 @@
                 <Button Content="본문" Click="HeadingBody_Click"/>
 
                 <TextBlock Text="Highlight:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Content="🟨" Click="HighlightYellow_Click"/>
-                <Button Content="✕" Click="HighlightNone_Click"/>
+                <Button Name="HighlightButton" Content="형광펜 ▾"/>
 
                 <TextBlock Text="Indent:" VerticalAlignment="Center" Margin="10,0,0,0"/>
                 <Button Content="→|" Click="IndentInc_Click"/>

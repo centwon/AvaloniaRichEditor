@@ -35,6 +35,71 @@ public partial class MainWindow : Window
             richTextBox.StatusChanged += (_, _) => UpdateStatusBar();
             UpdateStatusBar();
         }
+
+        SetupColorFlyout("TextColorButton", highlight: false);
+        SetupColorFlyout("HighlightButton", highlight: true);
+    }
+
+    // A 40-swatch palette (greys + hues in a few shades) used by the text-color/highlight pickers.
+    private static readonly string[] Palette =
+    {
+        "#000000","#444444","#666666","#999999","#BBBBBB","#DDDDDD","#EEEEEE","#FFFFFF",
+        "#FF0000","#E67E22","#F1C40F","#2ECC71","#1ABC9C","#3498DB","#9B59B6","#E91E63",
+        "#C0392B","#D35400","#F39C12","#27AE60","#16A085","#2980B9","#8E44AD","#AD1457",
+        "#7B241C","#935116","#9A7D0A","#196F3D","#0E6251","#1A5276","#5B2C6F","#78281F",
+        "#FFCDD2","#FFE0B2","#FFF9C4","#C8E6C9","#B2DFDB","#BBDEFB","#E1BEE7","#F8BBD0",
+    };
+
+    // Builds a palette + hex-input flyout on the named toolbar button. `highlight` selects whether the
+    // chosen colour is applied as text foreground or as a highlight (background) brush.
+    private void SetupColorFlyout(string buttonName, bool highlight)
+    {
+        var btn = this.FindControl<Button>(buttonName);
+        if (btn == null) return;
+
+        void Apply(Color? c)
+        {
+            var rtb = this.FindControl<CustomRichTextBox>("RichTextBox");
+            if (rtb == null) return;
+            IBrush? brush = c.HasValue ? new SolidColorBrush(c.Value) : null;
+            if (highlight) rtb.SetHighlight(brush);
+            else rtb.SetForeground(brush ?? Brushes.Black);
+            (btn.Flyout as Avalonia.Controls.Primitives.FlyoutBase)?.Hide();
+        }
+
+        var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 8 };
+        foreach (var hex in Palette)
+        {
+            var color = Color.Parse(hex);
+            var sw = new Button
+            {
+                Background = new SolidColorBrush(color),
+                Width = 22, Height = 22, Margin = new Avalonia.Thickness(1), Padding = new Avalonia.Thickness(0),
+                BorderBrush = Brushes.Gray, BorderThickness = new Avalonia.Thickness(1)
+            };
+            sw.Click += (_, _) => Apply(color);
+            grid.Children.Add(sw);
+        }
+
+        var panel = new StackPanel { Spacing = 6, Width = 200 };
+        panel.Children.Add(grid);
+
+        if (highlight)
+        {
+            var none = new Button { Content = "형광펜 없음", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+            none.Click += (_, _) => Apply(null);
+            panel.Children.Add(none);
+        }
+
+        var hexRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 4 };
+        var hexBox = new TextBox { PlaceholderText = "#RRGGBB", Width = 110 };
+        var applyBtn = new Button { Content = "적용" };
+        applyBtn.Click += (_, _) => { if (Color.TryParse(hexBox.Text, out var c)) Apply(c); };
+        hexRow.Children.Add(hexBox);
+        hexRow.Children.Add(applyBtn);
+        panel.Children.Add(hexRow);
+
+        btn.Flyout = new Flyout { Content = panel };
     }
 
     private void UpdateStatusBar()
@@ -288,10 +353,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ColorBlack_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetForeground(Avalonia.Media.Brushes.Black);
-    private void ColorRed_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetForeground(Avalonia.Media.Brushes.Red);
-    private void ColorBlue_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetForeground(Avalonia.Media.Brushes.Blue);
-
     private void AlignLeft_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetTextAlignment(Avalonia.Media.TextAlignment.Left);
     private void AlignCenter_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetTextAlignment(Avalonia.Media.TextAlignment.Center);
     private void AlignRight_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetTextAlignment(Avalonia.Media.TextAlignment.Right);
@@ -309,8 +370,6 @@ public partial class MainWindow : Window
     private void Heading2_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(2);
     private void Heading3_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(3);
     private void HeadingBody_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(0);
-    private void HighlightYellow_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHighlight(Avalonia.Media.Brushes.Yellow);
-    private void HighlightNone_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHighlight(null);
     private void IndentInc_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.Indent(20);
     private void IndentDec_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.Indent(-20);
     private void DividerButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.InsertDivider();
