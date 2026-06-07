@@ -15,7 +15,6 @@ public class Paragraph : Block
     public ListKind ListType { get; set; } = ListKind.None;
     public int HeadingLevel { get; set; } = 0; // 0 = body text, 1..6 = h1..h6
     public IBrush? Background { get; set; } // paragraph / table-cell background fill
-    public double Indent { get; set; } = 0; // left indent in px
     public bool IsQuote { get; set; } = false; // <blockquote>
     public int ListLevel { get; set; } = 0; // nested list depth (0 = top level)
 

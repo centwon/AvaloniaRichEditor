@@ -55,7 +55,8 @@ public static class DocumentSerializer
                     Type = "Image",
                     ImageBase64 = BitmapToBase64(img.Image),
                     Width = NanToNull(img.Width),
-                    Height = NanToNull(img.Height)
+                    Height = NanToNull(img.Height),
+                    Indent = img.Indent
                 };
             case TableBlock tb:
                 var td = new BlockDto
@@ -63,6 +64,7 @@ public static class DocumentSerializer
                     Type = "Table",
                     Rows = tb.Rows,
                     Columns = tb.Columns,
+                    Indent = tb.Indent,
                     ColumnWidths = new List<double>(tb.ColumnWidths),
                     RowHeights = new List<double>(tb.RowHeights),
                     Cells = new List<List<BlockDto>>()
@@ -142,10 +144,12 @@ public static class DocumentSerializer
                 {
                     Image = Base64ToBitmap(d.ImageBase64),
                     Width = d.Width ?? double.NaN,
-                    Height = d.Height ?? double.NaN
+                    Height = d.Height ?? double.NaN,
+                    Indent = d.Indent
                 };
             case "Table":
                 var tb = new TableBlock(Math.Max(1, d.Rows), Math.Max(1, d.Columns));
+                tb.Indent = d.Indent;
                 tb.Cells.Clear();
                 tb.ColumnWidths.Clear();
                 tb.RowHeights.Clear();
