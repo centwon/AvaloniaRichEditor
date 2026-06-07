@@ -28,6 +28,7 @@
                 <Button Name="ExportHtmlButton" Content="Export HTML" Click="ExportHtmlButton_Click" Foreground="Green"/>
                 <Button Name="PasteHtmlButton" Content="Paste HTML" Click="PasteHtmlButton_Click" Foreground="Green"/>
                 <Button Name="InsertImageButton" Content="Insert Image" Click="InsertImageButton_Click" Foreground="Orange"/>
+                <Button Name="SampleButton" Content="예제 문서" Click="SampleButton_Click" Foreground="Purple"/>
             </StackPanel>
             
             <!-- Formatting Toolbar -->

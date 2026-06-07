@@ -85,7 +85,11 @@
 - [x] **배경색(셀/문단)**: `Paragraph.Background` 추가(셀=Paragraph 재사용). 렌더 채움(셀·문단), HTML `td`/`p` `background-color`·`bgcolor` 왕복, JSON. **실데이터 최대 손실원(background 566→0)이던 표 셀 배경 해소.**
 
 **현황(실데이터 왕복)**: 보이는 본문 서식(글꼴/크기/임의색/배경/정렬/표/이미지/목록/제목/hr)은 대부분 왕복. 남은 count 차이는 Jodit이 `p`·`td`·`span` 래퍼에 반복 지정한 **블록 레벨 중복 스타일**로, 시각적 손실 아님(완화된 목표 충족).
-- [ ] (확인 후) 표 `colspan/rowspan` 필요하면 셀 모델 확장 — **범위 큰 항목, 실데이터로 필요성 먼저 판단**.
+- [x] **표 `colspan/rowspan`(셀 병합)** — 실데이터 코퍼스 8건 중 5건에서 사용(real_0056=189회) 확인 후 구현.
+  밀집 그리드 + 가려짐 마커(`TableBlock.ColSpans/RowSpans`, 앵커>=1·covered=0) 모델. 렌더·히트테스트 3곳의
+  기하 계산을 단일 `LayoutTable` 헬퍼로 추출해 병합 사각형/가려진 셀을 일관 처리. HTML 파싱(occupancy-fill)·
+  출력(covered 건너뜀 + colspan/rowspan 속성)·JSON(`ColSpans/RowSpans`, 레거시=1×1)·내비게이션(앵커 단위 Tab)·
+  편집 UI(우클릭 "셀 병합"/"병합 해제", 직사각형 검증) 전부 구현. 왕복 하네스: colspan/rowspan **in==out** 정확 일치.
 - 검증: 각 신규 속성/블록이 화면에 렌더되고 캐럿/선택/삭제가 정상.
 
 ### Phase 2 — HTML 무손실 왕복 *(핵심, 최대 난이도)*
@@ -131,7 +135,7 @@
 ## 2. 리스크 / 의사결정 필요
 
 1. **저장 포맷**: **둘 다 지원(확정)** — JSON = 내부 정본(무손실, 완료), HTML = 교환/SaemDesk 호환용. `NativeEditor.Text`는 HTML(get=`ToHtml`/set=`ParseHtml`)을 노출하고, 별도로 JSON 저장/불러오기도 유지. → 그래도 SaemDesk 교체의 핵심은 HTML 무손실 왕복.
-2. **표 병합(colspan/rowspan)**: 모델 미지원. 실데이터에 있으면 셀 모델 대수술 필요 → **코퍼스로 빈도 확인 후 결정**.
+2. ~~**표 병합(colspan/rowspan)**: 모델 미지원~~ → **구현 완료**(밀집 그리드+가려짐 마커, `LayoutTable` 단일 기하 헬퍼).
 3. **인쇄 충실도**: 정확 인쇄가 필수인지/수준은? 방식(a/b/c) 선택을 좌우.
 4. **롤아웃**: 기능 플래그 점진 교체 vs 일괄 교체.
 5. **임의 CSS 충실도 한계**: Jodit이 생성하는 인라인 스타일 범위(폰트/색/표 스타일)만 보장, 그 외는 근사.
