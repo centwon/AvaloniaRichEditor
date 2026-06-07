@@ -30,7 +30,20 @@ public partial class MainWindow : Window
             doc.Blocks.Add(p2);
 
             richTextBox.Document = doc;
+
+            // Status bar: live character/word count and caret line/column.
+            richTextBox.StatusChanged += (_, _) => UpdateStatusBar();
+            UpdateStatusBar();
         }
+    }
+
+    private void UpdateStatusBar()
+    {
+        var richTextBox = this.FindControl<CustomRichTextBox>("RichTextBox");
+        var status = this.FindControl<TextBlock>("StatusBar");
+        if (richTextBox == null || status == null) return;
+        var (chars, words, line, col) = richTextBox.GetStatus();
+        status.Text = $"글자 {chars}   단어 {words}   줄 {line}, 칸 {col}";
     }
 
     // Loads a built-in document that exercises every feature at once (via the HTML parser, so it also
