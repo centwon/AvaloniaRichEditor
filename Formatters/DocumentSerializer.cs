@@ -73,6 +73,10 @@ public static class DocumentSerializer
                     foreach (var cell in row) rd.Add(ParagraphToDto(cell));
                     td.Cells.Add(rd);
                 }
+                td.ColSpans = new List<List<int>>();
+                td.RowSpans = new List<List<int>>();
+                foreach (var row in tb.ColSpans) td.ColSpans.Add(new List<int>(row));
+                foreach (var row in tb.RowSpans) td.RowSpans.Add(new List<int>(row));
                 return td;
             default:
                 return new BlockDto { Type = "Paragraph", Inlines = new List<InlineDto>() };
@@ -156,6 +160,21 @@ public static class DocumentSerializer
                     }
                 tb.Rows = tb.Cells.Count;
                 tb.Columns = tb.Cells.Count > 0 ? tb.Cells[0].Count : d.Columns;
+                // Rebuild span grids to match the loaded cell grid. Missing/legacy docs default to 1×1.
+                tb.ColSpans.Clear();
+                tb.RowSpans.Clear();
+                for (int r = 0; r < tb.Rows; r++)
+                {
+                    var cs = new List<int>();
+                    var rs = new List<int>();
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        cs.Add(d.ColSpans != null && r < d.ColSpans.Count && c < d.ColSpans[r].Count ? d.ColSpans[r][c] : 1);
+                        rs.Add(d.RowSpans != null && r < d.RowSpans.Count && c < d.RowSpans[r].Count ? d.RowSpans[r][c] : 1);
+                    }
+                    tb.ColSpans.Add(cs);
+                    tb.RowSpans.Add(rs);
+                }
                 return tb;
             default:
                 return DtoToParagraph(d);
@@ -291,6 +310,8 @@ public class BlockDto
     public List<double>? ColumnWidths { get; set; }
     public List<double>? RowHeights { get; set; }
     public List<List<BlockDto>>? Cells { get; set; }
+    public List<List<int>>? ColSpans { get; set; }
+    public List<List<int>>? RowSpans { get; set; }
 }
 
 public class InlineDto

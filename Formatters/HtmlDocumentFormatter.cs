@@ -225,25 +225,55 @@ namespace AvaloniaRichTextBoxPort.Formatters
                 .Where(tr => tr.Ancestors("table").FirstOrDefault() == node)
                 .ToList();
             if (rows.Count == 0) return null;
+            int R = rows.Count;
 
-            int colCount = 0;
+            var cellNodes = new List<List<HtmlNode>>();
             foreach (var tr in rows)
-                colCount = Math.Max(colCount, tr.ChildNodes.Count(n => n.Name == "td" || n.Name == "th"));
-            if (colCount == 0) return null;
+                cellNodes.Add(tr.ChildNodes.Where(n => n.Name == "td" || n.Name == "th").ToList());
 
-            var tb = new TableBlock(rows.Count, colCount);
-            for (int r = 0; r < rows.Count; r++)
+            // Occupancy-fill pass: place each <td>/<th> at the next free column of its row, reserving
+            // colspan×rowspan cells in a growable grid. This yields each cell's anchor column and the
+            // true column count (which colspan/rowspan can push beyond a single row's cell count).
+            var occupied = new List<List<bool>>();
+            for (int i = 0; i < R; i++) occupied.Add(new List<bool>());
+            var placements = new List<List<(int col, int cs, int rs, HtmlNode node)>>();
+            for (int i = 0; i < R; i++) placements.Add(new List<(int, int, int, HtmlNode)>());
+            int colCount = 0;
+
+            static void Ensure(List<bool> row, int upTo) { while (row.Count <= upTo) row.Add(false); }
+
+            for (int r = 0; r < R; r++)
             {
-                var cells = rows[r].ChildNodes.Where(n => n.Name == "td" || n.Name == "th").ToList();
-                for (int c = 0; c < Math.Min(colCount, cells.Count); c++)
+                int col = 0;
+                foreach (var td in cellNodes[r])
                 {
-                    tb.Cells[r][c].Inlines.Clear();
-                    ParseInlines(cells[c], tb.Cells[r][c]);
-                    tb.Cells[r][c].Background = ReadBackground(cells[c]);
-                    if (tb.Cells[r][c].Inlines.Count == 0)
-                        tb.Cells[r][c].Inlines.Add(new Run { Text = "" });
+                    Ensure(occupied[r], col);
+                    while (col < occupied[r].Count && occupied[r][col]) col++;
+                    int cs = Math.Max(1, td.GetAttributeValue("colspan", 1));
+                    int rs = Math.Max(1, Math.Min(td.GetAttributeValue("rowspan", 1), R - r));
+                    placements[r].Add((col, cs, rs, td));
+                    for (int rr = r; rr < r + rs; rr++)
+                    {
+                        Ensure(occupied[rr], col + cs - 1);
+                        for (int cc = col; cc < col + cs; cc++) occupied[rr][cc] = true;
+                    }
+                    col += cs;
+                    colCount = Math.Max(colCount, col);
                 }
             }
+            if (colCount == 0) return null;
+
+            var tb = new TableBlock(R, colCount);
+            for (int r = 0; r < R; r++)
+                foreach (var (col, cs, rs, td) in placements[r])
+                {
+                    if (cs > 1 || rs > 1) tb.SetSpan(r, col, cs, rs);
+                    var cell = tb.Cells[r][col];
+                    cell.Inlines.Clear();
+                    ParseInlines(td, cell);
+                    cell.Background = ReadBackground(td);
+                    if (cell.Inlines.Count == 0) cell.Inlines.Add(new Run { Text = "" });
+                }
             return tb;
         }
 
@@ -530,11 +560,14 @@ namespace AvaloniaRichTextBoxPort.Formatters
                         sb.Append("<tr>\n");
                         for (int c = 0; c < tb.Columns; c++)
                         {
+                            if (tb.IsCovered(r, c)) continue; // covered cells are emitted via their anchor's span
                             var cell = tb.Cells[r][c];
+                            var (cs, rs) = tb.SpanOf(r, c);
+                            var span = (cs > 1 ? $" colspan='{cs}'" : "") + (rs > 1 ? $" rowspan='{rs}'" : "");
                             if (cell.Background is ISolidColorBrush cbg)
-                                sb.Append($"<td style='background-color:{CssColor(cbg.Color)}'>");
+                                sb.Append($"<td{span} style='background-color:{CssColor(cbg.Color)}'>");
                             else
-                                sb.Append("<td>");
+                                sb.Append($"<td{span}>");
                             foreach (var inline in cell.Inlines) EmitInline(sb, inline);
                             sb.Append("</td>\n");
                         }
