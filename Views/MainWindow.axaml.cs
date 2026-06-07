@@ -39,6 +39,51 @@ public partial class MainWindow : Window
 
         SetupColorFlyout("TextColorButton", highlight: false);
         SetupColorFlyout("HighlightButton", highlight: true);
+        SetupTableFlyout("TableButton");
+        SetupFontCombo();
+    }
+
+    // A drag-to-size table picker (hover the grid to choose rows×columns, click to insert).
+    private void SetupTableFlyout(string buttonName)
+    {
+        var btn = this.FindControl<Button>(buttonName);
+        if (btn == null) return;
+        const int rows = 8, cols = 10;
+        var cells = new Border[rows, cols];
+        var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = cols, Rows = rows };
+        var label = new TextBlock { Text = "끌어서 크기 선택", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
+
+        void Highlight(int hr, int hc)
+        {
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    cells[r, c].Background = (r <= hr && c <= hc) ? new SolidColorBrush(Color.Parse("#90CAF9")) : Brushes.White;
+            label.Text = $"{hr + 1} × {hc + 1}";
+        }
+
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+            {
+                int rr = r, cc = c;
+                var cell = new Border
+                {
+                    Width = 16, Height = 16, Margin = new Avalonia.Thickness(1),
+                    Background = Brushes.White, BorderBrush = Brushes.Gray, BorderThickness = new Avalonia.Thickness(1)
+                };
+                cell.PointerEntered += (_, _) => Highlight(rr, cc);
+                cell.PointerPressed += (_, _) =>
+                {
+                    this.FindControl<CustomRichTextBox>("RichTextBox")?.InsertTable(rr + 1, cc + 1);
+                    (btn.Flyout as Avalonia.Controls.Primitives.FlyoutBase)?.Hide();
+                };
+                cells[r, c] = cell;
+                grid.Children.Add(cell);
+            }
+
+        var panel = new StackPanel { Spacing = 4 };
+        panel.Children.Add(grid);
+        panel.Children.Add(label);
+        btn.Flyout = new Flyout { Content = panel };
     }
 
     // A 40-swatch palette (greys + hues in a few shades) used by the text-color/highlight pickers.
@@ -58,6 +103,18 @@ public partial class MainWindow : Window
         var btn = this.FindControl<Button>(buttonName);
         if (btn == null) return;
 
+        // Button face: a glyph over a colour bar that shows the last-picked colour.
+        var swatch = new Border
+        {
+            Height = 4, MinWidth = 18,
+            Background = new SolidColorBrush(highlight ? Color.Parse("#FFF176") : Colors.Black),
+            Margin = new Avalonia.Thickness(0, 1, 0, 0)
+        };
+        var face = new StackPanel { Spacing = 0 };
+        face.Children.Add(new TextBlock { Text = highlight ? "🖍" : "가", FontSize = 13, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center });
+        face.Children.Add(swatch);
+        btn.Content = face;
+
         void Apply(Color? c)
         {
             var rtb = this.FindControl<CustomRichTextBox>("RichTextBox");
@@ -65,6 +122,8 @@ public partial class MainWindow : Window
             IBrush? brush = c.HasValue ? new SolidColorBrush(c.Value) : null;
             if (highlight) rtb.SetHighlight(brush);
             else rtb.SetForeground(brush ?? Brushes.Black);
+            // Reflect the chosen colour on the button's bar (cleared highlight -> light grey).
+            swatch.Background = c.HasValue ? new SolidColorBrush(c.Value) : new SolidColorBrush(Color.Parse("#DDDDDD"));
             (btn.Flyout as Avalonia.Controls.Primitives.FlyoutBase)?.Hide();
         }
 
@@ -103,16 +162,84 @@ public partial class MainWindow : Window
         btn.Flyout = new Flyout { Content = panel };
     }
 
-    // Scales the A4 page so its fixed width fits the viewport (no horizontal scroll). The page content
-    // still wraps at A4 width; only the displayed size changes.
-    private void EditorScroll_SizeChanged(object? sender, SizeChangedEventArgs e)
+    private bool _fitWidth = true;       // "맞춤": scale to viewport width
+    private double _zoom = 1.0;          // fixed zoom factor when not fit-to-width
+    private bool _suppressZoomCombo;
+    private const double PageW = 794;
+
+    private void EditorScroll_SizeChanged(object? sender, SizeChangedEventArgs e) => ApplyZoom();
+
+    // Applies the current view mode to the page's LayoutTransform.
+    private void ApplyZoom()
     {
         var lt = this.FindControl<LayoutTransformControl>("PageScale");
-        if (sender is not ScrollViewer scroll || lt == null) return;
-        const double pageWidth = 794;
-        double avail = scroll.Bounds.Width - 8; // small breathing room; no surrounding desk padding
-        double scale = System.Math.Clamp(avail / pageWidth, 0.3, 2.0);
+        var scroll = this.FindControl<ScrollViewer>("EditorScroll");
+        if (lt == null || scroll == null) return;
+        double scale = _fitWidth
+            ? System.Math.Clamp((scroll.Bounds.Width - 8) / PageW, 0.2, 3.0)
+            : _zoom;
         lt.LayoutTransform = new ScaleTransform(scale, scale);
+        scroll.HorizontalScrollBarVisibility = _fitWidth
+            ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
+            : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
+        // Fit fills the viewport (plain white); fixed zoom shows the paper on a grey desk with a border.
+        scroll.Background = _fitWidth ? Brushes.White : new SolidColorBrush(Color.Parse("#9E9E9E"));
+        if (this.FindControl<Border>("PageBorder") is { } page)
+        {
+            page.BorderThickness = new Avalonia.Thickness(_fitWidth ? 0 : 1);
+            page.BoxShadow = _fitWidth ? default : BoxShadows.Parse("0 1 10 0 #40000000");
+        }
+        if (this.FindControl<TextBlock>("ZoomLabel") is { } zl)
+            zl.Text = $"{System.Math.Round(scale * 100)}%";
+    }
+
+    private void ZoomCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _suppressZoomCombo) return;
+        if ((sender as ComboBox)?.SelectedItem is not ComboBoxItem item) return;
+        string s = item.Content?.ToString() ?? "맞춤";
+        if (s == "맞춤") _fitWidth = true;
+        else if (int.TryParse(s.TrimEnd('%'), out int pct)) { _fitWidth = false; _zoom = pct / 100.0; }
+        ApplyZoom();
+    }
+
+    private void SetZoomPercent(double factor)
+    {
+        _fitWidth = false;
+        _zoom = System.Math.Clamp(factor, 0.2, 3.0);
+        ApplyZoom();
+        // Reflect on the combo (snap to nearest listed %, else leave as-is).
+        _suppressZoomCombo = true;
+        var combo = this.FindControl<ComboBox>("ZoomCombo");
+        if (combo != null)
+        {
+            int pct = (int)System.Math.Round(_zoom * 100);
+            ComboBoxItem? match = null;
+            foreach (var it in combo.Items)
+                if (it is ComboBoxItem ci && ci.Content?.ToString() == pct + "%") { match = ci; break; }
+            combo.SelectedItem = match; // null clears selection when not a listed value
+        }
+        _suppressZoomCombo = false;
+    }
+
+    private void ZoomIn_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => SetZoomPercent((_fitWidth ? 1.0 : _zoom) + 0.1);
+    private void ZoomOut_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => SetZoomPercent((_fitWidth ? 1.0 : _zoom) - 0.1);
+
+    private void EditorScroll_PointerWheelChanged(object? sender, Avalonia.Input.PointerWheelEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)) return;
+        SetZoomPercent((_fitWidth ? 1.0 : _zoom) + (e.Delta.Y > 0 ? 0.1 : -0.1));
+        e.Handled = true;
+    }
+
+    public void ResetZoomToFit()
+    {
+        _fitWidth = true;
+        ApplyZoom();
+        _suppressZoomCombo = true;
+        var combo = this.FindControl<ComboBox>("ZoomCombo");
+        if (combo != null) combo.SelectedIndex = 0; // "맞춤"
+        _suppressZoomCombo = false;
     }
 
     private void UpdateStatusBar()
@@ -136,9 +263,6 @@ public partial class MainWindow : Window
         SetActive("ItalicButton", f.Italic);
         SetActive("UnderlineButton", f.Underline);
         SetActive("StrikeButton", f.Strike);
-        SetActive("AlignLeftBtn", f.Align == Avalonia.Media.TextAlignment.Left);
-        SetActive("AlignCenterBtn", f.Align == Avalonia.Media.TextAlignment.Center);
-        SetActive("AlignRightBtn", f.Align == Avalonia.Media.TextAlignment.Right);
         SetActive("BulletBtn", f.List == Documents.ListKind.Bullet);
         SetActive("NumberBtn", f.List == Documents.ListKind.Ordered);
 
@@ -146,7 +270,12 @@ public partial class MainWindow : Window
         if (this.FindControl<ComboBox>("FontSizeComboBox") is { } sizeCb)
             SelectByContent(sizeCb, ((int)f.FontSize).ToString());
         if (f.FontFamily != null && this.FindControl<ComboBox>("FontFamilyComboBox") is { } famCb)
-            SelectByContent(famCb, f.FontFamily);
+            foreach (var it in famCb.Items)
+                if (it is ComboBoxItem ci && (ci.Tag as string) == f.FontFamily) { famCb.SelectedItem = ci; break; }
+        if (this.FindControl<ComboBox>("HeadingCombo") is { } headCb)
+            headCb.SelectedIndex = System.Math.Min(f.Heading, 3); // 0=본문, 1~3=제목
+        if (this.FindControl<ComboBox>("AlignCombo") is { } alignCb)
+            alignCb.SelectedIndex = f.Align switch { Avalonia.Media.TextAlignment.Center => 1, Avalonia.Media.TextAlignment.Right => 2, _ => 0 };
         _suppressToolbar = false;
     }
 
@@ -324,7 +453,12 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
     {
-        if (e.Key == Avalonia.Input.Key.F && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control))
+        bool ctrl = e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control);
+        if (ctrl && (e.Key == Avalonia.Input.Key.D0 || e.Key == Avalonia.Input.Key.NumPad0)) { ResetZoomToFit(); e.Handled = true; return; }
+        if (ctrl && (e.Key == Avalonia.Input.Key.OemPlus || e.Key == Avalonia.Input.Key.Add)) { SetZoomPercent((_fitWidth ? 1.0 : _zoom) + 0.1); e.Handled = true; return; }
+        if (ctrl && (e.Key == Avalonia.Input.Key.OemMinus || e.Key == Avalonia.Input.Key.Subtract)) { SetZoomPercent((_fitWidth ? 1.0 : _zoom) - 0.1); e.Handled = true; return; }
+
+        if (e.Key == Avalonia.Input.Key.F && ctrl)
         {
             ShowFindBar();
             e.Handled = true;
@@ -406,23 +540,35 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AlignLeft_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetTextAlignment(Avalonia.Media.TextAlignment.Left);
-    private void AlignCenter_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetTextAlignment(Avalonia.Media.TextAlignment.Center);
-    private void AlignRight_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetTextAlignment(Avalonia.Media.TextAlignment.Right);
+    private void AlignCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _suppressToolbar) return;
+        var align = (sender as ComboBox)?.SelectedIndex switch
+        {
+            1 => Avalonia.Media.TextAlignment.Center,
+            2 => Avalonia.Media.TextAlignment.Right,
+            _ => Avalonia.Media.TextAlignment.Left,
+        };
+        this.FindControl<CustomRichTextBox>("RichTextBox")?.SetTextAlignment(align);
+    }
 
-    private void Spacing10_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetLineHeight(double.NaN);
-    private void Spacing15_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetLineHeight(24);
-    private void Spacing20_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetLineHeight(32);
+    private void SpacingCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _suppressToolbar) return;
+        double lh = (sender as ComboBox)?.SelectedIndex switch { 1 => 24, 2 => 32, _ => double.NaN };
+        this.FindControl<CustomRichTextBox>("RichTextBox")?.SetLineHeight(lh);
+    }
 
     private void BulletButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleBullet();
 
-    private void InsertTableButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.InsertTable(3, 3);
 
     private void NumberingButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.ToggleNumbering();
-    private void Heading1_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(1);
-    private void Heading2_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(2);
-    private void Heading3_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(3);
-    private void HeadingBody_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(0);
+    private void HeadingCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || _suppressToolbar) return;
+        int level = (sender as ComboBox)?.SelectedIndex ?? 0; // 0=본문, 1~3=제목1~3
+        this.FindControl<CustomRichTextBox>("RichTextBox")?.SetHeading(level);
+    }
     private void IndentInc_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.Indent(20);
     private void IndentDec_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.Indent(-20);
     private void DividerButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<CustomRichTextBox>("RichTextBox")?.InsertDivider();
@@ -430,7 +576,30 @@ public partial class MainWindow : Window
     private void FontFamilyComboBox_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
     {
         if (!IsLoaded || _suppressToolbar) return;
-        if ((sender as Avalonia.Controls.ComboBox)?.SelectedItem is Avalonia.Controls.ComboBoxItem item && item.Content is string fam)
-            this.FindControl<CustomRichTextBox>("RichTextBox")?.SetFontFamily(fam);
+        if ((sender as ComboBox)?.SelectedItem is ComboBoxItem item)
+        {
+            // Tag holds the real font family; Content is the (possibly localized) display name.
+            string fam = item.Tag as string ?? item.Content?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(fam)) this.FindControl<CustomRichTextBox>("RichTextBox")?.SetFontFamily(fam);
+        }
+    }
+
+    // Font family display names are localized (맑은 고딕 …) on a Korean UI, English otherwise; the real
+    // family name lives in Tag so applying/reflecting still uses the actual font.
+    private static readonly (string family, string ko)[] Fonts =
+    {
+        ("Malgun Gothic", "맑은 고딕"), ("Gulim", "굴림"), ("Batang", "바탕"),
+        ("Dotum", "돋움"), ("Arial", "Arial"), ("Times New Roman", "Times New Roman"),
+    };
+
+    private void SetupFontCombo()
+    {
+        var combo = this.FindControl<ComboBox>("FontFamilyComboBox");
+        if (combo == null) return;
+        bool ko = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ko";
+        combo.Items.Clear();
+        foreach (var (family, korean) in Fonts)
+            combo.Items.Add(new ComboBoxItem { Content = ko ? korean : family, Tag = family });
+        combo.SelectedIndex = 0;
     }
 }

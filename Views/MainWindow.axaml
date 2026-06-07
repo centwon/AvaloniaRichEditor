@@ -51,20 +51,35 @@
         </Border>
         
         <StackPanel Grid.Row="1" Name="ToolbarRoot" Orientation="Vertical" Background="#F5F6F8">
-            <!-- File / insert -->
-            <StackPanel Orientation="Horizontal" Margin="8,7,8,3">
-                <Button Name="SaveButton" Content="저장" ToolTip.Tip="JSON으로 저장" Click="SaveButton_Click"/>
-                <Button Name="LoadButton" Content="열기" ToolTip.Tip="JSON 불러오기" Click="LoadButton_Click"/>
-                <Border Classes="div"/>
-                <Button Name="ExportHtmlButton" Content="HTML 내보내기" Click="ExportHtmlButton_Click"/>
-                <Button Name="PasteHtmlButton" Content="HTML 붙여넣기" Click="PasteHtmlButton_Click"/>
-                <Border Classes="div"/>
-                <Button Name="InsertImageButton" Content="🖼 그림" ToolTip.Tip="이미지 삽입" Click="InsertImageButton_Click"/>
-                <Button Content="▦ 표" ToolTip.Tip="표 삽입" Click="InsertTableButton_Click"/>
-                <Button Content="― 구분선" ToolTip.Tip="가로 구분선" Click="DividerButton_Click"/>
-                <Border Classes="div"/>
-                <Button Name="SampleButton" Content="예제 문서" Click="SampleButton_Click"/>
-            </StackPanel>
+            <!-- File / insert (+ view zoom on the right) -->
+            <DockPanel Margin="8,7,8,3">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="−" ToolTip.Tip="축소 (Ctrl+-)" Click="ZoomOut_Click"/>
+                    <ComboBox Name="ZoomCombo" Width="84" SelectedIndex="0" SelectionChanged="ZoomCombo_SelectionChanged" ToolTip.Tip="보기 배율 (Ctrl+휠, Ctrl+0=맞춤)">
+                        <ComboBoxItem>맞춤</ComboBoxItem>
+                        <ComboBoxItem>50%</ComboBoxItem>
+                        <ComboBoxItem>75%</ComboBoxItem>
+                        <ComboBoxItem>100%</ComboBoxItem>
+                        <ComboBoxItem>125%</ComboBoxItem>
+                        <ComboBoxItem>150%</ComboBoxItem>
+                        <ComboBoxItem>200%</ComboBoxItem>
+                    </ComboBox>
+                    <Button Content="+" ToolTip.Tip="확대 (Ctrl++)" Click="ZoomIn_Click"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Name="SaveButton" Content="💾" FontSize="15" ToolTip.Tip="JSON으로 저장" Click="SaveButton_Click"/>
+                    <Button Name="LoadButton" Content="📂" FontSize="15" ToolTip.Tip="JSON 불러오기" Click="LoadButton_Click"/>
+                    <Border Classes="div"/>
+                    <Button Name="ExportHtmlButton" Content="HTML 내보내기" Click="ExportHtmlButton_Click"/>
+                    <Button Name="PasteHtmlButton" Content="HTML 붙여넣기" Click="PasteHtmlButton_Click"/>
+                    <Border Classes="div"/>
+                    <Button Name="InsertImageButton" Content="🖼 그림" ToolTip.Tip="이미지 삽입" Click="InsertImageButton_Click"/>
+                    <Button Name="TableButton" Content="▦ 표 ▾" ToolTip.Tip="표 삽입 (격자에서 크기 선택)"/>
+                    <Button Content="― 구분선" ToolTip.Tip="가로 구분선" Click="DividerButton_Click"/>
+                    <Border Classes="div"/>
+                    <Button Name="SampleButton" Content="예제 문서" Click="SampleButton_Click"/>
+                </StackPanel>
+            </DockPanel>
 
             <!-- Formatting -->
             <WrapPanel Margin="8,0,8,7">
@@ -96,23 +111,29 @@
                     <ComboBoxItem>32</ComboBoxItem>
                 </ComboBox>
                 <Border Classes="div"/>
-                <Button Content="H1" ToolTip.Tip="제목 1" Click="Heading1_Click"/>
-                <Button Content="H2" ToolTip.Tip="제목 2" Click="Heading2_Click"/>
-                <Button Content="H3" ToolTip.Tip="제목 3" Click="Heading3_Click"/>
-                <Button Content="본문" ToolTip.Tip="본문" Click="HeadingBody_Click"/>
+                <ComboBox Name="HeadingCombo" SelectedIndex="0" SelectionChanged="HeadingCombo_SelectionChanged" ToolTip.Tip="문단 스타일">
+                    <ComboBoxItem>본문</ComboBoxItem>
+                    <ComboBoxItem>제목 1</ComboBoxItem>
+                    <ComboBoxItem>제목 2</ComboBoxItem>
+                    <ComboBoxItem>제목 3</ComboBoxItem>
+                </ComboBox>
                 <Border Classes="div"/>
-                <Button Name="AlignLeftBtn" Content="좌" ToolTip.Tip="왼쪽 정렬" Click="AlignLeft_Click"/>
-                <Button Name="AlignCenterBtn" Content="중" ToolTip.Tip="가운데 정렬" Click="AlignCenter_Click"/>
-                <Button Name="AlignRightBtn" Content="우" ToolTip.Tip="오른쪽 정렬" Click="AlignRight_Click"/>
+                <ComboBox Name="AlignCombo" SelectedIndex="0" SelectionChanged="AlignCombo_SelectionChanged" ToolTip.Tip="정렬">
+                    <ComboBoxItem>왼쪽 정렬</ComboBoxItem>
+                    <ComboBoxItem>가운데 정렬</ComboBoxItem>
+                    <ComboBoxItem>오른쪽 정렬</ComboBoxItem>
+                </ComboBox>
                 <Border Classes="div"/>
                 <Button Name="BulletBtn" Content="•" ToolTip.Tip="글머리표 목록" Click="BulletButton_Click"/>
                 <Button Name="NumberBtn" Content="1." ToolTip.Tip="번호 목록" Click="NumberingButton_Click"/>
                 <Button Content="→|" ToolTip.Tip="들여쓰기" Click="IndentInc_Click"/>
                 <Button Content="|←" ToolTip.Tip="내어쓰기" Click="IndentDec_Click"/>
                 <Border Classes="div"/>
-                <Button Content="1.0" ToolTip.Tip="줄 간격 1.0" Click="Spacing10_Click"/>
-                <Button Content="1.5" ToolTip.Tip="줄 간격 1.5" Click="Spacing15_Click"/>
-                <Button Content="2.0" ToolTip.Tip="줄 간격 2.0" Click="Spacing20_Click"/>
+                <ComboBox Name="SpacingCombo" SelectedIndex="0" SelectionChanged="SpacingCombo_SelectionChanged" ToolTip.Tip="줄 간격">
+                    <ComboBoxItem>줄간격 1.0</ComboBoxItem>
+                    <ComboBoxItem>줄간격 1.5</ComboBoxItem>
+                    <ComboBoxItem>줄간격 2.0</ComboBoxItem>
+                </ComboBox>
             </WrapPanel>
         </StackPanel>
 
@@ -133,18 +154,23 @@
         </Border>
 
         <ScrollViewer Grid.Row="3" Name="EditorScroll" Background="White" Padding="0"
-                      HorizontalScrollBarVisibility="Disabled" SizeChanged="EditorScroll_SizeChanged">
+                      HorizontalScrollBarVisibility="Disabled" SizeChanged="EditorScroll_SizeChanged"
+                      PointerWheelChanged="EditorScroll_PointerWheelChanged">
             <!-- A4-width page (210mm @96DPI ≈ 794px incl. 48px margins). Fixed width, scaled
                  (LayoutTransform) to fill the viewport. No surrounding desk. -->
             <LayoutTransformControl Name="PageScale" HorizontalAlignment="Center">
-                <Border Background="White" Width="794" MinHeight="1000" Padding="48,40">
+                <Border Name="PageBorder" Background="White" Width="794" MinHeight="1000" Padding="48,40"
+                        Margin="0,16" BorderBrush="#CFCFCF" BorderThickness="0">
                     <controls:CustomRichTextBox x:Name="RichTextBox" HorizontalAlignment="Stretch" MinHeight="900"/>
                 </Border>
             </LayoutTransformControl>
         </ScrollViewer>
 
-        <Border Grid.Row="4" Background="#EEEEEE" Padding="12,4" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
-            <TextBlock Name="StatusBar" Foreground="#444444" FontSize="12"/>
+        <Border Grid.Row="4" Background="#EEEEEE" Padding="12,3" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <TextBlock Name="ZoomLabel" DockPanel.Dock="Right" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Name="StatusBar" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
+            </DockPanel>
         </Border>
     </Grid>
 </Window>
