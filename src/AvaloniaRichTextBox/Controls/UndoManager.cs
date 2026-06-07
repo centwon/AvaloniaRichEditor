@@ -22,6 +22,9 @@ internal class UndoManager
     private readonly Stack<UndoState> _undoStack = new();
     private readonly Stack<UndoState> _redoStack = new();
 
+    public bool CanUndo => _undoStack.Count > 0;
+    public bool CanRedo => _redoStack.Count > 0;
+
     // Limit stack size to prevent memory leaks in our MVP
     private const int MaxStackSize = 50;
 

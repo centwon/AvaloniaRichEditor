@@ -4,8 +4,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using AvaloniaRichTextBox.Controls;
 
-namespace AvaloniaRichTextBox.Controls;
+namespace AvaloniaRichTextBox.Demo.Controls;
 
 // Drop-in-style host around CustomRichTextBox exposing the same surface SaemDesk's JoditEditor uses:
 //   Mode (ReadOnly/Simple/Full), Text (HTML, two-way), TextChanged, GetHtmlAsync, InsertHtmlAsync, PrintAsync.
@@ -32,8 +33,8 @@ public class NativeEditor : UserControl
     // HTML content. Get serializes the document; set replaces it.
     public string Text
     {
-        get => _editor.GetHtml();
-        set { _suppressTextChanged = true; _editor.SetHtml(value); _suppressTextChanged = false; }
+        get => _editor.ToHtml();
+        set { _suppressTextChanged = true; _editor.LoadHtml(value); _suppressTextChanged = false; }
     }
 
     public NativeEditor()
@@ -57,7 +58,7 @@ public class NativeEditor : UserControl
         // Coarse change signal: emit current HTML when focus leaves the editor.
         _editor.LostFocus += (_, _) =>
         {
-            if (!_suppressTextChanged) TextChanged?.Invoke(this, _editor.GetHtml());
+            if (!_suppressTextChanged) TextChanged?.Invoke(this, _editor.ToHtml());
         };
 
         ApplyMode();
@@ -75,7 +76,7 @@ public class NativeEditor : UserControl
         _toolbar.IsVisible = Mode == EditorMode.Full;
     }
 
-    public Task<string> GetHtmlAsync() => Task.FromResult(_editor.GetHtml());
+    public Task<string> GetHtmlAsync() => Task.FromResult(_editor.ToHtml());
 
     public Task InsertHtmlAsync(string html)
     {
@@ -87,7 +88,7 @@ public class NativeEditor : UserControl
     // in the default browser, where the user can print. Mirrors the old Jodit print behavior closely.
     public async Task PrintAsync()
     {
-        string body = _editor.GetHtml();
+        string body = _editor.ToHtml();
         string doc = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><style>" +
             "body{font-family:'Malgun Gothic',sans-serif;font-size:12px;line-height:1.6;margin:24px;}" +
             "img{max-width:100%;height:auto;}table{border-collapse:collapse;}td,th{border:1px solid #999;padding:4px 8px;}" +
