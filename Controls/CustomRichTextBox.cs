@@ -28,6 +28,10 @@ public class CustomRichTextBox : Control
     private bool _isSelecting = false;
     private Point _lastCaretPoint;
     private Block? _selectedBlock; // a block (image/table) selected by clicking it (deletable with Del/Backspace)
+    // A "block caret" sits before/after an image/table: Space/Tab indent it, Backspace outdents/deletes,
+    // arrows step before -> (table cells) -> after -> next text. Set by clicking or arrow navigation.
+    private Block? _caretBlock;
+    private bool _caretBlockAfter; // false = caret before the block, true = caret after it
 
     // Internal rich clipboard: preserves run formatting for copy/paste within the app.
     // The plain text put on the system clipboard is mirrored here; on paste we use the rich
@@ -159,6 +163,8 @@ public class CustomRichTextBox : Control
             return;
         }
 
+        _caretBlock = null; // any press clears the block caret unless an image/table sets it below
+
         if (!IsReadOnly)
         foreach (var h in _imageHandles)
         {
@@ -224,7 +230,9 @@ public class CustomRichTextBox : Control
         var clickedBlock = GetBlockAtPoint(point);
         if (clickedBlock is ImageBlock)
         {
-            _selectedBlock = clickedBlock;
+            // Place a block caret in front of the image (Space indents it; Del/Backspace deletes).
+            _caretBlock = clickedBlock; _caretBlockAfter = false;
+            _selectedBlock = null;
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink();
@@ -237,7 +245,9 @@ public class CustomRichTextBox : Control
             // already consumed above). Lets the table be deleted as a unit.
             if (IsOnTableLeftOrTopBorder(table, point))
             {
-                _selectedBlock = table;
+                // Block caret in front of the table (Space indents the whole table; Del deletes it).
+                _caretBlock = table; _caretBlockAfter = false;
+                _selectedBlock = null;
                 _cellSelMode = false; _cellSelTable = null;
                 _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
                 _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -347,7 +357,7 @@ public class CustomRichTextBox : Control
         {
             if (block is TableBlock tb)
             {
-                var tl = LayoutTable(tb, 10, yOffset);
+                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
                 foreach (var (r, c, rect) in tl.AnchorRects)
                 {
                     if (rect.Contains(p))
@@ -473,9 +483,9 @@ public class CustomRichTextBox : Control
             if (block is TableBlock tb)
             {
                 double tableTop = yOffset;
-                var tl = LayoutTable(tb, 10, yOffset);
+                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
                 yOffset += tl.TotalHeight;
-                if (p.X >= 10 && p.X <= 10 + tl.TableWidth && p.Y >= tableTop && p.Y <= yOffset) return tb;
+                if (p.X >= 10 + tb.Indent && p.X <= 10 + tb.Indent + tl.TableWidth && p.Y >= tableTop && p.Y <= yOffset) return tb;
                 yOffset += 10;
             }
             else if (block is Paragraph paragraph)
@@ -496,7 +506,7 @@ public class CustomRichTextBox : Control
             {
                 double w = img.Width > 0 ? img.Width : 200;
                 double h = img.Height > 0 ? img.Height : 200;
-                if (p.X >= listIndent && p.X <= listIndent + w && p.Y >= yOffset && p.Y <= yOffset + h) return img;
+                if (p.X >= listIndent + img.Indent && p.X <= listIndent + img.Indent + w && p.Y >= yOffset && p.Y <= yOffset + h) return img;
                 yOffset += h + 10;
             }
         }
@@ -512,7 +522,7 @@ public class CustomRichTextBox : Control
         {
             if (block is TableBlock tb)
             {
-                var tl = LayoutTable(tb, 10, yOffset);
+                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
                 if (tb == target) return (yOffset, tl);
                 yOffset += tl.TotalHeight + 10;
             }
@@ -537,11 +547,11 @@ public class CustomRichTextBox : Control
     private bool IsOnTableLeftOrTopBorder(TableBlock tb, Point p)
     {
         if (GetTableRect(tb) is not { } tr) return false;
-        double top = tr.top, w = tr.tl.TableWidth, h = tr.tl.TotalHeight;
+        double top = tr.top, w = tr.tl.TableWidth, h = tr.tl.TotalHeight, left = 10 + tb.Indent;
         const double m = 4;
         bool inY = p.Y >= top - m && p.Y <= top + h + m;
-        bool inX = p.X >= 10 - m && p.X <= 10 + w + m;
-        return (inY && Math.Abs(p.X - 10) <= m) || (inX && Math.Abs(p.Y - top) <= m);
+        bool inX = p.X >= left - m && p.X <= left + w + m;
+        return (inY && Math.Abs(p.X - left) <= m) || (inX && Math.Abs(p.Y - top) <= m);
     }
 
     private static Run? RunAtOffset(Paragraph p, int offset)
@@ -712,6 +722,7 @@ public class CustomRichTextBox : Control
         if (IsReadOnly) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         _selectedBlock = null;
+        _caretBlock = null;
         if (Document != null) _undoManager.PushState(Document, _caretPosition);
         InsertText(e.Text);
         e.Handled = true;
@@ -729,6 +740,40 @@ public class CustomRichTextBox : Control
             bool nav = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown;
             bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A);
             if (!nav && !copyOrAll) { e.Handled = true; return; }
+        }
+
+        // Block caret in front of an image/table.
+        if (_caretBlock != null && !ctrl && !IsReadOnly)
+        {
+            if (e.Key == Key.Space || (e.Key == Key.Tab && !shift))
+            {
+                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                _caretBlock.Indent = Math.Min(_caretBlock.Indent + 20, 600);
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            if ((e.Key == Key.Tab && shift) || (e.Key == Key.Back && _caretBlock.Indent > 0))
+            {
+                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                _caretBlock.Indent = Math.Max(0, _caretBlock.Indent - 20);
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            if ((e.Key == Key.Back || e.Key == Key.Delete) && Document != null)
+            {
+                _undoManager.PushState(Document, _caretPosition);
+                var blk = _caretBlock; _caretBlock = null;
+                MoveCaretToBlockNeighbor(blk, before: true);
+                Document.Blocks.Remove(blk);
+                NormalizeBlocks(Document);
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            if (e.Key is Key.Left or Key.Up or Key.Right or Key.Down)
+            {
+                HandleBlockCaretArrow(forward: e.Key is Key.Right or Key.Down);
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            // Any other key dismisses the block caret and continues normally.
+            _caretBlock = null;
+            InvalidateVisual();
         }
 
         // Any key other than the deletion keys cancels a block-image selection.
@@ -802,6 +847,12 @@ public class CustomRichTextBox : Control
 
         if (e.Key == Key.Left)
         {
+            // At a paragraph start, step onto an adjacent image/table as a block caret (from its right = "after").
+            if (!shift && _caretPosition.Offset == 0 && AdjacentBlock(before: true) is { } lb)
+            {
+                _caretBlock = lb; _caretBlockAfter = true;
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
             MoveCaretLeft();
             if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
             else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -811,6 +862,11 @@ public class CustomRichTextBox : Control
         }
         else if (e.Key == Key.Right)
         {
+            if (!shift && _caretPosition.Offset >= GetParagraphLength(_caretPosition.Paragraph) && AdjacentBlock(before: false) is { } rb)
+            {
+                _caretBlock = rb; _caretBlockAfter = false;
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
             MoveCaretRight();
             if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
             else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -820,7 +876,19 @@ public class CustomRichTextBox : Control
         }
         else if (e.Key == Key.Up)
         {
-            _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - 20)));
+            // Leaving a table cell upward from its first row -> the table's "before" caret.
+            if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0)
+            {
+                _caretBlock = fc.tb; _caretBlockAfter = false;
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            double ty = Math.Max(0, _lastCaretPoint.Y - 20);
+            if (!shift && BlockAtY(ty) is { } ub && !CaretInBlock(ub))
+            {
+                _caretBlock = ub; _caretBlockAfter = true; // entering a block from below
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, ty));
             if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
             else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink();
@@ -829,7 +897,20 @@ public class CustomRichTextBox : Control
         }
         else if (e.Key == Key.Down)
         {
-            _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, _lastCaretPoint.Y + 30));
+            // Leaving a table cell downward from its last row -> the table's "after" caret.
+            if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc
+                && fc.r + fc.tb.SpanOf(fc.r, fc.c).rs - 1 >= fc.tb.Rows - 1)
+            {
+                _caretBlock = fc.tb; _caretBlockAfter = true;
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            double ty = _lastCaretPoint.Y + 30;
+            if (!shift && BlockAtY(ty) is { } db && !CaretInBlock(db))
+            {
+                _caretBlock = db; _caretBlockAfter = false; // entering a block from above
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, ty));
             if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
             else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink();
@@ -1072,6 +1153,104 @@ public class CustomRichTextBox : Control
         int len = 0;
         foreach (var inline in p.Inlines) len += InlineLen(inline);
         return len;
+    }
+
+    // Places the text caret at the end of the paragraph before `blk` (before=true) or the start of the
+    // paragraph after it (before=false), skipping non-paragraph blocks. Used when leaving a block caret.
+    private void MoveCaretToBlockNeighbor(Block blk, bool before)
+    {
+        if (Document == null) return;
+        int idx = Document.Blocks.IndexOf(blk);
+        if (idx < 0) return;
+        Paragraph? target = null;
+        if (before) { for (int i = idx - 1; i >= 0 && target == null; i--) target = Document.Blocks[i] as Paragraph; }
+        else { for (int i = idx + 1; i < Document.Blocks.Count && target == null; i++) target = Document.Blocks[i] as Paragraph; }
+        if (target == null) foreach (var b in Document.Blocks) { if (b is Paragraph pp) { target = pp; break; } }
+        if (target == null) return;
+        int off = before ? GetParagraphLength(target) : 0;
+        _caretPosition = new TextPointer(target, off);
+        _selectionStart = new TextPointer(target, off);
+        _selectionEnd = new TextPointer(target, off);
+    }
+
+    private void SetCaretCollapsed(Paragraph p, int off)
+    {
+        _caretPosition = new TextPointer(p, off);
+        _selectionStart = new TextPointer(p, off);
+        _selectionEnd = new TextPointer(p, off);
+    }
+
+    // Steps a block caret: before -> (table cells | image after) -> after -> next text, and the reverse.
+    private void HandleBlockCaretArrow(bool forward)
+    {
+        var blk = _caretBlock!;
+        if (forward)
+        {
+            if (!_caretBlockAfter)
+            {
+                if (blk is TableBlock tb && tb.LogicalCells().Any())
+                { _caretBlock = null; var c = tb.LogicalCells().First().cell; SetCaretCollapsed(c, 0); }
+                else _caretBlockAfter = true; // image: before -> after
+            }
+            else { _caretBlock = null; MoveCaretToBlockNeighbor(blk, before: false); }
+        }
+        else
+        {
+            if (_caretBlockAfter)
+            {
+                if (blk is TableBlock tb && tb.LogicalCells().Any())
+                { _caretBlock = null; var c = tb.LogicalCells().Last().cell; SetCaretCollapsed(c, GetParagraphLength(c)); }
+                else _caretBlockAfter = false; // image: after -> before
+            }
+            else { _caretBlock = null; MoveCaretToBlockNeighbor(blk, before: true); }
+        }
+    }
+
+    // True when the text caret currently sits inside a cell of the given block (a table).
+    private bool CaretInBlock(Block b) => b is TableBlock tb && _caretPosition.Paragraph != null && IsCellOf(tb, _caretPosition.Paragraph);
+
+    // The image/table block immediately before/after the caret's top-level paragraph, or null.
+    private Block? AdjacentBlock(bool before)
+    {
+        if (Document == null || _caretPosition.Paragraph == null) return null;
+        int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
+        if (idx < 0) return null;
+        int j = before ? idx - 1 : idx + 1;
+        if (j < 0 || j >= Document.Blocks.Count) return null;
+        var b = Document.Blocks[j];
+        return (b is ImageBlock || b is TableBlock) ? b : null;
+    }
+
+    // The image/table block whose rendered vertical span contains y, or null (used for Up/Down into a block).
+    private Block? BlockAtY(double y)
+    {
+        if (Document == null) return null;
+        double yOffset = 0, maxWidth = Bounds.Width;
+        foreach (var block in Document.Blocks)
+        {
+            double top = yOffset;
+            if (block is TableBlock tb)
+            {
+                double h = LayoutTable(tb, 10 + tb.Indent, yOffset).TotalHeight;
+                if (y >= top && y <= top + h) return tb;
+                yOffset += h + 10;
+            }
+            else if (block is ImageBlock img)
+            {
+                double h = img.Height > 0 ? img.Height : 200;
+                if (y >= top && y <= top + h) return img;
+                yOffset += h + 10;
+            }
+            else if (block is Paragraph paragraph)
+            {
+                if (BuildPlain(paragraph) == "")
+                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
+                else
+                    yOffset += BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph))).Height + paragraph.MarginBottom;
+            }
+            else if (block is DividerBlock) yOffset += DividerHeight;
+        }
+        return null;
     }
 
     private void MoveCaretRight()
@@ -1469,7 +1648,7 @@ public class CustomRichTextBox : Control
         {
             if (block is TableBlock tb)
             {
-                var tl = LayoutTable(tb, 10, yOffset);
+                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
                 foreach (var (r, c, rect) in tl.AnchorRects)
                 {
                     var cell = tb.Cells[r][c];
@@ -2925,6 +3104,7 @@ public class CustomRichTextBox : Control
         double maxWidth = Bounds.Width;
         double listIndent = 10;
         Point? caretPoint = null;
+        Rect? blockCaretRect = null; // when a block caret is active, the image/table it sits in front of
         int orderedIndex = 0; // running counter for consecutive ordered-list paragraphs
 
         foreach (var block in Document.Blocks)
@@ -2932,9 +3112,11 @@ public class CustomRichTextBox : Control
             if (block is TableBlock tb)
             {
                 orderedIndex = 0;
-                double startX = 10;
+                double startX = 10 + tb.Indent;
                 double tableTop = yOffset;
                 var tl = LayoutTable(tb, startX, tableTop);
+                if (ReferenceEquals(tb, _caretBlock))
+                    blockCaretRect = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
                 // When the drag spans multiple cells of this table, highlight the rectangular block fully
                 // (Excel/Word style) instead of the linear text run; otherwise fall back to text highlight.
                 var cellBlock = SelectedCellRange(tb);
@@ -3087,8 +3269,10 @@ public class CustomRichTextBox : Control
                 {
                     double width = img.Width > 0 ? img.Width : 200;
                     double height = img.Height > 0 ? img.Height : 200;
-                    var imgRect = new Rect(listIndent, yOffset, width, height);
+                    double imgX = listIndent + img.Indent;
+                    var imgRect = new Rect(imgX, yOffset, width, height);
                     context.DrawImage(img.Image, imgRect);
+                    if (ReferenceEquals(img, _caretBlock)) blockCaretRect = imgRect;
 
                     bool imgSelected = ReferenceEquals(img, _selectedBlock);
                     if (imgSelected)
@@ -3099,10 +3283,10 @@ public class CustomRichTextBox : Control
                     }
                     // Thin border + bottom-right resize handle.
                     context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(120, 0, 120, 215)), 1), imgRect);
-                    var handle = new Rect(listIndent + width - 6, yOffset + height - 6, 12, 12);
+                    var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
                     context.FillRectangle(new SolidColorBrush(Color.FromArgb(230, 0, 120, 215)), handle);
                     // Slightly larger hit area than the visual handle for easier grabbing.
-                    _imageHandles.Add((new Rect(listIndent + width - 9, yOffset + height - 9, 18, 18), img));
+                    _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img));
 
                     yOffset += height + 10;
                 }
@@ -3116,7 +3300,19 @@ public class CustomRichTextBox : Control
             }
         }
 
-        if (caretPoint.HasValue)
+        if (blockCaretRect.HasValue)
+        {
+            // Blinking bar at the block's left edge: top = caret before the block, bottom = caret after.
+            if (_isCaretVisible && IsFocused && !IsReadOnly)
+            {
+                var r = blockCaretRect.Value;
+                double cx = r.X - 3;
+                double cy1 = _caretBlockAfter ? Math.Max(r.Y, r.Bottom - 20) : r.Y;
+                double cy2 = _caretBlockAfter ? r.Bottom : Math.Min(r.Bottom, r.Y + 20);
+                context.DrawLine(new Pen(Brushes.Black, 2), new Point(cx, cy1), new Point(cx, cy2));
+            }
+        }
+        else if (caretPoint.HasValue)
         {
             _lastCaretPoint = caretPoint.Value;
             if (_isCaretVisible && IsFocused && !IsReadOnly)

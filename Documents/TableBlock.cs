@@ -330,6 +330,7 @@ public class TableBlock : Block
     {
         EnsureSpanConsistency();
         var tb = new TableBlock(Rows, Columns);
+        tb.Indent = Indent;
         tb.Cells.Clear();
         tb.ColSpans.Clear();
         tb.RowSpans.Clear();

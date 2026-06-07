@@ -14,7 +14,8 @@ public class ImageBlock : Block
         {
             Image = this.Image,
             Width = this.Width,
-            Height = this.Height
+            Height = this.Height,
+            Indent = this.Indent
         };
     }
 }
