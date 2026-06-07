@@ -280,12 +280,12 @@ public static class DocumentSerializer
     }
 }
 
-public class FlowDocumentDto
+internal class FlowDocumentDto
 {
     public List<BlockDto> Blocks { get; set; } = new();
 }
 
-public class BlockDto
+internal class BlockDto
 {
     public string Type { get; set; } = "Paragraph";
 
@@ -318,7 +318,7 @@ public class BlockDto
     public List<List<int>>? RowSpans { get; set; }
 }
 
-public class InlineDto
+internal class InlineDto
 {
     public string Type { get; set; } = "Run";
 
