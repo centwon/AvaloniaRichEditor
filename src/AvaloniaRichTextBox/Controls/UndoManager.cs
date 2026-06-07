@@ -3,7 +3,7 @@ using AvaloniaRichTextBox.Documents;
 
 namespace AvaloniaRichTextBox.Controls;
 
-public struct UndoState
+internal struct UndoState
 {
     public FlowDocument Document { get; }
     public int CaretGlobalIndex { get; }
@@ -17,7 +17,7 @@ public struct UndoState
     }
 }
 
-public class UndoManager
+internal class UndoManager
 {
     private readonly Stack<UndoState> _undoStack = new();
     private readonly Stack<UndoState> _redoStack = new();

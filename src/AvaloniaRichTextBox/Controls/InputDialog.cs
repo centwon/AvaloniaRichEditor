@@ -6,7 +6,7 @@ using Avalonia.Layout;
 namespace AvaloniaRichTextBox.Controls;
 
 // Minimal modal text-input dialog (OK/Cancel). Returns the entered text, or null on cancel.
-public static class InputDialog
+internal static class InputDialog
 {
     public static async Task<string?> ShowAsync(Window owner, string title, string initial)
     {
