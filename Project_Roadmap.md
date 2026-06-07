@@ -126,13 +126,13 @@
 - [ ] **API 동결 가드**: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입 — 미착수.
 - [ ] (선택) 데모 코드비하인드를 새 이벤트/속성으로 마이그레이션 — 미착수(`StatusChanged` 계속 사용 중).
 
-### 🔵 N3: 크로스플랫폼 / Windows 의존 게이팅 (우선순위 3)
-- [ ] **클립보드 CF_HTML**(`ExtractHtmlFragment`의 Windows 헤더 처리)을 `OperatingSystem.IsWindows()` 분기 또는 추상화. mac/Linux에서 일반 `text/html` 경로 확인.
-- [ ] **하드코딩 한글 폰트**(`Malgun Gothic`/`Gulim` 등)를 기본값 속성으로 외부화 — 라이브러리는 폰트 가정 금지, 데모만 기본 지정.
-- [ ] `app.manifest`·`PublishAot`는 데모(앱)에만(이미 분리됨) — 라이브러리는 플랫폼 중립 유지 재확인.
-- [ ] mac/Linux 스모크 테스트(가능하면 CI 매트릭스) — 최소 빌드 + 헤드리스 렌더.
-- **검증**: 비Windows 환경에서 텍스트 입력·선택·HTML 붙여넣기 기본 동작(완벽 아님, 크래시 없음 기준).
-- **참고**: 완전 크로스플랫폼이 어려우면 `0.1.0-alpha`는 "Windows 우선, 기타 플랫폼 베스트에포트"로 README에 명시하고 출시.
+### 🟡 N3: 크로스플랫폼 / Windows 의존 게이팅 (코드 게이팅 완료 2026-06-08)
+- [x] **클립보드 CF_HTML**: 조사 결과 이미 안전 — `TryGetHtmlAsync`는 포맷 식별자에 "html" 포함 매칭(Windows `HTML Format`/mac `public.html`/Linux `text/html` 공통), `ExtractHtmlFragment`는 CF_HTML 마커 없으면 원문 통과. 별도 분기 불필요.
+- [x] **하드코딩 한글 폰트** 외부화: 컨텍스트 메뉴 글꼴 목록을 `FontFamilyChoices` 속성으로(기본=범용 폰트, 플랫폼 가정 없음). 데모가 한글 폰트로 설정. (`DefaultFontFamily`는 N2에서 외부화 완료)
+- [x] `OpenUrl`은 `Process.Start(UseShellExecute=true)` + try/catch — 현대 .NET에서 크로스플랫폼(xdg-open/open). P/Invoke 없음 확인.
+- [x] `app.manifest`/`PublishAot`는 데모에만(구조 분리로 확인). 라이브러리는 플랫폼 중립.
+- [x] README에 플랫폼 지원(Windows 우선, mac/Linux 베스트에포트) 명시.
+- [ ] mac/Linux 실제 스모크 테스트(헤드리스 빌드/렌더) — 환경 없어 **미실행**(N4 CI 매트릭스로 이관).
 
 ### 🔵 N4: 테스트 & CI (우선순위 4)
 - [ ] `tests/AvaloniaRichTextBox.Tests`(xUnit) 신설. 기존 `RoundTripHarness`/코퍼스를 테스트로 승격(HTML in==out 단언).

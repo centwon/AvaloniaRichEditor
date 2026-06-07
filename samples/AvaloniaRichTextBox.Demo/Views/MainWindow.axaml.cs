@@ -15,6 +15,12 @@ public partial class MainWindow : Window
         var richTextBox = this.FindControl<CustomRichTextBox>("RichTextBox");
         if (richTextBox != null)
         {
+            // This app targets a Korean UI: offer Korean fonts in the editor's right-click font submenu.
+            richTextBox.FontFamilyChoices = new[]
+            {
+                "Malgun Gothic", "Gulim", "Batang", "Dotum", "Arial", "Times New Roman"
+            };
+
             var doc = new FlowDocument();
             
             var p1 = new Paragraph();

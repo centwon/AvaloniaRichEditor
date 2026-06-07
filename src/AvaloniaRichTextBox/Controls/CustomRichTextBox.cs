@@ -137,6 +137,22 @@ public class CustomRichTextBox : Control
         set => SetValue(DefaultFontSizeProperty, value);
     }
 
+    // Widely-available families (metric-compatible substitutes exist on macOS/Linux). Hosts targeting a
+    // specific locale (e.g. Korean) should override FontFamilyChoices rather than relying on this.
+    private static readonly IReadOnlyList<string> DefaultFontChoices =
+        new[] { "Arial", "Times New Roman", "Courier New", "Verdana", "Georgia" };
+
+    public static readonly StyledProperty<IReadOnlyList<string>> FontFamilyChoicesProperty =
+        AvaloniaProperty.Register<CustomRichTextBox, IReadOnlyList<string>>(
+            nameof(FontFamilyChoices), DefaultFontChoices);
+
+    /// <summary>Font families offered in the right-click "글꼴" submenu. No platform-specific default.</summary>
+    public IReadOnlyList<string> FontFamilyChoices
+    {
+        get => GetValue(FontFamilyChoicesProperty);
+        set => SetValue(FontFamilyChoicesProperty, value);
+    }
+
     static CustomRichTextBox()
     {
         AffectsRender<CustomRichTextBox>(DocumentProperty, SelectionBrushProperty, CaretBrushProperty);
@@ -3120,6 +3136,10 @@ public class CustomRichTextBox : Control
 
     private void AddFormatItems(List<Control> items, bool hasSelection)
     {
+        // Font submenu is built from the (host-overridable) FontFamilyChoices, so no locale is assumed.
+        var fontItems = FontFamilyChoices
+            .Select(f => (Control)Mi(f, () => SetFontFamily(f), hasSelection))
+            .ToArray();
         // Character-level formatting, grouped under one submenu so the top level stays short.
         items.Add(Sub("글자 모양",
             Mi("굵게", ToggleBold, hasSelection),
@@ -3140,13 +3160,7 @@ public class CustomRichTextBox : Control
                 Mi("분홍", () => SetHighlight(Brushes.Pink), hasSelection),
                 Mi("하늘", () => SetHighlight(Brushes.LightBlue), hasSelection),
                 Mi("없음", () => SetHighlight(null), hasSelection)),
-            Sub("글꼴",
-                Mi("맑은 고딕", () => SetFontFamily("Malgun Gothic"), hasSelection),
-                Mi("굴림", () => SetFontFamily("Gulim"), hasSelection),
-                Mi("바탕", () => SetFontFamily("Batang"), hasSelection),
-                Mi("돋움", () => SetFontFamily("Dotum"), hasSelection),
-                Mi("Arial", () => SetFontFamily("Arial"), hasSelection),
-                Mi("Times New Roman", () => SetFontFamily("Times New Roman"), hasSelection)),
+            Sub("글꼴", fontItems),
             new Separator(),
             Mi("서식 지우기", ClearFormatting, hasSelection)));
         // Paragraph-level formatting, also grouped.
