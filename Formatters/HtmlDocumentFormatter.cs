@@ -27,6 +27,12 @@ namespace AvaloniaRichTextBoxPort.Formatters
 
         public static FlowDocument ParseHtml(string html)
         {
+            // Excel's CF_HTML fragment markers can sit *inside* the <table>, so the extracted
+            // fragment has orphan <tr>/<td> with no wrapping <table>. Wrap it so it's recognized.
+            if (System.Text.RegularExpressions.Regex.IsMatch(html, "<tr[\\s>]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                && !System.Text.RegularExpressions.Regex.IsMatch(html, "<table", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                html = "<table>" + html + "</table>";
+
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
