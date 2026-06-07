@@ -1043,6 +1043,7 @@ public class CustomRichTextBox : Control
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         InvalidateVisual();
+        NotifyStatus();
     }
 
     private void DoRedo()
@@ -1057,6 +1058,7 @@ public class CustomRichTextBox : Control
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         InvalidateVisual();
+        NotifyStatus();
     }
 
     private void ResetCaretBlink()
@@ -1066,6 +1068,38 @@ public class CustomRichTextBox : Control
         _caretTimer.Start();
         _imClient.NotifyCaretChanged();
         InvalidateVisual();
+        NotifyStatus();
+    }
+
+    // Raised whenever the caret moves or the text changes, so a host (status bar) can refresh counts.
+    public event EventHandler? StatusChanged;
+    private void NotifyStatus() => StatusChanged?.Invoke(this, EventArgs.Empty);
+
+    // Document character count, word count, and the caret's 1-based line/column (treating each paragraph
+    // break and embedded "\n" as a line break). Inline images count as one character.
+    public (int chars, int words, int line, int col) GetStatus()
+    {
+        if (Document == null) return (0, 0, 1, 1);
+        var full = new System.Text.StringBuilder();
+        int caretGlobal = -1;
+        foreach (var p in GetAllParagraphsInOrder())
+        {
+            if (ReferenceEquals(p, _caretPosition.Paragraph))
+                caretGlobal = full.Length + Math.Clamp(_caretPosition.Offset, 0, GetParagraphLength(p));
+            full.Append(BuildPlain(p));
+            full.Append('\n');
+        }
+        string text = full.ToString();
+        int chars = 0;
+        foreach (char ch in text) if (ch != '\n') chars++;
+        int words = text.Split(new[] { ' ', '\n', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+        if (caretGlobal < 0) caretGlobal = 0;
+        string before = text.Substring(0, Math.Min(caretGlobal, text.Length));
+        int line = 1;
+        foreach (char ch in before) if (ch == '\n') line++;
+        int lastNl = before.LastIndexOf('\n');
+        int col = before.Length - (lastNl + 1) + 1;
+        return (chars, words, line, col);
     }
 
     private void OnTextInputMethodClientRequested(object? sender, Avalonia.Input.TextInput.TextInputMethodClientRequestedEventArgs e)
@@ -1341,6 +1375,7 @@ public class CustomRichTextBox : Control
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         InvalidateVisual();
+        NotifyStatus();
     }
 
     // If the caret sits right after a list prefix ("-"/"*" -> bullet, "N." -> ordered) at the very start

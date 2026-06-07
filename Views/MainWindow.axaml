@@ -15,7 +15,7 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto, Auto, Auto, *">
+    <Grid RowDefinitions="Auto, Auto, Auto, *, Auto">
         <Border Grid.Row="0" Background="#EEEEEE" Padding="10">
             <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
         </Border>
@@ -120,5 +120,9 @@
         <ScrollViewer Grid.Row="3" Padding="20">
             <controls:CustomRichTextBox x:Name="RichTextBox" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinHeight="1000"/>
         </ScrollViewer>
+
+        <Border Grid.Row="4" Background="#EEEEEE" Padding="12,4" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
+            <TextBlock Name="StatusBar" Foreground="#444444" FontSize="12"/>
+        </Border>
     </Grid>
 </Window>
