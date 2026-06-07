@@ -103,6 +103,12 @@ public class CustomRichTextBox : Control
     private readonly RtbInputMethodClient _imClient;
     private string? _preeditText; // IME composition text shown inline at the caret while composing.
 
+    // Per-paragraph TextLayout cache. Building a TextLayout shapes/line-breaks text (the most expensive
+    // step), and Render + Measure + every hit-test would otherwise rebuild every paragraph each frame —
+    // crippling for large documents and the 2 Hz caret blink. Keyed by paragraph; reused while the
+    // paragraph's content signature and wrap width are unchanged.
+    private readonly Dictionary<Paragraph, (long sig, double width, Avalonia.Media.TextFormatting.TextLayout layout)> _layoutCache = new();
+
     public CustomRichTextBox()
     {
         Focusable = true;
@@ -131,9 +137,10 @@ public class CustomRichTextBox : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == DocumentProperty && Document != null)
+        if (change.Property == DocumentProperty)
         {
-            UpdateParents(Document);
+            _layoutCache.Clear();
+            if (Document != null) UpdateParents(Document);
         }
         if (change.Property == IsFocusedProperty)
         {
@@ -1745,9 +1752,63 @@ public class CustomRichTextBox : Control
         context.DrawText(ft, new Point(textLeft - gap - ft.Width, y));
     }
 
+    // A cheap content+formatting fingerprint of a paragraph; when it (and the wrap width) are unchanged
+    // the cached TextLayout can be reused. Iterating inlines to hash is far cheaper than re-shaping, and
+    // it can never go stale silently the way a manual dirty-flag would. Over-invalidation (e.g. a brush
+    // re-instantiated to the same colour) is harmless — it just rebuilds.
+    private static long ParagraphSig(Paragraph p)
+    {
+        unchecked
+        {
+            long h = 1469598103934665603; // FNV-1a 64-bit offset basis
+            void Mix(long v) { h = (h ^ v) * 1099511628211; }
+            void MixStr(string? s) { if (s == null) { Mix(0); return; } foreach (char ch in s) Mix(ch); Mix(s.Length + 1); }
+
+            Mix((long)p.TextAlignment);
+            Mix(BitConverter.DoubleToInt64Bits(p.LineHeight));
+            Mix(BitConverter.DoubleToInt64Bits(p.Indent));
+            Mix((long)p.ListType);
+            Mix(p.ListLevel);
+            foreach (var inl in p.Inlines)
+            {
+                if (inl is Run r)
+                {
+                    MixStr(r.Text);
+                    MixStr(r.FontFamily);
+                    MixStr(r.NavigateUri);
+                    Mix(BitConverter.DoubleToInt64Bits(r.FontSize));
+                    Mix((long)r.FontWeight);
+                    Mix((long)r.FontStyle);
+                    Mix(r.Foreground?.GetHashCode() ?? 0);
+                    Mix(r.Background?.GetHashCode() ?? 0);
+                    if (r.TextDecorations != null)
+                        foreach (var d in r.TextDecorations) Mix((long)d.Location + 101);
+                }
+                else if (inl is InlineImage img)
+                {
+                    Mix(7);
+                    Mix(BitConverter.DoubleToInt64Bits(img.Width));
+                    Mix(BitConverter.DoubleToInt64Bits(img.Height));
+                    Mix(img.Image?.GetHashCode() ?? 0);
+                }
+            }
+            return h;
+        }
+    }
+
     private Avalonia.Media.TextFormatting.TextLayout BuildTextLayout(Paragraph p, double maxWidth,
         int preeditOffset = -1, string? preeditText = null)
     {
+        // IME composition is transient and paragraph-local; never serve/store it from the cache.
+        bool hasPreedit = !string.IsNullOrEmpty(preeditText) && preeditOffset >= 0;
+        long sig = 0;
+        if (!hasPreedit)
+        {
+            sig = ParagraphSig(p);
+            if (_layoutCache.TryGetValue(p, out var cached) && cached.width == maxWidth && cached.sig == sig)
+                return cached.layout;
+        }
+
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
             Typeface.Default, 14, null, Brushes.Black);
 
@@ -1798,8 +1859,17 @@ public class CustomRichTextBox : Control
             0,
             0);
 
-        return new Avalonia.Media.TextFormatting.TextLayout(
+        var layout = new Avalonia.Media.TextFormatting.TextLayout(
             new ParagraphTextSource(segs), paraProps, null, Math.Max(1, maxWidth));
+
+        if (!hasPreedit)
+        {
+            // Entries for deleted paragraphs are never re-accessed and would linger; a generous cap keeps
+            // the cache from growing without bound over a long editing session (it just rebuilds lazily).
+            if (_layoutCache.Count > 10000) _layoutCache.Clear();
+            _layoutCache[p] = (sig, maxWidth, layout);
+        }
+        return layout;
     }
 
     private int HitTestIndex(Avalonia.Media.TextFormatting.TextLayout layout, Point localPoint)
