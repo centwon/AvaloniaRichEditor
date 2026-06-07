@@ -31,9 +31,10 @@ public partial class MainWindow : Window
 
             richTextBox.Document = doc;
 
-            // Status bar: live character/word count and caret line/column.
-            richTextBox.StatusChanged += (_, _) => UpdateStatusBar();
+            // Status bar + toolbar state follow the caret/text.
+            richTextBox.StatusChanged += (_, _) => { UpdateStatusBar(); UpdateToolbar(); };
             UpdateStatusBar();
+            UpdateToolbar();
         }
 
         SetupColorFlyout("TextColorButton", highlight: false);
@@ -102,6 +103,18 @@ public partial class MainWindow : Window
         btn.Flyout = new Flyout { Content = panel };
     }
 
+    // Scales the A4 page so its fixed width fits the viewport (no horizontal scroll). The page content
+    // still wraps at A4 width; only the displayed size changes.
+    private void EditorScroll_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        var lt = this.FindControl<LayoutTransformControl>("PageScale");
+        if (sender is not ScrollViewer scroll || lt == null) return;
+        const double pageWidth = 794;
+        double avail = scroll.Bounds.Width - 8; // small breathing room; no surrounding desk padding
+        double scale = System.Math.Clamp(avail / pageWidth, 0.3, 2.0);
+        lt.LayoutTransform = new ScaleTransform(scale, scale);
+    }
+
     private void UpdateStatusBar()
     {
         var richTextBox = this.FindControl<CustomRichTextBox>("RichTextBox");
@@ -109,6 +122,46 @@ public partial class MainWindow : Window
         if (richTextBox == null || status == null) return;
         var (chars, words, line, col) = richTextBox.GetStatus();
         status.Text = $"글자 {chars}   단어 {words}   줄 {line}, 칸 {col}";
+    }
+
+    private bool _suppressToolbar; // guards combo SelectionChanged while we sync the toolbar to the caret
+
+    // Reflects the caret's formatting on the toolbar: active B/I/U/S, alignment, list, font size/family.
+    private void UpdateToolbar()
+    {
+        var rtb = this.FindControl<CustomRichTextBox>("RichTextBox");
+        if (rtb == null) return;
+        var f = rtb.GetCaretFormat();
+        SetActive("BoldButton", f.Bold);
+        SetActive("ItalicButton", f.Italic);
+        SetActive("UnderlineButton", f.Underline);
+        SetActive("StrikeButton", f.Strike);
+        SetActive("AlignLeftBtn", f.Align == Avalonia.Media.TextAlignment.Left);
+        SetActive("AlignCenterBtn", f.Align == Avalonia.Media.TextAlignment.Center);
+        SetActive("AlignRightBtn", f.Align == Avalonia.Media.TextAlignment.Right);
+        SetActive("BulletBtn", f.List == Documents.ListKind.Bullet);
+        SetActive("NumberBtn", f.List == Documents.ListKind.Ordered);
+
+        _suppressToolbar = true;
+        if (this.FindControl<ComboBox>("FontSizeComboBox") is { } sizeCb)
+            SelectByContent(sizeCb, ((int)f.FontSize).ToString());
+        if (f.FontFamily != null && this.FindControl<ComboBox>("FontFamilyComboBox") is { } famCb)
+            SelectByContent(famCb, f.FontFamily);
+        _suppressToolbar = false;
+    }
+
+    private void SetActive(string name, bool active)
+    {
+        var b = this.FindControl<Button>(name);
+        if (b == null) return;
+        if (active) b.Background = new SolidColorBrush(Color.Parse("#90CAF9"));
+        else b.ClearValue(Button.BackgroundProperty);
+    }
+
+    private static void SelectByContent(ComboBox cb, string content)
+    {
+        foreach (var it in cb.Items)
+            if (it is ComboBoxItem ci && ci.Content?.ToString() == content) { cb.SelectedItem = ci; return; }
     }
 
     // Loads a built-in document that exercises every feature at once (via the HTML parser, so it also
@@ -345,7 +398,7 @@ public partial class MainWindow : Window
     
     private void FontSizeComboBox_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
     {
-        if (!IsLoaded) return;
+        if (!IsLoaded || _suppressToolbar) return;
         var cb = sender as Avalonia.Controls.ComboBox;
         if (cb?.SelectedItem is Avalonia.Controls.ComboBoxItem item && double.TryParse(item.Content?.ToString(), out double size))
         {
@@ -376,7 +429,7 @@ public partial class MainWindow : Window
 
     private void FontFamilyComboBox_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
     {
-        if (!IsLoaded) return;
+        if (!IsLoaded || _suppressToolbar) return;
         if ((sender as Avalonia.Controls.ComboBox)?.SelectedItem is Avalonia.Controls.ComboBoxItem item && item.Content is string fam)
             this.FindControl<CustomRichTextBox>("RichTextBox")?.SetFontFamily(fam);
     }

@@ -15,64 +15,72 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
+    <Window.Styles>
+        <!-- Flat, evenly-sized toolbar buttons with a soft hover. -->
+        <Style Selector="StackPanel#ToolbarRoot Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="Padding" Value="9,5"/>
+            <Setter Property="Margin" Value="1,0"/>
+            <Setter Property="MinWidth" Value="30"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="StackPanel#ToolbarRoot Button:pointerover">
+            <Setter Property="Background" Value="#E3ECFB"/>
+        </Style>
+        <Style Selector="StackPanel#ToolbarRoot ComboBox">
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- Vertical group divider. -->
+        <Style Selector="Border.div">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Background" Value="#DCDCDC"/>
+            <Setter Property="Margin" Value="6,4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Styles>
+
     <Grid RowDefinitions="Auto, Auto, Auto, *, Auto">
         <Border Grid.Row="0" Background="#EEEEEE" Padding="10">
             <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
         </Border>
         
-        <StackPanel Grid.Row="1" Orientation="Vertical" Background="#DDDDDD">
-            <!-- File Operations -->
-            <StackPanel Orientation="Horizontal" Spacing="10" Margin="10,10,10,5">
-                <Button Name="SaveButton" Content="Save to JSON" Click="SaveButton_Click" />
-                <Button Name="LoadButton" Content="Load from JSON" Click="LoadButton_Click" />
-                <Button Name="ExportHtmlButton" Content="Export HTML" Click="ExportHtmlButton_Click" Foreground="Green"/>
-                <Button Name="PasteHtmlButton" Content="Paste HTML" Click="PasteHtmlButton_Click" Foreground="Green"/>
-                <Button Name="InsertImageButton" Content="Insert Image" Click="InsertImageButton_Click" Foreground="Orange"/>
-                <Button Name="SampleButton" Content="예제 문서" Click="SampleButton_Click" Foreground="Purple"/>
+        <StackPanel Grid.Row="1" Name="ToolbarRoot" Orientation="Vertical" Background="#F5F6F8">
+            <!-- File / insert -->
+            <StackPanel Orientation="Horizontal" Margin="8,7,8,3">
+                <Button Name="SaveButton" Content="저장" ToolTip.Tip="JSON으로 저장" Click="SaveButton_Click"/>
+                <Button Name="LoadButton" Content="열기" ToolTip.Tip="JSON 불러오기" Click="LoadButton_Click"/>
+                <Border Classes="div"/>
+                <Button Name="ExportHtmlButton" Content="HTML 내보내기" Click="ExportHtmlButton_Click"/>
+                <Button Name="PasteHtmlButton" Content="HTML 붙여넣기" Click="PasteHtmlButton_Click"/>
+                <Border Classes="div"/>
+                <Button Name="InsertImageButton" Content="🖼 그림" ToolTip.Tip="이미지 삽입" Click="InsertImageButton_Click"/>
+                <Button Content="▦ 표" ToolTip.Tip="표 삽입" Click="InsertTableButton_Click"/>
+                <Button Content="― 구분선" ToolTip.Tip="가로 구분선" Click="DividerButton_Click"/>
+                <Border Classes="div"/>
+                <Button Name="SampleButton" Content="예제 문서" Click="SampleButton_Click"/>
             </StackPanel>
-            
-            <!-- Formatting Toolbar -->
-            <StackPanel Orientation="Horizontal" Spacing="5" Margin="10,0,10,10">
-                <Button Content="B" FontWeight="Bold" Click="BoldButton_Click"/>
-                <Button Content="I" FontStyle="Italic" Click="ItalicButton_Click"/>
-                <Button Click="UnderlineButton_Click">
+
+            <!-- Formatting -->
+            <WrapPanel Margin="8,0,8,7">
+                <Button Name="BoldButton" Content="B" FontWeight="Bold" ToolTip.Tip="굵게 (Ctrl+B)" Click="BoldButton_Click"/>
+                <Button Name="ItalicButton" Content="I" FontStyle="Italic" ToolTip.Tip="기울임 (Ctrl+I)" Click="ItalicButton_Click"/>
+                <Button Name="UnderlineButton" ToolTip.Tip="밑줄 (Ctrl+U)" Click="UnderlineButton_Click">
                     <TextBlock Text="U" TextDecorations="Underline"/>
                 </Button>
-                <Button Click="StrikethroughButton_Click">
+                <Button Name="StrikeButton" ToolTip.Tip="취소선" Click="StrikethroughButton_Click">
                     <TextBlock Text="S" TextDecorations="Strikethrough"/>
                 </Button>
-                
-                <TextBlock Text="Size:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <ComboBox Name="FontSizeComboBox" SelectedIndex="1" SelectionChanged="FontSizeComboBox_SelectionChanged">
-                    <ComboBoxItem>12</ComboBoxItem>
-                    <ComboBoxItem>14</ComboBoxItem>
-                    <ComboBoxItem>18</ComboBoxItem>
-                    <ComboBoxItem>24</ComboBoxItem>
-                    <ComboBoxItem>32</ComboBoxItem>
-                </ComboBox>
-
-                <TextBlock Text="Color:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Name="TextColorButton" Content="글자색 ▾"/>
-
-                <TextBlock Text="Align:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Content="Left" Click="AlignLeft_Click"/>
-                <Button Content="Center" Click="AlignCenter_Click"/>
-                <Button Content="Right" Click="AlignRight_Click"/>
-
-                <TextBlock Text="Spacing:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Content="1.0" Click="Spacing10_Click"/>
-                <Button Content="1.5" Click="Spacing15_Click"/>
-                <Button Content="2.0" Click="Spacing20_Click"/>
-
-                <Button Content="• List" Click="BulletButton_Click" Margin="10,0,0,0"/>
-                <Button Content="1. List" Click="NumberingButton_Click"/>
-                <Button Content="Table" Click="InsertTableButton_Click" Margin="10,0,0,0"/>
-            </StackPanel>
-
-            <!-- Font / heading / highlight / indent -->
-            <StackPanel Orientation="Horizontal" Spacing="5" Margin="10,0,10,10">
-                <TextBlock Text="Font:" VerticalAlignment="Center"/>
-                <ComboBox Name="FontFamilyComboBox" SelectedIndex="0" SelectionChanged="FontFamilyComboBox_SelectionChanged">
+                <Border Classes="div"/>
+                <Button Name="TextColorButton" Content="글자색 ▾" ToolTip.Tip="글자 색"/>
+                <Button Name="HighlightButton" Content="형광펜 ▾" ToolTip.Tip="형광펜(배경색)"/>
+                <Border Classes="div"/>
+                <ComboBox Name="FontFamilyComboBox" SelectedIndex="0" SelectionChanged="FontFamilyComboBox_SelectionChanged" ToolTip.Tip="글꼴">
                     <ComboBoxItem>Malgun Gothic</ComboBoxItem>
                     <ComboBoxItem>Gulim</ComboBoxItem>
                     <ComboBoxItem>Batang</ComboBoxItem>
@@ -80,22 +88,32 @@
                     <ComboBoxItem>Arial</ComboBoxItem>
                     <ComboBoxItem>Times New Roman</ComboBoxItem>
                 </ComboBox>
-
-                <TextBlock Text="Heading:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Content="H1" Click="Heading1_Click"/>
-                <Button Content="H2" Click="Heading2_Click"/>
-                <Button Content="H3" Click="Heading3_Click"/>
-                <Button Content="본문" Click="HeadingBody_Click"/>
-
-                <TextBlock Text="Highlight:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Name="HighlightButton" Content="형광펜 ▾"/>
-
-                <TextBlock Text="Indent:" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <Button Content="→|" Click="IndentInc_Click"/>
-                <Button Content="|←" Click="IndentDec_Click"/>
-
-                <Button Content="― HR" Click="DividerButton_Click" Margin="10,0,0,0"/>
-            </StackPanel>
+                <ComboBox Name="FontSizeComboBox" SelectedIndex="1" SelectionChanged="FontSizeComboBox_SelectionChanged" ToolTip.Tip="글자 크기">
+                    <ComboBoxItem>12</ComboBoxItem>
+                    <ComboBoxItem>14</ComboBoxItem>
+                    <ComboBoxItem>18</ComboBoxItem>
+                    <ComboBoxItem>24</ComboBoxItem>
+                    <ComboBoxItem>32</ComboBoxItem>
+                </ComboBox>
+                <Border Classes="div"/>
+                <Button Content="H1" ToolTip.Tip="제목 1" Click="Heading1_Click"/>
+                <Button Content="H2" ToolTip.Tip="제목 2" Click="Heading2_Click"/>
+                <Button Content="H3" ToolTip.Tip="제목 3" Click="Heading3_Click"/>
+                <Button Content="본문" ToolTip.Tip="본문" Click="HeadingBody_Click"/>
+                <Border Classes="div"/>
+                <Button Name="AlignLeftBtn" Content="좌" ToolTip.Tip="왼쪽 정렬" Click="AlignLeft_Click"/>
+                <Button Name="AlignCenterBtn" Content="중" ToolTip.Tip="가운데 정렬" Click="AlignCenter_Click"/>
+                <Button Name="AlignRightBtn" Content="우" ToolTip.Tip="오른쪽 정렬" Click="AlignRight_Click"/>
+                <Border Classes="div"/>
+                <Button Name="BulletBtn" Content="•" ToolTip.Tip="글머리표 목록" Click="BulletButton_Click"/>
+                <Button Name="NumberBtn" Content="1." ToolTip.Tip="번호 목록" Click="NumberingButton_Click"/>
+                <Button Content="→|" ToolTip.Tip="들여쓰기" Click="IndentInc_Click"/>
+                <Button Content="|←" ToolTip.Tip="내어쓰기" Click="IndentDec_Click"/>
+                <Border Classes="div"/>
+                <Button Content="1.0" ToolTip.Tip="줄 간격 1.0" Click="Spacing10_Click"/>
+                <Button Content="1.5" ToolTip.Tip="줄 간격 1.5" Click="Spacing15_Click"/>
+                <Button Content="2.0" ToolTip.Tip="줄 간격 2.0" Click="Spacing20_Click"/>
+            </WrapPanel>
         </StackPanel>
 
         <Border Grid.Row="2" Name="FindBar" IsVisible="False" Background="#F5F5F5" Padding="10,6" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1">
@@ -114,8 +132,15 @@
             </StackPanel>
         </Border>
 
-        <ScrollViewer Grid.Row="3" Padding="20">
-            <controls:CustomRichTextBox x:Name="RichTextBox" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MinHeight="1000"/>
+        <ScrollViewer Grid.Row="3" Name="EditorScroll" Background="White" Padding="0"
+                      HorizontalScrollBarVisibility="Disabled" SizeChanged="EditorScroll_SizeChanged">
+            <!-- A4-width page (210mm @96DPI ≈ 794px incl. 48px margins). Fixed width, scaled
+                 (LayoutTransform) to fill the viewport. No surrounding desk. -->
+            <LayoutTransformControl Name="PageScale" HorizontalAlignment="Center">
+                <Border Background="White" Width="794" MinHeight="1000" Padding="48,40">
+                    <controls:CustomRichTextBox x:Name="RichTextBox" HorizontalAlignment="Stretch" MinHeight="900"/>
+                </Border>
+            </LayoutTransformControl>
         </ScrollViewer>
 
         <Border Grid.Row="4" Background="#EEEEEE" Padding="12,4" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
