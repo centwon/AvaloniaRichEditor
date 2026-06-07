@@ -332,6 +332,89 @@ public class CustomRichTextBox : Control
         return (start, end);
     }
 
+    // Word boundaries on plain text: a word is a run of non-whitespace (so Korean eojeol = one word).
+    private static int PrevWord(string text, int offset)
+    {
+        int i = Math.Clamp(offset, 0, text.Length);
+        while (i > 0 && char.IsWhiteSpace(text[i - 1])) i--;
+        while (i > 0 && !char.IsWhiteSpace(text[i - 1])) i--;
+        return i;
+    }
+    private static int NextWord(string text, int offset)
+    {
+        int i = Math.Clamp(offset, 0, text.Length);
+        while (i < text.Length && !char.IsWhiteSpace(text[i])) i++;
+        while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+        return i;
+    }
+
+    private void ApplyCaretSelection(bool shift)
+    {
+        if (!shift) _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        ResetCaretBlink();
+    }
+
+    private void WordMove(bool forward, bool shift)
+    {
+        var p = _caretPosition.Paragraph;
+        if (p != null)
+        {
+            int off = _caretPosition.Offset;
+            if (forward && off < GetParagraphLength(p)) _caretPosition = new TextPointer(p, NextWord(BuildPlain(p), off));
+            else if (!forward && off > 0) _caretPosition = new TextPointer(p, PrevWord(BuildPlain(p), off));
+            else if (forward) MoveCaretRight();
+            else MoveCaretLeft();
+        }
+        ApplyCaretSelection(shift);
+    }
+
+    private void WordDelete(bool forward)
+    {
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (_selectionStart != _selectionEnd) { DeleteSelection(); InvalidateVisual(); ResetCaretBlink(); return; }
+        var p = _caretPosition.Paragraph;
+        if (p != null)
+        {
+            int off = _caretPosition.Offset;
+            if (forward && off < GetParagraphLength(p))
+            {
+                int no = NextWord(BuildPlain(p), off);
+                new TextRange(new TextPointer(p, off), new TextPointer(p, no)).Delete();
+            }
+            else if (!forward && off > 0)
+            {
+                int no = PrevWord(BuildPlain(p), off);
+                new TextRange(new TextPointer(p, no), new TextPointer(p, off)).Delete();
+                _caretPosition = new TextPointer(p, no);
+            }
+        }
+        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        InvalidateVisual();
+        ResetCaretBlink();
+    }
+
+    // Viewport height in document (unscaled) pixels, for PageUp/Down. Accounts for the fit-to-width zoom.
+    private double PageStep()
+    {
+        var sv = Avalonia.VisualTree.VisualExtensions.FindAncestorOfType<Avalonia.Controls.ScrollViewer>(this);
+        double h = sv?.Viewport.Height ?? 500;
+        var lt = Avalonia.VisualTree.VisualExtensions.FindAncestorOfType<Avalonia.Controls.LayoutTransformControl>(this);
+        double scale = (lt?.LayoutTransform as ScaleTransform)?.ScaleY ?? 1;
+        if (scale > 0.01) h /= scale;
+        return Math.Max(100, h - 40); // keep a little overlap between pages
+    }
+
+    private void GoToDocEdge(bool start, bool shift)
+    {
+        var paras = GetAllParagraphsInOrder();
+        if (paras.Count == 0) return;
+        var target = start ? paras[0] : paras[^1];
+        _caretPosition = new TextPointer(target, start ? 0 : GetParagraphLength(target));
+        ApplyCaretSelection(shift);
+    }
+
     private static void OpenUrl(string url)
     {
         // Only launch web links from pasted content; never arbitrary schemes (file:, etc.).
@@ -832,6 +915,26 @@ public class CustomRichTextBox : Control
         if (ctrl && e.Key == Key.I) { ToggleItalic(); e.Handled = true; return; }
         if (ctrl && e.Key == Key.U) { ToggleUnderline(); e.Handled = true; return; }
 
+        // Word-level navigation/deletion and document start/end (Ctrl + arrows/Home/End/Back/Delete).
+        if (ctrl && e.Key == Key.Home) { GoToDocEdge(start: true, shift); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.End) { GoToDocEdge(start: false, shift); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.Left) { WordMove(forward: false, shift); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.Right) { WordMove(forward: true, shift); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.Back && !IsReadOnly) { WordDelete(forward: false); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.Delete && !IsReadOnly) { WordDelete(forward: true); e.Handled = true; return; }
+
+        // PageUp/Down move the caret by ~a viewport height (and the auto-scroll follows). We handle them
+        // so the caret moves with the view instead of the ScrollViewer scrolling the caret off-screen.
+        if (e.Key == Key.PageUp || e.Key == Key.PageDown)
+        {
+            double step = PageStep();
+            double ty = e.Key == Key.PageUp ? Math.Max(0, _lastCaretPoint.Y - step) : _lastCaretPoint.Y + step;
+            _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, ty));
+            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            ResetCaretBlink(); e.Handled = true; return;
+        }
+
         if (e.Key == Key.Tab)
         {
             HandleTab(shift);
@@ -1067,13 +1170,54 @@ public class CustomRichTextBox : Control
         _caretTimer.Stop();
         _caretTimer.Start();
         _imClient.NotifyCaretChanged();
+        _bringCaretIntoView = true;
         InvalidateVisual();
         NotifyStatus();
     }
 
-    // Raised whenever the caret moves or the text changes, so a host (status bar) can refresh counts.
+    private bool _bringCaretIntoView;
+
+    // Raised whenever the caret moves or the text changes, so a host (status bar/toolbar) can refresh.
     public event EventHandler? StatusChanged;
-    private void NotifyStatus() => StatusChanged?.Invoke(this, EventArgs.Empty);
+    private void NotifyStatus()
+    {
+        InvalidateMeasure(); // content height may have changed -> let the ScrollViewer update its extent
+        StatusChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // Snapshot of the formatting at the caret, for a host toolbar to reflect (active B/I/U, size, etc.).
+    public readonly record struct CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike,
+        double FontSize, string? FontFamily, TextAlignment Align, ListKind List, int Heading);
+
+    private static bool HasDeco(Run? r, TextDecorationLocation loc)
+    {
+        if (r == null) return false;
+        if (r.TextDecorations == null)
+            return loc == TextDecorationLocation.Underline && !string.IsNullOrEmpty(r.NavigateUri);
+        foreach (var d in r.TextDecorations) if (d.Location == loc) return true;
+        return false;
+    }
+
+    public CaretFormat GetCaretFormat()
+    {
+        var p = _caretPosition.Paragraph;
+        Run? run = null;
+        if (p != null)
+        {
+            run = RunAtOffset(p, _caretPosition.Offset > 0 ? _caretPosition.Offset - 1 : 0);
+            if (run == null) foreach (var inl in p.Inlines) if (inl is Run r0) { run = r0; break; }
+        }
+        return new CaretFormat(
+            run?.FontWeight == FontWeight.Bold,
+            run?.FontStyle == FontStyle.Italic,
+            HasDeco(run, TextDecorationLocation.Underline),
+            HasDeco(run, TextDecorationLocation.Strikethrough),
+            run != null && run.FontSize > 0 ? run.FontSize : 14,
+            run?.FontFamily,
+            p?.TextAlignment ?? TextAlignment.Left,
+            p?.ListType ?? ListKind.None,
+            p?.HeadingLevel ?? 0);
+    }
 
     // Document character count, word count, and the caret's 1-based line/column (treating each paragraph
     // break and embedded "\n" as a line break). Inline images count as one character.
@@ -3108,6 +3252,38 @@ public class CustomRichTextBox : Control
         catch { }
     }
 
+    // Total rendered height of the document at the given content width (mirrors the render advancement).
+    // Reported via MeasureOverride so the hosting ScrollViewer grows its scrollable extent with content.
+    private double MeasureContentHeight(double width)
+    {
+        if (Document == null) return 0;
+        double yOffset = 0;
+        foreach (var block in Document.Blocks)
+        {
+            if (block is TableBlock tb) yOffset += LayoutTable(tb, 10 + tb.Indent, yOffset).TotalHeight + 10;
+            else if (block is ImageBlock img) yOffset += (img.Height > 0 ? img.Height : 200) + 10;
+            else if (block is DividerBlock) yOffset += DividerHeight;
+            else if (block is Paragraph p)
+            {
+                if (BuildPlain(p) == "")
+                    yOffset += p.MarginBottom + (!double.IsNaN(p.LineHeight) ? p.LineHeight : 20);
+                else
+                    yOffset += BuildTextLayout(p, Math.Max(10, width - 20 - ParaLeft(p))).Height + p.MarginBottom;
+            }
+        }
+        return yOffset + 40; // a little breathing room at the bottom
+    }
+
+    private double _measuredHeight;
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        base.MeasureOverride(availableSize);
+        double w = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0 ? 698 : availableSize.Width;
+        _measuredHeight = Math.Max(MinHeight, MeasureContentHeight(w));
+        return new Size(w, _measuredHeight);
+    }
+
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(Brushes.Transparent, new Rect(0, 0, Bounds.Width, 2000));
@@ -3354,6 +3530,20 @@ public class CustomRichTextBox : Control
             {
                 context.DrawLine(new Pen(Brushes.Black, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + 20));
             }
+        }
+
+        // After the caret position is known, scroll it into view if it moved off-screen. Posted (not
+        // called inline) so it runs after this layout/render pass rather than re-entering it.
+        if (_bringCaretIntoView)
+        {
+            _bringCaretIntoView = false;
+            // Include some margin above/below the caret so scrolling leaves it comfortably inside the
+            // viewport rather than flush against (or just past) an edge.
+            const double m = 40;
+            Rect target = blockCaretRect is { } br
+                ? new Rect(br.X, Math.Max(0, br.Y - m), 2, br.Height + 2 * m)
+                : new Rect(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - m), 2, 20 + 2 * m);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => { try { this.BringIntoView(target); } catch { } });
         }
     }
 }
