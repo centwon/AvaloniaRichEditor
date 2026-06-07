@@ -406,6 +406,22 @@ public class CustomRichTextBox : Control
         return Math.Max(100, h - 40); // keep a little overlap between pages
     }
 
+    // Focuses the editor and places a blinking caret at the end of the document (used on startup).
+    public void FocusDocumentEnd()
+    {
+        var paras = GetAllParagraphsInOrder();
+        if (paras.Count > 0)
+        {
+            var last = paras[^1];
+            int off = GetParagraphLength(last);
+            _caretPosition = new TextPointer(last, off);
+            _selectionStart = new TextPointer(last, off);
+            _selectionEnd = new TextPointer(last, off);
+        }
+        Focus();
+        ResetCaretBlink();
+    }
+
     private void GoToDocEdge(bool start, bool shift)
     {
         var paras = GetAllParagraphsInOrder();

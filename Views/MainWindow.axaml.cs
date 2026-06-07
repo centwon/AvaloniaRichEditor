@@ -41,9 +41,14 @@ public partial class MainWindow : Window
         SetupColorFlyout("HighlightButton", highlight: true);
         SetupTableFlyout("TableButton");
         SetupFontCombo();
+    }
 
-        // Focus the editor on launch so the user can type immediately (and the IME switches to Hangul).
-        Avalonia.Threading.Dispatcher.UIThread.Post(() => this.FindControl<CustomRichTextBox>("RichTextBox")?.Focus());
+    protected override void OnOpened(System.EventArgs e)
+    {
+        base.OnOpened(e);
+        // Once the window is shown, focus the editor with a blinking caret at the document end so the
+        // user can type immediately without clicking.
+        this.FindControl<CustomRichTextBox>("RichTextBox")?.FocusDocumentEnd();
     }
 
     // A drag-to-size table picker (hover the grid to choose rows×columns, click to insert).
