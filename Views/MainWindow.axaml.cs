@@ -301,45 +301,6 @@ public partial class MainWindow : Window
             if (it is ComboBoxItem ci && ci.Content?.ToString() == content) { cb.SelectedItem = ci; return; }
     }
 
-    // Loads a built-in document that exercises every feature at once (via the HTML parser, so it also
-    // checks ParseHtml). Useful for eyeballing rendering — especially the merged-cell table.
-    private void SampleButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var richTextBox = this.FindControl<CustomRichTextBox>("RichTextBox");
-        if (richTextBox == null) return;
-        richTextBox.Document = AvaloniaRichTextBoxPort.Formatters.HtmlDocumentFormatter.ParseHtml(SampleHtml);
-        richTextBox.InvalidateVisual();
-    }
-
-    private const string SampleHtml = @"
-<h1>예제 문서 — 전체 기능 테스트</h1>
-<p>인라인 서식: <b>굵게</b>, <i>기울임</i>, <u>밑줄</u>, <s>취소선</s>,
-<span style='color:#c00000'>빨강 글자</span>,
-<span style='background-color:#fff2a8'>형광펜</span>,
-<span style='font-size:20px'>큰 글자</span>,
-<span style='font-family:Georgia'>다른 글꼴</span>,
-<a href='https://avaloniaui.net'>하이퍼링크</a>.</p>
-
-<h2>목록</h2>
-<ul><li>글머리 항목 하나</li><li>글머리 항목 둘</li></ul>
-<ol><li>번호 항목 하나</li><li>번호 항목 둘</li></ol>
-<blockquote>인용문 블록입니다. 좌측에 세로 바가 표시됩니다.</blockquote>
-<hr/>
-
-<h2>문단 정렬</h2>
-<p style='text-align:center'>가운데 정렬된 문단</p>
-<p style='text-align:right'>오른쪽 정렬된 문단</p>
-
-<h2>표 — 셀 병합(colspan / rowspan)</h2>
-<table border='1'>
-  <tr><td colspan='3' style='background-color:#dbe5f1'>머리글 (가로 3칸 병합)</td></tr>
-  <tr><td rowspan='2'>세로 2칸<br/>병합</td><td>B1</td><td>C1</td></tr>
-  <tr><td>B2</td><td>C2</td></tr>
-  <tr><td>A3</td><td colspan='2'>가로 2칸 병합</td></tr>
-</table>
-<p>표 안에서 셀을 가로/세로로 드래그 선택한 뒤 우클릭 → <b>셀 병합</b> / <b>병합 해제</b>를 시험해 보세요.</p>
-";
-
     private async void SaveButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
@@ -416,12 +377,6 @@ public partial class MainWindow : Window
             using var writer = new System.IO.StreamWriter(stream);
             await writer.WriteAsync(html);
         }
-    }
-
-    private void PasteHtmlButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var richTextBox = this.FindControl<CustomRichTextBox>("RichTextBox");
-        richTextBox?.PasteFromClipboardAsync();
     }
 
     private async void InsertImageButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

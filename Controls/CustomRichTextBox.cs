@@ -8,6 +8,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using AvaloniaRichTextBoxPort.Documents;
 
@@ -660,6 +661,20 @@ public class CustomRichTextBox : Control
         {
             int len = InlineLen(inl);
             if (inl is Run run && offset >= idx && offset < idx + len) return run;
+            idx += len;
+        }
+        return null;
+    }
+
+    // The inline image occupying the logical position at `offset`. An image is one position wide, so a
+    // click on it can land on either edge — check both the position and the one before it.
+    private static InlineImage? InlineImageAt(Paragraph p, int offset)
+    {
+        int idx = 0;
+        foreach (var inl in p.Inlines)
+        {
+            int len = InlineLen(inl);
+            if (inl is InlineImage img && (offset == idx || offset == idx + len)) return img;
             idx += len;
         }
         return null;
@@ -2792,6 +2807,23 @@ public class CustomRichTextBox : Control
         return mi;
     }
 
+    // A context menu with a compact look: smaller font and tight row height/padding so long menus don't
+    // dominate the screen. The MenuItem style applies to nested submenu items too.
+    private static ContextMenu NewContextMenu()
+    {
+        var menu = new ContextMenu { Placement = PlacementMode.Pointer };
+        menu.Styles.Add(new Style(x => x.OfType<MenuItem>())
+        {
+            Setters =
+            {
+                new Setter(MenuItem.FontSizeProperty, 12.0),
+                new Setter(MenuItem.MinHeightProperty, 0.0),
+                new Setter(MenuItem.PaddingProperty, new Thickness(10, 2)),
+            }
+        });
+        return menu;
+    }
+
     private void CollapseSelectionToCaret()
     {
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -2808,7 +2840,7 @@ public class CustomRichTextBox : Control
         if (IsReadOnly)
         {
             var roItems = new List<Control> { Mi("복사", CopySelectionToClipboard, hasSelection), Mi("모두 선택", SelectAll) };
-            var roMenu = new ContextMenu { Placement = PlacementMode.Pointer };
+            var roMenu = NewContextMenu();
             roMenu.ItemsSource = roItems;
             roMenu.Open(this);
             return;
@@ -2829,25 +2861,43 @@ public class CustomRichTextBox : Control
             var tp = GetPositionFromPoint(point);
             _caretPosition = tp;
             if (!hasSelection) CollapseSelectionToCaret();
-            BuildTableMenu(items, tbk, tp.Paragraph, hasSelection);
+            // Text selected within a single cell -> text-formatting menu; a cell-block selection (or a bare
+            // caret) -> table-structure menu.
+            if (hasSelection && SelectedCellRange(tbk) == null)
+                BuildCellTextMenu(items, hasSelection);
+            else
+                BuildTableMenu(items, tbk, tp.Paragraph, hasSelection);
         }
         else
         {
             _selectedBlock = null;
+            var tp = GetPositionFromPoint(point);
+            // Right-clicking exactly on an inline image (and not over a selection) gets its own menu.
+            var inlineImg = !hasSelection && tp.Paragraph != null ? InlineImageAt(tp.Paragraph, tp.Offset) : null;
             if (!hasSelection)
             {
-                _caretPosition = GetPositionFromPoint(point);
+                _caretPosition = tp;
                 CollapseSelectionToCaret();
             }
-            var link = GetLinkRunAtPoint(point);
-            BuildTextMenu(items, hasSelection, link);
+            if (inlineImg != null && tp.Paragraph != null)
+            {
+                BuildInlineImageMenu(items, tp.Paragraph, inlineImg);
+            }
+            else
+            {
+                var link = GetLinkRunAtPoint(point);
+                if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
+                    BuildLinkMenu(items, hasSelection, link);
+                else
+                    BuildTextMenu(items, hasSelection, link);
+            }
         }
 
         ResetCaretBlink();
         InvalidateVisual();
 
         if (items.Count == 0) return;
-        var menu = new ContextMenu { Placement = PlacementMode.Pointer };
+        var menu = NewContextMenu();
         menu.ItemsSource = items;
         menu.Open(this);
     }
@@ -2873,46 +2923,61 @@ public class CustomRichTextBox : Control
 
     private void AddFormatItems(List<Control> items, bool hasSelection)
     {
-        items.Add(Mi("굵게", ToggleBold, hasSelection));
-        items.Add(Mi("기울임", ToggleItalic, hasSelection));
-        items.Add(Mi("밑줄", ToggleUnderline, hasSelection));
-        items.Add(Mi("취소선", ToggleStrikethrough, hasSelection));
-        items.Add(Sub("글자 크기",
-            Mi("10", () => SetFontSize(10)), Mi("12", () => SetFontSize(12)), Mi("14", () => SetFontSize(14)),
-            Mi("18", () => SetFontSize(18)), Mi("24", () => SetFontSize(24)), Mi("36", () => SetFontSize(36))));
-        items.Add(Sub("글자 색",
-            Mi("검정", () => SetForeground(Brushes.Black)), Mi("빨강", () => SetForeground(Brushes.Red)),
-            Mi("파랑", () => SetForeground(Brushes.Blue)), Mi("초록", () => SetForeground(Brushes.Green)),
-            Mi("회색", () => SetForeground(Brushes.Gray))));
-        items.Add(Sub("정렬",
-            Mi("왼쪽", () => SetTextAlignment(TextAlignment.Left)),
-            Mi("가운데", () => SetTextAlignment(TextAlignment.Center)),
-            Mi("오른쪽", () => SetTextAlignment(TextAlignment.Right))));
-        items.Add(Mi("서식 지우기", ClearFormatting, hasSelection));
-        items.Add(Sub("목록",
-            Mi("글머리표", ToggleBullet),
-            Mi("번호 매기기", ToggleNumbering)));
-        items.Add(Sub("제목",
-            Mi("제목 1", () => SetHeading(1)),
-            Mi("제목 2", () => SetHeading(2)),
-            Mi("제목 3", () => SetHeading(3)),
-            Mi("본문", () => SetHeading(0))));
-        items.Add(Sub("글꼴",
-            Mi("맑은 고딕", () => SetFontFamily("Malgun Gothic"), hasSelection),
-            Mi("굴림", () => SetFontFamily("Gulim"), hasSelection),
-            Mi("바탕", () => SetFontFamily("Batang"), hasSelection),
-            Mi("돋움", () => SetFontFamily("Dotum"), hasSelection),
-            Mi("Arial", () => SetFontFamily("Arial"), hasSelection),
-            Mi("Times New Roman", () => SetFontFamily("Times New Roman"), hasSelection)));
-        items.Add(Sub("형광펜",
-            Mi("노랑", () => SetHighlight(Brushes.Yellow), hasSelection),
-            Mi("연두", () => SetHighlight(Brushes.LightGreen), hasSelection),
-            Mi("분홍", () => SetHighlight(Brushes.Pink), hasSelection),
-            Mi("하늘", () => SetHighlight(Brushes.LightBlue), hasSelection),
-            Mi("없음", () => SetHighlight(null), hasSelection)));
-        items.Add(Sub("들여쓰기",
-            Mi("들여쓰기 +", () => Indent(20)),
-            Mi("내어쓰기 -", () => Indent(-20))));
+        // Character-level formatting, grouped under one submenu so the top level stays short.
+        items.Add(Sub("글자 모양",
+            Mi("굵게", ToggleBold, hasSelection),
+            Mi("기울임", ToggleItalic, hasSelection),
+            Mi("밑줄", ToggleUnderline, hasSelection),
+            Mi("취소선", ToggleStrikethrough, hasSelection),
+            new Separator(),
+            Sub("글자 크기",
+                Mi("10", () => SetFontSize(10)), Mi("12", () => SetFontSize(12)), Mi("14", () => SetFontSize(14)),
+                Mi("18", () => SetFontSize(18)), Mi("24", () => SetFontSize(24)), Mi("36", () => SetFontSize(36))),
+            Sub("글자 색",
+                Mi("검정", () => SetForeground(Brushes.Black)), Mi("빨강", () => SetForeground(Brushes.Red)),
+                Mi("파랑", () => SetForeground(Brushes.Blue)), Mi("초록", () => SetForeground(Brushes.Green)),
+                Mi("회색", () => SetForeground(Brushes.Gray))),
+            Sub("형광펜",
+                Mi("노랑", () => SetHighlight(Brushes.Yellow), hasSelection),
+                Mi("연두", () => SetHighlight(Brushes.LightGreen), hasSelection),
+                Mi("분홍", () => SetHighlight(Brushes.Pink), hasSelection),
+                Mi("하늘", () => SetHighlight(Brushes.LightBlue), hasSelection),
+                Mi("없음", () => SetHighlight(null), hasSelection)),
+            Sub("글꼴",
+                Mi("맑은 고딕", () => SetFontFamily("Malgun Gothic"), hasSelection),
+                Mi("굴림", () => SetFontFamily("Gulim"), hasSelection),
+                Mi("바탕", () => SetFontFamily("Batang"), hasSelection),
+                Mi("돋움", () => SetFontFamily("Dotum"), hasSelection),
+                Mi("Arial", () => SetFontFamily("Arial"), hasSelection),
+                Mi("Times New Roman", () => SetFontFamily("Times New Roman"), hasSelection)),
+            new Separator(),
+            Mi("서식 지우기", ClearFormatting, hasSelection)));
+        // Paragraph-level formatting, also grouped.
+        items.Add(Sub("문단",
+            Sub("정렬",
+                Mi("왼쪽", () => SetTextAlignment(TextAlignment.Left)),
+                Mi("가운데", () => SetTextAlignment(TextAlignment.Center)),
+                Mi("오른쪽", () => SetTextAlignment(TextAlignment.Right))),
+            Sub("목록",
+                Mi("글머리표", ToggleBullet),
+                Mi("번호 매기기", ToggleNumbering)),
+            Sub("제목",
+                Mi("제목 1", () => SetHeading(1)),
+                Mi("제목 2", () => SetHeading(2)),
+                Mi("제목 3", () => SetHeading(3)),
+                Mi("본문", () => SetHeading(0))),
+            Sub("들여쓰기",
+                Mi("들여쓰기 +", () => Indent(20)),
+                Mi("내어쓰기 -", () => Indent(-20)))));
+    }
+
+    // Menu shown when text is selected inside a table cell: clipboard + grouped formatting only — no
+    // table-structure or block-insert items.
+    private void BuildCellTextMenu(List<Control> items, bool hasSelection)
+    {
+        AddClipboardItems(items, hasSelection);
+        items.Add(new Separator());
+        AddFormatItems(items, hasSelection);
     }
 
     public void InsertDivider()
@@ -2958,6 +3023,31 @@ public class CustomRichTextBox : Control
         items.Add(Mi("다른 이름으로 저장...", () => { _ = SaveImageAsync(img); }, img.Image != null));
     }
 
+    // Concise menu shown when right-clicking a hyperlink: link actions + copy, no formatting clutter.
+    private void BuildLinkMenu(List<Control> items, bool hasSelection, Run link)
+    {
+        items.Add(Mi("링크 열기", () => OpenUrl(link.NavigateUri!)));
+        items.Add(Mi("링크 편집...", () => { _ = EditHyperlinkAsync(link.NavigateUri, link); }));
+        items.Add(Mi("링크 제거", () => SetHyperlink(null, link)));
+        items.Add(Mi("링크 복사", () =>
+        {
+            if (link.NavigateUri != null) TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(link.NavigateUri);
+        }, !string.IsNullOrEmpty(link.NavigateUri)));
+        items.Add(new Separator());
+        items.Add(Mi("복사", CopySelectionToClipboard, hasSelection));
+    }
+
+    // Menu for an inline image (small in-paragraph icon): mirrors the block-image menu but operates on
+    // the InlineImage in place.
+    private void BuildInlineImageMenu(List<Control> items, Paragraph p, InlineImage img)
+    {
+        items.Add(Mi("삭제", () => DeleteInlineImage(p, img)));
+        items.Add(new Separator());
+        items.Add(Mi("원본 크기로", () => ResetInlineImageSize(img), img.Image != null));
+        items.Add(Mi("이미지 교체...", () => { _ = ReplaceInlineImageAsync(img); }));
+        items.Add(Mi("다른 이름으로 저장...", () => { _ = SaveBitmapAsync(img.Image); }, img.Image != null));
+    }
+
     private void BuildTableMenu(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
     {
         AddClipboardItems(items, hasSelection);
@@ -2993,8 +3083,6 @@ public class CustomRichTextBox : Control
             FocusCell(tb.Cells[r][c]);
             InvalidateVisual();
         }, canUnmerge));
-        items.Add(new Separator());
-        AddFormatItems(items, hasSelection);
         items.Add(new Separator());
         items.Add(Mi("표 삭제", () => DeleteBlock(tb)));
     }
@@ -3225,9 +3313,11 @@ public class CustomRichTextBox : Control
         catch { }
     }
 
-    private async Task SaveImageAsync(ImageBlock img)
+    private Task SaveImageAsync(ImageBlock img) => SaveBitmapAsync(img.Image);
+
+    private async Task SaveBitmapAsync(Avalonia.Media.Imaging.Bitmap? bmp)
     {
-        if (img.Image == null) return;
+        if (bmp == null) return;
         var top = TopLevel.GetTopLevel(this);
         if (top == null) return;
         var file = await top.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
@@ -3240,7 +3330,46 @@ public class CustomRichTextBox : Control
         try
         {
             await using var s = await file.OpenWriteAsync();
-            img.Image.Save(s);
+            bmp.Save(s);
+        }
+        catch { }
+    }
+
+    private void DeleteInlineImage(Paragraph p, InlineImage img)
+    {
+        if (Document == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        p.Inlines.Remove(img);
+        InvalidateVisual();
+    }
+
+    private void ResetInlineImageSize(InlineImage img)
+    {
+        if (Document == null || img.Image == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        img.Width = img.Image.Size.Width;
+        img.Height = img.Image.Size.Height;
+        InvalidateVisual();
+    }
+
+    private async Task ReplaceInlineImageAsync(InlineImage img)
+    {
+        var top = TopLevel.GetTopLevel(this);
+        if (top == null) return;
+        var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "이미지 선택",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { Avalonia.Platform.Storage.FilePickerFileTypes.ImageAll }
+        });
+        if (files.Count == 0) return;
+        try
+        {
+            await using var s = await files[0].OpenReadAsync();
+            var bmp = new Avalonia.Media.Imaging.Bitmap(s);
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            img.Image = bmp;
+            InvalidateVisual();
         }
         catch { }
     }
@@ -3367,30 +3496,22 @@ public class CustomRichTextBox : Control
                     // caret. A bare caret (collapsed selection) means "editing text" and shows no fill —
                     // so the caret's presence vs. the fill cleanly distinguishes the two modes.
                     bool inBlock = cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1;
-                    bool fullCell = false;
                     if (inBlock)
                     {
                         context.FillRectangle(new SolidColorBrush(Color.FromArgb(80, 0, 120, 215)), rect);
                     }
                     else if (cellBlock == null && selectedParagraphs?.Contains(cell) == true)
                     {
+                        // Selecting text within a single cell shows the usual text-run highlight (not a full
+                        // cell fill) so it reads as "editing text", visibly distinct from a selected cell.
                         int cellLen = GetParagraphLength(cell);
                         int hlStart = (cell == selStart!.Paragraph) ? selStart.Offset : 0;
                         int hlEnd = (cell == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                        fullCell = hlStart <= 0 && hlEnd >= cellLen;
-                        if (fullCell)
-                        {
-                            // Fill the whole cell so fully-selected (incl. empty) cells are visibly selected.
-                            var cellBrush = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
-                            context.FillRectangle(cellBrush, rect);
-                        }
-                        else if (hlEnd > hlStart)
-                        {
+                        if (hlEnd > hlStart)
                             DrawSelectionHighlight(context, layout, hlStart, hlEnd, rect.X + 5, rect.Y + 5);
-                        }
                     }
 
-                    bool cellSelected = inBlock || fullCell;
+                    bool cellSelected = inBlock;
                     if (_caretPosition != null && _caretPosition.Paragraph == cell && (!cellSelected || cellHasPreedit))
                     {
                         int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);

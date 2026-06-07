@@ -70,14 +70,11 @@
                     <Button Name="SaveButton" Content="💾" FontSize="15" ToolTip.Tip="JSON으로 저장" Click="SaveButton_Click"/>
                     <Button Name="LoadButton" Content="📂" FontSize="15" ToolTip.Tip="JSON 불러오기" Click="LoadButton_Click"/>
                     <Border Classes="div"/>
-                    <Button Name="ExportHtmlButton" Content="HTML 내보내기" Click="ExportHtmlButton_Click"/>
-                    <Button Name="PasteHtmlButton" Content="HTML 붙여넣기" Click="PasteHtmlButton_Click"/>
+                    <Button Name="ExportHtmlButton" Content="📤" FontSize="15" ToolTip.Tip="HTML로 내보내기" Click="ExportHtmlButton_Click"/>
                     <Border Classes="div"/>
-                    <Button Name="InsertImageButton" Content="🖼 그림" ToolTip.Tip="이미지 삽입" Click="InsertImageButton_Click"/>
-                    <Button Name="TableButton" Content="▦ 표 ▾" ToolTip.Tip="표 삽입 (격자에서 크기 선택)"/>
-                    <Button Content="― 구분선" ToolTip.Tip="가로 구분선" Click="DividerButton_Click"/>
-                    <Border Classes="div"/>
-                    <Button Name="SampleButton" Content="예제 문서" Click="SampleButton_Click"/>
+                    <Button Name="InsertImageButton" Content="🖼" FontSize="15" ToolTip.Tip="이미지 삽입" Click="InsertImageButton_Click"/>
+                    <Button Name="TableButton" Content="▦ ▾" ToolTip.Tip="표 삽입 (격자에서 크기 선택)"/>
+                    <Button Content="―" ToolTip.Tip="가로 구분선" Click="DividerButton_Click"/>
                 </StackPanel>
             </DockPanel>
 
