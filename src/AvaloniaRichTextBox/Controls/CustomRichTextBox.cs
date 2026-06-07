@@ -95,9 +95,51 @@ public class CustomRichTextBox : Control
         set => SetValue(IsReadOnlyProperty, value);
     }
 
+    public static readonly StyledProperty<IBrush> SelectionBrushProperty =
+        AvaloniaProperty.Register<CustomRichTextBox, IBrush>(
+            nameof(SelectionBrush), new SolidColorBrush(Color.FromArgb(80, 0, 120, 215)));
+
+    /// <summary>Fill brush for the text/cell selection highlight.</summary>
+    public IBrush SelectionBrush
+    {
+        get => GetValue(SelectionBrushProperty);
+        set => SetValue(SelectionBrushProperty, value);
+    }
+
+    public static readonly StyledProperty<IBrush> CaretBrushProperty =
+        AvaloniaProperty.Register<CustomRichTextBox, IBrush>(nameof(CaretBrush), Brushes.Black);
+
+    /// <summary>Brush for the blinking text caret.</summary>
+    public IBrush CaretBrush
+    {
+        get => GetValue(CaretBrushProperty);
+        set => SetValue(CaretBrushProperty, value);
+    }
+
+    public static readonly StyledProperty<FontFamily> DefaultFontFamilyProperty =
+        AvaloniaProperty.Register<CustomRichTextBox, FontFamily>(
+            nameof(DefaultFontFamily), FontFamily.Default);
+
+    /// <summary>Font family used for runs that don't specify one.</summary>
+    public FontFamily DefaultFontFamily
+    {
+        get => GetValue(DefaultFontFamilyProperty);
+        set => SetValue(DefaultFontFamilyProperty, value);
+    }
+
+    public static readonly StyledProperty<double> DefaultFontSizeProperty =
+        AvaloniaProperty.Register<CustomRichTextBox, double>(nameof(DefaultFontSize), 14.0);
+
+    /// <summary>Font size used for runs that don't specify one.</summary>
+    public double DefaultFontSize
+    {
+        get => GetValue(DefaultFontSizeProperty);
+        set => SetValue(DefaultFontSizeProperty, value);
+    }
+
     static CustomRichTextBox()
     {
-        AffectsRender<CustomRichTextBox>(DocumentProperty);
+        AffectsRender<CustomRichTextBox>(DocumentProperty, SelectionBrushProperty, CaretBrushProperty);
     }
 
     private readonly RtbInputMethodClient _imClient;
@@ -141,6 +183,16 @@ public class CustomRichTextBox : Control
         {
             _layoutCache.Clear();
             if (Document != null) UpdateParents(Document);
+            _textChangedPending = true; // wholesale content swap
+            DocumentChanged?.Invoke(this, EventArgs.Empty);
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+        if (change.Property == DefaultFontFamilyProperty || change.Property == DefaultFontSizeProperty)
+        {
+            _layoutCache.Clear(); // default font feeds the cached layouts
+            InvalidateMeasure();
+            InvalidateVisual();
         }
         if (change.Property == IsFocusedProperty)
         {
@@ -178,7 +230,7 @@ public class CustomRichTextBox : Control
         {
             if (h.rect.Contains(point))
             {
-                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                if (Document != null) PushUndo();
                 _isResizingImage = true;
                 _resizingImage = h.img;
                 _initialImageWidth = h.img.Width > 0 ? h.img.Width : 200;
@@ -195,7 +247,7 @@ public class CustomRichTextBox : Control
         {
             if (b.rect.Contains(point))
             {
-                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                if (Document != null) PushUndo();
                 _isResizingColumn = true;
                 _resizingTable = b.tb;
                 _resizingColumnIndex = b.colIndex;
@@ -213,7 +265,7 @@ public class CustomRichTextBox : Control
         {
             if (b.rect.Contains(point))
             {
-                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                if (Document != null) PushUndo();
                 _isResizingRow = true;
                 _resizingRowTable = b.tb;
                 _resizingRowIndex = b.rowIndex;
@@ -379,7 +431,7 @@ public class CustomRichTextBox : Control
 
     private void WordDelete(bool forward)
     {
-        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (Document != null) PushUndo();
         if (_selectionStart != _selectionEnd) { DeleteSelection(); InvalidateVisual(); ResetCaretBlink(); return; }
         var p = _caretPosition.Paragraph;
         if (p != null)
@@ -844,7 +896,7 @@ public class CustomRichTextBox : Control
         if (string.IsNullOrEmpty(e.Text)) return;
         _selectedBlock = null;
         _caretBlock = null;
-        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (Document != null) PushUndo();
         InsertText(e.Text);
         e.Handled = true;
     }
@@ -868,19 +920,19 @@ public class CustomRichTextBox : Control
         {
             if (e.Key == Key.Space || (e.Key == Key.Tab && !shift))
             {
-                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                if (Document != null) PushUndo();
                 _caretBlock.Indent = Math.Min(_caretBlock.Indent + 20, 600);
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             if ((e.Key == Key.Tab && shift) || (e.Key == Key.Back && _caretBlock.Indent > 0))
             {
-                if (Document != null) _undoManager.PushState(Document, _caretPosition);
+                if (Document != null) PushUndo();
                 _caretBlock.Indent = Math.Max(0, _caretBlock.Indent - 20);
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             if ((e.Key == Key.Back || e.Key == Key.Delete) && Document != null)
             {
-                _undoManager.PushState(Document, _caretPosition);
+                PushUndo();
                 var blk = _caretBlock; _caretBlock = null;
                 MoveCaretToBlockNeighbor(blk, before: true);
                 Document.Blocks.Remove(blk);
@@ -934,7 +986,7 @@ public class CustomRichTextBox : Control
 
         if (e.Key == Key.X && ctrl)
         {
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             CopySelectionToClipboard();
             DeleteSelection();
             InvalidateVisual();
@@ -983,7 +1035,7 @@ public class CustomRichTextBox : Control
         // Push state before destructive keys
         if (e.Key == Key.Back || e.Key == Key.Delete || e.Key == Key.Enter)
         {
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
         }
 
         if (e.Key == Key.Left)
@@ -1153,7 +1205,7 @@ public class CustomRichTextBox : Control
                 // run" since a cell can't host sibling paragraphs.
                 if (Document != null && Document.Blocks.Contains(p))
                 {
-                    _undoManager.PushState(Document, _caretPosition);
+                    PushUndo();
                     if (_selectionStart != _selectionEnd) DeleteSelection();
                     p = _caretPosition.Paragraph!;
                     if (p.ListType != ListKind.None && GetParagraphLength(p) == 0)
@@ -1183,6 +1235,7 @@ public class CustomRichTextBox : Control
         _caretPosition.Offset = state.Value.CaretOffset;
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        MarkTextChanged();
         InvalidateVisual();
         NotifyStatus();
     }
@@ -1198,6 +1251,7 @@ public class CustomRichTextBox : Control
         _caretPosition.Offset = state.Value.CaretOffset;
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        MarkTextChanged();
         InvalidateVisual();
         NotifyStatus();
     }
@@ -1216,7 +1270,56 @@ public class CustomRichTextBox : Control
     private bool _bringCaretIntoView;
 
     // Raised whenever the caret moves or the text changes, so a host (status bar/toolbar) can refresh.
+    // (Coarse "something changed" signal; prefer the typed events below for new code.)
     public event EventHandler? StatusChanged;
+
+    /// <summary>Raised after the document's text, structure, or formatting is modified.</summary>
+    public event EventHandler? TextChanged;
+
+    /// <summary>Raised when the caret position or the selected range changes.</summary>
+    public event EventHandler? SelectionChanged;
+
+    /// <summary>Raised when the <see cref="Document"/> is replaced with a different instance.</summary>
+    public event EventHandler? DocumentChanged;
+
+    // Set by any edit; flushed (as TextChanged) from Render, off the render stack, so handlers see the
+    // already-mutated document and can't re-enter the render pass.
+    private bool _textChangedPending;
+    private void MarkTextChanged() => _textChangedPending = true;
+
+    // Records an undo checkpoint and flags a text change. Single choke point for document mutations.
+    private void PushUndo()
+    {
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        _textChangedPending = true;
+    }
+
+    // Last-seen selection, to fire SelectionChanged only on real movement (not on every repaint/blink).
+    private (Paragraph? cp, int co, Paragraph? ss, int so, Paragraph? se, int eo) _selSnapshot;
+    private bool SelectionMovedSinceLastSnapshot()
+    {
+        var now = (_caretPosition.Paragraph, _caretPosition.Offset,
+                   _selectionStart.Paragraph, _selectionStart.Offset,
+                   _selectionEnd.Paragraph, _selectionEnd.Offset);
+        if (now == _selSnapshot) return false;
+        _selSnapshot = now;
+        return true;
+    }
+
+    // Dispatches any pending TextChanged/SelectionChanged after the current render, avoiding re-entrancy.
+    private void RaisePendingChangeEvents()
+    {
+        bool text = _textChangedPending;
+        _textChangedPending = false;
+        bool sel = SelectionMovedSinceLastSnapshot();
+        if (!text && !sel) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (text) TextChanged?.Invoke(this, EventArgs.Empty);
+            if (sel) SelectionChanged?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
     private void NotifyStatus()
     {
         InvalidateMeasure(); // content height may have changed -> let the ScrollViewer update its extent
@@ -1556,6 +1659,7 @@ public class CustomRichTextBox : Control
         _caretPosition.Offset += text.Length;
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        MarkTextChanged();
         InvalidateVisual();
         NotifyStatus();
     }
@@ -1576,7 +1680,7 @@ public class CustomRichTextBox : Control
         else if (System.Text.RegularExpressions.Regex.IsMatch(prefix, @"^\d+\.$")) kind = ListKind.Ordered;
         else return false;
 
-        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (Document != null) PushUndo();
         DeleteLocalText(p, 0, prefix.Length);
         p.ListType = kind;
         _caretPosition = new TextPointer(p, 0);
@@ -1595,6 +1699,7 @@ public class CustomRichTextBox : Control
 
             _caretPosition = new TextPointer(range.Start.Paragraph, range.Start.Offset);
             if (Document != null) NormalizeBlocks(Document);
+            MarkTextChanged();
         }
         
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -1809,21 +1914,23 @@ public class CustomRichTextBox : Control
                 return cached.layout;
         }
 
+        var defaultFamily = DefaultFontFamily;
+        double defaultSize = DefaultFontSize;
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-            Typeface.Default, 14, null, Brushes.Black);
+            new Typeface(defaultFamily), defaultSize, null, Brushes.Black);
 
         var segs = new List<LayoutSeg>();
         foreach (var inline in p.Inlines)
         {
             if (inline is Run r && !string.IsNullOrEmpty(r.Text))
             {
-                var family = string.IsNullOrEmpty(r.FontFamily) ? FontFamily.Default : new FontFamily(r.FontFamily);
+                var family = string.IsNullOrEmpty(r.FontFamily) ? defaultFamily : new FontFamily(r.FontFamily);
                 var typeface = new Typeface(family, r.FontStyle, r.FontWeight);
                 TextDecorationCollection? decos = r.TextDecorations;
                 if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,
-                    r.FontSize <= 0 ? 14 : r.FontSize,
+                    r.FontSize <= 0 ? defaultSize : r.FontSize,
                     decos,
                     r.Foreground ?? Brushes.Black,
                     r.Background);
@@ -1996,12 +2103,32 @@ public class CustomRichTextBox : Control
 
     // ---- HTML interop (used by NativeEditor / external hosts) ----
 
-    public string GetHtml() => Document != null ? Formatters.HtmlDocumentFormatter.ToHtml(Document) : "";
+    /// <summary>Serializes the document to HTML.</summary>
+    public string ToHtml() => Document != null ? Formatters.HtmlDocumentFormatter.ToHtml(Document) : "";
 
-    public void SetHtml(string? html)
+    /// <summary>Replaces the document with one parsed from HTML (empty document if null/empty).</summary>
+    public void LoadHtml(string? html)
+        => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html));
+
+    /// <summary>Serializes the document to the library's JSON format.</summary>
+    public string ToJson() => Document != null ? Formatters.DocumentSerializer.Serialize(Document) : "";
+
+    /// <summary>Replaces the document with one loaded from the library's JSON format.</summary>
+    public void LoadJson(string json) => LoadDocument(Formatters.DocumentSerializer.Deserialize(json));
+
+    /// <summary>Clears the document to a single empty paragraph.</summary>
+    public void Clear() => LoadDocument(new FlowDocument());
+
+    /// <summary>True if there is an edit to undo.</summary>
+    public bool CanUndo => _undoManager.CanUndo;
+
+    /// <summary>True if there is an undone edit to redo.</summary>
+    public bool CanRedo => _undoManager.CanRedo;
+
+    // Swaps in a new document and resets caret/selection/undo to a clean state. Shared by Load*/Clear.
+    private void LoadDocument(FlowDocument doc)
     {
-        var doc = string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html);
-        Document = doc; // OnPropertyChanged runs UpdateParents/NormalizeBlocks
+        Document = doc; // OnPropertyChanged runs UpdateParents/NormalizeBlocks + raises DocumentChanged
         var first = GetAllParagraphsInOrder().FirstOrDefault();
         _caretPosition = new TextPointer(first, 0);
         CollapseSelectionToCaret();
@@ -2014,7 +2141,7 @@ public class CustomRichTextBox : Control
         if (Document == null || string.IsNullOrEmpty(html)) return;
         var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html);
         if (parsed.Blocks.Count == 0) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         InsertParsedDocument(parsed);
         InvalidateVisual();
     }
@@ -2031,7 +2158,7 @@ public class CustomRichTextBox : Control
         if (_internalClipboardText != null && text == _internalClipboardText &&
             (_internalClipboardBlocks != null || _internalClipboard != null))
         {
-            _undoManager.PushState(Document, _caretPosition);
+            PushUndo();
             if (_internalClipboardBlocks != null)
             {
                 InsertBlocks(_internalClipboardBlocks);
@@ -2056,7 +2183,7 @@ public class CustomRichTextBox : Control
                 var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(fragment);
                 if (parsed.Blocks.Count > 0)
                 {
-                    _undoManager.PushState(Document, _caretPosition);
+                    PushUndo();
                     InsertParsedDocument(parsed);
                     InvalidateVisual();
                     return;
@@ -2076,7 +2203,7 @@ public class CustomRichTextBox : Control
         // 4. Tab-separated text (e.g. Excel/HWP cells copied without HTML) -> rebuild as a table.
         if (!string.IsNullOrEmpty(text) && LooksTabular(text))
         {
-            _undoManager.PushState(Document, _caretPosition);
+            PushUndo();
             InsertTableFromTsv(text);
             InvalidateVisual();
             return;
@@ -2085,7 +2212,7 @@ public class CustomRichTextBox : Control
         // 5. Plain text fallback.
         if (!string.IsNullOrEmpty(text))
         {
-            _undoManager.PushState(Document, _caretPosition);
+            PushUndo();
             InsertText(text);
         }
     }
@@ -2328,7 +2455,7 @@ public class CustomRichTextBox : Control
     public void InsertImage(Avalonia.Media.Imaging.Bitmap image)
     {
         if (Document == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         var ib = new ImageBlock { Image = image, Width = image.Size.Width, Height = image.Size.Height };
         InsertBlockAtCaret(ib);
         InvalidateVisual();
@@ -2337,7 +2464,7 @@ public class CustomRichTextBox : Control
     public void InsertTable(int rows, int cols)
     {
         if (Document == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
         // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
         var tb = new TableBlock(rows, cols);
@@ -2355,20 +2482,20 @@ public class CustomRichTextBox : Control
     public void Indent(double delta)
     {
         if (_caretPosition.Paragraph == null) return;
-        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (Document != null) PushUndo();
         var p = _caretPosition.Paragraph;
         p.Indent = Math.Clamp(p.Indent + delta, 0, 400);
         InvalidateVisual();
     }
-    public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
-    public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null) { if (Document != null) _undoManager.PushState(Document, _caretPosition); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
+    public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null) { if (Document != null) PushUndo(); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
+    public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
     public void ToggleNumbering() { SetListType(ListKind.Ordered); }
 
     private void SetListType(ListKind kind)
     {
         if (_caretPosition.Paragraph == null || Document == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         bool turningOff = _caretPosition.Paragraph.ListType == kind;
 
         // Apply to every selected top-level paragraph (just the caret's when there's no selection).
@@ -2520,7 +2647,7 @@ public class CustomRichTextBox : Control
     public void SetHeading(int level)
     {
         if (_caretPosition.Paragraph == null) return;
-        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (Document != null) PushUndo();
         var p = _caretPosition.Paragraph;
         p.HeadingLevel = level;
         double size = level switch { 1 => 24, 2 => 20, 3 => 16, 4 => 14, 5 => 13, 6 => 12, _ => 14 };
@@ -2550,7 +2677,7 @@ public class CustomRichTextBox : Control
 
     private void ApplyStyleToSelection(Action<Run> styleAction)
     {
-        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        if (Document != null) PushUndo();
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
             var range = new TextRange(_selectionStart, _selectionEnd);
@@ -2742,7 +2869,7 @@ public class CustomRichTextBox : Control
         int startOffset, int endOffset, double originX, double originY)
     {
         if (endOffset <= startOffset) return;
-        var brush = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
+        var brush = SelectionBrush;
         foreach (var rect in layout.HitTestTextRange(startOffset, endOffset - startOffset))
             context.FillRectangle(brush, new Rect(originX + rect.X, originY + rect.Y, rect.Width, rect.Height));
     }
@@ -2774,7 +2901,7 @@ public class CustomRichTextBox : Control
             && string.Equals(new TextRange(_selectionStart, _selectionEnd).GetText(), query, cmp);
         if (selMatches)
         {
-            _undoManager.PushState(Document, _caretPosition);
+            PushUndo();
             ReplaceSelectionText(replacement);
             InvalidateVisual();
         }
@@ -2786,7 +2913,7 @@ public class CustomRichTextBox : Control
         if (Document == null || string.IsNullOrEmpty(query)) return 0;
         var paras = GetAllParagraphsInOrder();
         if (paras.Count == 0) return 0;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         _caretPosition = new TextPointer(paras[0], 0);
         CollapseSelectionToCaret();
         int count = 0;
@@ -2976,7 +3103,7 @@ public class CustomRichTextBox : Control
     {
         items.Add(Mi("잘라내기", () =>
         {
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             CopySelectionToClipboard();
             DeleteSelection();
             InvalidateVisual();
@@ -2985,7 +3112,7 @@ public class CustomRichTextBox : Control
         items.Add(Mi("붙여넣기", () => { _ = PasteFromClipboardAsync(); }));
         items.Add(Mi("삭제", () =>
         {
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             DeleteSelection();
             InvalidateVisual();
         }, hasSelection));
@@ -3053,7 +3180,7 @@ public class CustomRichTextBox : Control
     public void InsertDivider()
     {
         if (Document == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         InsertBlockAtCaret(new DividerBlock());
         InvalidateVisual();
     }
@@ -3138,7 +3265,7 @@ public class CustomRichTextBox : Control
         items.Add(Mi("셀 병합", () =>
         {
             if (range is not { } g) return;
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             tb.MergeCells(g.r0, g.c0, g.r1, g.c1);
             if (Document != null) UpdateParents(Document);
             FocusCell(tb.Cells[g.r0][g.c0]);
@@ -3147,7 +3274,7 @@ public class CustomRichTextBox : Control
         bool canUnmerge = r >= 0 && c >= 0 && (tb.SpanOf(r, c).cs > 1 || tb.SpanOf(r, c).rs > 1);
         items.Add(Mi("셀 병합 해제", () =>
         {
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             tb.UnmergeCell(r, c);
             if (Document != null) UpdateParents(Document);
             FocusCell(tb.Cells[r][c]);
@@ -3212,7 +3339,7 @@ public class CustomRichTextBox : Control
         var loc = _caretPosition.Paragraph != null ? FindCell(_caretPosition.Paragraph) : null;
         if (loc == null)
         {
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             InsertText("    ");
             return;
         }
@@ -3232,7 +3359,7 @@ public class CustomRichTextBox : Control
         }
         else
         {
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             tb.InsertRow(tb.Rows);
             if (Document != null) UpdateParents(Document);
             FocusCell(tb.Cells[tb.Rows - 1][0]);
@@ -3258,7 +3385,7 @@ public class CustomRichTextBox : Control
     private void DeleteBlock(Block b)
     {
         if (Document == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         Document.Blocks.Remove(b);
         _selectedBlock = null;
         NormalizeBlocks(Document);
@@ -3268,7 +3395,7 @@ public class CustomRichTextBox : Control
     private void TableInsertRow(TableBlock tb, int at)
     {
         if (Document == null || at < 0) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         tb.InsertRow(at);
         UpdateParents(Document);
         int ar = Math.Clamp(at, 0, tb.Rows - 1);
@@ -3280,7 +3407,7 @@ public class CustomRichTextBox : Control
     private void TableDeleteRow(TableBlock tb, int at)
     {
         if (Document == null || tb.Rows <= 1 || at < 0) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         tb.DeleteRow(at);
         UpdateParents(Document);
         int nr = Math.Clamp(at, 0, tb.Rows - 1);
@@ -3292,7 +3419,7 @@ public class CustomRichTextBox : Control
     private void TableInsertColumn(TableBlock tb, int at)
     {
         if (Document == null || at < 0) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         tb.InsertColumn(at);
         UpdateParents(Document);
         int ac = Math.Clamp(at, 0, tb.Columns - 1);
@@ -3304,7 +3431,7 @@ public class CustomRichTextBox : Control
     private void TableDeleteColumn(TableBlock tb, int at)
     {
         if (Document == null || tb.Columns <= 1 || at < 0) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         tb.DeleteColumn(at);
         UpdateParents(Document);
         int nc = Math.Clamp(at, 0, tb.Columns - 1);
@@ -3331,7 +3458,7 @@ public class CustomRichTextBox : Control
     private void SetHyperlink(string? url, Run? targetRun)
     {
         if (Document == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         if (_selectionStart.CompareTo(_selectionEnd) != 0)
         {
             var range = new TextRange(_selectionStart, _selectionEnd);
@@ -3355,7 +3482,7 @@ public class CustomRichTextBox : Control
     private void ResetImageSize(ImageBlock img)
     {
         if (Document == null || img.Image == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         img.Width = img.Image.Size.Width;
         img.Height = img.Image.Size.Height;
         InvalidateVisual();
@@ -3376,7 +3503,7 @@ public class CustomRichTextBox : Control
         {
             await using var s = await files[0].OpenReadAsync();
             var bmp = new Avalonia.Media.Imaging.Bitmap(s);
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             img.Image = bmp;
             InvalidateVisual();
         }
@@ -3408,7 +3535,7 @@ public class CustomRichTextBox : Control
     private void DeleteInlineImage(Paragraph p, InlineImage img)
     {
         if (Document == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         p.Inlines.Remove(img);
         InvalidateVisual();
     }
@@ -3416,7 +3543,7 @@ public class CustomRichTextBox : Control
     private void ResetInlineImageSize(InlineImage img)
     {
         if (Document == null || img.Image == null) return;
-        _undoManager.PushState(Document, _caretPosition);
+        PushUndo();
         img.Width = img.Image.Size.Width;
         img.Height = img.Image.Size.Height;
         InvalidateVisual();
@@ -3437,7 +3564,7 @@ public class CustomRichTextBox : Control
         {
             await using var s = await files[0].OpenReadAsync();
             var bmp = new Avalonia.Media.Imaging.Bitmap(s);
-            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            if (Document != null) PushUndo();
             img.Image = bmp;
             InvalidateVisual();
         }
@@ -3501,6 +3628,8 @@ public class CustomRichTextBox : Control
 
     public override void Render(DrawingContext context)
     {
+        // Flush change events after the edit/caret move that scheduled this paint (off the render stack).
+        RaisePendingChangeEvents();
         context.FillRectangle(Brushes.Transparent, new Rect(0, 0, Bounds.Width, 2000));
         if (Document == null) return;
 
@@ -3568,7 +3697,7 @@ public class CustomRichTextBox : Control
                     bool inBlock = cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1;
                     if (inBlock)
                     {
-                        context.FillRectangle(new SolidColorBrush(Color.FromArgb(80, 0, 120, 215)), rect);
+                        context.FillRectangle(SelectionBrush, rect);
                     }
                     else if (cellBlock == null && selectedParagraphs?.Contains(cell) == true)
                     {
@@ -3735,7 +3864,7 @@ public class CustomRichTextBox : Control
             _lastCaretPoint = caretPoint.Value;
             if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
-                context.DrawLine(new Pen(Brushes.Black, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + 20));
+                context.DrawLine(new Pen(CaretBrush, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + 20));
             }
         }
 
