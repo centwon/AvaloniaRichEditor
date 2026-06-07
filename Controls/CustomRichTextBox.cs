@@ -277,33 +277,18 @@ public class CustomRichTextBox : Control
         {
             if (block is TableBlock tb)
             {
-                for (int r = 0; r < tb.Rows; r++)
+                var tl = LayoutTable(tb, 10, yOffset);
+                foreach (var (r, c, rect) in tl.AnchorRects)
                 {
-                    double rowMaxHeight = 20;
-                    for (int c = 0; c < tb.Columns; c++)
+                    if (rect.Contains(p))
                     {
                         var cell = tb.Cells[r][c];
-                        double cw = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                        var l = BuildTextLayout(cell, Math.Max(10, cw - 10));
-                        if (l.Height + 10 > rowMaxHeight) rowMaxHeight = l.Height + 10;
+                        var layout = BuildTextLayout(cell, Math.Max(10, rect.Width - 10));
+                        var hit = layout.HitTestPoint(new Point(p.X - (rect.X + 5), p.Y - (rect.Y + 5)));
+                        return hit.IsInside ? RunAtOffset(cell, hit.TextPosition) : null;
                     }
-                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
-                    double currentX = 10;
-                    for (int c = 0; c < tb.Columns; c++)
-                    {
-                        var cell = tb.Cells[r][c];
-                        double cw = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                        if (p.X >= currentX && p.X <= currentX + cw && p.Y >= yOffset && p.Y <= yOffset + rowMaxHeight)
-                        {
-                            var layout = BuildTextLayout(cell, Math.Max(10, cw - 10));
-                            var hit = layout.HitTestPoint(new Point(p.X - (currentX + 5), p.Y - (yOffset + 5)));
-                            return hit.IsInside ? RunAtOffset(cell, hit.TextPosition) : null;
-                        }
-                        currentX += cw;
-                    }
-                    yOffset += rowMaxHeight;
                 }
-                yOffset += 10;
+                yOffset += tl.TotalHeight + 10;
             }
             else if (block is Paragraph paragraph)
             {
@@ -343,6 +328,71 @@ public class CustomRichTextBox : Control
         return false;
     }
 
+    // Pixel geometry of one table. Anchor cells get a rect spanning their merged columns/rows;
+    // covered cells are absorbed into their anchor and never appear here.
+    private readonly struct TableLayout
+    {
+        public readonly double[] ColX;       // length Columns+1: left edge of each column + right end
+        public readonly double[] RowY;       // length Rows+1: top edge of each row + bottom end
+        public readonly double TableWidth;
+        public readonly double TotalHeight;
+        public readonly List<(int r, int c, Rect rect)> AnchorRects;
+        public TableLayout(double[] colX, double[] rowY, double w, double h, List<(int, int, Rect)> anchors)
+        { ColX = colX; RowY = rowY; TableWidth = w; TotalHeight = h; AnchorRects = anchors; }
+    }
+
+    // Single source of truth for a table's geometry. Render and all three hit-tests consume this so
+    // merged-cell rects and skipped (covered) cells stay identical across every consumer.
+    private TableLayout LayoutTable(TableBlock tb, double startX, double top)
+    {
+        int cols = tb.Columns, rows = tb.Rows;
+        var colX = new double[cols + 1];
+        colX[0] = startX;
+        for (int c = 0; c < cols; c++)
+            colX[c + 1] = colX[c] + ((c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100);
+
+        var rowH = new double[rows];
+        for (int r = 0; r < rows; r++) rowH[r] = 20;
+
+        // Base row heights come from single-row cells (rowSpan == 1) measured at their merged width.
+        foreach (var (r, c, cell) in tb.LogicalCells())
+        {
+            var (cs, rs) = tb.SpanOf(r, c);
+            if (rs != 1) continue;
+            double w = colX[Math.Min(c + cs, cols)] - colX[c];
+            var l = BuildTextLayout(cell, Math.Max(10, w - 10));
+            if (l.Height + 10 > rowH[r]) rowH[r] = l.Height + 10;
+        }
+        for (int r = 0; r < rows; r++)
+            if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowH[r]) rowH[r] = tb.RowHeights[r];
+
+        // Row-spanning cells: if content needs more than the spanned rows provide, grow the last row.
+        foreach (var (r, c, cell) in tb.LogicalCells())
+        {
+            var (cs, rs) = tb.SpanOf(r, c);
+            if (rs <= 1) continue;
+            double w = colX[Math.Min(c + cs, cols)] - colX[c];
+            var l = BuildTextLayout(cell, Math.Max(10, w - 10));
+            double need = l.Height + 10, have = 0;
+            for (int rr = r; rr < r + rs && rr < rows; rr++) have += rowH[rr];
+            int last = Math.Min(r + rs - 1, rows - 1);
+            if (need > have) rowH[last] += need - have;
+        }
+
+        var rowY = new double[rows + 1];
+        rowY[0] = top;
+        for (int r = 0; r < rows; r++) rowY[r + 1] = rowY[r] + rowH[r];
+
+        var anchors = new List<(int, int, Rect)>();
+        foreach (var (r, c, cell) in tb.LogicalCells())
+        {
+            var (cs, rs) = tb.SpanOf(r, c);
+            int cEnd = Math.Min(c + cs, cols), rEnd = Math.Min(r + rs, rows);
+            anchors.Add((r, c, new Rect(colX[c], rowY[r], colX[cEnd] - colX[c], rowY[rEnd] - rowY[r])));
+        }
+        return new TableLayout(colX, rowY, colX[cols] - startX, rowY[rows] - top, anchors);
+    }
+
     // The block (image or table) whose rendered rectangle contains the point, or null.
     private Block? GetBlockAtPoint(Point p)
     {
@@ -353,22 +403,9 @@ public class CustomRichTextBox : Control
             if (block is TableBlock tb)
             {
                 double tableTop = yOffset;
-                double tableWidth = 0;
-                for (int c = 0; c < tb.Columns; c++) tableWidth += (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                for (int r = 0; r < tb.Rows; r++)
-                {
-                    double rowMaxHeight = 20;
-                    for (int c = 0; c < tb.Columns; c++)
-                    {
-                        var cell = tb.Cells[r][c];
-                        double cw = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                        var l = BuildTextLayout(cell, Math.Max(10, cw - 10));
-                        if (l.Height + 10 > rowMaxHeight) rowMaxHeight = l.Height + 10;
-                    }
-                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
-                    yOffset += rowMaxHeight;
-                }
-                if (p.X >= 10 && p.X <= 10 + tableWidth && p.Y >= tableTop && p.Y <= yOffset) return tb;
+                var tl = LayoutTable(tb, 10, yOffset);
+                yOffset += tl.TotalHeight;
+                if (p.X >= 10 && p.X <= 10 + tl.TableWidth && p.Y >= tableTop && p.Y <= yOffset) return tb;
                 yOffset += 10;
             }
             else if (block is Paragraph paragraph)
@@ -940,13 +977,11 @@ public class CustomRichTextBox : Control
             if (block is Paragraph p) { if (found) return p; if (p == current) found = true; }
             else if (block is TableBlock tb)
             {
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                    {
-                        var cell = tb.Cells[r][c];
-                        if (found) return cell;
-                        if (cell == current) found = true;
-                    }
+                foreach (var (_, _, cell) in tb.LogicalCells())
+                {
+                    if (found) return cell;
+                    if (cell == current) found = true;
+                }
             }
         }
         return null;
@@ -961,13 +996,11 @@ public class CustomRichTextBox : Control
             if (block is Paragraph p) { if (p == current) return prev; prev = p; }
             else if (block is TableBlock tb)
             {
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                    {
-                        var cell = tb.Cells[r][c];
-                        if (cell == current) return prev;
-                        prev = cell;
-                    }
+                foreach (var (_, _, cell) in tb.LogicalCells())
+                {
+                    if (cell == current) return prev;
+                    prev = cell;
+                }
             }
         }
         return null;
@@ -1245,47 +1278,32 @@ public class CustomRichTextBox : Control
         {
             if (block is TableBlock tb)
             {
-                double startX = 10;
-
-                for (int r = 0; r < tb.Rows; r++)
+                var tl = LayoutTable(tb, 10, yOffset);
+                foreach (var (r, c, rect) in tl.AnchorRects)
                 {
-                    double rowMaxHeight = 20;
-                    for (int c = 0; c < tb.Columns; c++)
+                    var cell = tb.Cells[r][c];
+                    var (cs, _) = tb.SpanOf(r, c);
+                    bool lastCol = c + cs >= tb.Columns;
+                    bool xInside = (p.X >= rect.X && p.X <= rect.Right) || (lastCol && p.X > rect.Right);
+                    if (xInside && p.Y >= rect.Y && p.Y <= rect.Bottom)
                     {
-                        var cell = tb.Cells[r][c];
-                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                        var cft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
-                        if (cft.Height + 10 > rowMaxHeight) rowMaxHeight = cft.Height + 10;
+                        var cft = BuildTextLayout(cell, Math.Max(10, rect.Width - 10));
+                        int idx = HitTestIndex(cft, new Point(p.X - (rect.X + 5), p.Y - (rect.Y + 5)));
+                        return new TextPointer(cell, idx);
                     }
-                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
-
-                    double currentX = startX;
-                    for (int c = 0; c < tb.Columns; c++)
-                    {
-                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                        var cell = tb.Cells[r][c];
-                        bool lastCol = c == tb.Columns - 1;
-                        bool xInside = (p.X >= currentX && p.X <= currentX + cellWidth) || (lastCol && p.X > currentX + cellWidth);
-                        if (xInside && p.Y >= yOffset && p.Y <= yOffset + rowMaxHeight)
-                        {
-                            var cft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
-                            int idx = HitTestIndex(cft, new Point(p.X - (currentX + 5), p.Y - (yOffset + 5)));
-                            return new TextPointer(cell, idx);
-                        }
-                        currentX += cellWidth;
-                    }
-
-                    double distY = p.Y < yOffset ? yOffset - p.Y : (p.Y > yOffset + rowMaxHeight ? p.Y - (yOffset + rowMaxHeight) : 0);
+                }
+                // Outside any cell: remember the nearest anchor (by vertical distance) as a fallback.
+                foreach (var (r, c, rect) in tl.AnchorRects)
+                {
+                    double distY = p.Y < rect.Y ? rect.Y - p.Y : (p.Y > rect.Bottom ? p.Y - rect.Bottom : 0);
                     if (distY < bestDistY)
                     {
                         bestDistY = distY;
-                        bestPara = tb.Cells[r][0];
+                        bestPara = tb.Cells[r][c];
                         bestLocalIndex = GetParagraphLength(bestPara);
                     }
-
-                    yOffset += rowMaxHeight;
                 }
-                yOffset += 10;
+                yOffset += tl.TotalHeight + 10;
             }
             else if (block is Paragraph paragraph)
             {
@@ -1629,7 +1647,7 @@ public class CustomRichTextBox : Control
         {
             Document.Blocks.Insert(insertIndex++, b);
             if (b is Paragraph bp) lastPara = bp;
-            else if (b is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
+            else if (b is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
         }
         UpdateParents(Document);
 
@@ -1670,14 +1688,9 @@ public class CustomRichTextBox : Control
     {
         if (Document == null) return;
         _undoManager.PushState(Document, _caretPosition);
-        var tb = new TableBlock { Rows = rows, Columns = cols, Cells = new List<List<Paragraph>>(), ColumnWidths = new List<double>() };
-        for (int c = 0; c < cols; c++) tb.ColumnWidths.Add(100);
-        for (int r = 0; r < rows; r++)
-        {
-            var rowList = new List<Paragraph>();
-            for (int c = 0; c < cols; c++) rowList.Add(new Paragraph());
-            tb.Cells.Add(rowList);
-        }
+        // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
+        // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
+        var tb = new TableBlock(rows, cols);
         InsertBlockAtCaret(tb);
         InvalidateVisual();
     }
@@ -1794,9 +1807,8 @@ public class CustomRichTextBox : Control
             if (block is Paragraph p) result.Add(p);
             else if (block is TableBlock tb)
             {
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                        result.Add(tb.Cells[r][c]);
+                foreach (var (_, _, cell) in tb.LogicalCells())
+                    result.Add(cell);
             }
         }
         return result;
@@ -1875,7 +1887,7 @@ public class CustomRichTextBox : Control
             if (b.Clone() is not Block cl) continue; // clone again so repeated pastes stay independent
             Document.Blocks.Insert(insertIndex++, cl);
             if (cl is Paragraph bp) lastPara = bp;
-            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
+            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
         }
         UpdateParents(Document);
 
@@ -2255,6 +2267,27 @@ public class CustomRichTextBox : Control
         items.Add(Mi("오른쪽에 열 삽입", () => TableInsertColumn(tb, c + 1), c >= 0));
         items.Add(Mi("열 삭제", () => TableDeleteColumn(tb, c), c >= 0 && tb.Columns > 1));
         items.Add(new Separator());
+        var range = SelectedCellRange(tb);
+        bool canMerge = range is { } rg && IsCleanRect(tb, rg.r0, rg.c0, rg.r1, rg.c1);
+        items.Add(Mi("셀 병합", () =>
+        {
+            if (range is not { } g) return;
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            tb.MergeCells(g.r0, g.c0, g.r1, g.c1);
+            if (Document != null) UpdateParents(Document);
+            FocusCell(tb.Cells[g.r0][g.c0]);
+            InvalidateVisual();
+        }, canMerge));
+        bool canUnmerge = r >= 0 && c >= 0 && (tb.SpanOf(r, c).cs > 1 || tb.SpanOf(r, c).rs > 1);
+        items.Add(Mi("셀 병합 해제", () =>
+        {
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            tb.UnmergeCell(r, c);
+            if (Document != null) UpdateParents(Document);
+            FocusCell(tb.Cells[r][c]);
+            InvalidateVisual();
+        }, canUnmerge));
+        items.Add(new Separator());
         AddFormatItems(items, hasSelection);
         items.Add(new Separator());
         items.Add(Mi("표 삭제", () => DeleteBlock(tb)));
@@ -2271,6 +2304,40 @@ public class CustomRichTextBox : Control
         return null;
     }
 
+    // Rectangular cell block (inclusive, span-aware) defined by the two selection *endpoints* — the
+    // cell the drag started in and the cell it ended in. Using the endpoints (not every cell the linear
+    // text selection passes through) makes a vertical drag select a vertical block, so up/down cells can
+    // be merged. Returns null unless both endpoints are cells of `tb` and they differ.
+    private (int r0, int c0, int r1, int c1)? SelectedCellRange(TableBlock tb)
+    {
+        if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null) return null;
+        if (FindCell(_selectionStart.Paragraph) is not { } s || s.tb != tb) return null;
+        if (FindCell(_selectionEnd.Paragraph) is not { } e || e.tb != tb) return null;
+        var (scs, srs) = tb.SpanOf(s.r, s.c);
+        var (ecs, ers) = tb.SpanOf(e.r, e.c);
+        int r0 = Math.Min(s.r, e.r), c0 = Math.Min(s.c, e.c);
+        int r1 = Math.Max(s.r + srs - 1, e.r + ers - 1), c1 = Math.Max(s.c + scs - 1, e.c + ecs - 1);
+        if (r0 == r1 && c0 == c1) return null; // selection is within a single cell
+        return (r0, c0, r1, c1);
+    }
+
+    // True when the box is a mergeable rectangle: spans more than one cell and no anchor inside it
+    // reaches outside the box (no partial overlap with an existing merge).
+    private static bool IsCleanRect(TableBlock tb, int r0, int c0, int r1, int c1)
+    {
+        if (r0 < 0 || c0 < 0 || r1 >= tb.Rows || c1 >= tb.Columns) return false;
+        if (r0 == r1 && c0 == c1) return false;
+        for (int r = r0; r <= r1; r++)
+            for (int c = c0; c <= c1; c++)
+            {
+                var (ar, ac) = tb.AnchorOf(r, c);
+                if (ar < r0 || ac < c0) return false;
+                var (cs, rs) = tb.SpanOf(ar, ac);
+                if (ar + rs - 1 > r1 || ac + cs - 1 > c1) return false;
+            }
+        return true;
+    }
+
     // Tab moves to the next table cell (Shift+Tab to the previous); Tab in the last cell appends a
     // new row. Outside a table it inserts spaces so focus doesn't leave the editor.
     private void HandleTab(bool shift)
@@ -2284,27 +2351,35 @@ public class CustomRichTextBox : Control
         }
 
         var (tb, r, c) = loc.Value;
+        // Navigate over logical (anchor) cells so merged areas count once and covered cells are skipped.
+        var anchors = tb.LogicalCells().Select(x => x.cell).ToList();
+        int idx = anchors.IndexOf(_caretPosition.Paragraph!);
+        if (idx < 0) { var (ar, ac) = tb.AnchorOf(r, c); idx = anchors.IndexOf(tb.Cells[ar][ac]); }
         if (shift)
         {
-            if (c > 0) FocusCell(tb.Cells[r][c - 1]);
-            else if (r > 0) FocusCell(tb.Cells[r - 1][tb.Columns - 1]);
+            if (idx > 0) FocusCell(anchors[idx - 1]);
+        }
+        else if (idx >= 0 && idx + 1 < anchors.Count)
+        {
+            FocusCell(anchors[idx + 1]);
         }
         else
         {
-            if (c + 1 < tb.Columns) FocusCell(tb.Cells[r][c + 1]);
-            else if (r + 1 < tb.Rows) FocusCell(tb.Cells[r + 1][0]);
-            else
-            {
-                if (Document != null) _undoManager.PushState(Document, _caretPosition);
-                tb.InsertRow(tb.Rows);
-                if (Document != null) UpdateParents(Document);
-                FocusCell(tb.Cells[tb.Rows - 1][0]);
-            }
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            tb.InsertRow(tb.Rows);
+            if (Document != null) UpdateParents(Document);
+            FocusCell(tb.Cells[tb.Rows - 1][0]);
         }
     }
 
     private void FocusCell(Paragraph cell)
     {
+        // If handed a covered cell, redirect the caret to its merge anchor.
+        if (FindCell(cell) is { } loc && loc.tb.IsCovered(loc.r, loc.c))
+        {
+            var (ar, ac) = loc.tb.AnchorOf(loc.r, loc.c);
+            cell = loc.tb.Cells[ar][ac];
+        }
         int len = GetParagraphLength(cell);
         _caretPosition = new TextPointer(cell, len);
         _selectionStart = new TextPointer(cell, 0);
@@ -2522,79 +2597,69 @@ public class CustomRichTextBox : Control
             {
                 double startX = 10;
                 double tableTop = yOffset;
-                double tableWidth = 0;
-                for (int c = 0; c < tb.Columns; c++) tableWidth += (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
+                var tl = LayoutTable(tb, startX, tableTop);
+                // When the drag spans multiple cells of this table, highlight the rectangular block fully
+                // (Excel/Word style) instead of the linear text run; otherwise fall back to text highlight.
+                var cellBlock = SelectedCellRange(tb);
 
-                for (int r = 0; r < tb.Rows; r++)
+                foreach (var (r, c, rect) in tl.AnchorRects)
                 {
-                    double rowMaxHeight = 20;
-                    for (int c = 0; c < tb.Columns; c++)
+                    var cell = tb.Cells[r][c];
+                    double cellWidth = rect.Width;
+
+                    if (cell.Background != null)
+                        context.FillRectangle(cell.Background, rect);
+                    context.DrawRectangle(null, new Pen(Brushes.Gray, 1), rect);
+
+                    bool cellHasPreedit = _caretPosition != null && _caretPosition.Paragraph == cell && !string.IsNullOrEmpty(_preeditText);
+                    var layout = cellHasPreedit
+                        ? BuildTextLayout(cell, Math.Max(10, cellWidth - 10), _caretPosition!.Offset, _preeditText)
+                        : BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
+
+                    if (cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1)
                     {
-                        var cell = tb.Cells[r][c];
-                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                        var ft = BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
-                        if (ft.Height + 10 > rowMaxHeight) rowMaxHeight = ft.Height + 10;
+                        context.FillRectangle(new SolidColorBrush(Color.FromArgb(80, 0, 120, 215)), rect);
                     }
-                    if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowMaxHeight) rowMaxHeight = tb.RowHeights[r];
-
-                    // Grab handle on the row's bottom edge (6px band) to drag its height.
-                    _rowBoundaries.Add((new Rect(startX, yOffset + rowMaxHeight - 3, tableWidth, 6), tb, r, rowMaxHeight));
-
-                    double currentX = startX;
-                    for (int c = 0; c < tb.Columns; c++)
+                    else if (cellBlock == null && selectedParagraphs?.Contains(cell) == true)
                     {
-                        var cell = tb.Cells[r][c];
-                        double cellWidth = (c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100;
-                        double cellX = currentX;
-                        currentX += cellWidth;
-
-                        if (cell.Background != null)
-                            context.FillRectangle(cell.Background, new Rect(cellX, yOffset, cellWidth, rowMaxHeight));
-                        context.DrawRectangle(null, new Pen(Brushes.Gray, 1), new Rect(cellX, yOffset, cellWidth, rowMaxHeight));
-
-                        // Grab handle on each column's right edge (6px band). Internal edges
-                        // redistribute width with the next column (total fixed); the outer-right
-                        // edge grows/shrinks the last column, changing the table's total width.
-                        _columnBoundaries.Add((new Rect(currentX - 3, yOffset, 6, rowMaxHeight), tb, c));
-
-                        bool cellHasPreedit = _caretPosition != null && _caretPosition.Paragraph == cell && !string.IsNullOrEmpty(_preeditText);
-                        var layout = cellHasPreedit
-                            ? BuildTextLayout(cell, Math.Max(10, cellWidth - 10), _caretPosition!.Offset, _preeditText)
-                            : BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
-
-                        if (selectedParagraphs?.Contains(cell) == true)
+                        int cellLen = GetParagraphLength(cell);
+                        int hlStart = (cell == selStart!.Paragraph) ? selStart.Offset : 0;
+                        int hlEnd = (cell == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
+                        bool fullCell = hlStart <= 0 && hlEnd >= cellLen;
+                        if (fullCell)
                         {
-                            int cellLen = GetParagraphLength(cell);
-                            int hlStart = (cell == selStart!.Paragraph) ? selStart.Offset : 0;
-                            int hlEnd = (cell == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                            bool fullCell = hlStart <= 0 && hlEnd >= cellLen;
-                            if (fullCell)
-                            {
-                                // Fill the whole cell so fully-selected (incl. empty) cells are visibly selected.
-                                var cellBrush = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
-                                context.FillRectangle(cellBrush, new Rect(cellX, yOffset, cellWidth, rowMaxHeight));
-                            }
-                            else if (hlEnd > hlStart)
-                            {
-                                DrawSelectionHighlight(context, layout, hlStart, hlEnd, cellX + 5, yOffset + 5);
-                            }
+                            // Fill the whole cell so fully-selected (incl. empty) cells are visibly selected.
+                            var cellBrush = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
+                            context.FillRectangle(cellBrush, rect);
                         }
-
-                        if (_caretPosition != null && _caretPosition.Paragraph == cell)
+                        else if (hlEnd > hlStart)
                         {
-                            int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
-                            var cr = layout.HitTestTextPosition(caretDisp);
-                            caretPoint = new Point(cellX + 5 + cr.X, yOffset + 5 + cr.Y);
-                            _lastCaretPoint = caretPoint.Value;
+                            DrawSelectionHighlight(context, layout, hlStart, hlEnd, rect.X + 5, rect.Y + 5);
                         }
-
-                        layout.Draw(context, new Point(cellX + 5, yOffset + 5));
                     }
-                    yOffset += rowMaxHeight;
+
+                    if (_caretPosition != null && _caretPosition.Paragraph == cell)
+                    {
+                        int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
+                        var cr = layout.HitTestTextPosition(caretDisp);
+                        caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y);
+                        _lastCaretPoint = caretPoint.Value;
+                    }
+
+                    layout.Draw(context, new Point(rect.X + 5, rect.Y + 5));
                 }
+
+                // Resize handles live on the physical grid lines (independent of merges). Internal column
+                // edges redistribute width with the next column; the outer-right edge grows the last column.
+                for (int r = 0; r < tb.Rows; r++)
+                    _rowBoundaries.Add((new Rect(startX, tl.RowY[r + 1] - 3, tl.TableWidth, 6), tb, r, tl.RowY[r + 1] - tl.RowY[r]));
+                for (int c = 0; c < tb.Columns; c++)
+                    _columnBoundaries.Add((new Rect(tl.ColX[c + 1] - 3, tableTop, 6, tl.TotalHeight), tb, c));
+
+                yOffset = tableTop + tl.TotalHeight;
                 if (ReferenceEquals(tb, _selectedBlock))
                 {
-                    var tableRect = new Rect(startX, tableTop, tableWidth, yOffset - tableTop);
+                    var tableRect = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
                     context.FillRectangle(new SolidColorBrush(Color.FromArgb(50, 0, 120, 215)), tableRect);
                     context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)), 2), tableRect);
                 }
