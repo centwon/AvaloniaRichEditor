@@ -88,4 +88,77 @@
   - SaemDesk 실통합(기능 플래그 롤아웃)
 
 ---
-**마지막 업데이트**: 2026년 6월 7일 (Phase 6 — Jodit 파리티 0~8단계 + 클립보드(엑셀/한글 표) 붙여넣기 수정 + **표 셀 병합(colspan/rowspan)** 완료) (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME, 표 행 높이 수동 조절. 블록 여백 조정만 보류)
+
+## 📦 NuGet 배포 계획 (NuGet Publication Plan)
+
+> **목표**: `AvaloniaRichTextBox`(src/) 라이브러리를 **NuGet에 배포 가능한 수준**으로 끌어올린다.
+> 현실적 출시 기준선은 **`0.1.0-alpha`**(실험적·기능 한정 공개)이며, 그 위에 **`1.0`**(프로덕션) 로드맵을 둔다.
+> 평가 근거: 코드는 탄탄하나(표 병합·HTML 왕복·IME·레이아웃 캐싱) 패키징·공개 API·테스트·크로스플랫폼·접근성이 부재.
+
+### 출시 품질 기준선 (Release Tiers)
+- **`0.1.0-alpha`** = 패키지로 설치·참조 가능 + 최소 공개 API/문서 + Windows에서 동작 보장 + LICENSE/README. "써볼 수 있다."
+- **`0.x`** = 크로스플랫폼 검증 + 공개 API 안정화 + 테스트 + CI. "실무에 조심스럽게 쓸 수 있다."
+- **`1.0`** = 접근성 + 대용량 성능(증분 Undo·가상화) + API 동결. "프로덕션."
+
+---
+
+### 🟢 [완료] N0: 프로젝트 구조 분리 (2026-06-08)
+- 단일 WinExe → `src/AvaloniaRichTextBox`(라이브러리) + `samples/AvaloniaRichTextBox.Demo`(데모/테스트 앱)로 분리.
+- 네임스페이스 `AvaloniaRichTextBox.*` / `AvaloniaRichTextBox.Demo.*`. 솔루션 `AvaloniaRichTextBox.slnx`. 빌드·실행 검증 완료.
+
+### 🔵 N1: 패키징 기반 — **`0.1.0-alpha` 핵심** (우선순위 1)
+- [ ] 라이브러리 csproj에 NuGet 메타데이터: `PackageId`(예: `AvaloniaRichTextBox`), `Version`, `Authors`, `Description`, `PackageTags`(avalonia, richtextbox, editor, wysiwyg), `PackageProjectUrl`/`RepositoryUrl`, `PackageLicenseExpression`(예: MIT), `PackageReadmeFile`, `PackageIcon`.
+- [ ] `LICENSE` 파일 추가(라이선스 확정 필요 — 권장 MIT).
+- [ ] 패키지용 `README.md`(설치법 + 5줄 사용 예제 + 스크린샷 + 지원/한계 명시) — `<None Include>`로 패키지에 포함.
+- [ ] `<GenerateDocumentationFile>true`(공개 멤버 XML 주석 산출) + 패키지 동봉.
+- [ ] `<IncludeSymbols>true` + `<SymbolPackageFormat>snupkg`, **SourceLink**(`Microsoft.SourceLink.GitHub`), `<EmbedUntrackedSources>`, `<Deterministic>`.
+- [ ] `<PackageReadmeFile>` 등 경로 검증 위해 `dotnet pack -c Release` 로컬 산출물 확인.
+- **검증**: `dotnet pack` → 생성된 `.nupkg`를 로컬 피드로 다른 빈 Avalonia 앱에서 설치→`CustomRichTextBox` 호스팅 성공.
+- **위험/주의**: 의존성 `HtmlAgilityPack`이 transitive로 노출됨(정상). `Avalonia` 버전은 `[12.0.1,)` 범위로 둘지 고정할지 결정.
+
+### 🔵 N2: 공개 API 설계 & 문서화 (우선순위 2)
+- [ ] **표면 정리**: 외부에 노출할 타입만 `public`, 내부 구현은 `internal`(현재 `CustomRichTextBox`의 다수 멤버가 `public`/`internal` 혼재). `[InternalsVisibleTo("...Tests")]`로 테스트 접근.
+- [ ] **표준 이벤트**: `TextChanged`, `SelectionChanged`(현재 `StatusChanged` 단일 이벤트만), `DocumentChanged`.
+- [ ] **스타일 가능 속성(StyledProperty)**: `SelectionBrush`, `CaretBrush`, `SelectionForeground`, 기본 `FontFamily`/`FontSize`(현재 선택색 `#0078D7` 등 하드코딩). 렌더가 이 속성을 읽도록 변경.
+- [ ] **편의 API**: `LoadHtml`/`ToHtml`, `LoadJson`/`ToJson`, `Clear`, `CanUndo`/`CanRedo` 노출 정리.
+- [ ] 공개 멤버 XML 문서 주석(N1의 DocumentationFile과 연동).
+- [ ] **API 동결 가드**: `Microsoft.CodeAnalysis.PublicApiAnalyzers`로 `PublicAPI.Shipped/Unshipped.txt` 도입(향후 파괴적 변경 감지).
+- **검증**: 데모 앱이 새 이벤트/속성만으로 기존 기능을 재현(코드비하인드에서 내부 접근 제거).
+
+### 🔵 N3: 크로스플랫폼 / Windows 의존 게이팅 (우선순위 3)
+- [ ] **클립보드 CF_HTML**(`ExtractHtmlFragment`의 Windows 헤더 처리)을 `OperatingSystem.IsWindows()` 분기 또는 추상화. mac/Linux에서 일반 `text/html` 경로 확인.
+- [ ] **하드코딩 한글 폰트**(`Malgun Gothic`/`Gulim` 등)를 기본값 속성으로 외부화 — 라이브러리는 폰트 가정 금지, 데모만 기본 지정.
+- [ ] `app.manifest`·`PublishAot`는 데모(앱)에만(이미 분리됨) — 라이브러리는 플랫폼 중립 유지 재확인.
+- [ ] mac/Linux 스모크 테스트(가능하면 CI 매트릭스) — 최소 빌드 + 헤드리스 렌더.
+- **검증**: 비Windows 환경에서 텍스트 입력·선택·HTML 붙여넣기 기본 동작(완벽 아님, 크래시 없음 기준).
+- **참고**: 완전 크로스플랫폼이 어려우면 `0.1.0-alpha`는 "Windows 우선, 기타 플랫폼 베스트에포트"로 README에 명시하고 출시.
+
+### 🔵 N4: 테스트 & CI (우선순위 4)
+- [ ] `tests/AvaloniaRichTextBox.Tests`(xUnit) 신설. 기존 `RoundTripHarness`/코퍼스를 테스트로 승격(HTML in==out 단언).
+- [ ] 단위 테스트: 오프셋 모델(`InlineLen`/`BuildPlain`), `TextRange` 삭제·서식, 표 병합(`MergeCells`/`SpanOf`/`IsCleanRect`), JSON 왕복, Undo/Redo.
+- [ ] (선택) `Avalonia.Headless.XUnit`로 컨트롤 렌더·히트테스트 헤드리스 검증.
+- [ ] **GitHub Actions**: build + test (+ 가능하면 OS 매트릭스), 태그 푸시 시 `dotnet pack` → NuGet 푸시(수동 승인).
+- **검증**: CI 그린, 커버리지 핵심 경로 확보.
+
+### 🔵 N5: 견고성·성능 — **`1.0` 목표** (우선순위 5)
+- [ ] **증분 Undo**: 현재 `UndoManager.PushState`가 편집마다 문서 전체 `Clone()`(O(N) 메모리·CPU, 50벌 보관). 명령(command)/델타 기반 또는 입력 코얼레싱으로 전환.
+- [ ] **렌더 가상화**: 뷰포트 밖 블록은 그리지 않도록(현재 매 프레임 전 블록 Draw). 레이아웃 캐싱(완료)과 결합.
+- [ ] **접근성**: `AutomationPeer` 구현(스크린리더). 공공/상용 납품 필수.
+- [ ] (선택) `CustomRichTextBox` 3,700줄 God-class 분해(렌더/입력/클립보드/표 partial 분리) — 유지보수·기여성.
+- **검증**: 수백 페이지 문서에서 타이핑/스크롤 지연 측정, 메모리 상한 확인.
+
+---
+
+### ✅ 배포 전 최종 체크리스트 (`0.1.0-alpha`)
+- [ ] N1(패키징) + N2(최소 공개 API/문서) + N3(Windows 동작 보장, 타 플랫폼 명시) 완료
+- [ ] `dotnet pack -c Release` 성공, 빈 앱에서 설치·호스팅 성공
+- [ ] README의 사용 예제가 실제로 컴파일/동작
+- [ ] LICENSE·저작권·서드파티(HtmlAgilityPack) 라이선스 고지
+- [ ] 버전 `0.1.0-alpha`, 변경 이력(CHANGELOG) 시작
+- [ ] (권장) NuGet 푸시 전 별도 테스트 계정/프리릴리스 채널로 1차 공개
+
+### ❗ 출시 전 결정 필요 (Open Decisions)
+- 라이선스 종류(MIT 권장?), 패키지 ID 최종(`AvaloniaRichTextBox` 선점 여부 확인), 지원 Avalonia 버전 범위, 크로스플랫폼 보장 수준(알파에서 Windows-only로 갈지).
+
+---
+**마지막 업데이트**: 2026년 6월 8일 (구조 분리 N0 완료 — 라이브러리/데모 2프로젝트 + 레이아웃 캐싱 성능 개선 + 우클릭 메뉴/툴바 정리. **NuGet 배포 계획 N1~N5 수립**) / 2026년 6월 7일 (Phase 6 — Jodit 파리티 0~8단계 + 클립보드(엑셀/한글 표) 붙여넣기 수정 + **표 셀 병합(colspan/rowspan)** 완료) (Phase 1~4 완료, Phase 5 대부분 완료)
