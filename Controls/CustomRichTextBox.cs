@@ -1509,7 +1509,7 @@ public class CustomRichTextBox : Control
             {
                 foreach (var fmt in item.Formats)
                 {
-                    var id = fmt.ToString() ?? "";
+                    var id = fmt.Identifier ?? fmt.ToString() ?? "";
                     bool looksImage = id.IndexOf("png", StringComparison.OrdinalIgnoreCase) >= 0
                         || id.IndexOf("image", StringComparison.OrdinalIgnoreCase) >= 0
                         || id.IndexOf("bitmap", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -1519,6 +1519,7 @@ public class CustomRichTextBox : Control
                     try { raw = await item.TryGetRawAsync(fmt); }
                     catch { continue; }
 
+                    if (raw is Avalonia.Media.Imaging.Bitmap bm) return bm;
                     byte[]? bytes = raw as byte[];
                     if (bytes == null && raw is System.IO.Stream s)
                     {
@@ -1551,7 +1552,8 @@ public class CustomRichTextBox : Control
             {
                 foreach (var fmt in item.Formats)
                 {
-                    if (fmt.ToString()?.IndexOf("html", StringComparison.OrdinalIgnoreCase) >= 0)
+                    var id = fmt.Identifier ?? fmt.ToString() ?? "";
+                    if (id.IndexOf("html", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         object? raw;
                         try { raw = await item.TryGetRawAsync(fmt); }
