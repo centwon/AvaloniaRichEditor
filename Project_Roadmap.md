@@ -116,14 +116,15 @@
 - **검증**: `dotnet pack` → 생성된 `.nupkg`를 로컬 피드로 다른 빈 Avalonia 앱에서 설치→`CustomRichTextBox` 호스팅 성공.
 - **위험/주의**: 의존성 `HtmlAgilityPack`이 transitive로 노출됨(정상). `Avalonia` 버전은 `[12.0.1,)` 범위로 둘지 고정할지 결정.
 
-### 🔵 N2: 공개 API 설계 & 문서화 (우선순위 2)
-- [ ] **표면 정리**: 외부에 노출할 타입만 `public`, 내부 구현은 `internal`(현재 `CustomRichTextBox`의 다수 멤버가 `public`/`internal` 혼재). `[InternalsVisibleTo("...Tests")]`로 테스트 접근.
-- [ ] **표준 이벤트**: `TextChanged`, `SelectionChanged`(현재 `StatusChanged` 단일 이벤트만), `DocumentChanged`.
-- [ ] **스타일 가능 속성(StyledProperty)**: `SelectionBrush`, `CaretBrush`, `SelectionForeground`, 기본 `FontFamily`/`FontSize`(현재 선택색 `#0078D7` 등 하드코딩). 렌더가 이 속성을 읽도록 변경.
-- [ ] **편의 API**: `LoadHtml`/`ToHtml`, `LoadJson`/`ToJson`, `Clear`, `CanUndo`/`CanRedo` 노출 정리.
-- [ ] 공개 멤버 XML 문서 주석(N1의 DocumentationFile과 연동).
-- [ ] **API 동결 가드**: `Microsoft.CodeAnalysis.PublicApiAnalyzers`로 `PublicAPI.Shipped/Unshipped.txt` 도입(향후 파괴적 변경 감지).
-- **검증**: 데모 앱이 새 이벤트/속성만으로 기존 기능을 재현(코드비하인드에서 내부 접근 제거).
+### 🟡 N2: 공개 API 설계 & 문서화 (대부분 완료 2026-06-08)
+- [x] **표면 정리**: 직렬화 DTO·`UndoManager`/`UndoState`·`InputDialog`를 `internal`로(중첩 레이아웃 타입은 이미 private). `[InternalsVisibleTo("AvaloniaRichTextBox.Tests")]` 추가.
+- [x] **표준 이벤트**: `TextChanged`, `SelectionChanged`, `DocumentChanged` 추가. 변이 신호를 `PushUndo()` 단일 choke point로 집약, Render에서 `Dispatcher.Post`로 비재진입 플러시.
+- [x] **스타일 가능 속성(StyledProperty)**: `SelectionBrush`, `CaretBrush`, `DefaultFontFamily`, `DefaultFontSize` 추가(선택색/캐럿색 하드코딩 제거, 기본 글꼴 외부화).
+- [x] **편의 API**: `ToHtml`/`LoadHtml`(기존 Get/SetHtml 개명), `ToJson`/`LoadJson`, `Clear`, `CanUndo`/`CanRedo`.
+- [x] `NativeEditor`(Jodit 호환 래퍼) 라이브러리→`samples` 이동.
+- [ ] 공개 멤버 XML 문서 주석 — **부분 완료**(신규 멤버만). 기존 공개 명령(`ToggleBold` 등) 주석 미작성.
+- [ ] **API 동결 가드**: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입 — 미착수.
+- [ ] (선택) 데모 코드비하인드를 새 이벤트/속성으로 마이그레이션 — 미착수(`StatusChanged` 계속 사용 중).
 
 ### 🔵 N3: 크로스플랫폼 / Windows 의존 게이팅 (우선순위 3)
 - [ ] **클립보드 CF_HTML**(`ExtractHtmlFragment`의 Windows 헤더 처리)을 `OperatingSystem.IsWindows()` 분기 또는 추상화. mac/Linux에서 일반 `text/html` 경로 확인.
