@@ -99,9 +99,13 @@
 
 ### Phase 3.5 — 외부 붙여넣기
 > 실데이터가 복잡한 이유 = **HWP 문서에서 복사·붙여넣기**한 콘텐츠(셀 배경·pt 폰트·촘촘한 인라인 스타일).
-- [x] **HWP/Excel HTML 경로**: CF_HTML로 들어오는 콘텐츠를 강화된 `ParseHtml`로 처리(글꼴/색/배경/크기pt/표/정렬 등). HWP 붙여넣기는 이 경로로 동작.
+- [x] **HWP/Excel HTML 경로**: CF_HTML로 들어오는 콘텐츠를 강화된 `ParseHtml`로 처리(글꼴/색/배경/크기pt/표/정렬 등).
 - [x] **Excel TSV 폴백**: HTML이 없을 때 탭 구분 텍스트를 감지(`LooksTabular`)해 `TableBlock`으로 변환(`InsertTableFromTsv`).
-- [ ] (향후) HWP 자체 클립보드 포맷·VML 그림 등 특수 마크업 — 보류.
+- [x] **클립보드 버그 2건 수정 (실데이터 진단으로 발견)**:
+  1. **HTML 포맷 미감지** — `TryGetHtmlAsync`/`TryGetImageAsync`가 `fmt.ToString()`로 매칭해 Excel/HWP의 `"HTML Format"`을 못 잡음 → `fmt.Identifier` 기준으로 수정. (CF_BITMAP이 `Bitmap` 객체로 오는 경우도 처리.)
+  2. **Excel CF_HTML `<table>` 누락** — Excel은 fragment 마커를 `<table>` 안쪽에 두어 추출 조각에 `<tr>/<td>`만 있고 `<table>`이 없음 → `ParseHtml`에서 `<tr>` 있고 `<table>` 없으면 `<table>`로 감싸 보정.
+  - 결과: **엑셀 셀 복사·한글 진짜 표 → 표로 붙여넣기.** (한글 글상자/도형은 `.gif` 이미지라 이미지로 — 정상)
+- [ ] (향후) HWP 글상자/표를 표 구조로 받기 = 클립보드 **DOCX Format**(`<w:tbl>`) 파싱. HWP CSS 클래스 서식·VML 그림 보류.
 
 ### Phase 3 — 편집 기능 파리티 (UI/상호작용)
 - [x] ul/ol 토글, **들여쓰기/내어쓰기**(`Paragraph.Indent`, margin-left 왕복).

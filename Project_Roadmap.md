@@ -62,8 +62,10 @@
 - **완료**: HTML 무손실 왕복 강화 — 글꼴/임의색/배경/크기(px·pt)/밑줄·취소선/이미지(data:)/번호목록(ol)/제목(h1~6)/구분선(hr)/셀배경/들여쓰기. 모델 확장(`Run.FontFamily/Background`, `Paragraph.ListType/HeadingLevel/Background/Indent`, `DividerBlock`).
 - **완료**: 편집 UI(툴바·메뉴) 파리티, ReadOnly 모드, 이미지 붙여넣기/드래그드롭(+다운스케일), 인쇄 우회.
 - **완료**: `NativeEditor` 호환 래퍼(JoditEditor 동일 API) — **SaemDesk 통합 가능 수준**. AOT 퍼블리시 확인 통과. 왕복 검증 하네스(`--roundtrip`)+코퍼스.
+- **완료**: 잔여 정리(blockquote·중첩목록 깊이·블록 정렬 읽기), HWP/Excel 붙여넣기.
+- **완료**: 클립보드 붙여넣기 버그 2건 수정 — (1) HTML 포맷 감지를 `fmt.Identifier` 기준으로(엑셀/한글 표가 텍스트·이미지로 새던 문제), (2) 엑셀 CF_HTML의 `<table>` 누락 보정. → 엑셀·한글 진짜 표가 표로 붙음(한글 글상자는 이미지=정상).
 - **상세 계획/현황**: [`Jodit_Parity_Plan.md`](Jodit_Parity_Plan.md).
 - **보류**: SaemDesk 실통합(기능 플래그 롤아웃), HWP/XLS 붙여넣기, 정밀 인쇄(페이지네이션/PDF), blockquote/중첩목록 깊이.
 
 ---
-**마지막 업데이트**: 2026년 6월 7일 (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME, 표 행 높이 수동 조절. 블록 여백 조정만 보류)
+**마지막 업데이트**: 2026년 6월 7일 (Phase 6 — Jodit 파리티 0~8단계 + 클립보드(엑셀/한글 표) 붙여넣기 수정 완료) (Phase 1~4 완료, Phase 5 대부분 완료 — HTML 붙여넣기, 표 구조 클립보드, 이미지 리사이즈, 커서 위치 삽입, 한글 IME, 표 행 높이 수동 조절. 블록 여백 조정만 보류)
