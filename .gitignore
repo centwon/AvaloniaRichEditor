@@ -13,3 +13,7 @@ tests/roundtrip-out/
 
 # Real document corpus extracted from SaemDesk DB — contains personal data, never commit.
 tests/corpus/real_*.html
+
+# Roundtrip harness generated outputs
+tests/out/
+tests/roundtrip-out/

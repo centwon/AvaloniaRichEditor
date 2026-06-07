@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/AvaloniaRichTextBox.Demo/AvaloniaRichTextBox.Demo.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/AvaloniaRichTextBox/AvaloniaRichTextBox.csproj" />
+  </Folder>
+</Solution>
