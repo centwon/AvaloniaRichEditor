@@ -1251,50 +1251,6 @@ public class CustomRichTextBox : Control
         e.Client = _imClient;
     }
 
-    // --- Start in the native IME mode (e.g. Hangul on Korean Windows) -------------------------------
-    // Windows-only: flip the window's IME to native (Hangul) conversion mode the first time we get focus.
-    private bool _imeInitDone;
-    private const int IME_CMODE_NATIVE = 0x0001;
-
-    [System.Runtime.InteropServices.DllImport("imm32.dll")]
-    private static extern IntPtr ImmGetContext(IntPtr hWnd);
-    [System.Runtime.InteropServices.DllImport("imm32.dll")]
-    private static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
-    [System.Runtime.InteropServices.DllImport("imm32.dll")]
-    private static extern bool ImmGetConversionStatus(IntPtr hIMC, out int conversion, out int sentence);
-    [System.Runtime.InteropServices.DllImport("imm32.dll")]
-    private static extern bool ImmSetConversionStatus(IntPtr hIMC, int conversion, int sentence);
-
-    private void EnsureNativeImeMode()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-        try
-        {
-            var hwnd = (TopLevel.GetTopLevel(this) as Window)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-            if (hwnd == IntPtr.Zero) return;
-            var hImc = ImmGetContext(hwnd);
-            if (hImc == IntPtr.Zero) return;
-            if (ImmGetConversionStatus(hImc, out int conv, out int sentence))
-                ImmSetConversionStatus(hImc, conv | IME_CMODE_NATIVE, sentence);
-            ImmReleaseContext(hwnd, hImc);
-        }
-        catch { }
-    }
-
-    private void InitNativeImeOnce()
-    {
-        if (_imeInitDone || IsReadOnly) return;
-        _imeInitDone = true;
-        // Posted so it runs after Avalonia has set up the focus/IME context for this window.
-        Avalonia.Threading.Dispatcher.UIThread.Post(EnsureNativeImeMode);
-    }
-
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnAttachedToVisualTree(e);
-        InitNativeImeOnce();
-    }
-
     // Caret position in this control's coordinate space, used to place the IME candidate window.
     private Rect GetCaretRectangle() => new Rect(_lastCaretPoint.X, _lastCaretPoint.Y, 1, 20);
 
