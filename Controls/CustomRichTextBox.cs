@@ -56,6 +56,11 @@ public class CustomRichTextBox : Control
     private double _initialMouseY;
     private double _initialRowHeight;
 
+    // Table interaction mode (HWP-style). In cell-selection mode a click selects whole cells (drag =
+    // a block); a double-click drops back into text-editing mode (a caret). Default = text editing.
+    private bool _cellSelMode;
+    private TableBlock? _cellSelTable;
+
     // Image resize state
     private List<(Avalonia.Rect rect, ImageBlock img)> _imageHandles = new();
     private bool _isResizingImage;
@@ -228,27 +233,93 @@ public class CustomRichTextBox : Control
         }
         if (clickedBlock is TableBlock table)
         {
-            bool editingThisTable = _caretPosition.Paragraph != null && IsCellOf(table, _caretPosition.Paragraph);
-            if (e.ClickCount < 2 && !editingThisTable)
+            // Outer left/top border -> select the whole table (right/bottom edges are resize handles,
+            // already consumed above). Lets the table be deleted as a unit.
+            if (IsOnTableLeftOrTopBorder(table, point))
             {
                 _selectedBlock = table;
+                _cellSelMode = false; _cellSelTable = null;
                 _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
                 _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
                 ResetCaretBlink();
                 InvalidateVisual();
                 return;
             }
-            // double-click or already editing -> fall through to place the caret in a cell
+            if (_cellSelMode && _cellSelTable == table)
+            {
+                if (e.ClickCount >= 2)
+                {
+                    // Cell-selection -> text editing: drop into the cell with a caret.
+                    _cellSelMode = false; _cellSelTable = null; _selectedBlock = null;
+                    _caretPosition = GetPositionFromPoint(point);
+                    _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    ResetCaretBlink();
+                    InvalidateVisual();
+                    e.Pointer.Capture(this);
+                    return;
+                }
+                // Single click selects exactly one cell; a drag (OnPointerMoved) extends to a block.
+                _selectedBlock = null;
+                var tp = GetPositionFromPoint(point);
+                if (tp.Paragraph != null) FocusCell(tp.Paragraph);
+                e.Pointer.Capture(this);
+                _isSelecting = true;
+                return;
+            }
+            // else: text-editing mode -> fall through to caret placement below.
         }
+        // Any click that isn't on the active cell-selection table leaves cell-selection mode.
+        _cellSelMode = false; _cellSelTable = null;
         _selectedBlock = null;
 
         _caretPosition = GetPositionFromPoint(point);
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
 
+        // Double-click selects the word under the caret; triple-click selects the whole paragraph.
+        if (e.ClickCount >= 2 && _caretPosition.Paragraph != null)
+        {
+            if (e.ClickCount >= 3)
+            {
+                int len = GetParagraphLength(_caretPosition.Paragraph);
+                _selectionStart = new TextPointer(_caretPosition.Paragraph, 0);
+                _selectionEnd = new TextPointer(_caretPosition.Paragraph, len);
+                _caretPosition = new TextPointer(_caretPosition.Paragraph, len);
+            }
+            else
+            {
+                var (ws, we) = WordBoundsAt(BuildPlain(_caretPosition.Paragraph), _caretPosition.Offset);
+                _selectionStart = new TextPointer(_caretPosition.Paragraph, ws);
+                _selectionEnd = new TextPointer(_caretPosition.Paragraph, we);
+                _caretPosition = new TextPointer(_caretPosition.Paragraph, we);
+            }
+            ResetCaretBlink();
+            InvalidateVisual();
+            e.Pointer.Capture(this);
+            return; // no drag-select; keep the word/paragraph selection intact
+        }
+
         ResetCaretBlink();
         e.Pointer.Capture(this);
         _isSelecting = true;
+    }
+
+    // Word span [start,end) around `offset` in plain text. A "word" is a run of letters/digits/_
+    // (Hangul syllables count as letters). On whitespace/punctuation, selects that single character.
+    private static (int start, int end) WordBoundsAt(string text, int offset)
+    {
+        if (text.Length == 0) return (0, 0);
+        static bool IsWord(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
+        int i = Math.Clamp(offset, 0, text.Length);
+        // Prefer the word the caret sits inside; if on a boundary, look one char left.
+        int probe = (i < text.Length && IsWord(text[i])) ? i : (i > 0 && IsWord(text[i - 1]) ? i - 1 : -1);
+        if (probe < 0)
+            return i < text.Length ? (i, i + 1) : (Math.Max(0, i - 1), i);
+        int start = probe, end = probe;
+        while (start > 0 && IsWord(text[start - 1])) start--;
+        while (end < text.Length && IsWord(text[end])) end++;
+        return (start, end);
     }
 
     private static void OpenUrl(string url)
@@ -433,6 +504,47 @@ public class CustomRichTextBox : Control
         return null;
     }
 
+    // Top y and geometry of a given table, mirroring the block advancement used by the hit-tests.
+    private (double top, TableLayout tl)? GetTableRect(TableBlock target)
+    {
+        if (Document == null) return null;
+        double yOffset = 0, listIndent = 10, maxWidth = Bounds.Width;
+        foreach (var block in Document.Blocks)
+        {
+            if (block is TableBlock tb)
+            {
+                var tl = LayoutTable(tb, 10, yOffset);
+                if (tb == target) return (yOffset, tl);
+                yOffset += tl.TotalHeight + 10;
+            }
+            else if (block is Paragraph paragraph)
+            {
+                if (BuildPlain(paragraph) == "")
+                {
+                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
+                    continue;
+                }
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent - paragraph.Indent - paragraph.ListLevel * 20));
+                yOffset += layout.Height + paragraph.MarginBottom;
+            }
+            else if (block is DividerBlock) yOffset += DividerHeight;
+            else if (block is ImageBlock img) yOffset += (img.Height > 0 ? img.Height : 200) + 10;
+        }
+        return null;
+    }
+
+    // True when the point sits on the table's outer left or top border (a thin band). The right/bottom
+    // borders are reserved for resize handles, so only left/top trigger whole-table selection.
+    private bool IsOnTableLeftOrTopBorder(TableBlock tb, Point p)
+    {
+        if (GetTableRect(tb) is not { } tr) return false;
+        double top = tr.top, w = tr.tl.TableWidth, h = tr.tl.TotalHeight;
+        const double m = 4;
+        bool inY = p.Y >= top - m && p.Y <= top + h + m;
+        bool inX = p.X >= 10 - m && p.X <= 10 + w + m;
+        return (inY && Math.Abs(p.X - 10) <= m) || (inX && Math.Abs(p.Y - top) <= m);
+    }
+
     private static Run? RunAtOffset(Paragraph p, int offset)
     {
         int idx = 0;
@@ -503,6 +615,15 @@ public class CustomRichTextBox : Control
         {
             _selectionEnd = GetPositionFromPoint(point);
             _caretPosition = new TextPointer(_selectionEnd.Paragraph, _selectionEnd.Offset);
+            // A drag spanning two different cells of one table is a cell-block selection: enter cell mode
+            // so subsequent single clicks select whole cells (HWP behaviour).
+            var sc = _selectionStart.Paragraph != null ? FindCell(_selectionStart.Paragraph) : null;
+            var ec = _selectionEnd.Paragraph != null ? FindCell(_selectionEnd.Paragraph) : null;
+            if (sc is { } s && ec is { } en && s.tb == en.tb && (s.r != en.r || s.c != en.c))
+            {
+                _cellSelMode = true;
+                _cellSelTable = s.tb;
+            }
             InvalidateVisual();
             return;
         }
@@ -532,6 +653,13 @@ public class CustomRichTextBox : Control
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
                 return;
             }
+        }
+
+        // Outer left/top table border selects the whole table on click -> show an arrow there.
+        if (GetBlockAtPoint(point) is TableBlock ht && IsOnTableLeftOrTopBorder(ht, point))
+        {
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
+            return;
         }
 
         var hoverLink = GetLinkRunAtPoint(point);
@@ -2313,11 +2441,14 @@ public class CustomRichTextBox : Control
         if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null) return null;
         if (FindCell(_selectionStart.Paragraph) is not { } s || s.tb != tb) return null;
         if (FindCell(_selectionEnd.Paragraph) is not { } e || e.tb != tb) return null;
+        // Both endpoints in the same cell = a caret/text selection inside one cell, not a cell block.
+        // (Must compare the cells directly: a merged cell spans rows/cols, so a span-expanded bounding
+        // box would otherwise look multi-cell even for a single merged cell.)
+        if (s.r == e.r && s.c == e.c) return null;
         var (scs, srs) = tb.SpanOf(s.r, s.c);
         var (ecs, ers) = tb.SpanOf(e.r, e.c);
         int r0 = Math.Min(s.r, e.r), c0 = Math.Min(s.c, e.c);
         int r1 = Math.Max(s.r + srs - 1, e.r + ers - 1), c1 = Math.Max(s.c + scs - 1, e.c + ecs - 1);
-        if (r0 == r1 && c0 == c1) return null; // selection is within a single cell
         return (r0, c0, r1, c1);
     }
 
@@ -2616,7 +2747,13 @@ public class CustomRichTextBox : Control
                         ? BuildTextLayout(cell, Math.Max(10, cellWidth - 10), _caretPosition!.Offset, _preeditText)
                         : BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
 
-                    if (cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1)
+                    // A cell is in "cell-selection mode" when it's part of a multi-cell drag block, or its
+                    // whole content is selected (Tab focus / triple-click). Such cells show a fill and NO
+                    // caret. A bare caret (collapsed selection) means "editing text" and shows no fill —
+                    // so the caret's presence vs. the fill cleanly distinguishes the two modes.
+                    bool inBlock = cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1;
+                    bool fullCell = false;
+                    if (inBlock)
                     {
                         context.FillRectangle(new SolidColorBrush(Color.FromArgb(80, 0, 120, 215)), rect);
                     }
@@ -2625,7 +2762,7 @@ public class CustomRichTextBox : Control
                         int cellLen = GetParagraphLength(cell);
                         int hlStart = (cell == selStart!.Paragraph) ? selStart.Offset : 0;
                         int hlEnd = (cell == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                        bool fullCell = hlStart <= 0 && hlEnd >= cellLen;
+                        fullCell = hlStart <= 0 && hlEnd >= cellLen;
                         if (fullCell)
                         {
                             // Fill the whole cell so fully-selected (incl. empty) cells are visibly selected.
@@ -2638,7 +2775,8 @@ public class CustomRichTextBox : Control
                         }
                     }
 
-                    if (_caretPosition != null && _caretPosition.Paragraph == cell)
+                    bool cellSelected = inBlock || fullCell;
+                    if (_caretPosition != null && _caretPosition.Paragraph == cell && (!cellSelected || cellHasPreedit))
                     {
                         int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
                         var cr = layout.HitTestTextPosition(caretDisp);
