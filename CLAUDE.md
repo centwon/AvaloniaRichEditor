@@ -53,7 +53,7 @@ dotnet run --project AvaloniaRichTextBoxPort.csproj
 
 1. **단일 `TextLayout`가 진실의 원천**: 렌더·커서·히트테스트·선택영역은 모두 `BuildTextLayout`(per-run `ITextSource`)에서 나온 하나의 `TextLayout`을 쓴다. `FormattedText`로 폭을 따로 재면 글자 단위 off-by-one이 생긴다. (Avalonia 12 `FormattedText`엔 `HitTestPoint`/`HitTestTextPosition` 없음 — `TextLayout`에 있음.)
 2. **오프셋 모델 = "이미지는 1글자"**: `InlineImage`는 논리적으로 1글자(`U+FFFC` placeholder, `ImageTextRun : DrawableTextRun`로 그림). 길이/오프셋 계산은 전부 `InlineLen()`/`BuildPlain()`을 쓴다. 새 오프셋 로직 추가 시 `Run.Text.Length`만 더하지 말 것.
-3. **줄바꿈은 Run 안의 `\n`**: Enter는 새 `Paragraph` 블록이 아니라 현재 Run에 `\n`을 넣는다. 초기 문서·표 셀만 별도 Paragraph. (메모리 `linebreaks-in-runs.md` 참고)
+3. **Enter = 새 `Paragraph`**: Enter는 커서 위치에서 문단을 분할해 새 Paragraph를 만든다(`SplitParagraphAtCaret`). 새 문단은 리스트/들여쓰기/정렬/배경을 물려받고 제목 레벨은 본문(0)으로. **예외: 표 셀**은 sibling 문단을 가질 수 없어 셀 안 Enter는 여전히 Run에 `\n`. (이전엔 모든 Enter가 `\n`이었음 — 2026-06 변경. 로드 문서·붙여넣기로 들어온 `\n`은 그대로 한 문단 여러 줄로 렌더되며 줄마다 처리되는 곳들이 이를 지원.)
 4. **블록 vs 인라인 이미지**: 큰 이미지=`ImageBlock`(독립 블록), 작은 아이콘(<64px)=`InlineImage`(문단 내). 표/큰 이미지에는 텍스트를 직접 넣을 수 없다(문단이 아님) — "표앞/표뒤"는 인접 문단의 끝/시작이다.
 5. **`NormalizeBlocks`**: 문서 처음/끝과 "연속된 비문단 블록 사이"에만 문단을 보장(빈 줄 강제 안 함). 캐럿이 모든 블록 앞뒤에 닿게 하는 장치. `UpdateParents`에서 호출됨.
 6. **선택/삭제**: 텍스트는 `TextRange`; 큰 이미지/표는 클릭하면 `_selectedBlock` 선택(파란 테두리) 후 Delete/Backspace. 표는 단일클릭=전체선택, 더블클릭=셀 편집.

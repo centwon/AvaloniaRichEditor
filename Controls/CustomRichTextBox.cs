@@ -341,7 +341,6 @@ public class CustomRichTextBox : Control
     {
         if (Document == null) return null;
         double yOffset = 0;
-        double listIndent = 10;
         double maxWidth = Bounds.Width;
 
         foreach (var block in Document.Blocks)
@@ -369,7 +368,7 @@ public class CustomRichTextBox : Control
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
-                double plink = listIndent + paragraph.Indent + paragraph.ListLevel * 20;
+                double plink = ParaLeft(paragraph);
                 var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - plink));
                 double height = layout.Height;
                 if (p.Y >= yOffset && p.Y <= yOffset + height)
@@ -486,7 +485,7 @@ public class CustomRichTextBox : Control
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent - paragraph.Indent - paragraph.ListLevel * 20));
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph)));
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
             else if (block is DividerBlock)
@@ -508,7 +507,7 @@ public class CustomRichTextBox : Control
     private (double top, TableLayout tl)? GetTableRect(TableBlock target)
     {
         if (Document == null) return null;
-        double yOffset = 0, listIndent = 10, maxWidth = Bounds.Width;
+        double yOffset = 0, maxWidth = Bounds.Width;
         foreach (var block in Document.Blocks)
         {
             if (block is TableBlock tb)
@@ -524,7 +523,7 @@ public class CustomRichTextBox : Control
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
                 }
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - listIndent - paragraph.Indent - paragraph.ListLevel * 20));
+                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph)));
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
             else if (block is DividerBlock) yOffset += DividerHeight;
@@ -926,6 +925,22 @@ public class CustomRichTextBox : Control
         {
             if (_caretPosition.Paragraph != null)
             {
+                var p = _caretPosition.Paragraph;
+                // Enter splits the paragraph at the caret into a new paragraph. On an empty list item it
+                // exits the list instead. Inside a table cell (not a top-level block) it keeps "\n in the
+                // run" since a cell can't host sibling paragraphs.
+                if (Document != null && Document.Blocks.Contains(p))
+                {
+                    _undoManager.PushState(Document, _caretPosition);
+                    if (_selectionStart != _selectionEnd) DeleteSelection();
+                    p = _caretPosition.Paragraph!;
+                    if (p.ListType != ListKind.None && GetParagraphLength(p) == 0)
+                        p.ListType = ListKind.None; // empty list item -> leave the list, stay put
+                    else
+                        SplitParagraphAtCaret();
+                    UpdateParents(Document);
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
                 TryInsertTextCore(_caretPosition.Paragraph, "\n", _caretPosition.Offset);
                 _caretPosition.Offset++;
                 _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -1139,11 +1154,40 @@ public class CustomRichTextBox : Control
         if (Document == null || _caretPosition.Paragraph == null) return;
         if (_selectionStart != _selectionEnd) DeleteSelection();
 
+        // Smart list: typing the space after "-"/"*" or "N." at a paragraph start turns it into a list.
+        if (text == " " && TryAutoList()) return;
+
         TryInsertTextCore(_caretPosition.Paragraph, text, _caretPosition.Offset);
         _caretPosition.Offset += text.Length;
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         InvalidateVisual();
+    }
+
+    // If the caret sits right after a list prefix ("-"/"*" -> bullet, "N." -> ordered) at the very start
+    // of its paragraph, convert the paragraph to that list (dropping the typed prefix) and swallow the
+    // triggering space. Only fires on a plain paragraph (not already a list). Returns true if it acted.
+    private bool TryAutoList()
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null || p.ListType != ListKind.None) return false;
+        int caret = _caretPosition.Offset;
+        string plain = BuildPlain(p);
+        if (caret <= 0 || caret > plain.Length) return false;
+        string prefix = plain.Substring(0, caret);
+        ListKind kind;
+        if (prefix == "-" || prefix == "*") kind = ListKind.Bullet;
+        else if (System.Text.RegularExpressions.Regex.IsMatch(prefix, @"^\d+\.$")) kind = ListKind.Ordered;
+        else return false;
+
+        if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        DeleteLocalText(p, 0, prefix.Length);
+        p.ListType = kind;
+        _caretPosition = new TextPointer(p, 0);
+        _selectionStart = new TextPointer(p, 0);
+        _selectionEnd = new TextPointer(p, 0);
+        InvalidateVisual();
+        return true;
     }
 
     private void DeleteSelection()
@@ -1292,6 +1336,26 @@ public class CustomRichTextBox : Control
         }
     }
 
+    // Width reserved to the left of list-item text for its bullet/number marker.
+    private const double ListMarkerWidth = 22;
+
+    // Left x where a paragraph's text starts: base indent + manual indent + nesting + (list marker gap).
+    // Single source so render and all hit-tests agree on where text begins.
+    private static double ParaLeft(Paragraph p)
+        => 10 + p.Indent + p.ListLevel * 20 + (p.ListType != ListKind.None ? ListMarkerWidth : 0);
+
+    // Draws a list item's marker (• or "N.") right-aligned just left of the text (small fixed gap),
+    // so the marker hugs the content regardless of its width. No-op for non-list paragraphs.
+    private static void DrawListMarker(DrawingContext context, Paragraph p, int num, double textLeft, double y)
+    {
+        if (p.ListType == ListKind.None) return;
+        string m = p.ListType == ListKind.Bullet ? "•" : $"{num}.";
+        var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight, Typeface.Default, 14, Brushes.Black);
+        const double gap = 6;
+        context.DrawText(ft, new Point(textLeft - gap - ft.Width, y));
+    }
+
     private Avalonia.Media.TextFormatting.TextLayout BuildTextLayout(Paragraph p, double maxWidth,
         int preeditOffset = -1, string? preeditText = null)
     {
@@ -1396,7 +1460,6 @@ public class CustomRichTextBox : Control
             return new TextPointer(null, 0);
 
         double yOffset = 0;
-        double listIndent = 10;
         double maxWidth = Bounds.Width;
         double bestDistY = double.MaxValue;
         Paragraph? bestPara = null;
@@ -1446,7 +1509,7 @@ public class CustomRichTextBox : Control
                     continue;
                 }
 
-                double ppos = listIndent + paragraph.Indent + paragraph.ListLevel * 20;
+                double ppos = ParaLeft(paragraph);
                 var ft = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ppos));
                 double height = ft.Height;
 
@@ -1845,11 +1908,152 @@ public class CustomRichTextBox : Control
 
     private void SetListType(ListKind kind)
     {
-        if (_caretPosition.Paragraph == null) return;
-        if (Document != null) _undoManager.PushState(Document, _caretPosition);
-        var p = _caretPosition.Paragraph;
-        p.ListType = p.ListType == kind ? ListKind.None : kind;
+        if (_caretPosition.Paragraph == null || Document == null) return;
+        _undoManager.PushState(Document, _caretPosition);
+        bool turningOff = _caretPosition.Paragraph.ListType == kind;
+
+        // Apply to every selected top-level paragraph (just the caret's when there's no selection).
+        var targets = SelectedTopLevelParagraphs();
+        if (targets.Count == 0)
+        {
+            // Caret in a table cell etc. -> just flag that paragraph.
+            _caretPosition.Paragraph.ListType = turningOff ? ListKind.None : kind;
+            InvalidateVisual();
+            return;
+        }
+        if (turningOff)
+        {
+            foreach (var tp in targets) tp.ListType = ListKind.None;
+            UpdateParents(Document);
+            InvalidateVisual();
+            return;
+        }
+        // Turning a list on: split each target's hard lines (\n) into independent list-item paragraphs.
+        // Process from the bottom up so earlier block indices stay valid while we splice. The selection
+        // anchors and caret are re-mapped onto the split items so the highlight (and caret) are kept.
+        var ssP = _selectionStart.Paragraph; int ssO = _selectionStart.Offset;
+        var seP = _selectionEnd.Paragraph; int seO = _selectionEnd.Offset;
+        var cpP = _caretPosition.Paragraph; int cpO = _caretPosition.Offset;
+        TextPointer? nSs = null, nSe = null, nCp = null;
+
+        // Maps an (offset within a multi-line paragraph) onto the matching split item + local offset.
+        (Paragraph, int) MapInto(List<Paragraph> items, Paragraph tp, int off)
+        {
+            string plain = BuildPlain(tp);
+            int line = 0, lineStart = 0, lim = Math.Min(off, plain.Length);
+            for (int i = 0; i < lim; i++) if (plain[i] == '\n') { line++; lineStart = i + 1; }
+            var it = items[Math.Min(line, items.Count - 1)];
+            return (it, Math.Min(off - lineStart, GetParagraphLength(it)));
+        }
+
+        foreach (var tp in targets.OrderByDescending(t => Document.Blocks.IndexOf(t)))
+        {
+            int idx = Document.Blocks.IndexOf(tp);
+            if (idx < 0) { tp.ListType = kind; continue; }
+            var items = SplitByNewlines(tp);
+            foreach (var it in items) { it.ListType = kind; it.Parent = Document; }
+            Document.Blocks.RemoveAt(idx);
+            for (int k = 0; k < items.Count; k++) Document.Blocks.Insert(idx + k, items[k]);
+            if (tp == ssP) { var (p2, o2) = MapInto(items, tp, ssO); nSs = new TextPointer(p2, o2); }
+            if (tp == seP) { var (p2, o2) = MapInto(items, tp, seO); nSe = new TextPointer(p2, o2); }
+            if (tp == cpP) { var (p2, o2) = MapInto(items, tp, cpO); nCp = new TextPointer(p2, o2); }
+        }
+        if (nSs != null) _selectionStart = nSs;
+        if (nSe != null) _selectionEnd = nSe;
+        if (nCp != null) _caretPosition = nCp;
+        UpdateParents(Document);
         InvalidateVisual();
+    }
+
+    // Top-level paragraphs touched by the current selection (or just the caret's when collapsed).
+    private List<Paragraph> SelectedTopLevelParagraphs()
+    {
+        var result = new List<Paragraph>();
+        if (Document == null) return result;
+        var all = GetAllParagraphsInOrder();
+        int si = _selectionStart.Paragraph != null ? all.IndexOf(_selectionStart.Paragraph) : -1;
+        int ei = _selectionEnd.Paragraph != null ? all.IndexOf(_selectionEnd.Paragraph) : -1;
+        if (si < 0 || ei < 0)
+        {
+            if (_caretPosition.Paragraph != null && Document.Blocks.Contains(_caretPosition.Paragraph))
+                result.Add(_caretPosition.Paragraph);
+            return result;
+        }
+        if (si > ei) (si, ei) = (ei, si);
+        for (int i = si; i <= ei; i++)
+            if (Document.Blocks.Contains(all[i])) result.Add(all[i]);
+        return result;
+    }
+
+    // Splits a paragraph into one paragraph per hard line (\n), preserving inline formatting and the
+    // paragraph's list/indent/alignment/background. Newlines are dropped (each becomes a paragraph break).
+    private List<Paragraph> SplitByNewlines(Paragraph p)
+    {
+        var result = new List<Paragraph>();
+        Paragraph NewPara() => new Paragraph
+        {
+            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
+            TextAlignment = p.TextAlignment, Background = p.Background
+        };
+        var cur = NewPara();
+        foreach (var inl in p.Inlines)
+        {
+            if (inl is Run run && run.Text != null && run.Text.Contains('\n'))
+            {
+                var parts = run.Text.Split('\n');
+                for (int k = 0; k < parts.Length; k++)
+                {
+                    if (k > 0) { result.Add(cur); cur = NewPara(); }
+                    if (parts[k].Length > 0)
+                    {
+                        var nr = (Run)run.Clone();
+                        nr.Text = parts[k];
+                        nr.Parent = cur;
+                        cur.Inlines.Add(nr);
+                    }
+                }
+            }
+            else
+            {
+                var c = (Inline)inl.Clone();
+                c.Parent = cur;
+                cur.Inlines.Add(c);
+            }
+        }
+        result.Add(cur);
+        foreach (var pp in result)
+            if (pp.Inlines.Count == 0) pp.Inlines.Add(new Run { Text = "" });
+        return result;
+    }
+
+    // Splits the caret's (top-level) paragraph at the caret into a new following paragraph, which
+    // inherits list/indent/alignment/background (not heading level). Used by Enter.
+    private void SplitParagraphAtCaret()
+    {
+        var p = _caretPosition.Paragraph;
+        if (Document == null || p == null) return;
+        int idx = Document.Blocks.IndexOf(p);
+        if (idx < 0) return;
+        int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
+        var np = new Paragraph
+        {
+            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
+            TextAlignment = p.TextAlignment, Background = p.Background
+        };
+        while (p.Inlines.Count > insertAt)
+        {
+            var inl = p.Inlines[insertAt];
+            p.Inlines.RemoveAt(insertAt);
+            inl.Parent = np;
+            np.Inlines.Add(inl);
+        }
+        if (np.Inlines.Count == 0) np.Inlines.Add(new Run { Text = "" });
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
+        np.Parent = Document;
+        Document.Blocks.Insert(idx + 1, np);
+        _caretPosition = new TextPointer(np, 0);
+        _selectionStart = new TextPointer(np, 0);
+        _selectionEnd = new TextPointer(np, 0);
     }
 
     // Applies a heading level (0 = body) to the caret's paragraph and resizes its runs so it
@@ -2721,11 +2925,13 @@ public class CustomRichTextBox : Control
         double maxWidth = Bounds.Width;
         double listIndent = 10;
         Point? caretPoint = null;
+        int orderedIndex = 0; // running counter for consecutive ordered-list paragraphs
 
         foreach (var block in Document.Blocks)
         {
             if (block is TableBlock tb)
             {
+                orderedIndex = 0;
                 double startX = 10;
                 double tableTop = yOffset;
                 var tl = LayoutTable(tb, startX, tableTop);
@@ -2809,10 +3015,15 @@ public class CustomRichTextBox : Control
 
                 bool hasPreedit = _caretPosition != null && _caretPosition.Paragraph == paragraph && !string.IsNullOrEmpty(_preeditText);
 
-                double px = listIndent + paragraph.Indent + paragraph.ListLevel * 20;
+                double px = ParaLeft(paragraph);
+
+                // Ordered numbering runs continuously across consecutive ordered paragraphs; reset otherwise.
+                if (paragraph.ListType != ListKind.Ordered) orderedIndex = 0;
 
                 if (fullText == "" && !hasPreedit)
                 {
+                    if (paragraph.ListType != ListKind.None)
+                        DrawListMarker(context, paragraph, paragraph.ListType == ListKind.Ordered ? ++orderedIndex : 0, px, yOffset);
                     if (_caretPosition != null && _caretPosition.Paragraph == paragraph)
                     {
                         caretPoint = new Point(px, yOffset);
@@ -2826,6 +3037,23 @@ public class CustomRichTextBox : Control
                 var layout = hasPreedit
                     ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
                     : BuildTextLayout(paragraph, pWidth);
+
+                // One marker per hard line (\n): each line of a list paragraph is an item. Ordered lists
+                // number each line; this is what makes "press Enter -> next bullet/number" work given the
+                // editor's "Enter inserts \n in a Run" model (lines aren't separate paragraphs).
+                if (paragraph.ListType != ListKind.None)
+                {
+                    int segStart = 0;
+                    for (int i = 0; i <= fullText.Length; i++)
+                    {
+                        if (i == fullText.Length || fullText[i] == '\n')
+                        {
+                            var lcr = layout.HitTestTextPosition(Math.Min(segStart, fullText.Length));
+                            DrawListMarker(context, paragraph, paragraph.ListType == ListKind.Ordered ? ++orderedIndex : 0, px, yOffset + lcr.Y);
+                            segStart = i + 1;
+                        }
+                    }
+                }
 
                 if (paragraph.Background != null)
                     context.FillRectangle(paragraph.Background, new Rect(px, yOffset, pWidth, layout.Height));
@@ -2854,6 +3082,7 @@ public class CustomRichTextBox : Control
             }
             else if (block is ImageBlock img)
             {
+                orderedIndex = 0;
                 if (img.Image != null)
                 {
                     double width = img.Width > 0 ? img.Width : 200;
@@ -2880,6 +3109,7 @@ public class CustomRichTextBox : Control
             }
             else if (block is DividerBlock)
             {
+                orderedIndex = 0;
                 double y = yOffset + DividerHeight / 2;
                 context.DrawLine(new Pen(Brushes.Gray, 1), new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
                 yOffset += DividerHeight;
