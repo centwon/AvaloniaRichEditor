@@ -64,6 +64,13 @@ currently developed and tested on **Windows**; macOS/Linux are **best-effort** f
 
 Cross-platform smoke testing and CI are tracked in the roadmap (N3/N4).
 
+## Accessibility
+
+The editor exposes an automation peer (`AutomationControlType.Edit` + `IValueProvider`), so screen
+readers can read and set its text content — the same level Avalonia's built-in `TextBox` offers
+(Avalonia's public automation model does not yet include a text-range/`ITextProvider` pattern). Give the
+control a label from your view with `AutomationProperties.Name="..."` (or `LabeledBy`).
+
 ## Building
 
 ```
