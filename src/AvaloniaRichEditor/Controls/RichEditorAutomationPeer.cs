@@ -5,8 +5,9 @@ using Avalonia.Automation.Provider;
 namespace AvaloniaRichEditor.Controls;
 
 // Accessibility peer: exposes the editor to screen readers as an editable text control whose value is
-// the document's plain text. A full ITextProvider (ranges/attributes) is future work; IValueProvider
-// already lets assistive tech read (and, when not read-only, replace) the content.
+// the document's plain text. Avalonia's public automation model has no ITextProvider (caret/range/
+// attribute navigation), so IValueProvider is the ceiling here — it lets assistive tech read (and,
+// when not read-only, replace) the content, same as Avalonia's own TextBox.
 internal sealed class RichEditorAutomationPeer : ControlAutomationPeer, IValueProvider
 {
     private readonly RichEditor _owner;
@@ -16,6 +17,13 @@ internal sealed class RichEditorAutomationPeer : ControlAutomationPeer, IValuePr
     protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Edit;
 
     protected override string GetClassNameCore() => nameof(RichEditor);
+
+    // Falls back to a sensible default when the host hasn't set AutomationProperties.Name.
+    protected override string? GetNameCore()
+    {
+        var name = base.GetNameCore();
+        return string.IsNullOrEmpty(name) ? "Rich text editor" : name;
+    }
 
     protected override bool IsContentElementCore() => true;
     protected override bool IsControlElementCore() => true;
