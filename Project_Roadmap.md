@@ -164,4 +164,4 @@
 - 라이선스 종류(MIT 권장?), 패키지 ID 최종(`AvaloniaRichEditor` 선점 여부 확인), 지원 Avalonia 버전 범위, 크로스플랫폼 보장 수준(알파에서 Windows-only로 갈지).
 
 ---
-**마지막 업데이트**: 2026년 6월 8일 (구조 분리 N0 완료 — 라이브러리/데모 2프로젝트 + 레이아웃 캐싱 성능 개선 + 우클릭 메뉴/툴바 정리. **NuGet 배포 계획 N1~N5 수립**) / 2026년 6월 7일 (Phase 6 — Jodit 파리티 0~8단계 + 클립보드(엑셀/한글 표) 붙여넣기 수정 + **표 셀 병합(colspan/rowspan)** 완료) (Phase 1~4 완료, Phase 5 대부분 완료)
+**마지막 업데이트**: 2026년 6월 8일 (NuGet 배포 준비 대거 진행 — N0 구조분리, **이름 변경 `AvaloniaRichEditor`/`RichEditor`**, N1 패키징(로컬 pack 검증, MIT, 0.1.0-alpha), N2 공개 API(이벤트·StyledProperty·편의·문서), N3 크로스플랫폼 게이팅, N4 테스트 27개(모델+헤드리스 xUnit v3)+CI, N5 Undo 코얼레싱·접근성(IValueProvider 천장)·God-class partial 3분할, +포맷 페인터·레이아웃 캐싱. 남은 게시 절차: GitHub 저장소→푸시→nuget push) / 2026년 6월 7일 (Phase 6 — Jodit 파리티 0~8단계 + 클립보드(엑셀/한글 표) 붙여넣기 수정 + **표 셀 병합(colspan/rowspan)** 완료) (Phase 1~4 완료, Phase 5 대부분 완료)

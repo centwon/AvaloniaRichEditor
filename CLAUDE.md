@@ -48,11 +48,15 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 - `Documents/` — 문서 모델. `FlowDocument.Blocks`(AvaloniaList<Block>)에 `Paragraph`/`TableBlock`/`ImageBlock`이 **형제(sibling)**로 들어감.
   - `Paragraph.Inlines`: `Run`(텍스트) 또는 `InlineImage`(인라인 아이콘).
   - `TextPointer`(Paragraph+Offset), `TextRange`(삭제/복사/서식/구조).
-- `Controls/RichEditor.cs` — 핵심 컨트롤(렌더·입력·선택·클립보드, ~3700줄). `UndoManager`, `InputDialog`, `NativeEditor`(Jodit 호환 래퍼).
+- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`). 입력·캐럿·선택·편집·히트테스트·표 연산(~3,160줄). 부분 클래스로 분리: `RichEditor.ContextMenu.cs`(우클릭 메뉴), `RichEditor.Clipboard.cs`(붙여넣기·드래그드롭), `RichEditor.Rendering.cs`(Measure/Render/AutomationPeer 훅). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal). 접근성 `RichEditorAutomationPeer`(IValueProvider).
 - `Formatters/` — `DocumentSerializer`(JSON), `HtmlDocumentFormatter`(HTML 입출력 파서), `RoundTripHarness`(`--roundtrip` CLI 검증).
 
 **데모/테스트 앱** `samples/AvaloniaRichEditor.Demo/` (네임스페이스 `AvaloniaRichEditor.Demo.*`):
-- `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`.
+- `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(Jodit 호환 래퍼)는 데모 전용.
+
+**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off). 27개.
+
+> NuGet 배포 준비(N0~N5)와 진행 상황은 [`Project_Roadmap.md`](Project_Roadmap.md)의 **"📦 NuGet 배포 계획"** 절 참고.
 
 ## 비자명한 핵심 규칙 (꼭 지킬 것)
 
