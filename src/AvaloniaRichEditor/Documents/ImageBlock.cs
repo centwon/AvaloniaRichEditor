@@ -2,6 +2,8 @@ using Avalonia.Media.Imaging;
 
 namespace AvaloniaRichEditor.Documents;
 
+/// <summary>A block-level image (its own line/paragraph), as opposed to a small in-line
+/// <see cref="InlineImage"/>. Used for larger pictures; supports resize.</summary>
 public class ImageBlock : Block
 {
     public Bitmap? Image { get; set; }

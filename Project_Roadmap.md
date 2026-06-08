@@ -139,7 +139,7 @@
 - [x] `tests/AvaloniaRichEditor.Tests`(xUnit) 신설 — **19개 테스트 통과**.
 - [x] 단위 테스트: 표 병합/해제·행열 삽입삭제(`MergeCells`/`SpanOf`/`AnchorOf`/`IsCovered`), `TextRange`(GetText/Delete/ApplyPropertyValue), JSON 왕복(텍스트·서식·정렬·제목·표 병합 + 멱등), HTML 왕복(bold/list/table). 헤드리스 없이 순수 단위테스트로 동작.
 - [x] **GitHub Actions**(`.github/workflows/ci.yml`): build+test **3-OS 매트릭스**(ubuntu/windows/macos) → N3의 mac/Linux 스모크 겸함. 태그(`v*`) 푸시 시 `dotnet pack` → 아티팩트 업로드(nuget push는 시크릿 추가 후 주석 해제).
-- [ ] (선택) `Avalonia.Headless.XUnit`로 **컨트롤 자체**(렌더·히트테스트·입력) 검증 — 미착수(모델/포매터만 커버).
+- [ ] (선택) `Avalonia.Headless.XUnit`로 **컨트롤 자체**(렌더·히트테스트·입력) 검증 — **보류**: Avalonia.Headless.XUnit 12는 xUnit **v3**(테스트 프로젝트 Exe 모델) 요구라 현행 v2 스위트와 충돌. v3 전환 시 함께 도입 예정.
 - [ ] CI 실제 실행 확인 — **저장소 푸시 후** 그린 확인 필요(로컬 `dotnet test`는 통과).
 - [ ] 오프셋 모델(`InlineLen`/`BuildPlain`)·Undo/Redo는 `RichEditor` private/컨트롤 레벨이라 헤드리스 테스트에서 다룰 항목.
 

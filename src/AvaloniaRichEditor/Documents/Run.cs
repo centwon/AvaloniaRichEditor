@@ -2,6 +2,8 @@ using Avalonia.Media;
 
 namespace AvaloniaRichEditor.Documents;
 
+/// <summary>A contiguous run of text sharing one set of character formatting (font, size, weight,
+/// style, color, highlight, decorations, optional hyperlink). The basic inline building block.</summary>
 public class Run : Inline
 {
     public string? Text { get; set; }

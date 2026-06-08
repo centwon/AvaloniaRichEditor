@@ -2,6 +2,9 @@ using System.Collections.Generic;
 
 namespace AvaloniaRichEditor.Documents;
 
+/// <summary>A grid of cells (each a <see cref="Paragraph"/>) supporting per-column widths, row heights,
+/// and cell merging via colspan/rowspan. The grid is kept dense/rectangular; merged areas use an anchor
+/// cell plus covered markers (see <see cref="ColSpans"/>/<see cref="RowSpans"/>).</summary>
 public class TableBlock : Block
 {
     public int Rows { get; set; } = 2;
