@@ -958,7 +958,7 @@ public class RichEditor : Control
         if (string.IsNullOrEmpty(e.Text)) return;
         _selectedBlock = null;
         _caretBlock = null;
-        if (Document != null) PushUndo();
+        PushUndoTyping(); // coalesce consecutive keystrokes into one undo checkpoint
         InsertText(e.Text);
         e.Handled = true;
     }
@@ -1325,6 +1325,7 @@ public class RichEditor : Control
         _caretTimer.Start();
         _imClient.NotifyCaretChanged();
         _bringCaretIntoView = true;
+        _typingRun = false; // any caret move / selection change breaks the typing-undo coalescing run
         InvalidateVisual();
         NotifyStatus();
     }
@@ -1349,10 +1350,28 @@ public class RichEditor : Control
     private bool _textChangedPending;
     private void MarkTextChanged() => _textChangedPending = true;
 
-    // Records an undo checkpoint and flags a text change. Single choke point for document mutations.
+    // True while a run of consecutive typed characters shares one undo checkpoint (see PushUndoTyping).
+    private bool _typingRun;
+
+    // Records an undo checkpoint and flags a text change. Single choke point for discrete (non-typing)
+    // document mutations; also ends any in-progress typing run so the next keystroke checkpoints afresh.
     private void PushUndo()
     {
         if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        _textChangedPending = true;
+        _typingRun = false;
+    }
+
+    // Undo checkpoint for typed text: coalesces a run of consecutive keystrokes into a single
+    // checkpoint (one full-document clone per typing run, not per character). The run ends on any
+    // caret move, selection change, or discrete edit (see ResetCaretBlink / PushUndo).
+    private void PushUndoTyping()
+    {
+        if (!_typingRun)
+        {
+            if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            _typingRun = true;
+        }
         _textChangedPending = true;
     }
 
