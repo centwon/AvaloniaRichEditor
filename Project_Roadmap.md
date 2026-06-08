@@ -146,7 +146,7 @@
 ### 🔵 N5: 견고성·성능 — **`1.0` 목표** (우선순위 5)
 - [ ] **증분 Undo**: 현재 `UndoManager.PushState`가 편집마다 문서 전체 `Clone()`(O(N) 메모리·CPU, 50벌 보관). 명령(command)/델타 기반 또는 입력 코얼레싱으로 전환.
 - [ ] **렌더 가상화**: 뷰포트 밖 블록은 그리지 않도록(현재 매 프레임 전 블록 Draw). 레이아웃 캐싱(완료)과 결합.
-- [ ] **접근성**: `AutomationPeer` 구현(스크린리더). 공공/상용 납품 필수.
+- [x] **접근성(기본)**: `RichEditorAutomationPeer : ControlAutomationPeer, IValueProvider` — 컨트롤 타입 Edit, 값=문서 평문(`GetPlainText`), `IsReadOnly` 반영, SetValue 지원. 스크린리더가 내용 읽기 가능. (전체 `ITextProvider`(캐럿·범위·속성)는 향후.)
 - [ ] (선택) `RichEditor` 3,700줄 God-class 분해(렌더/입력/클립보드/표 partial 분리) — 유지보수·기여성.
 - **검증**: 수백 페이지 문서에서 타이핑/스크롤 지연 측정, 메모리 상한 확인.
 

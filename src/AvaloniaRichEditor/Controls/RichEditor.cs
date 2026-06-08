@@ -2181,6 +2181,22 @@ public class RichEditor : Control
     /// <summary>Clears the document to a single empty paragraph.</summary>
     public void Clear() => LoadDocument(new FlowDocument());
 
+    /// <summary>The document's text content as plain text (paragraphs/cells separated by newlines).
+    /// Used for accessibility and quick text extraction.</summary>
+    public string GetPlainText()
+    {
+        if (Document == null) return "";
+        var sb = new System.Text.StringBuilder();
+        void AddPara(Paragraph p) { if (sb.Length > 0) sb.Append('\n'); sb.Append(BuildPlain(p)); }
+        foreach (var block in Document.Blocks)
+        {
+            if (block is Paragraph p) AddPara(p);
+            else if (block is TableBlock tb)
+                foreach (var (_, _, cell) in tb.LogicalCells()) AddPara(cell);
+        }
+        return sb.ToString();
+    }
+
     /// <summary>True if there is an edit to undo.</summary>
     public bool CanUndo => _undoManager.CanUndo;
 
@@ -3685,6 +3701,11 @@ public class RichEditor : Control
         _measuredHeight = Math.Max(MinHeight, MeasureContentHeight(w));
         return new Size(w, _measuredHeight);
     }
+
+    // Exposes the editor to assistive technologies (screen readers) as an editable text control via
+    // RichEditorAutomationPeer (IValueProvider over the plain-text content).
+    protected override Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer()
+        => new RichEditorAutomationPeer(this);
 
     public override void Render(DrawingContext context)
     {
