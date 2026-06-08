@@ -80,11 +80,15 @@
   단 **표 마지막 셀에서 ↓로 "표 뒤(after)" 캐럿 진입이 안 되는 버그** 남음(메모리 `future-work-suggestions.md` 참고). 추후 재논의.
 - **A4 페이지 레이아웃(추후)**: 편집 영역을 A4 기준으로. ① 간단안=A4 폭 고정+회색 배경 위 흰 페이지(가운데 정렬, 경계 없음, 저위험), ② **진짜 페이지네이션**=A4 한 장(≈794×1123@96DPI)마다 경계로 끊고 다음 장으로(렌더·히트테스트가 페이지 좌표를 알아야 함, 대공사). 정밀 인쇄/PDF와 연계. 참고: SaemDesk 콘텐츠는 HTML(웹 리플로우)이라 본질적 페이지 크기는 없음.
 - **IME 한글 기본 입력(시도→실패, 보류)**: IMM32 `ImmSetConversionStatus(IME_CMODE_NATIVE)` P/Invoke를 GotFocus + 시작시 자동포커스와 함께 시도했으나 **한국어 Win11에서 한글 전환 안 됨**(예상대로 TSF가 IMM32 변환모드 무시). 코드 제거함. 남은 대안: `SendInput(VK_HANGUL)`(토글이라 현재 상태 확인 필요·위험) 또는 TSF 인터롭(복잡). 실용성 대비 비용이 커서 보류. (시작시 에디터 자동포커스는 유지 — 클릭 없이 바로 입력 가능.)
+- **사용성(기능) 개선 후보**:
+  - **블록 여백(Margin) 제어**: `Block`에 상하좌우 여백 속성 추가 → 렌더에서 고정값 대신 반영(`MarginTop` 포함) → 툴바 입력 또는 컨텍스트 메뉴 UI. 현재 문단은 `MarginBottom`만, 이미지/표는 고정 10px.
+  - **DOCX 클립보드 파싱**: 한글(HWP) 표/글상자, 워드 그림(VML)이 이미지로 들어오는 문제 해결. 클립보드 DOCX format (`<w:tbl>`, `<w:drawing>`) 파싱. OOXML 스펙이 방대해 "표+이미지+기본 서식"만 타게팅해도 상당한 작업량.
+  - **마크다운 입출력**: Import는 Markdig 등 기존 파서 활용 가능. Export는 손실적(표 병합, 인라인 이미지, 글자색 등 표현 불가). SaemDesk 사용자층이 개발자인지에 따라 우선순위 결정.
+- **구조적 기반** (성능 개선의 전제):
+  - **테스트 보강**: 27개 테스트는 4,000줄+ 에디터 대비 낮은 수준. N6 이미지 모델 전환 등 구조 변경의 안전망 확보 필요.
+  - **크로스플랫폼 실검증**: mac/Linux 스모크 테스트 미실행. GitHub 푸시 후 CI 3-OS 매트릭스로 확인.
 - **남은 보류 항목**:
-  - ~~블록 여백(Margin)~~ → 그림/표 앞 여백(Space)으로 구현됨(위 버그 제외). 문단 상하 여백 UI는 여전히 미구현.
-  - HWP 글상자/표 → 클립보드 DOCX Format(`<w:tbl>`) 파싱(현재 이미지로 들어옴)
   - 정밀 인쇄(페이지네이션/PDF) — 현재 브라우저 우회만
-  - 대용량 base64 성능 정밀 측정
   - SaemDesk 실통합(기능 플래그 롤아웃)
 
 ---
@@ -97,8 +101,8 @@
 
 ### 출시 품질 기준선 (Release Tiers)
 - **`0.1.0-alpha`** = 패키지로 설치·참조 가능 + 최소 공개 API/문서 + Windows에서 동작 보장 + LICENSE/README. "써볼 수 있다."
-- **`0.x`** = 크로스플랫폼 검증 + 공개 API 안정화 + 테스트 + CI. "실무에 조심스럽게 쓸 수 있다."
-- **`1.0`** = 접근성 + 대용량 성능(증분 Undo·가상화) + API 동결. "프로덕션."
+- **`0.x`** = 크로스플랫폼 검증 + 공개 API 안정화 + 테스트 + CI + 에디터 모드(읽기전용/최소/전체). "실무에 조심스럽게 쓸 수 있다."
+- **`1.0`** = 기존 기능의 안정성·성능·문서화를 프로덕션 수준으로. 새 기능 추가 없이 품질 집중. "프로덕션."
 
 ---
 
@@ -135,6 +139,20 @@
 - [x] README에 플랫폼 지원(Windows 우선, mac/Linux 베스트에포트) 명시.
 - [ ] mac/Linux 실제 스모크 테스트(헤드리스 빌드/렌더) — 환경 없어 **미실행**(N4 CI 매트릭스로 이관).
 
+### 🔵 N3.5: 에디터 모드 (미착수, `0.x` 목표)
+> 하나의 컨트롤로 뷰어·간편 입력·본격 편집을 모두 커버한다. 기능 플래그 조합으로 유연성을 확보하고, `EditorMode` 프리셋으로 편의 제공.
+
+- [ ] **기능 플래그(StyledProperty)**: `AllowImages`, `AllowTables`, `AllowRichPaste`, `AllowFindReplace` 등. 소비자가 개별 기능을 켜고 끌 수 있음.
+- [ ] **`EditorMode` 프리셋**: `ReadOnly`(기존 `IsReadOnly` 통합), `Basic`(텍스트+기본 서식만), `Full`(현재 전체 기능). 프리셋 설정 시 내부 플래그 일괄 적용.
+  | 모드 | 텍스트 입력 | 기본 서식 | 표/이미지 | 리치 붙여넣기 | 찾기/바꾸기 | 컨텍스트 메뉴 |
+  |------|:---------:|:-------:|:-------:|:----------:|:---------:|:----------:|
+  | ReadOnly | — | — | 렌더만 | — | — | 복사만 |
+  | Basic | O | O | — | 평문만 | — | 서식만 |
+  | Full | O | O | O | O | O | 전체 |
+- [ ] **가드 삽입**: 컨텍스트 메뉴 구성, 붙여넣기 경로, 키보드 핸들러, 드래그드롭에 플래그 분기 (~10~15곳).
+- [ ] **ReadOnly 최적화**: Undo 스택 비활성, 입력 이벤트 핸들러 생략, IME 연결 해제.
+- **비용**: 낮음. 구조 변경 없이 기존 코드에 분기 추가.
+
 ### 🟡 N4: 테스트 & CI (기반 완료 2026-06-08)
 - [x] `tests/AvaloniaRichEditor.Tests`(xUnit) 신설 — **19개 테스트 통과**.
 - [x] 단위 테스트: 표 병합/해제·행열 삽입삭제(`MergeCells`/`SpanOf`/`AnchorOf`/`IsCovered`), `TextRange`(GetText/Delete/ApplyPropertyValue), JSON 왕복(텍스트·서식·정렬·제목·표 병합 + 멱등), HTML 왕복(bold/list/table). 헤드리스 없이 순수 단위테스트로 동작.
@@ -145,10 +163,51 @@
 
 ### 🔵 N5: 견고성·성능 — **`1.0` 목표** (우선순위 5)
 - [~] **Undo 입력 코얼레싱**: 연속 타이핑을 단일 체크포인트로(`PushUndoTyping`, 타이핑 1런=클론 1개. 캐럿 이동/선택/이산 편집 시 런 종료). 키 입력마다 전체 복제하던 최악 케이스 해소. (완전 델타/명령 기반 전환은 향후 — 이산 편집·삭제·서식은 여전히 op당 클론, 50벌 상한 유지.)
-- [ ] **렌더 가상화**: 뷰포트 밖 블록 Draw 생략 — **보류**. 레이아웃 캐싱(완료)으로 프레임당 셰이핑 비용은 이미 제거됨(가장 비쌌던 부분). 남은 건 Draw 호출인데, 데모의 LayoutTransform(줌)+ScrollViewer 좌표와 히트테스트 3곳을 일관되게 맞춰야 해 위험 대비 이득이 낮음. 수백 페이지 실사용 요구가 생기면 착수.
 - [x] **접근성(프레임워크 천장 도달)**: `RichEditorAutomationPeer : ControlAutomationPeer, IValueProvider` — 컨트롤 타입 Edit, 값=문서 평문(`GetPlainText`), `IsReadOnly`/`SetValue`, `GetNameCore` 기본 이름. 스크린리더 내용 읽기/쓰기 가능. **전체 `ITextProvider`(캐럿/범위/속성)는 불가** — Avalonia 공개 automation 모델에 ITextProvider/ITextRangeProvider가 없음(Win32 COM interop 전용). Avalonia 내장 `TextBox`도 동일하게 IValueProvider만 노출. → Avalonia가 TextPattern을 추가하면 그때 확장.
 - [~] **God-class 분해(진행 중)**: `RichEditor`를 `partial`로 전환, 컨텍스트 메뉴(`RichEditor.ContextMenu.cs`)·클립보드(`RichEditor.Clipboard.cs`)·렌더(`RichEditor.Rendering.cs`: Measure/Render/AutomationPeer) 분리(메인 ~3,760→3,162줄). 동작 불변(27 테스트 통과). 입력/표 추가 분리는 점진 진행(이후 영역은 입력↔히트테스트↔편집이 섞여 있어 신중히).
 - **검증**: 수백 페이지 문서에서 타이핑/스크롤 지연 측정, 메모리 상한 확인.
+
+### 🔵 N6: 이미지 저장 모델 전환 및 성능 최적화 (미착수)
+
+> **배경**: 현재 이미지는 `Bitmap` 객체가 데이터 주체이며, 저장 시 매번 PNG로 재인코딩된다. 원본이 JPEG(~80KB)여도 PNG(~500KB)로 부풀고, 직렬화마다 인코딩 비용이 발생한다. 외부 의존성 추가 없이(Avalonia 내장 + .NET 내장만) 용량·속도·화질을 동시에 개선한다.
+
+#### N6-1: JSON 스키마 버전 필드 (선행 필수)
+- [ ] `FlowDocumentDto`에 `"version": 1` 필드 추가.
+- [ ] 역직렬화 시 버전 미존재 → `1`로 폴백(기존 문서 하위 호환).
+- **목적**: 이후 스키마 변경(RawBytes, MimeType, 이미지 해시 참조 등)의 마이그레이션 경로 확보. NuGet 배포 전 필수.
+
+#### N6-2: `byte[]` 중심 이미지 모델 (핵심)
+- [ ] `ImageBlock`/`InlineImage`에 `byte[] RawBytes` + `string MimeType` 속성 추가.
+- [ ] `Bitmap`은 렌더 캐시로 격하: `Bitmap? _cachedBitmap` — 첫 렌더 시 `new Bitmap(new MemoryStream(RawBytes))`로 지연 생성.
+- [ ] **붙여넣기/드롭 경로 수정**: 원본 바이트를 Bitmap 디코딩 전에 캡처하여 `RawBytes`로 보관. 원본 포맷(JPEG/PNG/WebP 등) 유지.
+- [ ] **리사이즈 경로**: 이미지 폭이 콘텐츠 폭(~754px) 또는 1920px 상한 초과 시 `CreateScaledBitmap` → `Bitmap.Save(Stream)`으로 PNG `byte[]` 생성. 리사이즈 1회만 수행, 이후 드래그 핸들 크기 조절은 `Width`/`Height` 값만 변경(세대 손실 없음).
+- [ ] **Clone/Undo**: `RawBytes = this.RawBytes`로 참조 공유. 추가 메모리 없음.
+- [ ] **직렬화 수정**: `BitmapToBase64` → `Convert.ToBase64String(RawBytes)` 직행(인코딩 제거). `InlineDto`/`BlockDto`에 `MimeType` 필드 추가. 기존 문서(`MimeType` 없음)는 `image/png`로 폴백.
+- [ ] **HTML 출력**: `data:image/{MimeType};base64,...`로 원본 포맷 반영.
+
+| 항목 | 현재 | 개선 후 |
+|------|------|---------|
+| 저장 속도 | 이미지당 PNG 인코딩 수십~수백ms | base64 변환만 (~1ms) |
+| 저장 용량 (사진 10장) | ~6.5MB (전부 PNG) | ~1.3MB (JPEG 원본 유지) |
+| 문서 열기 | 모든 이미지 즉시 Bitmap 디코딩 | 화면 표시 시 지연 디코딩 |
+| 리사이즈 화질 | 세대 손실 가능 | Width/Height만 변경, 원본 보존 |
+| Undo 메모리 | Bitmap 참조 공유 (양호) | byte[] 참조 공유 (동일) |
+| 외부 의존성 | 없음 | 없음 (Avalonia 내장만) |
+
+#### N6-3: 직렬화 비동기화
+- [ ] `Serialize`/`Deserialize`를 `Task.Run`으로 백그라운드 스레드에서 실행.
+- [ ] 대용량 문서(이미지 다수 포함)에서 저장/열기 중 UI 프리징 방지.
+
+#### N6-4: 이미지 중복 제거 (해시 참조)
+- [ ] `SHA256(RawBytes)` 해시로 동일 이미지 식별.
+- [ ] JSON에 이미지 풀(pool) 섹션을 두고 바이트는 한 번만 저장, 블록에서는 해시로 참조.
+- [ ] 같은 로고/스크린샷을 반복 사용하는 문서에서 용량 대폭 감소.
+
+#### N6-5: 렌더링 가상화 (보류)
+- [ ] 뷰포트 밖 블록의 `Draw` 호출 생략.
+- 레이아웃 캐싱(완료)으로 셰이핑 비용은 이미 제거됨. 남은 건 Draw 호출 비용.
+- **난점**: LayoutTransform(줌) + ScrollViewer 좌표 + 히트테스트 3곳(`GetPositionFromPoint`/`GetBlockAtPoint`/`GetLinkRunAtPoint`)의 일관성을 맞춰야 함.
+- **착수 기준**: 수백 페이지 초대형 문서에서 프레임 드랍이 실측될 때.
 
 ---
 
@@ -160,8 +219,27 @@
 - [ ] 버전 `0.1.0-alpha`, 변경 이력(CHANGELOG) 시작
 - [ ] (권장) NuGet 푸시 전 별도 테스트 계정/프리릴리스 채널로 1차 공개
 
+### ✅ `1.0` 프로덕션 체크리스트
+> 새 기능 추가 없이 기존 기능의 **안정성·성능·문서화**를 프로덕션 수준으로 끌어올린다.
+
+**성능:**
+- [ ] N6-1: JSON 스키마 버전 필드 (`"version": 1`)
+- [ ] N6-2: `byte[]` 이미지 모델 전환 (원본 바이트 보존, 지연 Bitmap 캐시, 외부 의존성 없음)
+- [ ] N6-3: 직렬화 비동기화 (저장/열기 백그라운드 스레드)
+
+**안정성:**
+- [ ] 테스트 커버리지 확대: 핵심 편집 경로(텍스트 입력/삭제, 서식, 표 구조변경, 붙여넣기) 회귀 테스트
+- [ ] CI 3-OS 매트릭스 그린 확인 (GitHub 푸시 후)
+
+**문서화·API:**
+- [ ] 공개 멤버 XML 문서 주석 완성 (기존 `ToggleBold` 등 포함)
+- [ ] API 동결 가드: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입
+
+**1.0 이후 (2.0+) 후보:**
+- N6-4 이미지 중복 제거, N6-5 렌더링 가상화, 블록 여백 제어, DOCX 파싱, 마크다운, 델타 Undo, 동시편집, 페이지네이션, 플러그인 시스템.
+
 ### ❗ 출시 전 결정 필요 (Open Decisions)
 - 라이선스 종류(MIT 권장?), 패키지 ID 최종(`AvaloniaRichEditor` 선점 여부 확인), 지원 Avalonia 버전 범위, 크로스플랫폼 보장 수준(알파에서 Windows-only로 갈지).
 
 ---
-**마지막 업데이트**: 2026년 6월 8일 (NuGet 배포 준비 대거 진행 — N0 구조분리, **이름 변경 `AvaloniaRichEditor`/`RichEditor`**, N1 패키징(로컬 pack 검증, MIT, 0.1.0-alpha), N2 공개 API(이벤트·StyledProperty·편의·문서), N3 크로스플랫폼 게이팅, N4 테스트 27개(모델+헤드리스 xUnit v3)+CI, N5 Undo 코얼레싱·접근성(IValueProvider 천장)·God-class partial 3분할, +포맷 페인터·레이아웃 캐싱. 남은 게시 절차: GitHub 저장소→푸시→nuget push) / 2026년 6월 7일 (Phase 6 — Jodit 파리티 0~8단계 + 클립보드(엑셀/한글 표) 붙여넣기 수정 + **표 셀 병합(colspan/rowspan)** 완료) (Phase 1~4 완료, Phase 5 대부분 완료)
+**마지막 업데이트**: 2026년 6월 8일 — **N6 성능 최적화 로드맵 추가**: 이미지 저장 모델 전환(`Bitmap`→`byte[]` 중심, 원본 바이트 보존, 지연 Bitmap 캐시), JSON 스키마 버전, 직렬화 비동기화, 이미지 중복 제거(해시), 렌더링 가상화. 백로그에 사용성 후보(블록 여백·DOCX 파싱·마크다운) 및 구조 기반(테스트 보강·크로스플랫폼 실검증) 정리. 외부 의존성(SkiaSharp/ImageSharp) 추가 없이 Avalonia 내장만으로 진행 결정. / 이전: N0~N5 + Phase 1~6 완료 상태
