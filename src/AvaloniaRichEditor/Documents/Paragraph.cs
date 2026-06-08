@@ -5,6 +5,9 @@ namespace AvaloniaRichEditor.Documents;
 
 public enum ListKind { None, Bullet, Ordered }
 
+/// <summary>A block of inline content (<see cref="Run"/>s and <see cref="InlineImage"/>s) with
+/// paragraph-level formatting: alignment, line spacing, indent, list style, heading level, background.
+/// Also serves as the content of a table cell.</summary>
 public class Paragraph : Block
 {
     public List<Inline> Inlines { get; set; } = new();
