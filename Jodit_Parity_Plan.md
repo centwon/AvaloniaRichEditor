@@ -1,6 +1,6 @@
 # Jodit 대체(파리티) 구현 계획
 
-> 목표: AvaloniaRichTextBoxPort를 **Jodit 에디터 수준**으로 끌어올려, SaemDesk의 **WebView2 + Jodit**을
+> 목표: AvaloniaRichEditorPort를 **Jodit 에디터 수준**으로 끌어올려, SaemDesk의 **WebView2 + Jodit**을
 > 네이티브 컨트롤로 **드롭인 교체**한다. SaemDesk는 콘텐츠를 **HTML로 저장**하므로 성패의 핵심은
 > **HTML 무손실 왕복(round-trip)**이다.
 

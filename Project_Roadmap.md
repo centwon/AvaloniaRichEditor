@@ -91,7 +91,7 @@
 
 ## 📦 NuGet 배포 계획 (NuGet Publication Plan)
 
-> **목표**: `AvaloniaRichTextBox`(src/) 라이브러리를 **NuGet에 배포 가능한 수준**으로 끌어올린다.
+> **목표**: `AvaloniaRichEditor`(src/) 라이브러리를 **NuGet에 배포 가능한 수준**으로 끌어올린다.
 > 현실적 출시 기준선은 **`0.1.0-alpha`**(실험적·기능 한정 공개)이며, 그 위에 **`1.0`**(프로덕션) 로드맵을 둔다.
 > 평가 근거: 코드는 탄탄하나(표 병합·HTML 왕복·IME·레이아웃 캐싱) 패키징·공개 API·테스트·크로스플랫폼·접근성이 부재.
 
@@ -103,22 +103,22 @@
 ---
 
 ### 🟢 [완료] N0: 프로젝트 구조 분리 (2026-06-08)
-- 단일 WinExe → `src/AvaloniaRichTextBox`(라이브러리) + `samples/AvaloniaRichTextBox.Demo`(데모/테스트 앱)로 분리.
-- 네임스페이스 `AvaloniaRichTextBox.*` / `AvaloniaRichTextBox.Demo.*`. 솔루션 `AvaloniaRichTextBox.slnx`. 빌드·실행 검증 완료.
+- 단일 WinExe → `src/AvaloniaRichEditor`(라이브러리) + `samples/AvaloniaRichEditor.Demo`(데모/테스트 앱)로 분리.
+- 네임스페이스 `AvaloniaRichEditor.*` / `AvaloniaRichEditor.Demo.*`. 솔루션 `AvaloniaRichEditor.slnx`. 빌드·실행 검증 완료.
 
 ### 🟡 N1: 패키징 기반 — **`0.1.0-alpha`** (로컬 pack 검증 완료 2026-06-08)
-- [x] NuGet 메타데이터: `PackageId=AvaloniaRichTextBox`, `Version=0.1.0-alpha`, `Authors=centwon`, `Description`, `PackageTags`, `PackageLicenseExpression=MIT`, `Copyright`, `PackageReadmeFile`.
+- [x] NuGet 메타데이터: `PackageId=AvaloniaRichEditor`, `Version=0.1.0-alpha`, `Authors=centwon`, `Description`, `PackageTags`, `PackageLicenseExpression=MIT`, `Copyright`, `PackageReadmeFile`.
 - [x] `LICENSE`(MIT, © 2026 centwon) 추가.
 - [x] 패키지에 `README.md` 동봉(`<None Include="..\..\README.md" Pack=true>`).
 - [x] `<GenerateDocumentationFile>true` + XML 동봉(`CS1591`은 부분 문서화라 임시 NoWarn). `<Deterministic>`.
 - [x] `<IncludeSymbols>` + `snupkg` 생성.
-- [x] `dotnet pack -c Release` → `AvaloniaRichTextBox.0.1.0-alpha.nupkg`/`.snupkg` 생성, nuspec/DLL/XML/README/의존성 확인.
-- [x] **검증**: 별도 빈 net10 프로젝트가 로컬 피드로 패키지 설치 후 공개 API(`CustomRichTextBox`/`LoadHtml`/`TextChanged`/`SelectionBrush`/`ToHtml`/`ToJson` 등) 소비 빌드 성공.
+- [x] `dotnet pack -c Release` → `AvaloniaRichEditor.0.1.0-alpha.nupkg`/`.snupkg` 생성, nuspec/DLL/XML/README/의존성 확인.
+- [x] **검증**: 별도 빈 net10 프로젝트가 로컬 피드로 패키지 설치 후 공개 API(`RichEditor`/`LoadHtml`/`TextChanged`/`SelectionBrush`/`ToHtml`/`ToJson` 등) 소비 빌드 성공.
 - [ ] **미결**: `RepositoryUrl`/`PackageProjectUrl` + **SourceLink**(공개 저장소 필요), `PackageIcon`, nuget.org 실제 게시. → 저장소 생성 후.
-- **참고**: `AvaloniaRichTextBox` ID는 nuget.org 미등록(사용 가능). `Avalonia.` 점 프리픽스는 예약이라 회피.
+- **참고**: `AvaloniaRichEditor` ID는 nuget.org 미등록(사용 가능). `Avalonia.` 점 프리픽스는 예약이라 회피.
 
 ### 🟡 N2: 공개 API 설계 & 문서화 (대부분 완료 2026-06-08)
-- [x] **표면 정리**: 직렬화 DTO·`UndoManager`/`UndoState`·`InputDialog`를 `internal`로(중첩 레이아웃 타입은 이미 private). `[InternalsVisibleTo("AvaloniaRichTextBox.Tests")]` 추가.
+- [x] **표면 정리**: 직렬화 DTO·`UndoManager`/`UndoState`·`InputDialog`를 `internal`로(중첩 레이아웃 타입은 이미 private). `[InternalsVisibleTo("AvaloniaRichEditor.Tests")]` 추가.
 - [x] **표준 이벤트**: `TextChanged`, `SelectionChanged`, `DocumentChanged` 추가. 변이 신호를 `PushUndo()` 단일 choke point로 집약, Render에서 `Dispatcher.Post`로 비재진입 플러시.
 - [x] **스타일 가능 속성(StyledProperty)**: `SelectionBrush`, `CaretBrush`, `DefaultFontFamily`, `DefaultFontSize` 추가(선택색/캐럿색 하드코딩 제거, 기본 글꼴 외부화).
 - [x] **편의 API**: `ToHtml`/`LoadHtml`(기존 Get/SetHtml 개명), `ToJson`/`LoadJson`, `Clear`, `CanUndo`/`CanRedo`.
@@ -136,7 +136,7 @@
 - [ ] mac/Linux 실제 스모크 테스트(헤드리스 빌드/렌더) — 환경 없어 **미실행**(N4 CI 매트릭스로 이관).
 
 ### 🔵 N4: 테스트 & CI (우선순위 4)
-- [ ] `tests/AvaloniaRichTextBox.Tests`(xUnit) 신설. 기존 `RoundTripHarness`/코퍼스를 테스트로 승격(HTML in==out 단언).
+- [ ] `tests/AvaloniaRichEditor.Tests`(xUnit) 신설. 기존 `RoundTripHarness`/코퍼스를 테스트로 승격(HTML in==out 단언).
 - [ ] 단위 테스트: 오프셋 모델(`InlineLen`/`BuildPlain`), `TextRange` 삭제·서식, 표 병합(`MergeCells`/`SpanOf`/`IsCleanRect`), JSON 왕복, Undo/Redo.
 - [ ] (선택) `Avalonia.Headless.XUnit`로 컨트롤 렌더·히트테스트 헤드리스 검증.
 - [ ] **GitHub Actions**: build + test (+ 가능하면 OS 매트릭스), 태그 푸시 시 `dotnet pack` → NuGet 푸시(수동 승인).
@@ -146,7 +146,7 @@
 - [ ] **증분 Undo**: 현재 `UndoManager.PushState`가 편집마다 문서 전체 `Clone()`(O(N) 메모리·CPU, 50벌 보관). 명령(command)/델타 기반 또는 입력 코얼레싱으로 전환.
 - [ ] **렌더 가상화**: 뷰포트 밖 블록은 그리지 않도록(현재 매 프레임 전 블록 Draw). 레이아웃 캐싱(완료)과 결합.
 - [ ] **접근성**: `AutomationPeer` 구현(스크린리더). 공공/상용 납품 필수.
-- [ ] (선택) `CustomRichTextBox` 3,700줄 God-class 분해(렌더/입력/클립보드/표 partial 분리) — 유지보수·기여성.
+- [ ] (선택) `RichEditor` 3,700줄 God-class 분해(렌더/입력/클립보드/표 partial 분리) — 유지보수·기여성.
 - **검증**: 수백 페이지 문서에서 타이핑/스크롤 지연 측정, 메모리 상한 확인.
 
 ---
@@ -160,7 +160,7 @@
 - [ ] (권장) NuGet 푸시 전 별도 테스트 계정/프리릴리스 채널로 1차 공개
 
 ### ❗ 출시 전 결정 필요 (Open Decisions)
-- 라이선스 종류(MIT 권장?), 패키지 ID 최종(`AvaloniaRichTextBox` 선점 여부 확인), 지원 Avalonia 버전 범위, 크로스플랫폼 보장 수준(알파에서 Windows-only로 갈지).
+- 라이선스 종류(MIT 권장?), 패키지 ID 최종(`AvaloniaRichEditor` 선점 여부 확인), 지원 Avalonia 버전 범위, 크로스플랫폼 보장 수준(알파에서 Windows-only로 갈지).
 
 ---
 **마지막 업데이트**: 2026년 6월 8일 (구조 분리 N0 완료 — 라이브러리/데모 2프로젝트 + 레이아웃 캐싱 성능 개선 + 우클릭 메뉴/툴바 정리. **NuGet 배포 계획 N1~N5 수립**) / 2026년 6월 7일 (Phase 6 — Jodit 파리티 0~8단계 + 클립보드(엑셀/한글 표) 붙여넣기 수정 + **표 셀 병합(colspan/rowspan)** 완료) (Phase 1~4 완료, Phase 5 대부분 완료)
