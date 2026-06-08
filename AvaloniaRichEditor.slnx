@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/AvaloniaRichEditor/AvaloniaRichEditor.csproj" />
+  </Folder>
+</Solution>

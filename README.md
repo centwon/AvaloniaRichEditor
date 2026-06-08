@@ -1,4 +1,4 @@
-# AvaloniaRichTextBox
+# AvaloniaRichEditor
 
 A from-scratch rich text editor control for [Avalonia](https://avaloniaui.net) — a pure C# port of the
 ideas behind WPF's `RichTextBox`/`FlowDocument`, built entirely on Avalonia's `TextLayout` engine (no
@@ -23,13 +23,13 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 
 ```xml
 <!-- MainWindow.axaml -->
-<rtb:CustomRichTextBox xmlns:rtb="using:AvaloniaRichTextBox.Controls"
+<rtb:RichEditor xmlns:rtb="using:AvaloniaRichEditor.Controls"
                        x:Name="Editor" />
 ```
 
 ```csharp
-using AvaloniaRichTextBox.Controls;
-using AvaloniaRichTextBox.Documents;
+using AvaloniaRichEditor.Controls;
+using AvaloniaRichEditor.Documents;
 
 // Start from an empty document, or load HTML/JSON
 Editor.Document = new FlowDocument();
@@ -49,7 +49,7 @@ Editor.CaretBrush       = Brushes.Black;
 Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // right-click font menu
 ```
 
-See [`samples/AvaloniaRichTextBox.Demo`](samples/AvaloniaRichTextBox.Demo) for a full editor host with a
+See [`samples/AvaloniaRichEditor.Demo`](samples/AvaloniaRichEditor.Demo) for a full editor host with a
 toolbar.
 
 ## Platform support
@@ -67,18 +67,17 @@ Cross-platform smoke testing and CI are tracked in the roadmap (N3/N4).
 ## Building
 
 ```
-dotnet build AvaloniaRichTextBox.slnx
-dotnet run --project samples/AvaloniaRichTextBox.Demo/AvaloniaRichTextBox.Demo.csproj
+dotnet build AvaloniaRichEditor.slnx
+dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csproj
 ```
 
 ## Project layout
 
 | Path | Contents |
 |---|---|
-| `src/AvaloniaRichTextBox` | The control library (`Controls`, document model `Documents`, `Formatters`). NuGet target. |
-| `samples/AvaloniaRichTextBox.Demo` | A WinExe demo/test app: toolbar, window, sample document. |
+| `src/AvaloniaRichEditor` | The control library (`Controls`, document model `Documents`, `Formatters`). NuGet target. |
+| `samples/AvaloniaRichEditor.Demo` | A WinExe demo/test app: toolbar, window, sample document. |
 
 ## License
 
-License **to be finalized before the first NuGet release** (MIT is the likely choice — see roadmap N1).
-Bundles [HtmlAgilityPack](https://html-agility-pack.net/) (MIT) for HTML parsing.
+[MIT](LICENSE) © 2026 centwon. Bundles [HtmlAgilityPack](https://html-agility-pack.net/) (MIT) for HTML parsing.
