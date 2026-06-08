@@ -52,7 +52,7 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 - `Formatters/` — `DocumentSerializer`(JSON), `HtmlDocumentFormatter`(HTML 입출력 파서), `RoundTripHarness`(`--roundtrip` CLI 검증).
 
 **데모/테스트 앱** `samples/AvaloniaRichEditor.Demo/` (네임스페이스 `AvaloniaRichEditor.Demo.*`):
-- `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(Jodit 호환 래퍼)는 데모 전용.
+- `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(웹 에디터 호환 래퍼)는 데모 전용.
 
 **테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off). 27개.
 

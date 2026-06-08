@@ -56,20 +56,20 @@
 - **❗ 미해결 문제 (보류)**:
   1. **블록 여백(Margin) 조정**: 현재 `Paragraph`는 `MarginTop/Bottom` 속성이 있으나 렌더에는 `MarginBottom`만 반영되고 조정 UI 없음. `ImageBlock`/`TableBlock`은 여백 속성 자체가 없고 고정 10px 간격·들여쓰기 사용. 구현하려면 (1) `Block`에 상하좌우 여백 속성 추가, (2) 렌더에서 고정값 대신 반영(`MarginTop` 포함), (3) 툴바 입력 또는 드래그 핸들 UI 필요. (보류)
 
-### 🟢 [완료] Phase 6: 우클릭 메뉴·찾기/바꾸기 + Jodit 파리티(SaemDesk 대체 준비)
+### 🟢 [완료] Phase 6: 우클릭 메뉴·찾기/바꾸기 + 상용 에디터 수준 기능 완성
 - **완료**: 우클릭 컨텍스트 메뉴(텍스트/이미지/표/빈 곳), 찾기/바꾸기(Ctrl+F), 표 안 Tab 이동, 서식 단축키(Ctrl+B/I/U)·밑줄.
 - **완료**: 완전한 JSON 저장/불러오기(표·이미지·서식·정렬·여백·열폭·행높이, 비트맵 base64).
 - **완료**: HTML 무손실 왕복 강화 — 글꼴/임의색/배경/크기(px·pt)/밑줄·취소선/이미지(data:)/번호목록(ol)/제목(h1~6)/구분선(hr)/셀배경/들여쓰기. 모델 확장(`Run.FontFamily/Background`, `Paragraph.ListType/HeadingLevel/Background/Indent`, `DividerBlock`).
 - **완료**: 편집 UI(툴바·메뉴) 파리티, ReadOnly 모드, 이미지 붙여넣기/드래그드롭(+다운스케일), 인쇄 우회.
-- **완료**: `NativeEditor` 호환 래퍼(JoditEditor 동일 API) — **SaemDesk 통합 가능 수준**. AOT 퍼블리시 확인 통과. 왕복 검증 하네스(`--roundtrip`)+코퍼스.
+- **완료**: `NativeEditor` 호환 래퍼(웹 에디터 동일 API 표면) — **외부 앱 통합 가능 수준**. AOT 퍼블리시 확인 통과. 왕복 검증 하네스(`--roundtrip`)+코퍼스.
 - **완료**: 잔여 정리(blockquote·중첩목록 깊이·블록 정렬 읽기), HWP/Excel 붙여넣기.
 - **완료**: 클립보드 붙여넣기 버그 2건 수정 — (1) HTML 포맷 감지를 `fmt.Identifier` 기준으로(엑셀/한글 표가 텍스트·이미지로 새던 문제), (2) 엑셀 CF_HTML의 `<table>` 누락 보정. → 엑셀·한글 진짜 표가 표로 붙음(한글 글상자는 이미지=정상).
 - **완료**: **표 셀 병합(colspan/rowspan)** — 실데이터(코퍼스 8건 중 5건, 최대 189회)가 요구하던 격차 해소. 밀집 그리드+가려짐 마커 모델(`TableBlock.ColSpans/RowSpans`), 렌더·히트테스트 3곳의 기하를 단일 `LayoutTable` 헬퍼로 추출. HTML 파싱(occupancy-fill)/출력/JSON/내비게이션(앵커 단위 Tab)/우클릭 병합·해제 UI 전부 지원. 왕복 하네스 colspan·rowspan **in==out** 정확 일치.
-- **상세 계획/현황**: [`Jodit_Parity_Plan.md`](Jodit_Parity_Plan.md).
-- **보류**: SaemDesk 실통합(기능 플래그 롤아웃), HWP/XLS 붙여넣기, 정밀 인쇄(페이지네이션/PDF), blockquote/중첩목록 깊이.
+- **상세 계획/현황**: [`Jodit_Parity_Plan.md`](Jodit_Parity_Plan.md) (레거시 참고용).
+- **보류**: HWP/XLS 붙여넣기, 정밀 인쇄(페이지네이션/PDF), blockquote/중첩목록 깊이.
 
 ### 🔵 [백로그] 향후 작업 후보
-> 우선순위는 실데이터 충실도(SaemDesk HTML 왕복) 기준으로 재평가. 메모리 `future-work-suggestions.md`와 동기화.
+> 우선순위는 실데이터 충실도(HTML 왕복) 기준으로 재평가. 메모리 `future-work-suggestions.md`와 동기화.
 
 - **사용성(UX) 제안** (로드맵 외 일반 리치에디터 기능):
   - 더블클릭=단어 선택 / 세 번 클릭=문단 선택
@@ -78,18 +78,18 @@
   - 상태바: 글자 수/단어 수/커서 위치
 - **🐞 미해결(블록 캐럿)**: 그림/표 앞·뒤에 블록 캐럿을 두고 **Space로 앞 여백** 주는 기능 구현(동작함).
   단 **표 마지막 셀에서 ↓로 "표 뒤(after)" 캐럿 진입이 안 되는 버그** 남음(메모리 `future-work-suggestions.md` 참고). 추후 재논의.
-- **A4 페이지 레이아웃(추후)**: 편집 영역을 A4 기준으로. ① 간단안=A4 폭 고정+회색 배경 위 흰 페이지(가운데 정렬, 경계 없음, 저위험), ② **진짜 페이지네이션**=A4 한 장(≈794×1123@96DPI)마다 경계로 끊고 다음 장으로(렌더·히트테스트가 페이지 좌표를 알아야 함, 대공사). 정밀 인쇄/PDF와 연계. 참고: SaemDesk 콘텐츠는 HTML(웹 리플로우)이라 본질적 페이지 크기는 없음.
+- **A4 페이지 레이아웃(추후)**: 편집 영역을 A4 기준으로. ① 간단안=A4 폭 고정+회색 배경 위 흰 페이지(가운데 정렬, 경계 없음, 저위험), ② **진짜 페이지네이션**=A4 한 장(≈794×1123@96DPI)마다 경계로 끊고 다음 장으로(렌더·히트테스트가 페이지 좌표를 알아야 함, 대공사). 정밀 인쇄/PDF와 연계. 참고: 주 용도인 HTML 콘텐츠는 웹 리플로우라 본질적 페이지 크기는 없음.
 - **IME 한글 기본 입력(시도→실패, 보류)**: IMM32 `ImmSetConversionStatus(IME_CMODE_NATIVE)` P/Invoke를 GotFocus + 시작시 자동포커스와 함께 시도했으나 **한국어 Win11에서 한글 전환 안 됨**(예상대로 TSF가 IMM32 변환모드 무시). 코드 제거함. 남은 대안: `SendInput(VK_HANGUL)`(토글이라 현재 상태 확인 필요·위험) 또는 TSF 인터롭(복잡). 실용성 대비 비용이 커서 보류. (시작시 에디터 자동포커스는 유지 — 클릭 없이 바로 입력 가능.)
 - **사용성(기능) 개선 후보**:
   - **블록 여백(Margin) 제어**: `Block`에 상하좌우 여백 속성 추가 → 렌더에서 고정값 대신 반영(`MarginTop` 포함) → 툴바 입력 또는 컨텍스트 메뉴 UI. 현재 문단은 `MarginBottom`만, 이미지/표는 고정 10px.
   - **DOCX 클립보드 파싱**: 한글(HWP) 표/글상자, 워드 그림(VML)이 이미지로 들어오는 문제 해결. 클립보드 DOCX format (`<w:tbl>`, `<w:drawing>`) 파싱. OOXML 스펙이 방대해 "표+이미지+기본 서식"만 타게팅해도 상당한 작업량.
-  - **마크다운 입출력**: Import는 Markdig 등 기존 파서 활용 가능. Export는 손실적(표 병합, 인라인 이미지, 글자색 등 표현 불가). SaemDesk 사용자층이 개발자인지에 따라 우선순위 결정.
+  - **마크다운 입출력**: Import는 Markdig 등 기존 파서 활용 가능. Export는 손실적(표 병합, 인라인 이미지, 글자색 등 표현 불가). 대상 사용자층에 따라 우선순위 결정.
 - **구조적 기반** (성능 개선의 전제):
   - **테스트 보강**: 27개 테스트는 4,000줄+ 에디터 대비 낮은 수준. N6 이미지 모델 전환 등 구조 변경의 안전망 확보 필요.
   - **크로스플랫폼 실검증**: mac/Linux 스모크 테스트 미실행. GitHub 푸시 후 CI 3-OS 매트릭스로 확인.
 - **남은 보류 항목**:
   - 정밀 인쇄(페이지네이션/PDF) — 현재 브라우저 우회만
-  - SaemDesk 실통합(기능 플래그 롤아웃)
+  - 외부 앱 실통합 (기능 플래그 롤아웃)
 
 ---
 
@@ -126,7 +126,7 @@
 - [x] **표준 이벤트**: `TextChanged`, `SelectionChanged`, `DocumentChanged` 추가. 변이 신호를 `PushUndo()` 단일 choke point로 집약, Render에서 `Dispatcher.Post`로 비재진입 플러시.
 - [x] **스타일 가능 속성(StyledProperty)**: `SelectionBrush`, `CaretBrush`, `DefaultFontFamily`, `DefaultFontSize` 추가(선택색/캐럿색 하드코딩 제거, 기본 글꼴 외부화).
 - [x] **편의 API**: `ToHtml`/`LoadHtml`(기존 Get/SetHtml 개명), `ToJson`/`LoadJson`, `Clear`, `CanUndo`/`CanRedo`.
-- [x] `NativeEditor`(Jodit 호환 래퍼) 라이브러리→`samples` 이동.
+- [x] `NativeEditor`(웹 에디터 호환 래퍼) 라이브러리→`samples` 이동.
 - [ ] 공개 멤버 XML 문서 주석 — **부분 완료**(신규 멤버만). 기존 공개 명령(`ToggleBold` 등) 주석 미작성.
 - [ ] **API 동결 가드**: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입 — 미착수.
 - [ ] (선택) 데모 코드비하인드를 새 이벤트/속성으로 마이그레이션 — 미착수(`StatusChanged` 계속 사용 중).
@@ -219,7 +219,7 @@
   | ReadOnly (뷰어) | ~50장 | ~100장+ | Draw만 남음 — Undo/입력/저장 병목 전무 |
 - [ ] `MaxRecommendedLength` StyledProperty로 소비자가 임계값 조절 가능하게.
 - **방침**: 하드 제한(입력 거부)이 아니라 **소프트 제한(경고)**. 데이터 손실 없음.
-- **배경**: 가상화 없는 현재 아키텍처에서 편집 모드의 병목은 Undo Clone·입력 처리·이미지 저장 인코딩 3가지인데, ReadOnly에서는 전부 사라지고 Draw 호출만 남는다. 레이아웃 캐싱이 적용되어 있으므로 뷰어 용도는 상한이 훨씬 높음. 경쟁 비교 결과 무료/내장 에디터(Jodit, WPF RTB)도 100장 이상에서 동일하게 고전.
+- **배경**: 가상화 없는 현재 아키텍처에서 편집 모드의 병목은 Undo Clone·입력 처리·이미지 저장 인코딩 3가지인데, ReadOnly에서는 전부 사라지고 Draw 호출만 남는다. 레이아웃 캐싱이 적용되어 있으므로 뷰어 용도는 상한이 훨씬 높음. 경쟁 비교 결과 무료/내장 에디터(웹 기반, WPF RTB 등)도 100장 이상에서 동일하게 고전.
 
 ---
 

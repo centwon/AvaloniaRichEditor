@@ -448,7 +448,7 @@ namespace AvaloniaRichEditor.Formatters
                 if (!string.IsNullOrEmpty(fam)) family = fam;
             }
 
-            // Accept px and pt (Jodit/HWP paste often uses pt); convert pt -> px (96/72).
+            // Accept px and pt (external editors/HWP paste often uses pt); convert pt -> px (96/72).
             var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
             if (fm.Success && double.TryParse(fm.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out double val) && val > 0)
                 size = fm.Groups[2].Value == "pt" ? val * 96.0 / 72.0 : val;
