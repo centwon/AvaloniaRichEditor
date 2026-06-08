@@ -106,15 +106,16 @@
 - 단일 WinExe → `src/AvaloniaRichTextBox`(라이브러리) + `samples/AvaloniaRichTextBox.Demo`(데모/테스트 앱)로 분리.
 - 네임스페이스 `AvaloniaRichTextBox.*` / `AvaloniaRichTextBox.Demo.*`. 솔루션 `AvaloniaRichTextBox.slnx`. 빌드·실행 검증 완료.
 
-### 🔵 N1: 패키징 기반 — **`0.1.0-alpha` 핵심** (우선순위 1)
-- [ ] 라이브러리 csproj에 NuGet 메타데이터: `PackageId`(예: `AvaloniaRichTextBox`), `Version`, `Authors`, `Description`, `PackageTags`(avalonia, richtextbox, editor, wysiwyg), `PackageProjectUrl`/`RepositoryUrl`, `PackageLicenseExpression`(예: MIT), `PackageReadmeFile`, `PackageIcon`.
-- [ ] `LICENSE` 파일 추가(라이선스 확정 필요 — 권장 MIT).
-- [ ] 패키지용 `README.md`(설치법 + 5줄 사용 예제 + 스크린샷 + 지원/한계 명시) — `<None Include>`로 패키지에 포함.
-- [ ] `<GenerateDocumentationFile>true`(공개 멤버 XML 주석 산출) + 패키지 동봉.
-- [ ] `<IncludeSymbols>true` + `<SymbolPackageFormat>snupkg`, **SourceLink**(`Microsoft.SourceLink.GitHub`), `<EmbedUntrackedSources>`, `<Deterministic>`.
-- [ ] `<PackageReadmeFile>` 등 경로 검증 위해 `dotnet pack -c Release` 로컬 산출물 확인.
-- **검증**: `dotnet pack` → 생성된 `.nupkg`를 로컬 피드로 다른 빈 Avalonia 앱에서 설치→`CustomRichTextBox` 호스팅 성공.
-- **위험/주의**: 의존성 `HtmlAgilityPack`이 transitive로 노출됨(정상). `Avalonia` 버전은 `[12.0.1,)` 범위로 둘지 고정할지 결정.
+### 🟡 N1: 패키징 기반 — **`0.1.0-alpha`** (로컬 pack 검증 완료 2026-06-08)
+- [x] NuGet 메타데이터: `PackageId=AvaloniaRichTextBox`, `Version=0.1.0-alpha`, `Authors=centwon`, `Description`, `PackageTags`, `PackageLicenseExpression=MIT`, `Copyright`, `PackageReadmeFile`.
+- [x] `LICENSE`(MIT, © 2026 centwon) 추가.
+- [x] 패키지에 `README.md` 동봉(`<None Include="..\..\README.md" Pack=true>`).
+- [x] `<GenerateDocumentationFile>true` + XML 동봉(`CS1591`은 부분 문서화라 임시 NoWarn). `<Deterministic>`.
+- [x] `<IncludeSymbols>` + `snupkg` 생성.
+- [x] `dotnet pack -c Release` → `AvaloniaRichTextBox.0.1.0-alpha.nupkg`/`.snupkg` 생성, nuspec/DLL/XML/README/의존성 확인.
+- [x] **검증**: 별도 빈 net10 프로젝트가 로컬 피드로 패키지 설치 후 공개 API(`CustomRichTextBox`/`LoadHtml`/`TextChanged`/`SelectionBrush`/`ToHtml`/`ToJson` 등) 소비 빌드 성공.
+- [ ] **미결**: `RepositoryUrl`/`PackageProjectUrl` + **SourceLink**(공개 저장소 필요), `PackageIcon`, nuget.org 실제 게시. → 저장소 생성 후.
+- **참고**: `AvaloniaRichTextBox` ID는 nuget.org 미등록(사용 가능). `Avalonia.` 점 프리픽스는 예약이라 회피.
 
 ### 🟡 N2: 공개 API 설계 & 문서화 (대부분 완료 2026-06-08)
 - [x] **표면 정리**: 직렬화 DTO·`UndoManager`/`UndoState`·`InputDialog`를 `internal`로(중첩 레이아웃 타입은 이미 private). `[InternalsVisibleTo("AvaloniaRichTextBox.Tests")]` 추가.
