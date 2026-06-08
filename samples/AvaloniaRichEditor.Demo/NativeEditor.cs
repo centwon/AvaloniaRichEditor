@@ -8,7 +8,7 @@ using AvaloniaRichEditor.Controls;
 
 namespace AvaloniaRichEditor.Demo.Controls;
 
-// Drop-in-style host around RichEditor exposing the same surface SaemDesk's JoditEditor uses:
+// Drop-in-style host around RichEditor exposing a web-editor-compatible API surface:
 //   Mode (ReadOnly/Simple/Full), Text (HTML, two-way), TextChanged, GetHtmlAsync, InsertHtmlAsync, PrintAsync.
 // Full mode shows a built-in toolbar; Simple hides it; ReadOnly also disables editing.
 public class NativeEditor : UserControl
@@ -85,7 +85,7 @@ public class NativeEditor : UserControl
     }
 
     // Print is bypassed (no native print engine): export to a temp HTML file and let the OS open it
-    // in the default browser, where the user can print. Mirrors the old Jodit print behavior closely.
+    // in the default browser, where the user can print via the browser's print dialog.
     public async Task PrintAsync()
     {
         string body = _editor.ToHtml();

@@ -149,7 +149,7 @@ public partial class RichEditor
         }
     }
 
-    // Scales an image down to fit within maxW x maxH (keeping aspect), matching Jodit's image cap.
+    // Scales an image down to fit within maxW x maxH (keeping aspect ratio).
     private static Avalonia.Media.Imaging.Bitmap Downscale(Avalonia.Media.Imaging.Bitmap bmp, int maxW = 1920, int maxH = 1080)
     {
         var ps = bmp.PixelSize;

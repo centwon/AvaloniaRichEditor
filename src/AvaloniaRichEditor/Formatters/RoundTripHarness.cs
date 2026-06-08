@@ -11,7 +11,7 @@ namespace AvaloniaRichEditor.Formatters;
 // input vs the regenerated output so we can see exactly what ToHtml/ParseHtml currently drops.
 public static class RoundTripHarness
 {
-    // (label, regex over HTML) pairs describing the features we care about for Jodit parity.
+    // (label, regex over HTML) pairs describing the features we care about for HTML round-trip fidelity.
     private static readonly (string Label, Regex Rx)[] Features =
     {
         ("bold",            Rx("<b\\b|<strong\\b|font-weight\\s*:\\s*(bold|[6-9]00)")),
