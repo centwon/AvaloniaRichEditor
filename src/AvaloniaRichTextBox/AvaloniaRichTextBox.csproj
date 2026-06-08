@@ -5,7 +5,32 @@
     <LangVersion>latest</LangVersion>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <IsAotCompatible>true</IsAotCompatible>
+
+    <!-- Emit XML docs into the package. Missing-doc warnings are silenced for now (docs are partial;
+         completing them is tracked in roadmap N2). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Deterministic>true</Deterministic>
   </PropertyGroup>
+
+  <!-- NuGet package metadata (roadmap N1, target 0.1.0-alpha) -->
+  <PropertyGroup>
+    <PackageId>AvaloniaRichTextBox</PackageId>
+    <Version>0.1.0-alpha</Version>
+    <Authors>centwon</Authors>
+    <Description>A from-scratch rich text editor control for Avalonia, built purely on the TextLayout engine. Supports inline formatting, paragraphs, lists, tables (with cell merge), images, hyperlinks, HTML/JSON round-trip, find/replace, undo/redo, and CJK IME.</Description>
+    <PackageTags>avalonia;richtextbox;editor;wysiwyg;rich-text;flowdocument;text</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2026 centwon</Copyright>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- TODO(N1): set RepositoryUrl / PackageProjectUrl + enable SourceLink once a public repo exists. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.1" />
