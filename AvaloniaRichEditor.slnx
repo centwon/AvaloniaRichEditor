@@ -5,4 +5,7 @@
   <Folder Name="/src/">
     <Project Path="src/AvaloniaRichEditor/AvaloniaRichEditor.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AvaloniaRichEditor.Tests/AvaloniaRichEditor.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -135,12 +135,13 @@
 - [x] README에 플랫폼 지원(Windows 우선, mac/Linux 베스트에포트) 명시.
 - [ ] mac/Linux 실제 스모크 테스트(헤드리스 빌드/렌더) — 환경 없어 **미실행**(N4 CI 매트릭스로 이관).
 
-### 🔵 N4: 테스트 & CI (우선순위 4)
-- [ ] `tests/AvaloniaRichEditor.Tests`(xUnit) 신설. 기존 `RoundTripHarness`/코퍼스를 테스트로 승격(HTML in==out 단언).
-- [ ] 단위 테스트: 오프셋 모델(`InlineLen`/`BuildPlain`), `TextRange` 삭제·서식, 표 병합(`MergeCells`/`SpanOf`/`IsCleanRect`), JSON 왕복, Undo/Redo.
-- [ ] (선택) `Avalonia.Headless.XUnit`로 컨트롤 렌더·히트테스트 헤드리스 검증.
-- [ ] **GitHub Actions**: build + test (+ 가능하면 OS 매트릭스), 태그 푸시 시 `dotnet pack` → NuGet 푸시(수동 승인).
-- **검증**: CI 그린, 커버리지 핵심 경로 확보.
+### 🟡 N4: 테스트 & CI (기반 완료 2026-06-08)
+- [x] `tests/AvaloniaRichEditor.Tests`(xUnit) 신설 — **19개 테스트 통과**.
+- [x] 단위 테스트: 표 병합/해제·행열 삽입삭제(`MergeCells`/`SpanOf`/`AnchorOf`/`IsCovered`), `TextRange`(GetText/Delete/ApplyPropertyValue), JSON 왕복(텍스트·서식·정렬·제목·표 병합 + 멱등), HTML 왕복(bold/list/table). 헤드리스 없이 순수 단위테스트로 동작.
+- [x] **GitHub Actions**(`.github/workflows/ci.yml`): build+test **3-OS 매트릭스**(ubuntu/windows/macos) → N3의 mac/Linux 스모크 겸함. 태그(`v*`) 푸시 시 `dotnet pack` → 아티팩트 업로드(nuget push는 시크릿 추가 후 주석 해제).
+- [ ] (선택) `Avalonia.Headless.XUnit`로 **컨트롤 자체**(렌더·히트테스트·입력) 검증 — 미착수(모델/포매터만 커버).
+- [ ] CI 실제 실행 확인 — **저장소 푸시 후** 그린 확인 필요(로컬 `dotnet test`는 통과).
+- [ ] 오프셋 모델(`InlineLen`/`BuildPlain`)·Undo/Redo는 `RichEditor` private/컨트롤 레벨이라 헤드리스 테스트에서 다룰 항목.
 
 ### 🔵 N5: 견고성·성능 — **`1.0` 목표** (우선순위 5)
 - [ ] **증분 Undo**: 현재 `UndoManager.PushState`가 편집마다 문서 전체 `Clone()`(O(N) 메모리·CPU, 50벌 보관). 명령(command)/델타 기반 또는 입력 코얼레싱으로 전환.
