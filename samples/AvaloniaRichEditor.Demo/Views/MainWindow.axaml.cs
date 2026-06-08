@@ -279,6 +279,7 @@ public partial class MainWindow : Window
         SetActive("StrikeButton", f.Strike);
         SetActive("BulletBtn", f.List == Documents.ListKind.Bullet);
         SetActive("NumberBtn", f.List == Documents.ListKind.Ordered);
+        SetActive("FormatPainterButton", rtb.IsFormatPainterActive);
 
         _suppressToolbar = true;
         if (this.FindControl<ComboBox>("FontSizeComboBox") is { } sizeCb)
@@ -417,6 +418,13 @@ public partial class MainWindow : Window
     private void ItalicButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<RichEditor>("RichTextBox")?.ToggleItalic();
     private void StrikethroughButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<RichEditor>("RichTextBox")?.ToggleStrikethrough();
     private void UnderlineButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => this.FindControl<RichEditor>("RichTextBox")?.ToggleUnderline();
+
+    private void FormatPainterButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var rtb = this.FindControl<RichEditor>("RichTextBox");
+        rtb?.StartFormatPainter();
+        SetActive("FormatPainterButton", rtb?.IsFormatPainterActive == true);
+    }
 
     // ---- Find / Replace bar ----
 

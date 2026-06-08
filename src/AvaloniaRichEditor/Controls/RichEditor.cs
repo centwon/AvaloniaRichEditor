@@ -902,7 +902,53 @@ public class RichEditor : Control
         {
             _isSelecting = false;
             e.Pointer.Capture(null);
+            // Format painter: a just-completed selection receives the captured formatting, then disarms.
+            ApplyFormatPainterToSelection();
         }
+    }
+
+    // ---- Format painter ----
+    // Snapshot of character formatting captured from the source selection; non-null while armed.
+    private (FontWeight w, FontStyle st, TextDecorationCollection? dec, double size, string? family, IBrush? fg, IBrush? bg)? _painterFmt;
+
+    /// <summary>True while the format painter is armed (the next selection receives the captured formatting).</summary>
+    public bool IsFormatPainterActive => _painterFmt != null;
+
+    /// <summary>
+    /// Captures character formatting from the current caret/selection and arms the format painter: the
+    /// next selection the user makes will receive that formatting. Calling again re-captures; if already
+    /// armed, cancels. Bind to a toolbar toggle.
+    /// </summary>
+    public void StartFormatPainter()
+    {
+        if (_painterFmt != null) { CancelFormatPainter(); return; } // toggle off
+        var p = _selectionStart.Paragraph ?? _caretPosition.Paragraph;
+        if (p == null) return;
+        int off = _selectionStart.Paragraph != null ? _selectionStart.Offset : _caretPosition.Offset;
+        var src = RunAtOffset(p, off) ?? RunAtOffset(p, Math.Max(0, off - 1));
+        if (src == null) return;
+        _painterFmt = (src.FontWeight, src.FontStyle, src.TextDecorations,
+            src.FontSize, src.FontFamily, src.Foreground, src.Background);
+        Cursor = new Cursor(StandardCursorType.Cross);
+    }
+
+    /// <summary>Disarms the format painter without applying.</summary>
+    public void CancelFormatPainter()
+    {
+        _painterFmt = null;
+        Cursor = new Cursor(StandardCursorType.Ibeam);
+    }
+
+    private void ApplyFormatPainterToSelection()
+    {
+        if (_painterFmt is not { } f) return;
+        if (_selectionStart.Paragraph == null || _selectionStart.CompareTo(_selectionEnd) == 0) return;
+        ApplyStyleToSelection(r =>
+        {
+            r.FontWeight = f.w; r.FontStyle = f.st; r.TextDecorations = f.dec;
+            r.FontSize = f.size; r.FontFamily = f.family; r.Foreground = f.fg; r.Background = f.bg;
+        });
+        CancelFormatPainter();
     }
 
     protected override void OnTextInput(TextInputEventArgs e)

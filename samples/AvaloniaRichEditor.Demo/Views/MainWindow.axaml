@@ -88,6 +88,7 @@
                 <Button Name="StrikeButton" ToolTip.Tip="취소선" Click="StrikethroughButton_Click">
                     <TextBlock Text="S" TextDecorations="Strikethrough"/>
                 </Button>
+                <Button Name="FormatPainterButton" Content="🖌" FontSize="14" ToolTip.Tip="서식 복사 (선택 후 클릭 → 대상 선택)" Click="FormatPainterButton_Click"/>
                 <Border Classes="div"/>
                 <Button Name="TextColorButton" Content="글자색 ▾" ToolTip.Tip="글자 색"/>
                 <Button Name="HighlightButton" Content="형광펜 ▾" ToolTip.Tip="형광펜(배경색)"/>
