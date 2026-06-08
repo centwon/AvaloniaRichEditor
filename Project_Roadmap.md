@@ -144,8 +144,8 @@
 - [ ] 오프셋 모델(`InlineLen`/`BuildPlain`)·Undo/Redo는 `RichEditor` private/컨트롤 레벨이라 헤드리스 테스트에서 다룰 항목.
 
 ### 🔵 N5: 견고성·성능 — **`1.0` 목표** (우선순위 5)
-- [ ] **증분 Undo**: 현재 `UndoManager.PushState`가 편집마다 문서 전체 `Clone()`(O(N) 메모리·CPU, 50벌 보관). 명령(command)/델타 기반 또는 입력 코얼레싱으로 전환.
-- [ ] **렌더 가상화**: 뷰포트 밖 블록은 그리지 않도록(현재 매 프레임 전 블록 Draw). 레이아웃 캐싱(완료)과 결합.
+- [~] **Undo 입력 코얼레싱**: 연속 타이핑을 단일 체크포인트로(`PushUndoTyping`, 타이핑 1런=클론 1개. 캐럿 이동/선택/이산 편집 시 런 종료). 키 입력마다 전체 복제하던 최악 케이스 해소. (완전 델타/명령 기반 전환은 향후 — 이산 편집·삭제·서식은 여전히 op당 클론, 50벌 상한 유지.)
+- [ ] **렌더 가상화**: 뷰포트 밖 블록 Draw 생략 — **보류**. 레이아웃 캐싱(완료)으로 프레임당 셰이핑 비용은 이미 제거됨(가장 비쌌던 부분). 남은 건 Draw 호출인데, 데모의 LayoutTransform(줌)+ScrollViewer 좌표와 히트테스트 3곳을 일관되게 맞춰야 해 위험 대비 이득이 낮음. 수백 페이지 실사용 요구가 생기면 착수.
 - [x] **접근성(기본)**: `RichEditorAutomationPeer : ControlAutomationPeer, IValueProvider` — 컨트롤 타입 Edit, 값=문서 평문(`GetPlainText`), `IsReadOnly` 반영, SetValue 지원. 스크린리더가 내용 읽기 가능. (전체 `ITextProvider`(캐럿·범위·속성)는 향후.)
 - [ ] (선택) `RichEditor` 3,700줄 God-class 분해(렌더/입력/클립보드/표 partial 분리) — 유지보수·기여성.
 - **검증**: 수백 페이지 문서에서 타이핑/스크롤 지연 측정, 메모리 상한 확인.
