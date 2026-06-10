@@ -7,6 +7,7 @@ obj/
 
 # Scratch / test artifacts
 test.html
+test.json
 
 # Round-trip harness output
 tests/roundtrip-out/
