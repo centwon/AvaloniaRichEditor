@@ -303,7 +303,7 @@
 - [x] README의 사용 예제가 실제로 컴파일/동작 (2026-06-11) — 모든 API 참조를 `PublicAPI.Unshipped.txt`(분석기 생성)와 대조 검증.
 - [x] LICENSE·저작권·서드파티(HtmlAgilityPack) 라이선스 고지 (2026-06-11) — `THIRD-PARTY-NOTICES.md`(Avalonia·HtmlAgilityPack, 둘 다 MIT) 추가 + 패키지 동봉 + README 링크.
 - [x] 버전 `0.1.0-alpha`, 변경 이력(CHANGELOG) 시작 (`CHANGELOG.md` 2026-06-10 작성, 2026-06-11 N3.6 항목 추가)
-- [ ] (권장) NuGet 푸시 전 별도 테스트 계정/프리릴리스 채널로 1차 공개
+- [ ] (권장) NuGet 푸시 전 별도 테스트 계정/프리릴리스 채널로 1차 공개 — **보류 결정(2026-06-11)**: 버전은 `0.1.0-alpha` 유지(툴바·현지화 포함 — 첫 공개라 번호 부담 없음, 0.2.0 승격 안 함), NuGet 공개는 나중에. 공개 시: API 키 발급 후 `dotnet nuget push` 또는 CI 시크릿 등록 + `v0.1.0-alpha` 태그 푸시.
 
 ### ✅ `1.0` 프로덕션 체크리스트
 > 새 기능 추가 없이 기존 기능의 **안정성·성능·문서화**를 프로덕션 수준으로 끌어올린다.
