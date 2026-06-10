@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   AOT-safe (plain dictionaries, no satellite assemblies).
 
 ### Changed
+- **JSON schema v2 — image pool deduplication**: identical images (same encoded bytes) are now
+  stored once in a document-level pool keyed by SHA-256 and referenced from blocks, instead of
+  inline base64 per image. Documents that repeat a logo/screenshot shrink accordingly, and loading
+  shares a single byte array per pooled image in memory. v1 documents (inline base64) still load.
 - **Font pickers list the installed system fonts** by default (`FontFamilyChoices` empty =
   system list, sorted and localized by the OS UI language — e.g. "맑은 고딕" on Korean Windows);
   assigning a non-empty list still curates as before.

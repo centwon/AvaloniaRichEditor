@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Avalonia.Media;
@@ -19,14 +20,18 @@ internal partial class DocumentJsonContext : JsonSerializerContext { }
 public static class DocumentSerializer
 {
     /// <summary>Current JSON schema version written by <see cref="Serialize"/>. Bump when the on-disk
-    /// shape changes; older documents (no "version" field) are read back as version 1.</summary>
-    public const int CurrentSchemaVersion = 1;
+    /// shape changes; older documents (no "version" field) are read back as version 1.
+    /// History: 1 = inline base64 per image; 2 = document-level image pool keyed by SHA-256,
+    /// images reference the pool (identical bytes are stored once).</summary>
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>Serializes <paramref name="document"/> to a JSON string.</summary>
     public static string Serialize(FlowDocument document)
     {
+        var pool = new Dictionary<string, ImagePoolDto>();
         var dto = new FlowDocumentDto { Version = CurrentSchemaVersion };
-        foreach (var block in document.Blocks) dto.Blocks.Add(BlockToDto(block));
+        foreach (var block in document.Blocks) dto.Blocks.Add(BlockToDto(block, pool));
+        if (pool.Count > 0) dto.Images = pool;
         return JsonSerializer.Serialize(dto, DocumentJsonContext.Default.FlowDocumentDto);
     }
 
@@ -36,10 +41,18 @@ public static class DocumentSerializer
     {
         var doc = new FlowDocument();
         var dto = JsonSerializer.Deserialize(json, DocumentJsonContext.Default.FlowDocumentDto);
+        // Decode each pool entry once; blocks referencing the same hash share one byte[] instance.
+        var pool = new Dictionary<string, (byte[] Bytes, string Mime)>();
+        if (dto?.Images != null)
+            foreach (var (key, entry) in dto.Images)
+            {
+                var bytes = TryFromBase64(entry.Data);
+                if (bytes != null) pool[key] = (bytes, entry.MimeType ?? "image/png");
+            }
         if (dto?.Blocks != null)
             foreach (var bd in dto.Blocks)
             {
-                var b = DtoToBlock(bd);
+                var b = DtoToBlock(bd, pool);
                 if (b != null) doc.Blocks.Add(b);
             }
         return doc;
@@ -47,22 +60,21 @@ public static class DocumentSerializer
 
     // ---- model -> dto ----
 
-    private static BlockDto BlockToDto(Block block)
+    private static BlockDto BlockToDto(Block block, Dictionary<string, ImagePoolDto> pool)
     {
         switch (block)
         {
             case Paragraph p:
-                return ParagraphToDto(p);
+                return ParagraphToDto(p, pool);
             case DividerBlock:
                 return new BlockDto { Type = "Divider" };
             case ImageBlock img:
-                // RawBytes go straight to base64 (no re-encoding); a bitmap set without bytes
-                // (legacy/consumer path) falls back to PNG encoding as before.
+                // Bytes go to the document image pool (deduplicated by hash); the block stores only
+                // the pool key. A bitmap set without bytes (legacy/consumer path) is PNG-encoded once.
                 return new BlockDto
                 {
                     Type = "Image",
-                    ImageBase64 = img.RawBytes != null ? Convert.ToBase64String(img.RawBytes) : BitmapToBase64(img.Image),
-                    MimeType = img.RawBytes != null ? img.MimeType : null,
+                    ImageRef = PoolImage(pool, img.RawBytes, img.MimeType, img.Image),
                     Width = NanToNull(img.Width),
                     Height = NanToNull(img.Height),
                     Indent = img.Indent
@@ -81,7 +93,7 @@ public static class DocumentSerializer
                 foreach (var row in tb.Cells)
                 {
                     var rd = new List<BlockDto>();
-                    foreach (var cell in row) rd.Add(ParagraphToDto(cell));
+                    foreach (var cell in row) rd.Add(ParagraphToDto(cell, pool));
                     td.Cells.Add(rd);
                 }
                 td.ColSpans = new List<List<int>>();
@@ -94,7 +106,7 @@ public static class DocumentSerializer
         }
     }
 
-    private static BlockDto ParagraphToDto(Paragraph p)
+    private static BlockDto ParagraphToDto(Paragraph p, Dictionary<string, ImagePoolDto> pool)
     {
         var d = new BlockDto
         {
@@ -132,8 +144,7 @@ public static class DocumentSerializer
                 d.Inlines.Add(new InlineDto
                 {
                     Type = "Image",
-                    ImageBase64 = im.RawBytes != null ? Convert.ToBase64String(im.RawBytes) : BitmapToBase64(im.Image),
-                    MimeType = im.RawBytes != null ? im.MimeType : null,
+                    ImageRef = PoolImage(pool, im.RawBytes, im.MimeType, im.Image),
                     Width = im.Width,
                     Height = im.Height
                 });
@@ -143,7 +154,7 @@ public static class DocumentSerializer
 
     // ---- dto -> model ----
 
-    private static Block? DtoToBlock(BlockDto d)
+    private static Block? DtoToBlock(BlockDto d, Dictionary<string, (byte[] Bytes, string Mime)> pool)
     {
         switch (d.Type)
         {
@@ -152,15 +163,14 @@ public static class DocumentSerializer
             case "Image":
                 {
                     // Bytes are kept encoded; the Bitmap is decoded lazily on first render.
-                    // Legacy documents (no MimeType field) were always PNG-encoded.
                     var ib = new ImageBlock
                     {
                         Width = d.Width ?? double.NaN,
                         Height = d.Height ?? double.NaN,
                         Indent = d.Indent
                     };
-                    var bytes = TryFromBase64(d.ImageBase64);
-                    if (bytes != null) ib.SetImageData(bytes, d.MimeType ?? "image/png");
+                    if (ResolveImage(d.ImageRef, d.ImageBase64, d.MimeType, pool) is { } img)
+                        ib.SetImageData(img.Bytes, img.Mime);
                     return ib;
                 }
             case "Table":
@@ -175,7 +185,7 @@ public static class DocumentSerializer
                     foreach (var rowD in d.Cells)
                     {
                         var row = new List<Paragraph>();
-                        foreach (var cd in rowD) row.Add(DtoToParagraph(cd));
+                        foreach (var cd in rowD) row.Add(DtoToParagraph(cd, pool));
                         tb.Cells.Add(row);
                     }
                 tb.Rows = tb.Cells.Count;
@@ -197,11 +207,11 @@ public static class DocumentSerializer
                 }
                 return tb;
             default:
-                return DtoToParagraph(d);
+                return DtoToParagraph(d, pool);
         }
     }
 
-    private static Paragraph DtoToParagraph(BlockDto d)
+    private static Paragraph DtoToParagraph(BlockDto d, Dictionary<string, (byte[] Bytes, string Mime)> pool)
     {
         var p = new Paragraph
         {
@@ -226,8 +236,8 @@ public static class DocumentSerializer
                         Width = id.Width ?? 16,
                         Height = id.Height ?? 16
                     };
-                    var bytes = TryFromBase64(id.ImageBase64);
-                    if (bytes != null) im.SetImageData(bytes, id.MimeType ?? "image/png");
+                    if (ResolveImage(id.ImageRef, id.ImageBase64, id.MimeType, pool) is { } img)
+                        im.SetImageData(img.Bytes, img.Mime);
                     p.Inlines.Add(im);
                 }
                 else
@@ -276,14 +286,38 @@ public static class DocumentSerializer
         try { return new SolidColorBrush(Color.Parse(value)); } catch { return null; }
     }
 
-    private static string? BitmapToBase64(Bitmap? bmp)
+    // Adds the image bytes to the document pool (deduplicated by content hash) and returns the
+    // pool key, or null when there is no image data. RawBytes are stored as-is (no re-encoding);
+    // a bitmap without bytes falls back to PNG encoding.
+    private static string? PoolImage(Dictionary<string, ImagePoolDto> pool, byte[]? rawBytes, string? mimeType, Bitmap? bmp)
+    {
+        byte[]? bytes = rawBytes ?? BitmapToBytes(bmp);
+        if (bytes == null) return null;
+        string mime = rawBytes != null ? (mimeType ?? "image/png") : "image/png";
+        string key = Convert.ToHexString(SHA256.HashData(bytes));
+        if (!pool.ContainsKey(key))
+            pool[key] = new ImagePoolDto { Data = Convert.ToBase64String(bytes), MimeType = mime };
+        return key;
+    }
+
+    // Resolves an image dto to its bytes: pool reference (v2) first, inline base64 (v1 legacy)
+    // as fallback. Legacy documents without a MimeType were always PNG-encoded.
+    private static (byte[] Bytes, string Mime)? ResolveImage(string? imageRef, string? inlineBase64, string? mimeType,
+        Dictionary<string, (byte[] Bytes, string Mime)> pool)
+    {
+        if (imageRef != null && pool.TryGetValue(imageRef, out var pooled)) return pooled;
+        var bytes = TryFromBase64(inlineBase64);
+        return bytes != null ? (bytes, mimeType ?? "image/png") : null;
+    }
+
+    private static byte[]? BitmapToBytes(Bitmap? bmp)
     {
         if (bmp == null) return null;
         try
         {
             using var ms = new MemoryStream();
             bmp.Save(ms);
-            return Convert.ToBase64String(ms.ToArray());
+            return ms.ToArray();
         }
         catch { return null; }
     }
@@ -301,6 +335,14 @@ internal class FlowDocumentDto
     // Schema version. Absent in pre-versioning documents → deserializes to the initializer (1).
     public int Version { get; set; } = 1;
     public List<BlockDto> Blocks { get; set; } = new();
+    // v2: image pool keyed by SHA-256 hex of the encoded bytes; identical images stored once.
+    public Dictionary<string, ImagePoolDto>? Images { get; set; }
+}
+
+internal class ImagePoolDto
+{
+    public string? Data { get; set; } // base64 of the original encoded bytes
+    public string? MimeType { get; set; }
 }
 
 internal class BlockDto
@@ -322,7 +364,8 @@ internal class BlockDto
     public int ListLevel { get; set; }
 
     // Image block
-    public string? ImageBase64 { get; set; }
+    public string? ImageRef { get; set; } // v2: key into FlowDocumentDto.Images
+    public string? ImageBase64 { get; set; } // v1 legacy: inline base64 (read fallback)
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }
@@ -354,7 +397,8 @@ internal class InlineDto
     public bool Strikethrough { get; set; }
 
     // Inline image
-    public string? ImageBase64 { get; set; }
+    public string? ImageRef { get; set; } // v2: key into FlowDocumentDto.Images
+    public string? ImageBase64 { get; set; } // v1 legacy: inline base64 (read fallback)
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }

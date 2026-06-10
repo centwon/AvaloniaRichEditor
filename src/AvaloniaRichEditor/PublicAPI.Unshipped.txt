@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 abstract AvaloniaRichEditor.Documents.TextElement.Clone() -> AvaloniaRichEditor.Documents.TextElement!
 AvaloniaRichEditor.Controls.EditorMode
 AvaloniaRichEditor.Controls.EditorMode.Basic = 1 -> AvaloniaRichEditor.Controls.EditorMode
@@ -231,7 +231,7 @@ AvaloniaRichEditor.Documents.TextRange.TextRange(AvaloniaRichEditor.Documents.Te
 AvaloniaRichEditor.Formatters.DocumentSerializer
 AvaloniaRichEditor.Formatters.HtmlDocumentFormatter
 AvaloniaRichEditor.Formatters.RoundTripHarness
-const AvaloniaRichEditor.Formatters.DocumentSerializer.CurrentSchemaVersion = 1 -> int
+const AvaloniaRichEditor.Formatters.DocumentSerializer.CurrentSchemaVersion = 2 -> int
 override AvaloniaRichEditor.Controls.RichEditor.MeasureOverride(Avalonia.Size availableSize) -> Avalonia.Size
 override AvaloniaRichEditor.Controls.RichEditor.OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
 override AvaloniaRichEditor.Controls.RichEditor.OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void

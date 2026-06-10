@@ -73,7 +73,7 @@ public class DocumentSerializerTests
     public void Serialize_WritesSchemaVersion()
     {
         var json = DocumentSerializer.Serialize(SampleDoc());
-        Assert.Contains("\"Version\": 1", json);
+        Assert.Contains($"\"Version\": {DocumentSerializer.CurrentSchemaVersion}", json);
     }
 
     [Fact]
