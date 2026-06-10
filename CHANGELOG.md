@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `RichEditor.InsertImageBytes(byte[])` — insert an image from its encoded bytes, preserving the
   original format. Preferred over `InsertImage(Bitmap)` when bytes are available.
+- Image context menu: 1/2, 1/3, 1/4 scale presets (relative to natural size; display size only,
+  no re-encoding).
 
 ## [0.1.0-alpha] - 2026-06-10
 

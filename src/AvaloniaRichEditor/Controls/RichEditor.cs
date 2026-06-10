@@ -3058,6 +3058,16 @@ public partial class RichEditor : Control
         InvalidateVisual();
     }
 
+    // Sets the display size to a fraction of the natural size (context-menu presets).
+    private void ScaleImageSize(ImageBlock img, double factor)
+    {
+        if (Document == null || img.Image == null) return;
+        PushUndo();
+        img.Width = Math.Max(1, img.Image.Size.Width * factor);
+        img.Height = Math.Max(1, img.Image.Size.Height * factor);
+        InvalidateVisual();
+    }
+
     private async Task ReplaceImageAsync(ImageBlock img)
     {
         var top = TopLevel.GetTopLevel(this);

@@ -243,6 +243,11 @@ public partial class RichEditor
         items.Add(Mi("삭제", () => DeleteBlock(img)));
         items.Add(new Separator());
         items.Add(Mi("원본 크기로", () => ResetImageSize(img), img.Image != null));
+        // Scale presets relative to the natural size. Width/Height only — the encoded bytes are
+        // untouched (no generation loss), matching the drag-handle behavior.
+        items.Add(Mi("1/2 크기", () => ScaleImageSize(img, 1.0 / 2), img.Image != null));
+        items.Add(Mi("1/3 크기", () => ScaleImageSize(img, 1.0 / 3), img.Image != null));
+        items.Add(Mi("1/4 크기", () => ScaleImageSize(img, 1.0 / 4), img.Image != null));
         items.Add(Mi("이미지 교체...", () => { _ = ReplaceImageAsync(img); }));
         items.Add(Mi("다른 이름으로 저장...", () => { _ = SaveImageAsync(img); }, img.Image != null));
     }
