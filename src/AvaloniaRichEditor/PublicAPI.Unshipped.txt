@@ -284,3 +284,7 @@ static AvaloniaRichEditor.RichEditorLocalization.Language.get -> string!
 static AvaloniaRichEditor.RichEditorLocalization.Language.set -> void
 static AvaloniaRichEditor.RichEditorLocalization.LanguageChanged -> System.EventHandler?
 static AvaloniaRichEditor.RichEditorLocalization.Register(string! language, System.Collections.Generic.IReadOnlyDictionary<string!, string!>! strings) -> void
+AvaloniaRichEditor.Controls.RichEditorView
+AvaloniaRichEditor.Controls.RichEditorView.Editor.get -> AvaloniaRichEditor.Controls.RichEditor!
+AvaloniaRichEditor.Controls.RichEditorView.RichEditorView() -> void
+AvaloniaRichEditor.Controls.RichEditorView.Toolbar.get -> AvaloniaRichEditor.Controls.RichEditorToolbar!

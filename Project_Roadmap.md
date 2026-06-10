@@ -167,18 +167,18 @@
 - **참고**: 데모 `NativeEditor`의 자체 `EditorMode{ReadOnly,Simple,Full}`은 의미가 달라(Simple=툴바만 숨김) 그대로 유지.
 - **비용**: 낮음. 구조 변경 없이 기존 코드에 분기 추가.
 
-### 🟢 N3.6: 라이브러리 툴바 승격 + 모드 연동 (②툴바+현지화 완료 2026-06-11, ③번들 뷰만 잔여)
+### 🟢 N3.6: 라이브러리 툴바 승격 + 모드 연동 (완료 2026-06-11)
 
 > **배경**: 거의 모든 소비 앱이 서식 툴바를 필요로 한다. 서식 툴바(B/I/U·글꼴·목록·정렬 등)는 컨트롤 *자신의 공개 명령*만 호출하므로 "에디터의 일부"이지 앱 셸이 아니다. 현재는 N0 분리(2026-06-08) 때 툴바가 데모 쪽(`NativeEditor.BuildToolbar`/`MainWindow`)에 남아 라이브러리 밖에 있다. → N3.5 모드 표의 "툴바" 열이 미구현인 근본 원인. 이를 라이브러리로 되돌려 **모드가 동작·컨텍스트 메뉴·툴바를 일관되게 지배**하도록 한다.
 >
 > **경계(중요)**: "서식 툴바"는 라이브러리(선택 계층), "앱 셸"(창·저장/열기·메뉴바·파일 다이얼로그)은 앱. 이 선을 지켜 비대화를 막는다.
 
-- [~] **3계층 구조** (소비자가 추상화 수준 선택, 셋 다 같은 패키지):
+- [x] **3계층 구조** (소비자가 추상화 수준 선택, 셋 다 같은 패키지):
   | 계층 | 타입 | 용도 | 상태 |
   |------|------|------|------|
   | ① 코어 | `RichEditor` (현행 유지) | 명령+상태+이벤트만. 완전 커스텀 UI를 만드는 소수용 | ✅ |
   | ② 툴바 | `RichEditorToolbar` | 선택적 서식 툴바. `Target`으로 ①을 가리켜 명령 호출+모드 반영. 레이아웃은 소비자가 배치 | ✅ 2026-06-11 |
-  | ③ 번들 뷰 | `RichEditorView` | ①+②+스크롤러를 묶은 한 줄 drop-in. 가장 편한 기본값 | ⬜ 잔여 |
+  | ③ 번들 뷰 | `RichEditorView` | ①+②+스크롤러를 묶은 한 줄 drop-in. 가장 편한 기본값 | ✅ 2026-06-11 |
 - [x] **연결 고리 = `Target` 속성**: `RichEditorToolbar.Target`(`StyledProperty<RichEditor?>`) 하나로 세 방향 연결 — 구현 완료.
   - 버튼 → 명령: `Target.ToggleBold()` 등 *기존 공개 명령* 호출.
   - 모드/플래그 → 가시성: `Target.PropertyChanged` 구독으로 `AllowImages`/`AllowTables`/`IsReadOnly` 반영. ReadOnly(또는 Target 없음)=툴바 숨김, Basic(플래그 off)=삽입 버튼 숨김, Full=전체.
@@ -189,7 +189,8 @@
   - **선택 상태 반영엔 소폭 신규 API 필요**: 버튼이 명령을 *호출*하는 건 기존 명령으로 끝나지만, 현재 선택의 서식을 *반영*(B 눌림)하려면 "지금 선택이 Bold인가?" 조회 표면이 필요(현재 `SelectionChanged` 이벤트는 있으나 상태 조회 API 없음 → 예: `CurrentFormat` 신설). 비용 중간.
   - **스크롤러 소유권**: 스크롤은 ③(번들 뷰)만 품고, ①②는 스크롤 비소유로 분리(경계 명확화). 현재 `NativeEditor`가 스크롤러를 품고 있으므로([NativeEditor.cs](samples/AvaloniaRichEditor.Demo/NativeEditor.cs)) 승격 시 ③으로만 이전.
 - **✅ 결정(2026-06-10): `0.1.0-alpha`에는 미포함, `0.2.0`으로.** 근거: ① alpha의 독자는 정의상 얼리어답터(부품 조립형 개발자)이고 데모에 동작하는 툴바 프로토타입이 참고 코드로 존재. ② 툴바에 필요한 `CurrentFormat` 등 신규 공개 API를 API 동결 가드 도입 전에 서두르면 동결 전에 표면만 넓히는 꼴. **`PublicApiAnalyzers` 도입(N2 잔여)을 0.2.0 진입 조건으로** 하여 "0.x = API 안정화" 선언과 순서를 맞춘다. → **이행 확인(2026-06-11)**: PublicApiAnalyzers 가동 중 상태에서 구현, 신규 표면(`RichEditorToolbar`, `RichEditorLocalization`)은 `PublicAPI.Unshipped.txt` 등재 완료.
-- **구현 메모(2026-06-11)**: `Controls/RichEditorToolbar.cs`(코드 컨트롤, XAML 없음), `RichEditorLocalization.cs`. 테스트 11건 추가(현지화 6 + 툴바 헤드리스 5) — 총 85건 통과. 잔여: ③ `RichEditorView` 번들 뷰, 버튼 구성 커스터마이즈 API.
+- **구현 메모(2026-06-11)**: `Controls/RichEditorToolbar.cs`(코드 컨트롤, XAML 없음), `RichEditorLocalization.cs`. 테스트 11건 추가(현지화 6 + 툴바 헤드리스 5) — 총 85건 통과. 잔여: 버튼 구성 커스터마이즈 API(수요 시).
+- **③ `RichEditorView` 완료(2026-06-11)**: `Controls/RichEditorView.cs` — 에디터+툴바(Target 사전 연결)+수직 스크롤러(③만 스크롤 소유, 경계 규칙 준수) 묶음. 공개 표면은 `Editor`/`Toolbar` get 프로퍼티 2개뿐(문서/명령/플래그는 `Editor.*`로). 커스텀 레이아웃·스크롤이 필요한 호스트는 ①/② 직접 조합. 테스트 4건 — 총 92건 통과. 데모 `MainWindow`는 자체 페이지/줌 레이아웃이라 ①+② 조합 시연을 유지(③은 헤드리스 테스트로 검증).
 - **기본 글꼴 = OS UI 글꼴(2026-06-11)**: `DefaultFontFamily` 기본값을 Windows 메시지 글꼴(`SystemParametersInfo(SPI_GETNONCLIENTMETRICS).lfMessageFont`, 한국어 Windows 실측 "맑은 고딕" — 현지화된 이름으로 반환되어 글꼴 콤보 항목과 일치)로 변경(`SystemFontInfo` internal). 비Windows/실패 시 `FontFamily.Default` 폴백. 명시 글꼴 없는 런의 툴바 콤보는 유효 기본 글꼴을 PlaceholderText로 표시(거짓 선택 안 함).
 - **글꼴 목록 = 시스템 글꼴(2026-06-11)**: `FontFamilyChoices` 기본값을 설치된 시스템 글꼴(`FontManager.Current.SystemFonts`, UI 컬처 정렬)로 변경. 빈 목록=시스템(센티널), 비어있지 않은 목록 할당=큐레이션(기존 오버라이드 의미 유지, 신규 공개 API 없음). **OS가 글꼴 이름을 UI 언어로 현지화해 보고**(한국어 Windows 실측: "맑은 고딕" 등 238개)하고 그 이름으로 DirectWrite 매칭도 되므로 표시명 매핑 불필요. 주의: 현지화된 이름이 문서에 저장되므로 비Windows 간 이동 시 해석 안 될 수 있음(영문명 필요 시 호스트가 큐레이션). 헤드리스 등 열거 불가 플랫폼은 기존 5종 폴백.
 
