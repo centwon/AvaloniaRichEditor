@@ -419,7 +419,21 @@ public class RichEditorToolbar : UserControl
 
         _suppress = true;
         if (_sizeCombo != null) SelectByContent(_sizeCombo, ((int)f.FontSize).ToString());
-        if (_fontCombo != null && f.FontFamily != null) SelectByContent(_fontCombo, f.FontFamily);
+        if (_fontCombo != null)
+        {
+            // Runs without an explicit font fall back to the editor's DefaultFontFamily for
+            // rendering, so the combo shows that effective default as placeholder text instead of
+            // faking a selection (selecting would suggest the run carries the font explicitly).
+            if (f.FontFamily != null)
+            {
+                SelectByContent(_fontCombo, f.FontFamily);
+            }
+            else
+            {
+                _fontCombo.SelectedItem = null;
+                _fontCombo.PlaceholderText = EffectiveDefaultFamilyName(rt);
+            }
+        }
         if (_headingCombo != null) _headingCombo.SelectedIndex = Math.Min(f.Heading, 3);
         if (_alignCombo != null) _alignCombo.SelectedIndex = f.Align switch
         {
@@ -428,6 +442,16 @@ public class RichEditorToolbar : UserControl
             _ => 0,
         };
         _suppress = false;
+    }
+
+    // Display name of the font a run without explicit FontFamily actually renders with: the
+    // editor's DefaultFontFamily, resolving Avalonia's "$Default" sentinel through the FontManager
+    // (e.g. "Inter" when the app uses WithInterFont()).
+    private static string EffectiveDefaultFamilyName(RichEditor rt)
+    {
+        var fam = rt.DefaultFontFamily;
+        if (fam.Name != FontFamily.DefaultFontFamilyName) return fam.Name;
+        return FontManager.Current.DefaultFontFamily.Name;
     }
 
     private static void SelectByContent(ComboBox cb, string content)

@@ -66,6 +66,18 @@ public class RichEditorToolbarTests
     }
 
     [AvaloniaFact]
+    public void FontCombo_NoExplicitFont_ShowsEffectiveDefaultAsPlaceholder()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p>plain</p>"); // run carries no explicit FontFamily
+        ed.FocusDocumentEnd();
+        var tb = new RichEditorToolbar { Target = ed };
+        var fonts = Strip(tb).Children.OfType<ComboBox>().First();
+        Assert.Null(fonts.SelectedItem);
+        Assert.False(string.IsNullOrEmpty(fonts.PlaceholderText));
+    }
+
+    [AvaloniaFact]
     public void FontFamilyChoices_DefaultsToNonEmptyList()
     {
         // Default = system fonts; platforms without enumeration (headless) fall back to a stock list.

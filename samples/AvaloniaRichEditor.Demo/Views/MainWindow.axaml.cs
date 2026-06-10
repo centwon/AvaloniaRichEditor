@@ -16,12 +16,8 @@ public partial class MainWindow : Window
         var richTextBox = this.FindControl<RichEditor>("RichTextBox");
         if (richTextBox != null)
         {
-            // This app targets a Korean UI: offer Korean fonts in the editor's font pickers
-            // (toolbar combo + right-click font submenu both read FontFamilyChoices).
-            richTextBox.FontFamilyChoices = new[]
-            {
-                "Malgun Gothic", "Gulim", "Batang", "Dotum", "Arial", "Times New Roman"
-            };
+            // Font pickers (toolbar combo + right-click submenu) default to the installed system
+            // fonts with OS-localized names ("맑은 고딕" on Korean Windows) — no override needed.
 
             // Connect the library toolbar: commands, caret-state reflection and feature-flag
             // visibility are all driven through this single Target link.
@@ -48,7 +44,6 @@ public partial class MainWindow : Window
             richTextBox.StatusChanged += (_, _) => UpdateStatusBar();
             UpdateStatusBar();
         }
-
         RegisterDemoStrings();
         LocalizeChrome();
     }
