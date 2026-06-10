@@ -126,12 +126,19 @@ public partial class RichEditor : Control
         set => SetValue(CaretBrushProperty, value);
     }
 
+    // The OS default UI font (Windows message font, e.g. "맑은 고딕" on Korean Windows) so
+    // unstyled documents look native rather than using the app's Avalonia font (often Inter).
+    // Platforms without the query keep Avalonia's default.
+    private static FontFamily SystemDefaultFontFamily() =>
+        SystemFontInfo.MessageFontFaceName() is { } name ? new FontFamily(name) : FontFamily.Default;
+
     /// <inheritdoc cref="DefaultFontFamily"/>
     public static readonly StyledProperty<FontFamily> DefaultFontFamilyProperty =
         AvaloniaProperty.Register<RichEditor, FontFamily>(
-            nameof(DefaultFontFamily), FontFamily.Default);
+            nameof(DefaultFontFamily), SystemDefaultFontFamily());
 
-    /// <summary>Font family used for runs that don't specify one.</summary>
+    /// <summary>Font family used for runs that don't specify one. Defaults to the OS UI font
+    /// (e.g. 맑은 고딕 on Korean Windows); assign to override.</summary>
     public FontFamily DefaultFontFamily
     {
         get => GetValue(DefaultFontFamilyProperty);
