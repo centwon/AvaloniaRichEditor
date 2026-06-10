@@ -31,14 +31,10 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         {
             PushUndo();
             if (_internalClipboardBlocks != null)
-            {
                 InsertBlocks(_internalClipboardBlocks);
-                InvalidateVisual();
-            }
             else
-            {
                 InsertRuns(_internalClipboard!);
-            }
+            ResetCaretBlink(); // caret sits at the end of the pasted content — scroll it into view
             return;
         }
 
@@ -56,7 +52,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 {
                     PushUndo();
                     InsertParsedDocument(parsed);
-                    InvalidateVisual();
+                    ResetCaretBlink(); // caret sits at the end of the pasted content — scroll it into view
                     return;
                 }
             }
@@ -71,6 +67,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         {
             if (clipBytes != null) InsertImageBytes(clipBytes);     // keep the original encoding
             else InsertImage(Downscale(clipImage));                  // raw Bitmap object: no bytes to keep
+            ResetCaretBlink(); // image lands just after the caret block — scroll there
             return;
         }
 
@@ -79,7 +76,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         {
             PushUndo();
             InsertTableFromTsv(text);
-            InvalidateVisual();
+            ResetCaretBlink(); // table lands just after the caret block — scroll there
             return;
         }
 
@@ -88,6 +85,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         {
             PushUndo();
             InsertText(text);
+            ResetCaretBlink(); // caret sits at the end of the pasted text — scroll it into view
         }
     }
 
