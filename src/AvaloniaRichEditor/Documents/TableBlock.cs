@@ -7,27 +7,31 @@ namespace AvaloniaRichEditor.Documents;
 /// cell plus covered markers (see <see cref="ColSpans"/>/<see cref="RowSpans"/>).</summary>
 public class TableBlock : Block
 {
+    /// <summary>Number of rows in the table.</summary>
     public int Rows { get; set; } = 2;
+    /// <summary>Number of columns in the table.</summary>
     public int Columns { get; set; } = 2;
+    /// <summary>Pixel widths of each column (parallel to column index).</summary>
     public List<double> ColumnWidths { get; set; } = new();
-    // User-specified minimum row heights (parallel to rows). Empty/0 means "auto" (content-driven);
-    // the renderer uses Max(content height, this) so a manually dragged row can't shrink below its text.
+    /// <summary>User-specified minimum row heights in pixels. 0 = auto (content-driven).</summary>
     public List<double> RowHeights { get; set; } = new();
+    /// <summary>The grid of cell paragraphs ([row][column]). The grid is always dense/rectangular.</summary>
     public List<List<Paragraph>> Cells { get; set; } = new();
 
-    // Cell-merge model (colspan/rowspan). Parallel grids to Cells, same Rows×Columns shape.
-    //   anchor cell  : ColSpans[r][c] >= 1 && RowSpans[r][c] >= 1  (rendered/edited; spans its area)
-    //   covered cell : ColSpans[r][c] == 0 && RowSpans[r][c] == 0  (overlapped by an anchor; skipped)
-    // The grid is always kept dense/rectangular so Cells[r][c] indexing stays valid everywhere;
-    // covered positions keep an (unused) empty Paragraph just to preserve the rectangle.
+    /// <summary>Column-span values per cell ([row][column]).
+    /// Anchor: ≥ 1. Covered by a merge: 0.</summary>
     public List<List<int>> ColSpans { get; set; } = new();
+    /// <summary>Row-span values per cell ([row][column]).
+    /// Anchor: ≥ 1. Covered by a merge: 0.</summary>
     public List<List<int>> RowSpans { get; set; } = new();
 
+    /// <summary>Creates a 2×2 table.</summary>
     public TableBlock()
     {
         InitializeCells(Rows, Columns);
     }
 
+    /// <summary>Creates a <paramref name="rows"/>×<paramref name="cols"/> table.</summary>
     public TableBlock(int rows, int cols)
     {
         Rows = rows;
@@ -131,6 +135,7 @@ public class TableBlock : Block
     // Merge handling: an anchor whose span *crosses* the insert/delete boundary grows/shrinks; cells in
     // the new row/column that fall inside a crossing anchor's area are marked covered.
 
+    /// <summary>Inserts a new empty row before row index <paramref name="at"/>.</summary>
     public void InsertRow(int at)
     {
         at = System.Math.Clamp(at, 0, Rows);
@@ -161,6 +166,7 @@ public class TableBlock : Block
         ClampSpans();
     }
 
+    /// <summary>Deletes row at index <paramref name="at"/>. No-op when the table has only one row.</summary>
     public void DeleteRow(int at)
     {
         if (Rows <= 1 || at < 0 || at >= Rows) return;
@@ -191,6 +197,7 @@ public class TableBlock : Block
         ClampSpans();
     }
 
+    /// <summary>Inserts a new empty column before column index <paramref name="at"/>.</summary>
     public void InsertColumn(int at)
     {
         at = System.Math.Clamp(at, 0, Columns);
@@ -220,6 +227,7 @@ public class TableBlock : Block
         ClampSpans();
     }
 
+    /// <summary>Deletes column at index <paramref name="at"/>. No-op when the table has only one column.</summary>
     public void DeleteColumn(int at)
     {
         if (Columns <= 1 || at < 0 || at >= Columns) return;
@@ -311,8 +319,8 @@ public class TableBlock : Block
             }
     }
 
-    // Force ColSpans/RowSpans to exactly match the Cells grid, filling any gaps with 1 (plain cell).
-    // A safety net so a table built via a path that didn't populate the span grids can't crash here.
+    /// <summary>Ensures <see cref="ColSpans"/>/<see cref="RowSpans"/> exactly match the <see cref="Cells"/>
+    /// grid dimensions, filling gaps with 1 (plain cell). Safe to call after deserialization.</summary>
     public void EnsureSpanConsistency()
     {
         while (ColSpans.Count < Cells.Count) ColSpans.Add(new List<int>());
@@ -329,6 +337,7 @@ public class TableBlock : Block
         }
     }
 
+    /// <inheritdoc/>
     public override TextElement Clone()
     {
         EnsureSpanConsistency();
@@ -338,8 +347,8 @@ public class TableBlock : Block
         tb.ColSpans.Clear();
         tb.RowSpans.Clear();
         tb.ColumnWidths.Clear();
-        foreach(var w in ColumnWidths) tb.ColumnWidths.Add(w);
-        foreach(var h in RowHeights) tb.RowHeights.Add(h);
+        foreach (var w in ColumnWidths) tb.ColumnWidths.Add(w);
+        foreach (var h in RowHeights) tb.RowHeights.Add(h);
 
         for (int r = 0; r < Rows; r++)
         {

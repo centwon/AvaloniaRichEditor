@@ -11,9 +11,12 @@ public class TextRange
     private TextPointer _start;
     private TextPointer _end;
 
+    /// <summary>The start (earlier) position of the range.</summary>
     public TextPointer Start => _start;
+    /// <summary>The end (later) position of the range.</summary>
     public TextPointer End => _end;
 
+    /// <summary>Creates a range from two positions (order does not matter; the earlier becomes <see cref="Start"/>).</summary>
     public TextRange(TextPointer position1, TextPointer position2)
     {
         if (position1.CompareTo(position2) <= 0)
@@ -28,8 +31,11 @@ public class TextRange
         }
     }
 
+    /// <summary><see langword="true"/> when Start and End are at the same position (nothing selected).</summary>
     public bool IsEmpty => _start.CompareTo(_end) == 0;
 
+    /// <summary>Deletes all content covered by this range (across paragraph boundaries).
+    /// After deletion, <see cref="Start"/> and <see cref="End"/> both point to the same position.</summary>
     public void Delete()
     {
         if (IsEmpty) return;
@@ -69,6 +75,8 @@ public class TextRange
         _end = new TextPointer(sp, _start.Offset);
     }
 
+    /// <summary>Returns the plain text content of this range (paragraphs joined with newlines;
+    /// inline image placeholders are dropped).</summary>
     public string GetText()
     {
         if (IsEmpty) return "";
@@ -105,9 +113,8 @@ public class TextRange
         return sb.ToString();
     }
 
-    // Returns cloned Runs covering the range, preserving formatting. Paragraph breaks within
-    // the range are represented as Runs whose Text is "\n" (matching how this editor stores
-    // line breaks inside a paragraph), so the result can be re-inserted at any caret position.
+    /// <summary>Returns cloned <see cref="Run"/>s covering the range with formatting preserved.
+    /// Paragraph breaks are represented as <see cref="Run"/>s with <c>Text = "\n"</c>.</summary>
     public List<Run> GetRichRuns()
     {
         var result = new List<Run>();
@@ -164,6 +171,8 @@ public class TextRange
         return result;
     }
 
+    /// <summary>Applies <paramref name="styleAction"/> to every <see cref="Run"/> within the range,
+    /// splitting runs at boundaries as needed.</summary>
     public void ApplyPropertyValue(Action<Run> styleAction)
     {
         if (IsEmpty) return;

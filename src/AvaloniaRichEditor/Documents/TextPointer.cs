@@ -6,20 +6,28 @@ namespace AvaloniaRichEditor.Documents;
 /// plus a character offset. Inline images count as one logical character (the U+FFFC placeholder).</summary>
 public class TextPointer : IComparable<TextPointer>
 {
+    /// <summary>The paragraph that contains this position.</summary>
     public Paragraph? Paragraph { get; set; }
+    /// <summary>The character offset within <see cref="Paragraph"/>. Inline images count as 1.</summary>
     public int Offset { get; set; }
 
+    /// <summary>Creates a new pointer at <paramref name="offset"/> inside <paramref name="paragraph"/>.</summary>
     public TextPointer(Paragraph? paragraph, int offset)
     {
         Paragraph = paragraph;
         Offset = offset;
     }
 
+    /// <inheritdoc/>
     public override bool Equals(object? obj) => obj is TextPointer t && t.Paragraph == Paragraph && t.Offset == Offset;
+    /// <inheritdoc/>
     public override int GetHashCode() => (Paragraph?.GetHashCode() ?? 0) ^ Offset.GetHashCode();
+    /// <summary>Equality comparison.</summary>
     public static bool operator ==(TextPointer? a, TextPointer? b) => ReferenceEquals(a, null) ? ReferenceEquals(b, null) : a.Equals(b);
+    /// <summary>Inequality comparison.</summary>
     public static bool operator !=(TextPointer? a, TextPointer? b) => !(a == b);
 
+    /// <inheritdoc/>
     public int CompareTo(TextPointer? other)
     {
         if (other == null) return 1;
@@ -61,7 +69,7 @@ public class TextPointer : IComparable<TextPointer>
             foreach (var block in blocks)
             {
                 if (found) return;
-                
+
                 if (block is Paragraph p)
                 {
                     if (p == target) { found = true; return; }

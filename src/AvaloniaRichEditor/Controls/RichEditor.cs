@@ -17,6 +17,9 @@ namespace AvaloniaRichEditor.Controls;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 
+/// <summary>A from-scratch rich text editor built on Avalonia's <c>TextLayout</c> engine.
+/// Supports inline formatting, paragraphs, lists, tables, images, HTML/JSON import-export,
+/// find/replace, undo/redo, CJK IME, and editor-mode presets (ReadOnly/Basic/Full).</summary>
 public partial class RichEditor : Control
 {
 
@@ -75,6 +78,7 @@ public partial class RichEditor : Control
     private double _initialImageMouseX;
     private double _imageAspect;
 
+    /// <inheritdoc cref="Document"/>
     public static readonly StyledProperty<FlowDocument?> DocumentProperty =
         AvaloniaProperty.Register<RichEditor, FlowDocument?>(nameof(Document));
 
@@ -86,6 +90,7 @@ public partial class RichEditor : Control
         set => SetValue(DocumentProperty, value);
     }
 
+    /// <inheritdoc cref="IsReadOnly"/>
     public static readonly StyledProperty<bool> IsReadOnlyProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(IsReadOnly));
 
@@ -98,6 +103,7 @@ public partial class RichEditor : Control
         set => SetValue(IsReadOnlyProperty, value);
     }
 
+    /// <inheritdoc cref="SelectionBrush"/>
     public static readonly StyledProperty<IBrush> SelectionBrushProperty =
         AvaloniaProperty.Register<RichEditor, IBrush>(
             nameof(SelectionBrush), new SolidColorBrush(Color.FromArgb(80, 0, 120, 215)));
@@ -109,6 +115,7 @@ public partial class RichEditor : Control
         set => SetValue(SelectionBrushProperty, value);
     }
 
+    /// <inheritdoc cref="CaretBrush"/>
     public static readonly StyledProperty<IBrush> CaretBrushProperty =
         AvaloniaProperty.Register<RichEditor, IBrush>(nameof(CaretBrush), Brushes.Black);
 
@@ -119,6 +126,7 @@ public partial class RichEditor : Control
         set => SetValue(CaretBrushProperty, value);
     }
 
+    /// <inheritdoc cref="DefaultFontFamily"/>
     public static readonly StyledProperty<FontFamily> DefaultFontFamilyProperty =
         AvaloniaProperty.Register<RichEditor, FontFamily>(
             nameof(DefaultFontFamily), FontFamily.Default);
@@ -130,6 +138,7 @@ public partial class RichEditor : Control
         set => SetValue(DefaultFontFamilyProperty, value);
     }
 
+    /// <inheritdoc cref="DefaultFontSize"/>
     public static readonly StyledProperty<double> DefaultFontSizeProperty =
         AvaloniaProperty.Register<RichEditor, double>(nameof(DefaultFontSize), 14.0);
 
@@ -145,6 +154,7 @@ public partial class RichEditor : Control
     private static readonly IReadOnlyList<string> DefaultFontChoices =
         new[] { "Arial", "Times New Roman", "Courier New", "Verdana", "Georgia" };
 
+    /// <inheritdoc cref="FontFamilyChoices"/>
     public static readonly StyledProperty<IReadOnlyList<string>> FontFamilyChoicesProperty =
         AvaloniaProperty.Register<RichEditor, IReadOnlyList<string>>(
             nameof(FontFamilyChoices), DefaultFontChoices);
@@ -174,6 +184,7 @@ public partial class RichEditor : Control
     // paragraph's content signature and wrap width are unchanged.
     private readonly Dictionary<Paragraph, (long sig, double width, Avalonia.Media.TextFormatting.TextLayout layout)> _layoutCache = new();
 
+    /// <summary>Initializes a new <see cref="RichEditor"/> with a single empty paragraph and default settings.</summary>
     public RichEditor()
     {
         Focusable = true;
@@ -199,6 +210,7 @@ public partial class RichEditor : Control
         };
     }
 
+    /// <inheritdoc/>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -233,6 +245,7 @@ public partial class RichEditor : Control
         }
     }
 
+    /// <inheritdoc/>
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
@@ -249,55 +262,55 @@ public partial class RichEditor : Control
         _caretBlock = null; // any press clears the block caret unless an image/table sets it below
 
         if (!IsReadOnly)
-        foreach (var h in _imageHandles)
-        {
-            if (h.rect.Contains(point))
+            foreach (var h in _imageHandles)
             {
-                if (Document != null) PushUndo();
-                _isResizingImage = true;
-                _resizingImage = h.img;
-                _initialImageWidth = h.img.Width > 0 ? h.img.Width : 200;
-                _initialImageHeight = h.img.Height > 0 ? h.img.Height : 200;
-                _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
-                _initialImageMouseX = point.X;
-                e.Pointer.Capture(this);
-                return;
+                if (h.rect.Contains(point))
+                {
+                    if (Document != null) PushUndo();
+                    _isResizingImage = true;
+                    _resizingImage = h.img;
+                    _initialImageWidth = h.img.Width > 0 ? h.img.Width : 200;
+                    _initialImageHeight = h.img.Height > 0 ? h.img.Height : 200;
+                    _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
+                    _initialImageMouseX = point.X;
+                    e.Pointer.Capture(this);
+                    return;
+                }
             }
-        }
 
         if (!IsReadOnly)
-        foreach (var b in _columnBoundaries)
-        {
-            if (b.rect.Contains(point))
+            foreach (var b in _columnBoundaries)
             {
-                if (Document != null) PushUndo();
-                _isResizingColumn = true;
-                _resizingTable = b.tb;
-                _resizingColumnIndex = b.colIndex;
-                _resizingLastColumn = b.colIndex >= b.tb.Columns - 1;
-                _initialMouseX = point.X;
-                _initialColumnWidth = (b.colIndex < b.tb.ColumnWidths.Count) ? b.tb.ColumnWidths[b.colIndex] : 100;
-                _initialNextColumnWidth = (b.colIndex + 1 < b.tb.ColumnWidths.Count) ? b.tb.ColumnWidths[b.colIndex + 1] : 100;
-                e.Pointer.Capture(this);
-                return;
+                if (b.rect.Contains(point))
+                {
+                    if (Document != null) PushUndo();
+                    _isResizingColumn = true;
+                    _resizingTable = b.tb;
+                    _resizingColumnIndex = b.colIndex;
+                    _resizingLastColumn = b.colIndex >= b.tb.Columns - 1;
+                    _initialMouseX = point.X;
+                    _initialColumnWidth = (b.colIndex < b.tb.ColumnWidths.Count) ? b.tb.ColumnWidths[b.colIndex] : 100;
+                    _initialNextColumnWidth = (b.colIndex + 1 < b.tb.ColumnWidths.Count) ? b.tb.ColumnWidths[b.colIndex + 1] : 100;
+                    e.Pointer.Capture(this);
+                    return;
+                }
             }
-        }
 
         if (!IsReadOnly)
-        foreach (var b in _rowBoundaries)
-        {
-            if (b.rect.Contains(point))
+            foreach (var b in _rowBoundaries)
             {
-                if (Document != null) PushUndo();
-                _isResizingRow = true;
-                _resizingRowTable = b.tb;
-                _resizingRowIndex = b.rowIndex;
-                _initialMouseY = point.Y;
-                _initialRowHeight = b.height; // current rendered row height (content- or user-driven)
-                e.Pointer.Capture(this);
-                return;
+                if (b.rect.Contains(point))
+                {
+                    if (Document != null) PushUndo();
+                    _isResizingRow = true;
+                    _resizingRowTable = b.tb;
+                    _resizingRowIndex = b.rowIndex;
+                    _initialMouseY = point.Y;
+                    _initialRowHeight = b.height; // current rendered row height (content- or user-driven)
+                    e.Pointer.Capture(this);
+                    return;
+                }
             }
-        }
 
         // Click on a hyperlink opens it in the default browser instead of placing the caret.
         var linkRun = GetLinkRunAtPoint(point);
@@ -762,11 +775,12 @@ public partial class RichEditor : Control
         return null;
     }
 
+    /// <inheritdoc/>
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
         var point = e.GetPosition(this);
-        
+
         if (_isResizingImage && _resizingImage != null)
         {
             double diff = point.X - _initialImageMouseX;
@@ -873,10 +887,11 @@ public partial class RichEditor : Control
             : new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Ibeam);
     }
 
+    /// <inheritdoc/>
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        
+
         if (_isResizingImage)
         {
             // Pre-resize state already pushed on press; undo restores original size in one step.
@@ -958,6 +973,7 @@ public partial class RichEditor : Control
         CancelFormatPainter();
     }
 
+    /// <inheritdoc/>
     protected override void OnTextInput(TextInputEventArgs e)
     {
         base.OnTextInput(e);
@@ -970,6 +986,7 @@ public partial class RichEditor : Control
         e.Handled = true;
     }
 
+    /// <inheritdoc/>
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -1339,8 +1356,8 @@ public partial class RichEditor : Control
 
     private bool _bringCaretIntoView;
 
-    // Raised whenever the caret moves or the text changes, so a host (status bar/toolbar) can refresh.
-    // (Coarse "something changed" signal; prefer the typed events below for new code.)
+    /// <summary>Raised whenever the caret moves or the document changes, so a host status bar can refresh.
+    /// Coarse signal — prefer <see cref="TextChanged"/> or <see cref="SelectionChanged"/> for new code.</summary>
     public event EventHandler? StatusChanged;
 
     /// <summary>Raised after the document's text, structure, or formatting is modified.</summary>
@@ -1414,7 +1431,8 @@ public partial class RichEditor : Control
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    // Snapshot of the formatting at the caret, for a host toolbar to reflect (active B/I/U, size, etc.).
+    /// <summary>Snapshot of the formatting at the caret position, for toolbar state reflection.
+    /// Obtain via <see cref="GetCaretFormat"/>.</summary>
     public readonly record struct CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike,
         double FontSize, string? FontFamily, TextAlignment Align, ListKind List, int Heading);
 
@@ -1427,6 +1445,7 @@ public partial class RichEditor : Control
         return false;
     }
 
+    /// <summary>Returns the formatting snapshot at the current caret position for toolbar state display.</summary>
     public CaretFormat GetCaretFormat()
     {
         var p = _caretPosition.Paragraph;
@@ -1448,8 +1467,8 @@ public partial class RichEditor : Control
             p?.HeadingLevel ?? 0);
     }
 
-    // Document character count, word count, and the caret's 1-based line/column (treating each paragraph
-    // break and embedded "\n" as a line break). Inline images count as one character.
+    /// <summary>Returns document statistics: total character count, word count, and the caret's
+    /// 1-based (line, column) position. Inline images count as one character.</summary>
     public (int chars, int words, int line, int col) GetStatus()
     {
         if (Document == null) return (0, 0, 1, 1);
@@ -1535,22 +1554,22 @@ public partial class RichEditor : Control
     private void UpdateParents(FlowDocument doc)
     {
         NormalizeBlocks(doc);
-        foreach(var block in doc.Blocks)
+        foreach (var block in doc.Blocks)
         {
             block.Parent = doc;
             if (block is Paragraph p)
             {
-                foreach(var inline in p.Inlines) inline.Parent = p;
+                foreach (var inline in p.Inlines) inline.Parent = p;
             }
             else if (block is TableBlock tb)
             {
-                for(int r=0; r<tb.Rows; r++)
-                for(int c=0; c<tb.Columns; c++)
-                {
-                    var cell = tb.Cells[r][c];
-                    cell.Parent = tb;
-                    foreach(var inline in cell.Inlines) inline.Parent = cell;
-                }
+                for (int r = 0; r < tb.Rows; r++)
+                    for (int c = 0; c < tb.Columns; c++)
+                    {
+                        var cell = tb.Cells[r][c];
+                        cell.Parent = tb;
+                        foreach (var inline in cell.Inlines) inline.Parent = cell;
+                    }
             }
         }
     }
@@ -1793,7 +1812,7 @@ public partial class RichEditor : Control
             if (Document != null) NormalizeBlocks(Document);
             MarkTextChanged();
         }
-        
+
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
     }
@@ -2482,8 +2501,11 @@ public partial class RichEditor : Control
         var result = new List<Paragraph>();
         Paragraph NewPara() => new Paragraph
         {
-            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
-            TextAlignment = p.TextAlignment, Background = p.Background
+            ListType = p.ListType,
+            ListLevel = p.ListLevel,
+            Indent = p.Indent,
+            TextAlignment = p.TextAlignment,
+            Background = p.Background
         };
         var cur = NewPara();
         foreach (var inl in p.Inlines)
@@ -2527,8 +2549,11 @@ public partial class RichEditor : Control
         int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
         var np = new Paragraph
         {
-            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
-            TextAlignment = p.TextAlignment, Background = p.Background
+            ListType = p.ListType,
+            ListLevel = p.ListLevel,
+            Indent = p.Indent,
+            TextAlignment = p.TextAlignment,
+            Background = p.Background
         };
         while (p.Inlines.Count > insertAt)
         {

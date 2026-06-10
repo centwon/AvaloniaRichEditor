@@ -13,7 +13,7 @@ namespace AvaloniaRichEditor.Controls;
 
 // Clipboard paste + external-content ingestion (HTML/CF_HTML, image, Excel/TSV->table) and drag-drop.
 // Part of RichEditor (split out of the main file for readability).
-public partial class RichEditor
+public partial class RichEditor  // doc comment lives on the primary declaration in RichEditor.cs
 {
     /// <summary>Pastes from the system clipboard. Priority: internal rich → external HTML → plain text.</summary>
     public async Task PasteFromClipboardAsync()

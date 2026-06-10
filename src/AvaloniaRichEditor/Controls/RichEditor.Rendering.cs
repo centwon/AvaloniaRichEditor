@@ -39,6 +39,7 @@ public partial class RichEditor
 
     private double _measuredHeight;
 
+    /// <inheritdoc/>
     protected override Size MeasureOverride(Size availableSize)
     {
         base.MeasureOverride(availableSize);
@@ -47,11 +48,11 @@ public partial class RichEditor
         return new Size(w, _measuredHeight);
     }
 
-    // Exposes the editor to assistive technologies (screen readers) as an editable text control via
-    // RichEditorAutomationPeer (IValueProvider over the plain-text content).
+    /// <inheritdoc/>
     protected override Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer()
         => new RichEditorAutomationPeer(this);
 
+    /// <inheritdoc/>
     public override void Render(DrawingContext context)
     {
         // Flush change events after the edit/caret move that scheduled this paint (off the render stack).

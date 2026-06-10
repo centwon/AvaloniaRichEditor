@@ -22,6 +22,7 @@ public enum EditorMode
 // and undo history (see OnReadOnlyChanged).
 public partial class RichEditor
 {
+    /// <inheritdoc cref="EditorMode"/>
     public static readonly StyledProperty<EditorMode> EditorModeProperty =
         AvaloniaProperty.Register<RichEditor, EditorMode>(nameof(EditorMode), EditorMode.Full);
 
@@ -35,6 +36,7 @@ public partial class RichEditor
         set => SetValue(EditorModeProperty, value);
     }
 
+    /// <inheritdoc cref="AllowImages"/>
     public static readonly StyledProperty<bool> AllowImagesProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(AllowImages), true);
 
@@ -45,6 +47,7 @@ public partial class RichEditor
         set => SetValue(AllowImagesProperty, value);
     }
 
+    /// <inheritdoc cref="AllowTables"/>
     public static readonly StyledProperty<bool> AllowTablesProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(AllowTables), true);
 
@@ -55,6 +58,7 @@ public partial class RichEditor
         set => SetValue(AllowTablesProperty, value);
     }
 
+    /// <inheritdoc cref="AllowRichPaste"/>
     public static readonly StyledProperty<bool> AllowRichPasteProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(AllowRichPaste), true);
 
@@ -65,6 +69,7 @@ public partial class RichEditor
         set => SetValue(AllowRichPasteProperty, value);
     }
 
+    /// <inheritdoc cref="AllowFindReplace"/>
     public static readonly StyledProperty<bool> AllowFindReplaceProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(AllowFindReplace), true);
 

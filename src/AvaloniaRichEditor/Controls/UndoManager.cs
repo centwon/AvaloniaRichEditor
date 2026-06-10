@@ -38,17 +38,17 @@ internal class UndoManager
     public void PushState(FlowDocument currentDoc, TextPointer currentCaret)
     {
         if (currentDoc == null || currentCaret == null || currentCaret.Paragraph == null) return;
-        
+
         int caretGlobal = GetGlobalIndex(currentDoc, currentCaret);
         var clonedDoc = currentDoc.Clone();
-        
+
         _undoStack.Push(new UndoState(clonedDoc, caretGlobal, currentCaret.Offset));
-        
+
         if (_undoStack.Count > MaxStackSize)
         {
             var arr = _undoStack.ToArray();
             _undoStack.Clear();
-            for(int i = MaxStackSize - 1; i >= 0; i--) _undoStack.Push(arr[i]);
+            for (int i = MaxStackSize - 1; i >= 0; i--) _undoStack.Push(arr[i]);
         }
 
         _redoStack.Clear();
@@ -125,7 +125,7 @@ internal class UndoManager
             foreach (var block in blocks)
             {
                 if (found) return;
-                
+
                 if (block is Paragraph p)
                 {
                     if (p == pointer.Paragraph) { found = true; return; }

@@ -13,17 +13,16 @@ namespace AvaloniaRichEditor.Formatters;
 [JsonSerializable(typeof(FlowDocumentDto))]
 internal partial class DocumentJsonContext : JsonSerializerContext { }
 
-// Full document persistence: paragraphs, runs (bold/italic/underline/strikethrough/size/color/link),
-// inline images, image blocks and tables (column widths, row heights, cell contents). Images are
-// stored as base64 of their original encoded bytes (RawBytes + MimeType, no re-encoding); bitmaps
-// set without bytes fall back to base64 PNG. A flat BlockDto/InlineDto with a Type discriminator
-// keeps the schema AOT/source-generator friendly (no polymorphic serialization).
+/// <summary>Serializes and deserializes a <see cref="FlowDocument"/> to/from the library's JSON format.
+/// Images are stored as base64 of their original encoded bytes (no re-encoding); bitmaps
+/// set without raw bytes fall back to base64 PNG. Uses AOT-safe source-generated JSON.</summary>
 public static class DocumentSerializer
 {
     /// <summary>Current JSON schema version written by <see cref="Serialize"/>. Bump when the on-disk
     /// shape changes; older documents (no "version" field) are read back as version 1.</summary>
     public const int CurrentSchemaVersion = 1;
 
+    /// <summary>Serializes <paramref name="document"/> to a JSON string.</summary>
     public static string Serialize(FlowDocument document)
     {
         var dto = new FlowDocumentDto { Version = CurrentSchemaVersion };
@@ -31,6 +30,8 @@ public static class DocumentSerializer
         return JsonSerializer.Serialize(dto, DocumentJsonContext.Default.FlowDocumentDto);
     }
 
+    /// <summary>Deserializes a <see cref="FlowDocument"/> from a JSON string produced by <see cref="Serialize"/>.
+    /// Returns an empty document on parse errors. Image decoding is deferred to first render.</summary>
     public static FlowDocument Deserialize(string json)
     {
         var doc = new FlowDocument();
@@ -149,19 +150,19 @@ public static class DocumentSerializer
             case "Divider":
                 return new DividerBlock();
             case "Image":
-            {
-                // Bytes are kept encoded; the Bitmap is decoded lazily on first render.
-                // Legacy documents (no MimeType field) were always PNG-encoded.
-                var ib = new ImageBlock
                 {
-                    Width = d.Width ?? double.NaN,
-                    Height = d.Height ?? double.NaN,
-                    Indent = d.Indent
-                };
-                var bytes = TryFromBase64(d.ImageBase64);
-                if (bytes != null) ib.SetImageData(bytes, d.MimeType ?? "image/png");
-                return ib;
-            }
+                    // Bytes are kept encoded; the Bitmap is decoded lazily on first render.
+                    // Legacy documents (no MimeType field) were always PNG-encoded.
+                    var ib = new ImageBlock
+                    {
+                        Width = d.Width ?? double.NaN,
+                        Height = d.Height ?? double.NaN,
+                        Indent = d.Indent
+                    };
+                    var bytes = TryFromBase64(d.ImageBase64);
+                    if (bytes != null) ib.SetImageData(bytes, d.MimeType ?? "image/png");
+                    return ib;
+                }
             case "Table":
                 var tb = new TableBlock(Math.Max(1, d.Rows), Math.Max(1, d.Columns));
                 tb.Indent = d.Indent;

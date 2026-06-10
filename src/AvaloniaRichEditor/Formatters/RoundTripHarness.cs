@@ -6,9 +6,9 @@ using System.Text.RegularExpressions;
 
 namespace AvaloniaRichEditor.Formatters;
 
-// Phase 0 round-trip harness: for every *.html in inDir, run ParseHtml -> ToHtml and report which
-// rich-text features survived. Heuristic, not a strict DOM diff — it counts feature "tokens" in the
-// input vs the regenerated output so we can see exactly what ToHtml/ParseHtml currently drops.
+/// <summary>Round-trip validation harness: for every <c>*.html</c> in a corpus directory, runs
+/// <c>ParseHtml → ToHtml</c> and reports which rich-text feature tokens survived.
+/// Heuristic (token counts, not strict DOM diff) — useful for CI regression checks.</summary>
 public static class RoundTripHarness
 {
     // (label, regex over HTML) pairs describing the features we care about for HTML round-trip fidelity.
@@ -35,6 +35,8 @@ public static class RoundTripHarness
 
     private static Regex Rx(string p) => new(p, RegexOptions.IgnoreCase);
 
+    /// <summary>Runs the harness against all HTML files in <paramref name="inDir"/>,
+    /// writes regenerated HTML to <paramref name="outDir"/>, and prints a fidelity report to stdout.</summary>
     public static void Run(string inDir, string outDir)
     {
         if (!Directory.Exists(inDir))

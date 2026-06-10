@@ -46,9 +46,12 @@ public class ImageBlock : Block
         _cachedBitmap = decoded;
     }
 
+    /// <summary>Display width in device-independent pixels. <see cref="double.NaN"/> = natural size.</summary>
     public double Width { get; set; } = double.NaN;
+    /// <summary>Display height in device-independent pixels. <see cref="double.NaN"/> = natural size.</summary>
     public double Height { get; set; } = double.NaN;
 
+    /// <inheritdoc/>
     public override TextElement Clone()
     {
         // RawBytes and the decoded bitmap are immutable as used here, so clones (undo snapshots)

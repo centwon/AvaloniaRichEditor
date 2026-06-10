@@ -8,6 +8,9 @@ using System.Text;
 
 namespace AvaloniaRichEditor.Formatters
 {
+    /// <summary>Converts between <see cref="FlowDocument"/> and HTML.
+    /// Supports full round-trip for bold/italic/underline/strikethrough, colors, sizes, alignment,
+    /// headings, lists, tables (with cell merge), images, hyperlinks, and horizontal rules.</summary>
     public static class HtmlDocumentFormatter
     {
         // Tags that introduce/contain block-level structure. Their presence means we must
@@ -25,6 +28,7 @@ namespace AvaloniaRichEditor.Formatters
             "figure","figcaption","header","footer","main","aside","pre","caption"
         };
 
+        /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.</summary>
         public static FlowDocument ParseHtml(string html)
         {
             // Excel's CF_HTML fragment markers can sit *inside* the <table>, so the extracted
@@ -518,7 +522,8 @@ namespace AvaloniaRichEditor.Formatters
                 _ => null
             };
         }
-        
+
+        /// <summary>Serializes <paramref name="doc"/> to an HTML string.</summary>
         public static string ToHtml(FlowDocument doc)
         {
             var sb = new StringBuilder();

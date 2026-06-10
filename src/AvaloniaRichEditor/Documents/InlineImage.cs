@@ -2,9 +2,9 @@ using Avalonia.Media.Imaging;
 
 namespace AvaloniaRichEditor.Documents;
 
-// An image that flows inline within a paragraph's text (e.g. a small logo/emoji icon).
-// It occupies exactly one logical character position in the paragraph (see InlineLen),
-// represented in text layouts by the object-replacement character U+FFFC.
+/// <summary>An image that flows inline within a paragraph's text (e.g. a small icon or logo).
+/// Occupies exactly one logical character position (object-replacement character U+FFFC).
+/// For large block-level pictures use <see cref="ImageBlock"/> instead.</summary>
 public class InlineImage : Inline
 {
     private Bitmap? _cachedBitmap;
@@ -47,9 +47,12 @@ public class InlineImage : Inline
         _cachedBitmap = decoded;
     }
 
+    /// <summary>Display width in device-independent pixels. Default: 16.</summary>
     public double Width { get; set; } = 16;
+    /// <summary>Display height in device-independent pixels. Default: 16.</summary>
     public double Height { get; set; } = 16;
 
+    /// <inheritdoc/>
     public override TextElement Clone()
     {
         // Shares RawBytes/bitmap references — see ImageBlock.Clone.

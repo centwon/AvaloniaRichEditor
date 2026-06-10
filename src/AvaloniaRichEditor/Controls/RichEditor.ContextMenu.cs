@@ -203,6 +203,7 @@ public partial class RichEditor
         AddFormatItems(items, hasSelection);
     }
 
+    /// <summary>Inserts a horizontal rule (<see cref="DividerBlock"/>) at the caret position.</summary>
     public void InsertDivider()
     {
         if (Document == null) return;
