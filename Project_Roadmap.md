@@ -138,19 +138,46 @@
 - [x] README에 플랫폼 지원(Windows 우선, mac/Linux 베스트에포트) 명시.
 - [ ] mac/Linux 실제 스모크 테스트(헤드리스 빌드/렌더) — 환경 없어 **미실행**(N4 CI 매트릭스로 이관).
 
-### 🔵 N3.5: 에디터 모드 (미착수, `0.x` 목표)
-> 하나의 컨트롤로 뷰어·간편 입력·본격 편집을 모두 커버한다. 기능 플래그 조합으로 유연성을 확보하고, `EditorMode` 프리셋으로 편의 제공.
+### 🟢 [완료] N3.5: 에디터 모드 (2026-06-09, `0.x` 목표)
+> 하나의 컨트롤로 뷰어·간편 입력·본격 편집을 모두 커버한다. 기능 플래그 조합으로 유연성을 확보하고, `EditorMode` 프리셋으로 편의 제공. 구현: `RichEditor.Modes.cs`(enum+플래그+프리셋/ReadOnly 핸들러). 기본=Full이라 기존 호스트 동작 불변.
 
-- [ ] **기능 플래그(StyledProperty)**: `AllowImages`, `AllowTables`, `AllowRichPaste`, `AllowFindReplace` 등. 소비자가 개별 기능을 켜고 끌 수 있음.
-- [ ] **`EditorMode` 프리셋**: `ReadOnly`(기존 `IsReadOnly` 통합), `Basic`(텍스트+기본 서식만), `Full`(현재 전체 기능). 프리셋 설정 시 내부 플래그 일괄 적용.
-  | 모드 | 텍스트 입력 | 기본 서식 | 표/이미지 | 리치 붙여넣기 | 찾기/바꾸기 | 컨텍스트 메뉴 |
-  |------|:---------:|:-------:|:-------:|:----------:|:---------:|:----------:|
-  | ReadOnly | — | — | 렌더만 | — | — | 복사만 |
-  | Basic | O | O | — | 평문만 | — | 서식만 |
-  | Full | O | O | O | O | O | 전체 |
-- [ ] **가드 삽입**: 컨텍스트 메뉴 구성, 붙여넣기 경로, 키보드 핸들러, 드래그드롭에 플래그 분기 (~10~15곳).
-- [ ] **ReadOnly 최적화**: Undo 스택 비활성, 입력 이벤트 핸들러 생략, IME 연결 해제.
+- [x] **기능 플래그(StyledProperty)**: `AllowImages`, `AllowTables`, `AllowRichPaste`, `AllowFindReplace`(전부 기본 `true`). 소비자가 개별 기능을 켜고 끌 수 있음.
+- [x] **`EditorMode` 프리셋**: `ReadOnly`(기존 `IsReadOnly` 통합—프리셋이 `IsReadOnly=true` 세팅), `Basic`(텍스트+기본 서식만), `Full`(현재 전체 기능, 기본값). 프리셋 설정 시 내부 플래그 일괄 적용(`ApplyEditorModePreset`, 정적 클래스 핸들러). **개별 플래그가 프리셋을 오버라이드 가능**(프리셋 적용 후 플래그 재설정).
+  | 모드 | 텍스트 입력 | 기본 서식 | 표/이미지 | 리치 붙여넣기 | 찾기/바꾸기 | 컨텍스트 메뉴 | 툴바 |
+  |------|:---------:|:-------:|:-------:|:----------:|:---------:|:----------:|:----:|
+  | ReadOnly | — | — | 렌더만 | — | — | 복사만 | 없음/뷰어 |
+  | Basic | O | O | — | 평문만 | — | 서식만 | 서식 버튼만 |
+  | Full | O | O | O | O | O | 전체 | 전체 |
+  > **툴바 열은 의도(설계 목표)이며 아직 미구현** — 툴바가 라이브러리 밖(데모 `NativeEditor`)에 있어 현재 모드는 동작·컨텍스트 메뉴까지만 지배. 툴바 연동은 N3.6 참고.
+- [x] **가드 삽입**: 붙여넣기 경로(내부리치/HTML→AllowRichPaste, 이미지→AllowImages, TSV표→AllowTables), 드래그드롭(AllowImages), 공개 삽입 명령(`InsertImage`/`InsertTable`/`InsertImageFromFileAsync`), 컨텍스트 메뉴(표/이미지 삽입 항목 조건부), 찾기/바꾸기(`FindNext`/`FindPrev`/`ReplaceNext`/`ReplaceAll` no-op).
+- [x] **ReadOnly 최적화**: Undo 스택 비활성(`UndoManager.Clear`), IME 클라이언트 미연결(`e.Client=null`), 캐럿 블링크 타이머 정지(2Hz 재그리기 제거). `OnReadOnlyChanged` 중앙 처리 — `IsReadOnly`가 프리셋/직접설정 어느 쪽으로 와도 동작.
+- [x] **테스트**: `EditorModeTests.cs` 8건(프리셋 번들, 가드, 플래그 오버라이드 우선순위, ReadOnly undo 클리어). 총 27→**35건 통과**.
+- **참고**: 데모 `NativeEditor`의 자체 `EditorMode{ReadOnly,Simple,Full}`은 의미가 달라(Simple=툴바만 숨김) 그대로 유지.
 - **비용**: 낮음. 구조 변경 없이 기존 코드에 분기 추가.
+
+### 🔵 N3.6: 라이브러리 툴바 승격 + 모드 연동 (미착수, `0.2.0` 목표)
+
+> **배경**: 거의 모든 소비 앱이 서식 툴바를 필요로 한다. 서식 툴바(B/I/U·글꼴·목록·정렬 등)는 컨트롤 *자신의 공개 명령*만 호출하므로 "에디터의 일부"이지 앱 셸이 아니다. 현재는 N0 분리(2026-06-08) 때 툴바가 데모 쪽(`NativeEditor.BuildToolbar`/`MainWindow`)에 남아 라이브러리 밖에 있다. → N3.5 모드 표의 "툴바" 열이 미구현인 근본 원인. 이를 라이브러리로 되돌려 **모드가 동작·컨텍스트 메뉴·툴바를 일관되게 지배**하도록 한다.
+>
+> **경계(중요)**: "서식 툴바"는 라이브러리(선택 계층), "앱 셸"(창·저장/열기·메뉴바·파일 다이얼로그)은 앱. 이 선을 지켜 비대화를 막는다.
+
+- [ ] **3계층 구조** (소비자가 추상화 수준 선택, 셋 다 같은 패키지):
+  | 계층 | 타입 | 용도 |
+  |------|------|------|
+  | ① 코어 | `RichEditor` (현행 유지) | 명령+상태+이벤트만. 완전 커스텀 UI를 만드는 소수용 |
+  | ② 툴바 | `RichEditorToolbar` | 선택적 서식 툴바. `Target`으로 ①을 가리켜 명령 호출+모드 반영. 레이아웃은 소비자가 배치 |
+  | ③ 번들 뷰 | `RichEditorView` | ①+②+스크롤러를 묶은 한 줄 drop-in. 가장 편한 기본값 |
+- [ ] **연결 고리 = `Target` 속성**: `RichEditorToolbar.Target`(`StyledProperty<RichEditor?>`) 하나로 세 방향 연결.
+  - 버튼 → 명령: `Target.ToggleBold()` 등 *기존 공개 명령* 호출.
+  - 모드/플래그 → 가시성: `Target`의 `EditorMode`/`AllowImages`/`AllowTables` 구독 → 표/이미지 버튼 표시 토글(컨텍스트 메뉴가 쓰는 그 플래그 재사용, 새 로직 최소). ReadOnly=숨김/뷰어, Basic=서식 버튼만, Full=전체.
+  - 선택 상태 → 버튼 표시: `Target.SelectionChanged` 구독 → 커서가 굵은 글자 위면 B 버튼 눌림 표시(토글 반영).
+- [ ] **`NativeEditor` 승격**: 데모의 툴바 빌더(`NativeEditor.BuildToolbar`)를 라이브러리로 이관하되 데모 가정(한글 폰트 등) 제거. `FontFamilyChoices` 같은 기존 외부화 패턴 재사용.
+- [ ] **현지화/오버라이드**: 라벨·아이콘 교체, 버튼 구성 커스터마이즈, 또는 툴바 무시(①만 사용) 가능하게.
+- **설계 주의점**:
+  - **선택 상태 반영엔 소폭 신규 API 필요**: 버튼이 명령을 *호출*하는 건 기존 명령으로 끝나지만, 현재 선택의 서식을 *반영*(B 눌림)하려면 "지금 선택이 Bold인가?" 조회 표면이 필요(현재 `SelectionChanged` 이벤트는 있으나 상태 조회 API 없음 → 예: `CurrentFormat` 신설). 비용 중간.
+  - **스크롤러 소유권**: 스크롤은 ③(번들 뷰)만 품고, ①②는 스크롤 비소유로 분리(경계 명확화). 현재 `NativeEditor`가 스크롤러를 품고 있으므로([NativeEditor.cs](samples/AvaloniaRichEditor.Demo/NativeEditor.cs)) 승격 시 ③으로만 이전.
+- **결정 필요**: 0.1.0에 최소 툴바를 포함할지, 0.2.0으로 미룰지(알파의 목표 독자 — 부품 조립형 개발자 vs 그냥 박는 개발자 — 에 따라).
+- **비용**: 낮음~중. 툴바 자체는 데모 프로토타입 존재, 가시성 로직은 기존 플래그 재사용. 선택상태 반영만 소폭 신규.
 
 ### 🟡 N4: 테스트 & CI (기반 완료 2026-06-08)
 - [x] `tests/AvaloniaRichEditor.Tests`(xUnit) 신설 — **19개 테스트 통과**.
@@ -220,6 +247,23 @@
 - **방침**: 하드 제한(입력 거부)이 아니라 **소프트 제한(경고)**. 데이터 손실 없음.
 - **배경**: 가상화 없는 현재 아키텍처에서 편집 모드의 병목은 Undo Clone·입력 처리·이미지 저장 인코딩 3가지인데, ReadOnly에서는 전부 사라지고 Draw 호출만 남는다. 레이아웃 캐싱이 적용되어 있으므로 뷰어 용도는 상한이 훨씬 높음. 경쟁 비교 결과 무료/내장 에디터(웹 기반, WPF RTB 등)도 100장 이상에서 동일하게 고전.
 
+#### N6-7: `.ardx` 패키지 파일 포맷 (선택, **N6-2 의존**)
+
+> **방침**: 기존 JSON **문자열** 계약(`ToJson()`/`LoadJson()`)은 **그대로 유지**(이식·임베드·DB TEXT 컬럼·diff 용도). 그 **위에** 파일 저장용 ZIP 컨테이너 포맷을 **추가**한다. 치환이 아니라 계층 추가.
+
+- [ ] **파일 포맷 `.ardx`** (Avalonia Rich Document, ZIP 컨테이너 — `System.IO.Compression.ZipArchive`, 외부 의존성 없음·AOT 호환):
+  ```text
+  내문서.ardx  (ZIP)
+   ├── document.json   ← 뼈대+텍스트 (ToJson 재사용, 이미지는 인덱스 참조만)
+   ├── images/img_001.jpg / img_002.png  ← 원본 byte[] 그대로
+   └── meta.json       ← (선택) 저자/생성일/schema version
+  ```
+- [ ] **추가 API**: `Task SavePackageAsync(Stream)` / `Task LoadPackageAsync(Stream)`. `ToJson`/`LoadJson`은 변경 없음.
+- [ ] **이미지 엔트리는 무압축(Stored, `CompressionLevel.NoCompression`)**: JPEG/PNG는 이미 압축돼 있어 Deflate해도 용량 ~0%·CPU만 낭비. ZIP의 이득은 "압축"이 아니라 **base64 제거(텍스트 ~33% 오버헤드 소거) + 지연 디코드**.
+- [ ] **지연 로딩**: `document.json`으로 뼈대 먼저 렌더 → 이미지 바이트는 백그라운드(N6-3 비동기와 연계)에서 디코드해 채움.
+- **의존성**: N6-2(원본 byte[] 보존)가 선행 필수 — 그래야 "원본 JPEG 무손실 저장"이 성립(현재는 PNG 재인코딩이라 불가).
+- **참고**: DB(SQLite) 저장 용도라면 `.ardx`보다 `ToJson()` 문자열을 TEXT 컬럼에 넣는 편이 검색 텍스트 분리·쿼리에 유리. `.ardx`는 **파일로 주고받는** 시나리오용.
+
 ---
 
 ### ✅ 배포 전 최종 체크리스트 (`0.1.0-alpha`)
@@ -253,4 +297,4 @@
 - 라이선스 종류(MIT 권장?), 패키지 ID 최종(`AvaloniaRichEditor` 선점 여부 확인), 지원 Avalonia 버전 범위, 크로스플랫폼 보장 수준(알파에서 Windows-only로 갈지).
 
 ---
-**마지막 업데이트**: 2026년 6월 8일 — **N6 성능 최적화 로드맵 추가**: 이미지 저장 모델 전환(`Bitmap`→`byte[]` 중심, 원본 바이트 보존, 지연 Bitmap 캐시), JSON 스키마 버전, 직렬화 비동기화, 이미지 중복 제거(해시), 렌더링 가상화. 백로그에 사용성 후보(블록 여백·DOCX 파싱·마크다운) 및 구조 기반(테스트 보강·크로스플랫폼 실검증) 정리. 외부 의존성(SkiaSharp/ImageSharp) 추가 없이 Avalonia 내장만으로 진행 결정. / 이전: N0~N5 + Phase 1~6 완료 상태
+**마지막 업데이트**: 2026년 6월 9일 — **N3.6 추가**: 라이브러리 툴바 승격 + 모드 연동(3계층 `RichEditor`/`RichEditorToolbar`/`RichEditorView`, `Target` 연결, 모드/플래그→버튼 가시성, 선택상태 반영·스크롤러 주의점). N3.5 모드 표에 "툴바" 열 추가(의도, 미구현). / **N6-7 추가**: `.ardx` 패키지 파일 포맷(ZIP 컨테이너, JSON 문자열 계약 유지 + 파일 저장 API 추가, 이미지 무압축 Stored, N6-2 의존). / **N3.5 에디터 모드 완료**: `EditorMode` 프리셋(ReadOnly/Basic/Full)+기능 플래그 4종(`AllowImages`/`AllowTables`/`AllowRichPaste`/`AllowFindReplace`), 붙여넣기·드롭·삽입명령·컨텍스트메뉴·찾기바꾸기 가드, ReadOnly 최적화(undo/IME/캐럿타이머 비활성). 테스트 27→35건. / 이전: 2026년 6월 8일 — **N6 성능 최적화 로드맵 추가**: 이미지 저장 모델 전환(`Bitmap`→`byte[]` 중심, 원본 바이트 보존, 지연 Bitmap 캐시), JSON 스키마 버전, 직렬화 비동기화, 이미지 중복 제거(해시), 렌더링 가상화. 백로그에 사용성 후보(블록 여백·DOCX 파싱·마크다운) 및 구조 기반(테스트 보강·크로스플랫폼 실검증) 정리. 외부 의존성(SkiaSharp/ImageSharp) 추가 없이 Avalonia 내장만으로 진행 결정. / 이전: N0~N5 + Phase 1~6 완료 상태

@@ -24,7 +24,8 @@ public partial class RichEditor
 
         // 1. Internal rich clipboard: if the system text still matches what we last copied
         //    in-app, paste the formatted version (blocks/tables when available, else runs).
-        if (_internalClipboardText != null && text == _internalClipboardText &&
+        //    Skipped when rich paste is disabled (Basic mode) — falls through to plain text below.
+        if (AllowRichPaste && _internalClipboardText != null && text == _internalClipboardText &&
             (_internalClipboardBlocks != null || _internalClipboard != null))
         {
             PushUndo();
@@ -41,7 +42,7 @@ public partial class RichEditor
         }
 
         // 2. External HTML (from browsers, Word, etc.): parse and insert with formatting.
-        string? html = await TryGetHtmlAsync(clipboard);
+        string? html = AllowRichPaste ? await TryGetHtmlAsync(clipboard) : null;
         if (!string.IsNullOrEmpty(html))
         {
             // Malformed/exotic HTML can make the parser throw; fall through to the plain-text
@@ -62,7 +63,7 @@ public partial class RichEditor
         }
 
         // 3. Bitmap image on the clipboard (e.g. a screenshot or copied picture).
-        var clipImage = await TryGetImageAsync(clipboard);
+        var clipImage = AllowImages ? await TryGetImageAsync(clipboard) : null;
         if (clipImage != null)
         {
             InsertImage(Downscale(clipImage));
@@ -70,7 +71,7 @@ public partial class RichEditor
         }
 
         // 4. Tab-separated text (e.g. Excel/HWP cells copied without HTML) -> rebuild as a table.
-        if (!string.IsNullOrEmpty(text) && LooksTabular(text))
+        if (AllowTables && !string.IsNullOrEmpty(text) && LooksTabular(text))
         {
             PushUndo();
             InsertTableFromTsv(text);
@@ -127,12 +128,12 @@ public partial class RichEditor
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = (!IsReadOnly && e.DataTransfer.Contains(DataFormat.File)) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.DragEffects = (!IsReadOnly && AllowImages && e.DataTransfer.Contains(DataFormat.File)) ? DragDropEffects.Copy : DragDropEffects.None;
     }
 
     private void OnDrop(object? sender, DragEventArgs e)
     {
-        if (IsReadOnly) return;
+        if (IsReadOnly || !AllowImages) return;
         var files = e.DataTransfer.TryGetFiles();
         if (files == null) return;
         foreach (var f in files)

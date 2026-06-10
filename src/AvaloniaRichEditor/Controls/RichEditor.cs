@@ -156,6 +156,10 @@ public partial class RichEditor : Control
     static RichEditor()
     {
         AffectsRender<RichEditor>(DocumentProperty, SelectionBrushProperty, CaretBrushProperty);
+        // EditorMode preset writes the feature-flag bundle; ReadOnly drives caret/IME/undo optimization
+        // (whether it arrives via the preset or a direct IsReadOnly assignment). See RichEditor.Modes.cs.
+        EditorModeProperty.Changed.AddClassHandler<RichEditor>((x, e) => x.ApplyEditorModePreset(e.GetNewValue<EditorMode>()));
+        IsReadOnlyProperty.Changed.AddClassHandler<RichEditor>((x, e) => x.OnReadOnlyChanged(e.GetNewValue<bool>()));
     }
 
     private readonly RtbInputMethodClient _imClient;
@@ -1470,7 +1474,8 @@ public partial class RichEditor : Control
 
     private void OnTextInputMethodClientRequested(object? sender, Avalonia.Input.TextInput.TextInputMethodClientRequestedEventArgs e)
     {
-        e.Client = _imClient;
+        // Don't advertise an input-method client in ReadOnly mode — a viewer never composes text.
+        e.Client = IsReadOnly ? null : _imClient;
     }
 
     // Caret position in this control's coordinate space, used to place the IME candidate window.
@@ -2314,7 +2319,7 @@ public partial class RichEditor : Control
 
     public void InsertImage(Avalonia.Media.Imaging.Bitmap image)
     {
-        if (Document == null) return;
+        if (Document == null || IsReadOnly || !AllowImages) return;
         PushUndo();
         var ib = new ImageBlock { Image = image, Width = image.Size.Width, Height = image.Size.Height };
         InsertBlockAtCaret(ib);
@@ -2323,7 +2328,7 @@ public partial class RichEditor : Control
 
     public void InsertTable(int rows, int cols)
     {
-        if (Document == null) return;
+        if (Document == null || IsReadOnly || !AllowTables) return;
         PushUndo();
         // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
         // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
@@ -2738,7 +2743,7 @@ public partial class RichEditor : Control
 
     public bool FindNext(string query, bool matchCase)
     {
-        if (Document == null || string.IsNullOrEmpty(query)) return false;
+        if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
         var paras = GetAllParagraphsInOrder();
         int pi = _selectionEnd.Paragraph != null ? paras.IndexOf(_selectionEnd.Paragraph) : -1;
         return FindCore(query, matchCase, backwards: false, wrap: true, fromPi: pi, fromOff: _selectionEnd.Offset);
@@ -2746,7 +2751,7 @@ public partial class RichEditor : Control
 
     public bool FindPrev(string query, bool matchCase)
     {
-        if (Document == null || string.IsNullOrEmpty(query)) return false;
+        if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
         var paras = GetAllParagraphsInOrder();
         int pi = _selectionStart.Paragraph != null ? paras.IndexOf(_selectionStart.Paragraph) : -1;
         return FindCore(query, matchCase, backwards: true, wrap: true, fromPi: pi, fromOff: _selectionStart.Offset);
@@ -2755,7 +2760,7 @@ public partial class RichEditor : Control
     // Replaces the current selection if it equals the query, then advances to the next match.
     public bool ReplaceNext(string query, string replacement, bool matchCase)
     {
-        if (Document == null || string.IsNullOrEmpty(query)) return false;
+        if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
         var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         bool selMatches = _selectionStart.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0
             && string.Equals(new TextRange(_selectionStart, _selectionEnd).GetText(), query, cmp);
@@ -2770,7 +2775,7 @@ public partial class RichEditor : Control
 
     public int ReplaceAll(string query, string replacement, bool matchCase)
     {
-        if (Document == null || string.IsNullOrEmpty(query)) return 0;
+        if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return 0;
         var paras = GetAllParagraphsInOrder();
         if (paras.Count == 0) return 0;
         PushUndo();
@@ -3141,6 +3146,7 @@ public partial class RichEditor : Control
 
     public async Task InsertImageFromFileAsync()
     {
+        if (IsReadOnly || !AllowImages) return;
         var top = TopLevel.GetTopLevel(this);
         if (top == null) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions

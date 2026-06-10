@@ -25,6 +25,13 @@ internal class UndoManager
     public bool CanUndo => _undoStack.Count > 0;
     public bool CanRedo => _redoStack.Count > 0;
 
+    // Drops all history (e.g. when switching into ReadOnly mode, where no edits can occur).
+    public void Clear()
+    {
+        _undoStack.Clear();
+        _redoStack.Clear();
+    }
+
     // Limit stack size to prevent memory leaks in our MVP
     private const int MaxStackSize = 50;
 
