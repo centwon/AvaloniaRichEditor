@@ -231,10 +231,11 @@ public partial class RichEditor
         items.Add(Mi("모두 선택", SelectAll));
         items.Add(Mi("실행 취소", DoUndo));
         items.Add(Mi("다시 실행", DoRedo));
-        items.Add(new Separator());
-        items.Add(Mi("표 삽입 (2x2)", () => InsertTable(2, 2)));
-        items.Add(Mi("이미지 삽입...", () => { _ = InsertImageFromFileAsync(); }));
-        items.Add(Mi("구분선 삽입", InsertDivider));
+        // Block-insert items appear only when the corresponding feature flag is enabled (N3.5).
+        if (AllowTables || AllowImages) items.Add(new Separator());
+        if (AllowTables) items.Add(Mi("표 삽입 (2x2)", () => InsertTable(2, 2)));
+        if (AllowImages) items.Add(Mi("이미지 삽입...", () => { _ = InsertImageFromFileAsync(); }));
+        if (AllowTables || AllowImages) items.Add(Mi("구분선 삽입", InsertDivider));
     }
 
     private void BuildImageMenu(List<Control> items, ImageBlock img)
