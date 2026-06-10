@@ -110,4 +110,38 @@ public class RichEditorControlTests
         ed.Clear();
         Assert.Equal("", ed.GetPlainText().Trim());
     }
+
+    [AvaloniaFact]
+    public async System.Threading.Tasks.Task ToJsonAsync_LoadJsonAsync_RoundTrips()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p>async <b>data</b></p>");
+        // Include an image so the background path covers RawBytes serialization too.
+        var ib = new ImageBlock { Width = 10, Height = 10 };
+        ib.SetImageData(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }, "image/jpeg");
+        ed.Document!.Blocks.Add(ib);
+
+        var json = await ed.ToJsonAsync();
+
+        var ed2 = new RichEditor();
+        await ed2.LoadJsonAsync(json);
+        Assert.Equal("async data", FirstParagraphText(ed2));
+        var ib2 = Assert.IsType<ImageBlock>(ed2.Document!.Blocks.First(b => b is ImageBlock));
+        Assert.Equal("image/jpeg", ib2.MimeType);
+    }
+
+    [AvaloniaFact]
+    public async System.Threading.Tasks.Task ToJsonAsync_SnapshotIgnoresLaterEdits()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p>before</p>");
+
+        var task = ed.ToJsonAsync();   // snapshot taken synchronously here
+        ed.FocusDocumentEnd();
+        ed.InsertText("-after");        // must not appear in the snapshot
+
+        var json = await task;
+        Assert.Contains("before", json);
+        Assert.DoesNotContain("-after", json);
+    }
 }

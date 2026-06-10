@@ -324,7 +324,7 @@ public partial class MainWindow : Window
 
         if (file != null)
         {
-            string json = AvaloniaRichEditor.Formatters.DocumentSerializer.Serialize(richTextBox.Document);
+            string json = await richTextBox.ToJsonAsync(); // serialize off the UI thread (N6-3)
             using var stream = await file.OpenWriteAsync();
             using var writer = new System.IO.StreamWriter(stream);
             await writer.WriteAsync(json);
@@ -352,10 +352,7 @@ public partial class MainWindow : Window
 
                 var richTextBox = this.FindControl<RichEditor>("RichTextBox");
                 if (richTextBox != null)
-                {
-                    richTextBox.Document = AvaloniaRichEditor.Formatters.DocumentSerializer.Deserialize(json);
-                    richTextBox.InvalidateVisual();
-                }
+                    await richTextBox.LoadJsonAsync(json); // parse off the UI thread (N6-3)
             }
             catch (System.Exception ex)
             {

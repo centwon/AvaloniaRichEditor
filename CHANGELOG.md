@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   original format. Preferred over `InsertImage(Bitmap)` when bytes are available.
 - Image context menu: 1/2, 1/3, 1/4 scale presets (relative to natural size; display size only,
   no re-encoding).
+- `RichEditor.ToJsonAsync()` / `LoadJsonAsync()` — JSON save/load on a background thread (N6-3).
+  `ToJsonAsync` snapshots the document first, so edits made during serialization can't tear the
+  output. The synchronous `ToJson`/`LoadJson` remain unchanged.
 
 ## [0.1.0-alpha] - 2026-06-10
 

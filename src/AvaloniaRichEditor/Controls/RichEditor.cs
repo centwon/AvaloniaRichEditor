@@ -2202,6 +2202,24 @@ public partial class RichEditor : Control
     /// <summary>Replaces the document with one loaded from the library's JSON format.</summary>
     public void LoadJson(string json) => LoadDocument(Formatters.DocumentSerializer.Deserialize(json));
 
+    /// <summary>Serializes the document to JSON on a background thread, keeping the UI responsive
+    /// for large documents. The document is snapshotted (cloned) on the calling thread first, so
+    /// edits made while serialization runs can't tear the output. Call from the UI thread.</summary>
+    public Task<string> ToJsonAsync()
+    {
+        if (Document == null) return Task.FromResult("");
+        var snapshot = Document.Clone(); // cheap: image bytes/bitmaps are shared by reference (N6-2)
+        return Task.Run(() => Formatters.DocumentSerializer.Serialize(snapshot));
+    }
+
+    /// <summary>Parses JSON into a document on a background thread (image decoding is already
+    /// deferred to first render), then swaps it in. Call (and await) from the UI thread.</summary>
+    public async Task LoadJsonAsync(string json)
+    {
+        var doc = await Task.Run(() => Formatters.DocumentSerializer.Deserialize(json));
+        LoadDocument(doc);
+    }
+
     /// <summary>Clears the document to a single empty paragraph.</summary>
     public void Clear() => LoadDocument(new FlowDocument());
 
