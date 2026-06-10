@@ -237,7 +237,8 @@ public partial class RichEditor
     }
 
     // Strips the Windows CF_HTML ("HTML Format") header/fragment markers down to the markup.
-    private static string ExtractHtmlFragment(string raw)
+    // (internal for test coverage — CF_HTML stripping is a documented Windows-specific pitfall.)
+    internal static string ExtractHtmlFragment(string raw)
     {
         const string startTag = "<!--StartFragment-->";
         const string endTag = "<!--EndFragment-->";
