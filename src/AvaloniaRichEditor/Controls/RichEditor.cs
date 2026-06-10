@@ -3117,7 +3117,7 @@ public partial class RichEditor : Control
     private async Task EditHyperlinkAsync(string? current, Run? targetRun)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
-        string? url = await InputDialog.ShowAsync(owner, "하이퍼링크", current ?? "https://");
+        string? url = await InputDialog.ShowAsync(owner, Loc("Hyperlink"), current ?? "https://");
         if (string.IsNullOrWhiteSpace(url)) return;
         SetHyperlink(url, targetRun);
     }
@@ -3147,7 +3147,7 @@ public partial class RichEditor : Control
         if (top == null) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
         {
-            Title = "이미지 선택",
+            Title = Loc("SelectImage"),
             AllowMultiple = false,
             FileTypeFilter = new[] { Avalonia.Platform.Storage.FilePickerFileTypes.ImageAll }
         });
@@ -3176,7 +3176,7 @@ public partial class RichEditor : Control
         if (top == null) return;
         var file = await top.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
-            Title = "이미지 저장",
+            Title = Loc("SaveImage"),
             DefaultExtension = "png",
             SuggestedFileName = "image.png"
         });
@@ -3212,7 +3212,7 @@ public partial class RichEditor : Control
         if (top == null) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
         {
-            Title = "이미지 선택",
+            Title = Loc("SelectImage"),
             AllowMultiple = false,
             FileTypeFilter = new[] { Avalonia.Platform.Storage.FilePickerFileTypes.ImageAll }
         });
@@ -3245,7 +3245,7 @@ public partial class RichEditor : Control
         if (top == null) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
         {
-            Title = "이미지 선택",
+            Title = Loc("SelectImage"),
             AllowMultiple = false,
             FileTypeFilter = new[] { Avalonia.Platform.Storage.FilePickerFileTypes.ImageAll }
         });

@@ -49,14 +49,14 @@
         <Border Grid.Row="0" Background="#EEEEEE" Padding="10">
             <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
         </Border>
-        
+
         <StackPanel Grid.Row="1" Name="ToolbarRoot" Orientation="Vertical" Background="#F5F6F8">
-            <!-- File / insert (+ view zoom on the right) -->
-            <DockPanel Margin="8,7,8,3">
+            <!-- App shell: file actions (+ view zoom on the right). Tooltips/labels are localized in code-behind. -->
+            <DockPanel Margin="8,7,8,0">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="−" ToolTip.Tip="축소 (Ctrl+-)" Click="ZoomOut_Click"/>
-                    <ComboBox Name="ZoomCombo" Width="84" SelectedIndex="0" SelectionChanged="ZoomCombo_SelectionChanged" ToolTip.Tip="보기 배율 (Ctrl+휠, Ctrl+0=맞춤)">
-                        <ComboBoxItem>맞춤</ComboBoxItem>
+                    <Button Name="ZoomOutButton" Content="−" Click="ZoomOut_Click"/>
+                    <ComboBox Name="ZoomCombo" Width="84" SelectedIndex="0" SelectionChanged="ZoomCombo_SelectionChanged">
+                        <ComboBoxItem Name="ZoomFitItem">맞춤</ComboBoxItem>
                         <ComboBoxItem>50%</ComboBoxItem>
                         <ComboBoxItem>75%</ComboBoxItem>
                         <ComboBoxItem>100%</ComboBoxItem>
@@ -64,87 +64,31 @@
                         <ComboBoxItem>150%</ComboBoxItem>
                         <ComboBoxItem>200%</ComboBoxItem>
                     </ComboBox>
-                    <Button Content="+" ToolTip.Tip="확대 (Ctrl++)" Click="ZoomIn_Click"/>
+                    <Button Name="ZoomInButton" Content="+" Click="ZoomIn_Click"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <Button Name="SaveButton" Content="💾" FontSize="15" ToolTip.Tip="JSON으로 저장" Click="SaveButton_Click"/>
-                    <Button Name="LoadButton" Content="📂" FontSize="15" ToolTip.Tip="JSON 불러오기" Click="LoadButton_Click"/>
+                    <Button Name="SaveButton" Content="💾" FontSize="15" Click="SaveButton_Click"/>
+                    <Button Name="LoadButton" Content="📂" FontSize="15" Click="LoadButton_Click"/>
                     <Border Classes="div"/>
-                    <Button Name="ExportHtmlButton" Content="📤" FontSize="15" ToolTip.Tip="HTML로 내보내기" Click="ExportHtmlButton_Click"/>
-                    <Border Classes="div"/>
-                    <Button Name="InsertImageButton" Content="🖼" FontSize="15" ToolTip.Tip="이미지 삽입" Click="InsertImageButton_Click"/>
-                    <Button Name="TableButton" Content="▦ ▾" ToolTip.Tip="표 삽입 (격자에서 크기 선택)"/>
-                    <Button Content="―" ToolTip.Tip="가로 구분선" Click="DividerButton_Click"/>
+                    <Button Name="ExportHtmlButton" Content="📤" FontSize="15" Click="ExportHtmlButton_Click"/>
                 </StackPanel>
             </DockPanel>
 
-            <!-- Formatting -->
-            <WrapPanel Margin="8,0,8,7">
-                <Button Name="BoldButton" Content="B" FontWeight="Bold" ToolTip.Tip="굵게 (Ctrl+B)" Click="BoldButton_Click"/>
-                <Button Name="ItalicButton" Content="I" FontStyle="Italic" ToolTip.Tip="기울임 (Ctrl+I)" Click="ItalicButton_Click"/>
-                <Button Name="UnderlineButton" ToolTip.Tip="밑줄 (Ctrl+U)" Click="UnderlineButton_Click">
-                    <TextBlock Text="U" TextDecorations="Underline"/>
-                </Button>
-                <Button Name="StrikeButton" ToolTip.Tip="취소선" Click="StrikethroughButton_Click">
-                    <TextBlock Text="S" TextDecorations="Strikethrough"/>
-                </Button>
-                <Button Name="FormatPainterButton" Content="🖌" FontSize="14" ToolTip.Tip="서식 복사 (선택 후 클릭 → 대상 선택)" Click="FormatPainterButton_Click"/>
-                <Border Classes="div"/>
-                <Button Name="TextColorButton" Content="글자색 ▾" ToolTip.Tip="글자 색"/>
-                <Button Name="HighlightButton" Content="형광펜 ▾" ToolTip.Tip="형광펜(배경색)"/>
-                <Border Classes="div"/>
-                <ComboBox Name="FontFamilyComboBox" SelectedIndex="0" SelectionChanged="FontFamilyComboBox_SelectionChanged" ToolTip.Tip="글꼴">
-                    <ComboBoxItem>Malgun Gothic</ComboBoxItem>
-                    <ComboBoxItem>Gulim</ComboBoxItem>
-                    <ComboBoxItem>Batang</ComboBoxItem>
-                    <ComboBoxItem>Dotum</ComboBoxItem>
-                    <ComboBoxItem>Arial</ComboBoxItem>
-                    <ComboBoxItem>Times New Roman</ComboBoxItem>
-                </ComboBox>
-                <ComboBox Name="FontSizeComboBox" SelectedIndex="1" SelectionChanged="FontSizeComboBox_SelectionChanged" ToolTip.Tip="글자 크기">
-                    <ComboBoxItem>12</ComboBoxItem>
-                    <ComboBoxItem>14</ComboBoxItem>
-                    <ComboBoxItem>18</ComboBoxItem>
-                    <ComboBoxItem>24</ComboBoxItem>
-                    <ComboBoxItem>32</ComboBoxItem>
-                </ComboBox>
-                <Border Classes="div"/>
-                <ComboBox Name="HeadingCombo" SelectedIndex="0" SelectionChanged="HeadingCombo_SelectionChanged" ToolTip.Tip="문단 스타일">
-                    <ComboBoxItem>본문</ComboBoxItem>
-                    <ComboBoxItem>제목 1</ComboBoxItem>
-                    <ComboBoxItem>제목 2</ComboBoxItem>
-                    <ComboBoxItem>제목 3</ComboBoxItem>
-                </ComboBox>
-                <Border Classes="div"/>
-                <ComboBox Name="AlignCombo" SelectedIndex="0" SelectionChanged="AlignCombo_SelectionChanged" ToolTip.Tip="정렬">
-                    <ComboBoxItem>왼쪽 정렬</ComboBoxItem>
-                    <ComboBoxItem>가운데 정렬</ComboBoxItem>
-                    <ComboBoxItem>오른쪽 정렬</ComboBoxItem>
-                </ComboBox>
-                <Border Classes="div"/>
-                <Button Name="BulletBtn" Content="•" ToolTip.Tip="글머리표 목록" Click="BulletButton_Click"/>
-                <Button Name="NumberBtn" Content="1." ToolTip.Tip="번호 목록" Click="NumberingButton_Click"/>
-                <Button Content="→|" ToolTip.Tip="들여쓰기" Click="IndentInc_Click"/>
-                <Button Content="|←" ToolTip.Tip="내어쓰기" Click="IndentDec_Click"/>
-                <Border Classes="div"/>
-                <ComboBox Name="SpacingCombo" SelectedIndex="0" SelectionChanged="SpacingCombo_SelectionChanged" ToolTip.Tip="줄 간격">
-                    <ComboBoxItem>줄간격 1.0</ComboBoxItem>
-                    <ComboBoxItem>줄간격 1.5</ComboBoxItem>
-                    <ComboBoxItem>줄간격 2.0</ComboBoxItem>
-                </ComboBox>
-            </WrapPanel>
+            <!-- Formatting strip: the library's toolbar (promoted from this demo, roadmap N3.6).
+                 Target is wired in code-behind; buttons, flyouts and state reflection live in the library. -->
+            <controls:RichEditorToolbar Name="EditorToolbar"/>
         </StackPanel>
 
         <Border Grid.Row="2" Name="FindBar" IsVisible="False" Background="#F5F5F5" Padding="10,6" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Text="찾기:" VerticalAlignment="Center"/>
+                <TextBlock Name="FindLabel" Text="찾기:" VerticalAlignment="Center"/>
                 <TextBox Name="FindBox" Width="160"/>
-                <Button Content="이전" Click="FindPrev_Click"/>
-                <Button Content="다음" Click="FindNext_Click"/>
-                <TextBlock Text="바꾸기:" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                <Button Name="FindPrevButton" Content="이전" Click="FindPrev_Click"/>
+                <Button Name="FindNextButton" Content="다음" Click="FindNext_Click"/>
+                <TextBlock Name="ReplaceLabel" Text="바꾸기:" VerticalAlignment="Center" Margin="12,0,0,0"/>
                 <TextBox Name="ReplaceBox" Width="160"/>
-                <Button Content="바꾸기" Click="ReplaceNext_Click"/>
-                <Button Content="모두 바꾸기" Click="ReplaceAll_Click"/>
+                <Button Name="ReplaceNextButton" Content="바꾸기" Click="ReplaceNext_Click"/>
+                <Button Name="ReplaceAllButton" Content="모두 바꾸기" Click="ReplaceAll_Click"/>
                 <CheckBox Name="MatchCaseBox" Content="대소문자 구분" VerticalAlignment="Center" Margin="8,0,0,0"/>
                 <TextBlock Name="FindStatus" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="Gray"/>
                 <Button Content="✕" Click="CloseFind_Click" Margin="8,0,0,0"/>

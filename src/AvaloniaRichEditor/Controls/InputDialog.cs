@@ -13,8 +13,8 @@ internal static class InputDialog
         var box = new TextBox { Text = initial, PlaceholderText = "https://...", Width = 320 };
         string? result = null;
 
-        var ok = new Button { Content = "확인", IsDefault = true };
-        var cancel = new Button { Content = "취소", IsCancel = true };
+        var ok = new Button { Content = RichEditorLocalization.GetString("OK"), IsDefault = true };
+        var cancel = new Button { Content = RichEditorLocalization.GetString("Cancel"), IsCancel = true };
 
         var dialog = new Window
         {

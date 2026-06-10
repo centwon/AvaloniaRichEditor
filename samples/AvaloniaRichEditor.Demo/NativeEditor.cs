@@ -101,67 +101,19 @@ public class NativeEditor : UserControl
 
     // ---- toolbar ----
 
+    // The formatting strip is the library's RichEditorToolbar (promoted from this demo, roadmap N3.6);
+    // only the print button is NativeEditor-specific. The wrapping Border lets Simple mode hide the
+    // whole row without fighting the toolbar's own flag-driven visibility.
     private Border BuildToolbar()
     {
-        var panel = new WrapPanel { Orientation = Orientation.Horizontal };
+        var print = new Button { Content = "🖨", Margin = new Thickness(2), Padding = new Thickness(6, 2), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        print.Click += (_, _) => { _ = PrintAsync(); };
 
-        void Add(Control c) => panel.Children.Add(c);
-        Button B(string content, Action click)
-        {
-            var b = new Button { Content = content, Margin = new Thickness(2), Padding = new Thickness(6, 2) };
-            b.Click += (_, _) => click();
-            return b;
-        }
+        var dock = new DockPanel();
+        DockPanel.SetDock(print, Dock.Right);
+        dock.Children.Add(print);
+        dock.Children.Add(new RichEditorToolbar { Target = _editor });
 
-        Add(B("B", _editor.ToggleBold));
-        Add(B("I", _editor.ToggleItalic));
-        Add(B("U", _editor.ToggleUnderline));
-        Add(B("S", _editor.ToggleStrikethrough));
-
-        var fonts = new ComboBox { Margin = new Thickness(6, 2, 2, 2), MinWidth = 120 };
-        foreach (var f in new[] { "Malgun Gothic", "Gulim", "Batang", "Dotum", "Arial", "Times New Roman" })
-            fonts.Items.Add(new ComboBoxItem { Content = f });
-        fonts.SelectionChanged += (_, _) => { if (fonts.SelectedItem is ComboBoxItem it && it.Content is string fam) _editor.SetFontFamily(fam); };
-        Add(fonts);
-
-        var sizes = new ComboBox { Margin = new Thickness(2), MinWidth = 60 };
-        foreach (var s in new[] { 10.0, 12, 14, 18, 24, 32 })
-            sizes.Items.Add(new ComboBoxItem { Content = s.ToString() });
-        sizes.SelectionChanged += (_, _) => { if (sizes.SelectedItem is ComboBoxItem it && double.TryParse(it.Content?.ToString(), out var sz)) _editor.SetFontSize(sz); };
-        Add(sizes);
-
-        Add(B("A", () => _editor.SetForeground(Brushes.Black)));
-        Add(B("A!", () => _editor.SetForeground(Brushes.Red)));
-        Add(B("🖍", () => _editor.SetHighlight(Brushes.Yellow)));
-        Add(B("🖍✕", () => _editor.SetHighlight(null)));
-
-        Add(B("⯇", () => _editor.SetTextAlignment(TextAlignment.Left)));
-        Add(B("≡", () => _editor.SetTextAlignment(TextAlignment.Center)));
-        Add(B("⯈", () => _editor.SetTextAlignment(TextAlignment.Right)));
-
-        Add(B("•", _editor.ToggleBullet));
-        Add(B("1.", _editor.ToggleNumbering));
-        Add(B("→|", () => _editor.Indent(20)));
-        Add(B("|←", () => _editor.Indent(-20)));
-
-        Add(B("H1", () => _editor.SetHeading(1)));
-        Add(B("H2", () => _editor.SetHeading(2)));
-        Add(B("H3", () => _editor.SetHeading(3)));
-        Add(B("¶", () => _editor.SetHeading(0)));
-
-        Add(B("―", _editor.InsertDivider));
-        Add(B("표", () => _editor.InsertTable(3, 3)));
-        Add(B("🖼", () => { _ = _editor.InsertImageFromFileAsync(); }));
-
-        Add(B("↶", _editor.Undo));
-        Add(B("↷", _editor.Redo));
-        Add(B("🖨", () => { _ = PrintAsync(); }));
-
-        return new Border
-        {
-            Background = new SolidColorBrush(Color.Parse("#DDDDDD")),
-            Padding = new Thickness(4),
-            Child = panel
-        };
+        return new Border { Background = new SolidColorBrush(Color.Parse("#DDDDDD")), Child = dock };
     }
 }
