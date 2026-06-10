@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
@@ -52,6 +53,32 @@ public partial class RichEditor
     protected override Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer()
         => new RichEditorAutomationPeer(this);
 
+    // Draw-culling redraw contract: blocks outside the viewport are skipped in Render, so scrolling
+    // must re-run Render for blocks entering the viewport to appear. Avalonia happens to re-render
+    // scrolled content already; subscribing makes that an explicit guarantee instead of an accident.
+    private ScrollViewer? _cullScroller;
+
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _cullScroller = this.FindAncestorOfType<ScrollViewer>();
+        if (_cullScroller != null) _cullScroller.ScrollChanged += OnHostScrollChanged;
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        if (_cullScroller != null)
+        {
+            _cullScroller.ScrollChanged -= OnHostScrollChanged;
+            _cullScroller = null;
+        }
+    }
+
+    private void OnHostScrollChanged(object? sender, ScrollChangedEventArgs e) => InvalidateVisual();
+
     /// <inheritdoc/>
     public override void Render(DrawingContext context)
     {
@@ -89,6 +116,23 @@ public partial class RichEditor
         Rect? blockCaretRect = null; // when a block caret is active, the image/table it sits in front of
         int orderedIndex = 0; // running counter for consecutive ordered-list paragraphs
 
+        // Draw culling (N6-5): blocks fully outside the hosting ScrollViewer's viewport advance
+        // yOffset without issuing draw commands, so the scene the render thread rasterizes stays
+        // viewport-sized regardless of document length. Layout math, caret geometry, and hit-testing
+        // are unaffected (hit-test paths walk the document independently of what was drawn). The
+        // block holding the caret or selection anchor always draws so _lastCaretPoint/BringIntoView
+        // stay correct even when the caret is scrolled off-screen. No ScrollViewer => no culling.
+        double visTop = double.NegativeInfinity, visBottom = double.PositiveInfinity;
+        if (this.FindAncestorOfType<ScrollViewer>() is { } scroller
+            && scroller.TranslatePoint(default, this) is { } vt
+            && scroller.TranslatePoint(new Point(0, scroller.Viewport.Height), this) is { } vb)
+        {
+            // TranslatePoint runs the full transform chain, so zoom (LayoutTransform) is handled.
+            double slack = Math.Max(400, vb.Y - vt.Y); // one viewport of slack on each side
+            visTop = vt.Y - slack;
+            visBottom = vb.Y + slack;
+        }
+
         foreach (var block in Document.Blocks)
         {
             if (block is TableBlock tb)
@@ -99,6 +143,19 @@ public partial class RichEditor
                 var tl = LayoutTable(tb, startX, tableTop);
                 if (ReferenceEquals(tb, _caretBlock))
                     blockCaretRect = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
+
+                // Cull check: skip cell draws + resize-handle registration when fully off-screen
+                // (off-screen handles can't be grabbed). Geometry (tl) is still computed above so
+                // yOffset advances identically. A table being edited (caret in a cell) always draws.
+                bool tbVisible = (tableTop + tl.TotalHeight >= visTop && tableTop <= visBottom)
+                    || _caretPosition?.Paragraph?.Parent == tb
+                    || ReferenceEquals(tb, _caretBlock) || ReferenceEquals(tb, _selectedBlock);
+                if (!tbVisible)
+                {
+                    yOffset = tableTop + tl.TotalHeight + 10;
+                    continue;
+                }
+
                 // When the drag spans multiple cells of this table, highlight the rectangular block fully
                 // (Excel/Word style) instead of the linear text run; otherwise fall back to text highlight.
                 var cellBlock = SelectedCellRange(tb);
@@ -194,9 +251,15 @@ public partial class RichEditor
                     ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
                     : BuildTextLayout(paragraph, pWidth);
 
+                // Cull check: the layout above is still built (cached; its height advances yOffset),
+                // but off-screen paragraphs issue no draw commands. The caret paragraph always draws.
+                bool pVisible = (yOffset + layout.Height >= visTop && yOffset <= visBottom)
+                    || (_caretPosition != null && _caretPosition.Paragraph == paragraph);
+
                 // One marker per hard line (\n): each line of a list paragraph is an item. Ordered lists
                 // number each line; this is what makes "press Enter -> next bullet/number" work given the
                 // editor's "Enter inserts \n in a Run" model (lines aren't separate paragraphs).
+                // The ordered counter must advance even for culled paragraphs so visible numbering holds.
                 if (paragraph.ListType != ListKind.None)
                 {
                     int segStart = 0;
@@ -204,11 +267,21 @@ public partial class RichEditor
                     {
                         if (i == fullText.Length || fullText[i] == '\n')
                         {
-                            var lcr = layout.HitTestTextPosition(Math.Min(segStart, fullText.Length));
-                            DrawListMarker(context, paragraph, paragraph.ListType == ListKind.Ordered ? ++orderedIndex : 0, px, yOffset + lcr.Y);
+                            int marker = paragraph.ListType == ListKind.Ordered ? ++orderedIndex : 0;
+                            if (pVisible)
+                            {
+                                var lcr = layout.HitTestTextPosition(Math.Min(segStart, fullText.Length));
+                                DrawListMarker(context, paragraph, marker, px, yOffset + lcr.Y);
+                            }
                             segStart = i + 1;
                         }
                     }
+                }
+
+                if (!pVisible)
+                {
+                    yOffset += layout.Height + paragraph.MarginBottom;
+                    continue;
                 }
 
                 if (paragraph.Background != null)
@@ -239,6 +312,16 @@ public partial class RichEditor
             else if (block is ImageBlock img)
             {
                 orderedIndex = 0;
+                double cullHeight = img.Height > 0 ? img.Height : 200;
+                // Cull check before touching img.Image: the getter lazily decodes RawBytes (N6-2), so
+                // skipping it means off-screen images are never decoded at all. yOffset advances by the
+                // declared size, matching MeasureContentHeight's unconditional advance.
+                if ((yOffset + cullHeight < visTop || yOffset > visBottom)
+                    && !ReferenceEquals(img, _caretBlock) && !ReferenceEquals(img, _selectedBlock))
+                {
+                    yOffset += cullHeight + 10;
+                    continue;
+                }
                 if (img.Image != null)
                 {
                     double width = img.Width > 0 ? img.Width : 200;
@@ -268,8 +351,11 @@ public partial class RichEditor
             else if (block is DividerBlock)
             {
                 orderedIndex = 0;
-                double y = yOffset + DividerHeight / 2;
-                context.DrawLine(new Pen(Brushes.Gray, 1), new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
+                if (yOffset + DividerHeight >= visTop && yOffset <= visBottom)
+                {
+                    double y = yOffset + DividerHeight / 2;
+                    context.DrawLine(new Pen(Brushes.Gray, 1), new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
+                }
                 yOffset += DividerHeight;
             }
         }

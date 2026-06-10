@@ -233,6 +233,8 @@ AvaloniaRichEditor.Formatters.HtmlDocumentFormatter
 AvaloniaRichEditor.Formatters.RoundTripHarness
 const AvaloniaRichEditor.Formatters.DocumentSerializer.CurrentSchemaVersion = 1 -> int
 override AvaloniaRichEditor.Controls.RichEditor.MeasureOverride(Avalonia.Size availableSize) -> Avalonia.Size
+override AvaloniaRichEditor.Controls.RichEditor.OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
+override AvaloniaRichEditor.Controls.RichEditor.OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
 override AvaloniaRichEditor.Controls.RichEditor.OnCreateAutomationPeer() -> Avalonia.Automation.Peers.AutomationPeer!
 override AvaloniaRichEditor.Controls.RichEditor.OnKeyDown(Avalonia.Input.KeyEventArgs! e) -> void
 override AvaloniaRichEditor.Controls.RichEditor.OnPointerMoved(Avalonia.Input.PointerEventArgs! e) -> void
