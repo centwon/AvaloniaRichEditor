@@ -87,4 +87,6 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 
 ## License
 
-[MIT](LICENSE) © 2026 centwon. Bundles [HtmlAgilityPack](https://html-agility-pack.net/) (MIT) for HTML parsing.
+[MIT](LICENSE) © 2026 centwon. Depends on [Avalonia](https://github.com/AvaloniaUI/Avalonia) and
+[HtmlAgilityPack](https://html-agility-pack.net/) (both MIT) — see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
