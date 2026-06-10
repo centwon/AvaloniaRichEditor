@@ -138,8 +138,8 @@
 - [x] **스타일 가능 속성(StyledProperty)**: `SelectionBrush`, `CaretBrush`, `DefaultFontFamily`, `DefaultFontSize` 추가(선택색/캐럿색 하드코딩 제거, 기본 글꼴 외부화).
 - [x] **편의 API**: `ToHtml`/`LoadHtml`(기존 Get/SetHtml 개명), `ToJson`/`LoadJson`, `Clear`, `CanUndo`/`CanRedo`.
 - [x] `NativeEditor`(웹 에디터 호환 래퍼) 라이브러리→`samples` 이동.
-- [ ] 공개 멤버 XML 문서 주석 — **부분 완료**(신규 멤버만). 기존 공개 명령(`ToggleBold` 등) 주석 미작성.
-- [ ] **API 동결 가드**: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입 — 미착수.
+- [x] **공개 멤버 XML 문서 주석 완성 (2026-06-10)** — 전체 공개 API(240개) `<summary>` 완료. CS1591 NoWarn 제거. 경고 0개.
+- [x] **API 동결 가드: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입 (2026-06-10)** — `PublicAPI.Shipped.txt`/`Unshipped.txt` + nullable 주석 269개 선언. RS0016이 새 공개 멤버 추가 시 선언 강제.
 - [ ] (선택) 데모 코드비하인드를 새 이벤트/속성으로 마이그레이션 — 미착수(`StatusChanged` 계속 사용 중).
 
 ### 🟡 N3: 크로스플랫폼 / Windows 의존 게이팅 (코드 게이팅 완료 2026-06-08)
@@ -308,8 +308,8 @@
 - ~~N6-1: JSON 스키마 버전 필드~~ → **`0.1.0-alpha` 체크리스트로 이동** (2026-06-10)
 
 **문서화·API:**
-- [ ] 공개 멤버 XML 문서 주석 완성 (기존 `ToggleBold` 등 포함)
-- [ ] API 동결 가드: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입
+- [x] **공개 멤버 XML 문서 주석 완성 (2026-06-10)** — CS1591 경고 0개.
+- [x] **API 동결 가드: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 도입 (2026-06-10)**
 
 **1.0 이후 (2.0+) 후보:**
 - N6-4 이미지 중복 제거, N6-5 렌더링 가상화, 블록 여백 제어, DOCX 파싱, 마크다운, 델타 Undo, 동시편집, 페이지네이션, 플러그인 시스템.
