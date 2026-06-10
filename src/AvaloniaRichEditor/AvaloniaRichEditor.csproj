@@ -25,7 +25,14 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <!-- TODO(N1): set RepositoryUrl / PackageProjectUrl + enable SourceLink once a public repo exists. -->
+
+    <!-- Repository / SourceLink (N1). SourceLink GitHub provider is in-box in the .NET 8+ SDK,
+         so no PackageReference is needed — these properties are enough to embed source mapping. -->
+    <RepositoryUrl>https://github.com/centwon/AvaloniaRichEditor.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/centwon/AvaloniaRichEditor</PackageProjectUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
   <ItemGroup>
