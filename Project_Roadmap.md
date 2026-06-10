@@ -217,16 +217,17 @@
 - **목적**: 이후 스키마 변경(RawBytes, MimeType, 이미지 해시 참조 등)의 마이그레이션 경로 확보.
 - **티어 변경 사유**: alpha 사용자가 `ToJson()`으로 문서를 저장하기 시작하는 순간 스키마는 사실상 동결된다. "NuGet 배포 전 필수"이므로 1.0이 아니라 **첫 공개(alpha) 전**에 있어야 한다. 30분 작업.
 
-#### N6-2: `byte[]` 중심 이미지 모델 (핵심, **선행: 테스트 보강**)
-> **착수 조건**: 직렬화 왕복(이미지 포함 문서)·오프셋 모델(`InlineLen`/`BuildPlain`) 회귀 테스트를 **먼저** 추가한 뒤 착수. 백로그의 "테스트 보강은 구조 변경의 안전망" 원칙을 순서로 강제. (N5의 God-class 추가 분해도 동일하게 테스트 뒤로.)
+#### 🟢 [완료] N6-2: `byte[]` 중심 이미지 모델 (2026-06-10)
+> 착수 조건(테스트 안전망)은 같은 날 선행 완료(37→64). 구현 후 72개 테스트 + 왕복 하네스 리포트 **이전과 완전 동일**(회귀 0) 확인.
 
-- [ ] `ImageBlock`/`InlineImage`에 `byte[] RawBytes` + `string MimeType` 속성 추가.
-- [ ] `Bitmap`은 렌더 캐시로 격하: `Bitmap? _cachedBitmap` — 첫 렌더 시 `new Bitmap(new MemoryStream(RawBytes))`로 지연 생성.
-- [ ] **붙여넣기/드롭 경로 수정**: 원본 바이트를 Bitmap 디코딩 전에 캡처하여 `RawBytes`로 보관. 원본 포맷(JPEG/PNG/WebP 등) 유지.
-- [ ] **리사이즈 경로**: 이미지 폭이 콘텐츠 폭(~754px) 또는 1920px 상한 초과 시 `CreateScaledBitmap` → `Bitmap.Save(Stream)`으로 PNG `byte[]` 생성. 리사이즈 1회만 수행, 이후 드래그 핸들 크기 조절은 `Width`/`Height` 값만 변경(세대 손실 없음).
-- [ ] **Clone/Undo**: `RawBytes = this.RawBytes`로 참조 공유. 추가 메모리 없음.
-- [ ] **직렬화 수정**: `BitmapToBase64` → `Convert.ToBase64String(RawBytes)` 직행(인코딩 제거). `InlineDto`/`BlockDto`에 `MimeType` 필드 추가. 기존 문서(`MimeType` 없음)는 `image/png`로 폴백.
-- [ ] **HTML 출력**: `data:image/{MimeType};base64,...`로 원본 포맷 반영.
+- [x] `ImageBlock`/`InlineImage`에 `byte[] RawBytes` + `string MimeType` 추가(`SetImageData(bytes, mime, decoded?)`).
+- [x] `Bitmap`은 렌더 캐시로 격하 — `Image` getter가 `RawBytes`에서 지연 디코드(실패 시 바이트 폐기로 매 렌더 재시도 방지). **`Image` setter 직접 대입은 RawBytes 무효화**(소비자 Bitmap-only 경로는 저장 시 PNG 폴백 유지).
+- [x] **인제스천 경로 전부 바이트 캡처**: 클립보드 이미지(`TryGetImageAsync`가 (Bitmap, bytes) 반환), 파일 드롭, `InsertImageFromFileAsync`, 이미지 교체(블록/인라인), HTML 파서(`LoadImage`가 bytes 반환), 데모 삽입 버튼. 신규 공개 API **`InsertImageBytes(byte[])`** (원본 인코딩 보존 권장 경로).
+- [x] **리사이즈**: 1920×1080 초과 시 인제스천에서 1회 다운스케일→PNG 바이트, 이하면 원본 바이트 그대로. 드래그 핸들은 Width/Height만 변경(세대 손실 없음, 기존 동작).
+- [x] **Clone/Undo**: RawBytes·캐시 Bitmap 참조 공유(스냅샷당 추가 메모리 0).
+- [x] **직렬화**: RawBytes→base64 직행(재인코딩 제거), DTO에 `MimeType` 추가, 레거시 문서(`MimeType` 없음)는 `image/png` 폴백. **역직렬화도 지연** — 문서 열기 시 Bitmap 디코드 0회.
+- [x] **HTML 출력**: `data:{MimeType};base64,` 원본 포맷 반영, RawBytes 우선 검사로 export 시 디코드 회피. MIME 스니핑(`ImageMime.Detect`: png/jpeg/gif/bmp/webp).
+- [x] **테스트 8건**(`ImageRawBytesTests`): 가짜 JPEG 바이트(디코드 불가)로 "재인코딩 없음"을 구조적으로 증명 — JSON 왕복(블록/인라인), 레거시 png 폴백, ToHtml 원본 mime, Clone 참조 공유, setter 무효화, 디코드 실패 무해성, MIME 스니핑. **총 64→72.**
 
 | 항목 | 현재 | 개선 후 |
 |------|------|---------|
@@ -301,7 +302,7 @@
 - [ ] CI 3-OS 매트릭스 그린 확인 (GitHub 푸시 후 — alpha 체크리스트에서 선행 처리됨)
 
 **성능 (테스트 보강 후 착수):**
-- [ ] N6-2: `byte[]` 이미지 모델 전환 (원본 바이트 보존, 지연 Bitmap 캐시, 외부 의존성 없음)
+- [x] N6-2: `byte[]` 이미지 모델 전환 (2026-06-10 — 원본 바이트 보존, 지연 Bitmap 캐시, 외부 의존성 없음, 테스트 72개+왕복 하네스 회귀 0)
 - [ ] N6-3: 직렬화 비동기화 (저장/열기 백그라운드 스레드)
 - ~~N6-1: JSON 스키마 버전 필드~~ → **`0.1.0-alpha` 체크리스트로 이동** (2026-06-10)
 
@@ -316,4 +317,4 @@
 - 라이선스 종류(MIT 권장?), 패키지 ID 최종(`AvaloniaRichEditor` 선점 여부 확인), 지원 Avalonia 버전 범위, 크로스플랫폼 보장 수준(알파에서 Windows-only로 갈지).
 
 ---
-**마지막 업데이트**: 2026년 6월 10일 (5차) — **테스트 갭 마저 처리**: 키 입력 파이프라인 11건(라우티드 이벤트로 OnKeyDown/OnTextInput 실구동 — Backspace/Delete 문단 병합, Enter 분할·제목 리셋·리스트 탈출, Undo 코얼레싱, ReadOnly) + 붙여넣기 구성요소 6건(CF_HTML 추출 — `ExtractHtmlFragment` internal 승격, `InsertHtml` 인라인 병합/블록 삽입 계약). 총 47→64. **1.0 안정성 "테스트 커버리지 확대" 완료 — N6-2 착수 조건 충족.** / (4차) — **테스트 보강(N6-2 안전망)**: `TextRangeOffsetTests.cs` 10건 추가(인라인 이미지 오프셋 모델·멀티문단 삭제/스타일·표 횡단·부분 서식 분할). 총 37→47 통과. 남은 갭은 `RichEditor` private 편집 경로·붙여넣기 폴백(클립보드 페이크 필요)으로 기록. / (3차) — **N1 마무리 + N6-1 + CHANGELOG**: SourceLink/RepositoryUrl(SDK in-box, nuspec에 repo+branch+commit 확인), N6-1 JSON 스키마 버전 필드(레거시 폴백, 테스트 35→37), `CHANGELOG.md` 시작, `v0.1.0-alpha` 태그 → CI `Pack` 잡 그린(아티팩트 생성). **결정: `PackageIcon`+nuget.org 게시는 API 안정화/키 발급 시점까지 함께 보류**(게시 비가역성·아이콘 의미 시점 일치). 현재 `0.1.0-alpha`는 자기완결적 마일스톤. / (2차) — **최우선 항목 실행**: GitHub 저장소 `centwon/AvaloniaRichEditor`(Private) 생성·푸시. 초기 커밋의 ~240MB 빌드 산출물(`bin`/`obj`)을 `filter-branch`로 히스토리에서 제거. **CI 3-OS 매트릭스 첫 실행 그린**(windows/ubuntu/macos) → N3 mac/Linux 스모크 + N4 CI 그린 동시 해소. 남은 차단: Public 전환 → SourceLink/nuget 게시. / 같은 날 (1차) — **로드맵 적정성 점검 반영(4건)**: ① GitHub 저장소 푸시를 "🚨 최우선" 독립 항목으로 승격(단일 차단점 — N1/N3/N4 잔여+alpha 체크리스트 전체가 이것에 막힘, CI는 미실행 상태). ② N6-1(JSON 스키마 버전)을 1.0 → `0.1.0-alpha` 체크리스트로 이동(alpha에서 JSON 저장이 시작되면 스키마 사실상 동결). ③ N6-2 착수 조건으로 테스트 보강 선행 명시(1.0 체크리스트도 안정성→성능 순서로 재배열). ④ N3.6 툴바는 0.1.0 미포함·0.2.0 확정, `PublicApiAnalyzers`를 0.2.0 진입 조건으로. / 이전: 2026년 6월 9일 — **N3.6 추가**: 라이브러리 툴바 승격 + 모드 연동(3계층 `RichEditor`/`RichEditorToolbar`/`RichEditorView`, `Target` 연결, 모드/플래그→버튼 가시성, 선택상태 반영·스크롤러 주의점). N3.5 모드 표에 "툴바" 열 추가(의도, 미구현). / **N6-7 추가**: `.ardx` 패키지 파일 포맷(ZIP 컨테이너, JSON 문자열 계약 유지 + 파일 저장 API 추가, 이미지 무압축 Stored, N6-2 의존). / **N3.5 에디터 모드 완료**: `EditorMode` 프리셋(ReadOnly/Basic/Full)+기능 플래그 4종(`AllowImages`/`AllowTables`/`AllowRichPaste`/`AllowFindReplace`), 붙여넣기·드롭·삽입명령·컨텍스트메뉴·찾기바꾸기 가드, ReadOnly 최적화(undo/IME/캐럿타이머 비활성). 테스트 27→35건. / 이전: 2026년 6월 8일 — **N6 성능 최적화 로드맵 추가**: 이미지 저장 모델 전환(`Bitmap`→`byte[]` 중심, 원본 바이트 보존, 지연 Bitmap 캐시), JSON 스키마 버전, 직렬화 비동기화, 이미지 중복 제거(해시), 렌더링 가상화. 백로그에 사용성 후보(블록 여백·DOCX 파싱·마크다운) 및 구조 기반(테스트 보강·크로스플랫폼 실검증) 정리. 외부 의존성(SkiaSharp/ImageSharp) 추가 없이 Avalonia 내장만으로 진행 결정. / 이전: N0~N5 + Phase 1~6 완료 상태
+**마지막 업데이트**: 2026년 6월 10일 (6차) — **N6-2 완료**: `byte[]` 중심 이미지 모델(RawBytes+MimeType, 지연 Bitmap 캐시, 인제스천 6경로 바이트 캡처, 직렬화/HTML 재인코딩 제거, Clone 참조 공유, `InsertImageBytes` 공개 API). 테스트 64→72, 왕복 하네스 리포트 이전과 완전 동일(회귀 0). 1.0 성능 항목 잔여는 N6-3(직렬화 비동기화). / (5차) — **테스트 갭 마저 처리**: 키 입력 파이프라인 11건(라우티드 이벤트로 OnKeyDown/OnTextInput 실구동 — Backspace/Delete 문단 병합, Enter 분할·제목 리셋·리스트 탈출, Undo 코얼레싱, ReadOnly) + 붙여넣기 구성요소 6건(CF_HTML 추출 — `ExtractHtmlFragment` internal 승격, `InsertHtml` 인라인 병합/블록 삽입 계약). 총 47→64. **1.0 안정성 "테스트 커버리지 확대" 완료 — N6-2 착수 조건 충족.** / (4차) — **테스트 보강(N6-2 안전망)**: `TextRangeOffsetTests.cs` 10건 추가(인라인 이미지 오프셋 모델·멀티문단 삭제/스타일·표 횡단·부분 서식 분할). 총 37→47 통과. 남은 갭은 `RichEditor` private 편집 경로·붙여넣기 폴백(클립보드 페이크 필요)으로 기록. / (3차) — **N1 마무리 + N6-1 + CHANGELOG**: SourceLink/RepositoryUrl(SDK in-box, nuspec에 repo+branch+commit 확인), N6-1 JSON 스키마 버전 필드(레거시 폴백, 테스트 35→37), `CHANGELOG.md` 시작, `v0.1.0-alpha` 태그 → CI `Pack` 잡 그린(아티팩트 생성). **결정: `PackageIcon`+nuget.org 게시는 API 안정화/키 발급 시점까지 함께 보류**(게시 비가역성·아이콘 의미 시점 일치). 현재 `0.1.0-alpha`는 자기완결적 마일스톤. / (2차) — **최우선 항목 실행**: GitHub 저장소 `centwon/AvaloniaRichEditor`(Private) 생성·푸시. 초기 커밋의 ~240MB 빌드 산출물(`bin`/`obj`)을 `filter-branch`로 히스토리에서 제거. **CI 3-OS 매트릭스 첫 실행 그린**(windows/ubuntu/macos) → N3 mac/Linux 스모크 + N4 CI 그린 동시 해소. 남은 차단: Public 전환 → SourceLink/nuget 게시. / 같은 날 (1차) — **로드맵 적정성 점검 반영(4건)**: ① GitHub 저장소 푸시를 "🚨 최우선" 독립 항목으로 승격(단일 차단점 — N1/N3/N4 잔여+alpha 체크리스트 전체가 이것에 막힘, CI는 미실행 상태). ② N6-1(JSON 스키마 버전)을 1.0 → `0.1.0-alpha` 체크리스트로 이동(alpha에서 JSON 저장이 시작되면 스키마 사실상 동결). ③ N6-2 착수 조건으로 테스트 보강 선행 명시(1.0 체크리스트도 안정성→성능 순서로 재배열). ④ N3.6 툴바는 0.1.0 미포함·0.2.0 확정, `PublicApiAnalyzers`를 0.2.0 진입 조건으로. / 이전: 2026년 6월 9일 — **N3.6 추가**: 라이브러리 툴바 승격 + 모드 연동(3계층 `RichEditor`/`RichEditorToolbar`/`RichEditorView`, `Target` 연결, 모드/플래그→버튼 가시성, 선택상태 반영·스크롤러 주의점). N3.5 모드 표에 "툴바" 열 추가(의도, 미구현). / **N6-7 추가**: `.ardx` 패키지 파일 포맷(ZIP 컨테이너, JSON 문자열 계약 유지 + 파일 저장 API 추가, 이미지 무압축 Stored, N6-2 의존). / **N3.5 에디터 모드 완료**: `EditorMode` 프리셋(ReadOnly/Basic/Full)+기능 플래그 4종(`AllowImages`/`AllowTables`/`AllowRichPaste`/`AllowFindReplace`), 붙여넣기·드롭·삽입명령·컨텍스트메뉴·찾기바꾸기 가드, ReadOnly 최적화(undo/IME/캐럿타이머 비활성). 테스트 27→35건. / 이전: 2026년 6월 8일 — **N6 성능 최적화 로드맵 추가**: 이미지 저장 모델 전환(`Bitmap`→`byte[]` 중심, 원본 바이트 보존, 지연 Bitmap 캐시), JSON 스키마 버전, 직렬화 비동기화, 이미지 중복 제거(해시), 렌더링 가상화. 백로그에 사용성 후보(블록 여백·DOCX 파싱·마크다운) 및 구조 기반(테스트 보강·크로스플랫폼 실검증) 정리. 외부 의존성(SkiaSharp/ImageSharp) 추가 없이 Avalonia 내장만으로 진행 결정. / 이전: N0~N5 + Phase 1~6 완료 상태

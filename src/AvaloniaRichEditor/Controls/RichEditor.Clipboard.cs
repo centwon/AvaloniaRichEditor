@@ -63,10 +63,13 @@ public partial class RichEditor
         }
 
         // 3. Bitmap image on the clipboard (e.g. a screenshot or copied picture).
-        var clipImage = AllowImages ? await TryGetImageAsync(clipboard) : null;
+        var (clipImage, clipBytes) = AllowImages
+            ? await TryGetImageAsync(clipboard)
+            : ((Avalonia.Media.Imaging.Bitmap?)null, (byte[]?)null);
         if (clipImage != null)
         {
-            InsertImage(Downscale(clipImage));
+            if (clipBytes != null) InsertImageBytes(clipBytes);     // keep the original encoding
+            else InsertImage(Downscale(clipImage));                  // raw Bitmap object: no bytes to keep
             return;
         }
 
@@ -142,12 +145,43 @@ public partial class RichEditor
             if (string.IsNullOrEmpty(path)) continue;
             try
             {
-                using var st = System.IO.File.OpenRead(path);
-                var bmp = new Avalonia.Media.Imaging.Bitmap(st);
-                InsertImage(Downscale(bmp));
+                InsertImageBytes(System.IO.File.ReadAllBytes(path));
             }
             catch { }
         }
+    }
+
+    /// <summary>Inserts an image from its original encoded bytes (JPEG/PNG/...), keeping them as
+    /// the document's data (<see cref="ImageBlock.RawBytes"/>) so saving never re-encodes. Prefer
+    /// this over <see cref="InsertImage"/> when the encoded bytes are available. Oversized images
+    /// are downscaled once here (PNG); later drag-handle resizes only change Width/Height.</summary>
+    public void InsertImageBytes(byte[] bytes)
+    {
+        if (Document == null || IsReadOnly || !AllowImages) return;
+        Avalonia.Media.Imaging.Bitmap bmp;
+        try
+        {
+            using var ms = new System.IO.MemoryStream(bytes);
+            bmp = new Avalonia.Media.Imaging.Bitmap(ms);
+        }
+        catch { return; }
+
+        var scaled = Downscale(bmp);
+        var ib = new ImageBlock { Width = scaled.Size.Width, Height = scaled.Size.Height };
+        if (!ReferenceEquals(scaled, bmp))
+        {
+            using var ms = new System.IO.MemoryStream();
+            scaled.Save(ms);
+            ib.SetImageData(ms.ToArray(), "image/png", scaled);
+        }
+        else
+        {
+            ib.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
+        }
+
+        PushUndo();
+        InsertBlockAtCaret(ib);
+        InvalidateVisual();
     }
 
     // Scales an image down to fit within maxW x maxH (keeping aspect ratio).
@@ -161,12 +195,15 @@ public partial class RichEditor
         catch { return bmp; }
     }
 
-    private static async Task<Avalonia.Media.Imaging.Bitmap?> TryGetImageAsync(IClipboard clipboard)
+    // Returns the decoded bitmap plus, when the clipboard handed us encoded bytes, those original
+    // bytes (so the document can keep them without re-encoding). Bytes are null when the clipboard
+    // produced a Bitmap object directly.
+    private static async Task<(Avalonia.Media.Imaging.Bitmap?, byte[]?)> TryGetImageAsync(IClipboard clipboard)
     {
         Avalonia.Input.IAsyncDataTransfer? dt;
         try { dt = await clipboard.TryGetDataAsync(); }
-        catch { return null; }
-        if (dt == null) return null;
+        catch { return (null, null); }
+        if (dt == null) return (null, null);
 
         try
         {
@@ -184,7 +221,7 @@ public partial class RichEditor
                     try { raw = await item.TryGetRawAsync(fmt); }
                     catch { continue; }
 
-                    if (raw is Avalonia.Media.Imaging.Bitmap bm) return bm;
+                    if (raw is Avalonia.Media.Imaging.Bitmap bm) return (bm, null);
                     byte[]? bytes = raw as byte[];
                     if (bytes == null && raw is System.IO.Stream s)
                     {
@@ -194,14 +231,14 @@ public partial class RichEditor
                     }
                     if (bytes is { Length: > 0 })
                     {
-                        try { using var ms = new System.IO.MemoryStream(bytes); return new Avalonia.Media.Imaging.Bitmap(ms); }
+                        try { using var ms = new System.IO.MemoryStream(bytes); return (new Avalonia.Media.Imaging.Bitmap(ms), bytes); }
                         catch { }
                     }
                 }
             }
         }
         finally { (dt as IDisposable)?.Dispose(); }
-        return null;
+        return (null, null);
     }
 
     private static async Task<string?> TryGetHtmlAsync(IClipboard clipboard)

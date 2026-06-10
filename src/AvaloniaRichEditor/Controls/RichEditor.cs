@@ -3072,9 +3072,13 @@ public partial class RichEditor : Control
         try
         {
             await using var s = await files[0].OpenReadAsync();
-            var bmp = new Avalonia.Media.Imaging.Bitmap(s);
+            using var ms = new System.IO.MemoryStream();
+            await s.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            using var ms2 = new System.IO.MemoryStream(bytes);
+            var bmp = new Avalonia.Media.Imaging.Bitmap(ms2); // validate before committing
             if (Document != null) PushUndo();
-            img.Image = bmp;
+            img.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
             InvalidateVisual();
         }
         catch { }
@@ -3133,9 +3137,13 @@ public partial class RichEditor : Control
         try
         {
             await using var s = await files[0].OpenReadAsync();
-            var bmp = new Avalonia.Media.Imaging.Bitmap(s);
+            using var ms = new System.IO.MemoryStream();
+            await s.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            using var ms2 = new System.IO.MemoryStream(bytes);
+            var bmp = new Avalonia.Media.Imaging.Bitmap(ms2); // validate before committing
             if (Document != null) PushUndo();
-            img.Image = bmp;
+            img.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
             InvalidateVisual();
         }
         catch { }
@@ -3159,8 +3167,9 @@ public partial class RichEditor : Control
         try
         {
             await using var s = await files[0].OpenReadAsync();
-            var bmp = new Avalonia.Media.Imaging.Bitmap(s);
-            InsertImage(bmp);
+            using var ms = new System.IO.MemoryStream();
+            await s.CopyToAsync(ms);
+            InsertImageBytes(ms.ToArray()); // keep the file's original encoding (no PNG re-encode on save)
         }
         catch { }
     }

@@ -402,9 +402,10 @@ public partial class MainWindow : Window
             try
             {
                 using var stream = await file[0].OpenReadAsync();
-                var bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+                using var ms = new System.IO.MemoryStream();
+                await stream.CopyToAsync(ms);
                 var richTextBox = this.FindControl<RichEditor>("RichTextBox");
-                richTextBox?.InsertImage(bitmap);
+                richTextBox?.InsertImageBytes(ms.ToArray()); // keeps the file's original encoding
             }
             catch (System.Exception ex)
             {

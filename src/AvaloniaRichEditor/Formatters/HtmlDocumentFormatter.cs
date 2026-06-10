@@ -84,13 +84,14 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (name == "img")
                 {
-                    var (bmp, w, h) = LoadImage(child);
-                    if (bmp != null)
+                    var (bytes, bmp, w, h) = LoadImage(child);
+                    if (bmp != null && bytes != null)
                     {
                         if (w < IconMaxSize && h < IconMaxSize)
                         {
                             // Small icon/logo -> keep on a text line rather than its own block.
-                            var icon = new InlineImage { Image = bmp, Width = w, Height = h };
+                            var icon = new InlineImage { Width = w, Height = h };
+                            icon.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
                             if (current != null)
                                 current.Inlines.Add(icon);                       // inline with pending text
                             else if (flow.Blocks.Count > 0 && flow.Blocks[flow.Blocks.Count - 1] is Paragraph lastP)
@@ -104,7 +105,9 @@ namespace AvaloniaRichEditor.Formatters
                         else
                         {
                             Flush();
-                            flow.Blocks.Add(new ImageBlock { Image = bmp, Width = w, Height = h });
+                            var ib = new ImageBlock { Width = w, Height = h };
+                            ib.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
+                            flow.Blocks.Add(ib);
                         }
                     }
                 }
@@ -282,12 +285,13 @@ namespace AvaloniaRichEditor.Formatters
         // would otherwise land on their own awkward line after each heading.
         private const double IconMaxSize = 64;
 
-        // Loads an <img> and returns the bitmap plus its intended display size (declared px when
-        // present, otherwise natural size). Returns (null,0,0) on failure/unsupported source.
-        private static (Avalonia.Media.Imaging.Bitmap?, double, double) LoadImage(HtmlNode node)
+        // Loads an <img> and returns the original encoded bytes, the decoded bitmap, and its
+        // intended display size (declared px when present, otherwise natural size).
+        // Returns (null,null,0,0) on failure/unsupported source.
+        private static (byte[]?, Avalonia.Media.Imaging.Bitmap?, double, double) LoadImage(HtmlNode node)
         {
             var src = node.GetAttributeValue("src", "");
-            if (string.IsNullOrEmpty(src)) return (null, 0, 0);
+            if (string.IsNullOrEmpty(src)) return (null, null, 0, 0);
 
             double declW = ReadPx(node, "width", "width");
             double declH = ReadPx(node, "height", "height");
@@ -310,14 +314,14 @@ namespace AvaloniaRichEditor.Formatters
                     var path = new Uri(src).LocalPath;
                     if (System.IO.File.Exists(path)) bytes = System.IO.File.ReadAllBytes(path);
                 }
-                if (bytes == null) return (null, 0, 0);
+                if (bytes == null) return (null, null, 0, 0);
                 using var ms = new System.IO.MemoryStream(bytes);
                 var bitmap = new Avalonia.Media.Imaging.Bitmap(ms);
                 double w = (!double.IsNaN(declW) && declW > 0) ? declW : bitmap.Size.Width;
                 double h = (!double.IsNaN(declH) && declH > 0) ? declH : bitmap.Size.Height;
-                return (bitmap, w, h);
+                return (bytes, bitmap, w, h);
             }
-            catch { return (null, 0, 0); }
+            catch { return (null, null, 0, 0); }
         }
 
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
@@ -390,8 +394,13 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (name == "img")
                 {
-                    var (bmp, w, h) = LoadImage(child);
-                    if (bmp != null) p.Inlines.Add(new InlineImage { Image = bmp, Width = w, Height = h });
+                    var (bytes, bmp, w, h) = LoadImage(child);
+                    if (bmp != null && bytes != null)
+                    {
+                        var im = new InlineImage { Width = w, Height = h };
+                        im.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
+                        p.Inlines.Add(im);
+                    }
                 }
                 else
                 {
@@ -575,10 +584,11 @@ namespace AvaloniaRichEditor.Formatters
                     }
                     sb.Append("</table>\n");
                 }
-                else if (block is ImageBlock ib && ib.Image != null)
+                else if (block is ImageBlock ib && (ib.RawBytes != null || ib.Image != null))
                 {
+                    // RawBytes checked first so export doesn't force a lazy bitmap decode.
                     CloseAll();
-                    sb.Append($"<p>{ImgTag(ib.Image, ib.Width, ib.Height)}</p>\n");
+                    sb.Append($"<p>{ImgTag(ib.RawBytes, ib.MimeType, ib.RawBytes == null ? ib.Image : null, ib.Width, ib.Height)}</p>\n");
                 }
             }
             CloseAll();
@@ -588,9 +598,9 @@ namespace AvaloniaRichEditor.Formatters
         // Emits a single inline (Run with all its styling, or an inline image) as HTML.
         private static void EmitInline(StringBuilder sb, Inline inline)
         {
-            if (inline is InlineImage im && im.Image != null)
+            if (inline is InlineImage im && (im.RawBytes != null || im.Image != null))
             {
-                sb.Append(ImgTag(im.Image, im.Width, im.Height));
+                sb.Append(ImgTag(im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height));
                 return;
             }
             if (inline is not Run r || r.Text == null) return;
@@ -634,20 +644,32 @@ namespace AvaloniaRichEditor.Formatters
                 ? $"#{c.R:X2}{c.G:X2}{c.B:X2}"
                 : $"rgba({c.R},{c.G},{c.B},{(c.A / 255.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)})";
 
-        private static string ImgTag(Avalonia.Media.Imaging.Bitmap bmp, double w, double h)
+        // Emits a data: URI <img>. RawBytes (with their MIME type) are used verbatim when present;
+        // a bitmap set without bytes is PNG-encoded as before.
+        private static string ImgTag(byte[]? raw, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h)
         {
-            string b64;
-            try
+            string b64, m;
+            if (raw != null)
             {
-                using var ms = new System.IO.MemoryStream();
-                bmp.Save(ms);
-                b64 = System.Convert.ToBase64String(ms.ToArray());
+                b64 = System.Convert.ToBase64String(raw);
+                m = mime ?? "image/png";
             }
-            catch { return ""; }
+            else if (bmp != null)
+            {
+                try
+                {
+                    using var ms = new System.IO.MemoryStream();
+                    bmp.Save(ms);
+                    b64 = System.Convert.ToBase64String(ms.ToArray());
+                }
+                catch { return ""; }
+                m = "image/png";
+            }
+            else return "";
             string size = "";
             if (!double.IsNaN(w) && w > 0) size += $" width='{(int)w}'";
             if (!double.IsNaN(h) && h > 0) size += $" height='{(int)h}'";
-            return $"<img src='data:image/png;base64,{b64}'{size}/>";
+            return $"<img src='data:{m};base64,{b64}'{size}/>";
         }
     }
 }

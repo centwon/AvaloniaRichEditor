@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Image storage model (N6-2)**: images now keep their original encoded bytes
+  (`ImageBlock.RawBytes`/`InlineImage.RawBytes` + `MimeType`); the `Bitmap` is a lazy render cache.
+  Saving no longer re-encodes to PNG (a pasted ~80KB JPEG stays ~80KB instead of ballooning),
+  JSON/HTML export embed the original format, and opening a document defers all image decoding
+  to first render. Drag-handle resizes only change Width/Height (no generation loss).
+  Legacy documents (no `MimeType` field) still load, treated as PNG.
+
+### Added
+- `RichEditor.InsertImageBytes(byte[])` — insert an image from its encoded bytes, preserving the
+  original format. Preferred over `InsertImage(Bitmap)` when bytes are available.
+
 ## [0.1.0-alpha] - 2026-06-10
 
 First public pre-release. The control is feature-complete for everyday rich-text

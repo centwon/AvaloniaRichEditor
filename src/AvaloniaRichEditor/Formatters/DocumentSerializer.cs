@@ -14,9 +14,10 @@ namespace AvaloniaRichEditor.Formatters;
 internal partial class DocumentJsonContext : JsonSerializerContext { }
 
 // Full document persistence: paragraphs, runs (bold/italic/underline/strikethrough/size/color/link),
-// inline images, image blocks and tables (column widths, row heights, cell contents). Bitmaps are
-// stored as base64-encoded PNG. A flat BlockDto/InlineDto with a Type discriminator keeps the schema
-// AOT/source-generator friendly (no polymorphic serialization).
+// inline images, image blocks and tables (column widths, row heights, cell contents). Images are
+// stored as base64 of their original encoded bytes (RawBytes + MimeType, no re-encoding); bitmaps
+// set without bytes fall back to base64 PNG. A flat BlockDto/InlineDto with a Type discriminator
+// keeps the schema AOT/source-generator friendly (no polymorphic serialization).
 public static class DocumentSerializer
 {
     /// <summary>Current JSON schema version written by <see cref="Serialize"/>. Bump when the on-disk
@@ -54,10 +55,13 @@ public static class DocumentSerializer
             case DividerBlock:
                 return new BlockDto { Type = "Divider" };
             case ImageBlock img:
+                // RawBytes go straight to base64 (no re-encoding); a bitmap set without bytes
+                // (legacy/consumer path) falls back to PNG encoding as before.
                 return new BlockDto
                 {
                     Type = "Image",
-                    ImageBase64 = BitmapToBase64(img.Image),
+                    ImageBase64 = img.RawBytes != null ? Convert.ToBase64String(img.RawBytes) : BitmapToBase64(img.Image),
+                    MimeType = img.RawBytes != null ? img.MimeType : null,
                     Width = NanToNull(img.Width),
                     Height = NanToNull(img.Height),
                     Indent = img.Indent
@@ -127,7 +131,8 @@ public static class DocumentSerializer
                 d.Inlines.Add(new InlineDto
                 {
                     Type = "Image",
-                    ImageBase64 = BitmapToBase64(im.Image),
+                    ImageBase64 = im.RawBytes != null ? Convert.ToBase64String(im.RawBytes) : BitmapToBase64(im.Image),
+                    MimeType = im.RawBytes != null ? im.MimeType : null,
                     Width = im.Width,
                     Height = im.Height
                 });
@@ -144,13 +149,19 @@ public static class DocumentSerializer
             case "Divider":
                 return new DividerBlock();
             case "Image":
-                return new ImageBlock
+            {
+                // Bytes are kept encoded; the Bitmap is decoded lazily on first render.
+                // Legacy documents (no MimeType field) were always PNG-encoded.
+                var ib = new ImageBlock
                 {
-                    Image = Base64ToBitmap(d.ImageBase64),
                     Width = d.Width ?? double.NaN,
                     Height = d.Height ?? double.NaN,
                     Indent = d.Indent
                 };
+                var bytes = TryFromBase64(d.ImageBase64);
+                if (bytes != null) ib.SetImageData(bytes, d.MimeType ?? "image/png");
+                return ib;
+            }
             case "Table":
                 var tb = new TableBlock(Math.Max(1, d.Rows), Math.Max(1, d.Columns));
                 tb.Indent = d.Indent;
@@ -208,12 +219,16 @@ public static class DocumentSerializer
             foreach (var id in d.Inlines)
             {
                 if (id.Type == "Image")
-                    p.Inlines.Add(new InlineImage
+                {
+                    var im = new InlineImage
                     {
-                        Image = Base64ToBitmap(id.ImageBase64),
                         Width = id.Width ?? 16,
                         Height = id.Height ?? 16
-                    });
+                    };
+                    var bytes = TryFromBase64(id.ImageBase64);
+                    if (bytes != null) im.SetImageData(bytes, id.MimeType ?? "image/png");
+                    p.Inlines.Add(im);
+                }
                 else
                     p.Inlines.Add(new Run
                     {
@@ -272,14 +287,10 @@ public static class DocumentSerializer
         catch { return null; }
     }
 
-    private static Bitmap? Base64ToBitmap(string? value)
+    private static byte[]? TryFromBase64(string? value)
     {
         if (string.IsNullOrEmpty(value)) return null;
-        try
-        {
-            using var ms = new MemoryStream(Convert.FromBase64String(value));
-            return new Bitmap(ms);
-        }
+        try { return Convert.FromBase64String(value); }
         catch { return null; }
     }
 }
@@ -311,6 +322,7 @@ internal class BlockDto
 
     // Image block
     public string? ImageBase64 { get; set; }
+    public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }
 
@@ -342,6 +354,7 @@ internal class InlineDto
 
     // Inline image
     public string? ImageBase64 { get; set; }
+    public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }
 }
