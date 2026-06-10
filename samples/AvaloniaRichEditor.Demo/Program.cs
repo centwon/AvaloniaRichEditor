@@ -19,6 +19,11 @@ sealed class Program
             return;
         }
 
+        // Performance measurement harness (roadmap N6-6): AvaloniaRichEditor.Demo.exe --bench
+        // Opens a real window, runs scripted scenarios, writes bench-results.txt, exits.
+        if (args.Length >= 1 && args[0] == "--bench")
+            BenchHarness.Enabled = true;
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

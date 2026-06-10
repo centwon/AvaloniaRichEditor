@@ -9,6 +9,7 @@ artifacts/
 # Scratch / test artifacts
 test.html
 test.json
+bench-results.txt
 
 # Round-trip harness output
 tests/roundtrip-out/
