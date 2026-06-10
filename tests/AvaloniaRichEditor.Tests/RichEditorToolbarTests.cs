@@ -66,6 +66,14 @@ public class RichEditorToolbarTests
     }
 
     [AvaloniaFact]
+    public void FontFamilyChoices_DefaultsToNonEmptyList()
+    {
+        // Default = system fonts; platforms without enumeration (headless) fall back to a stock list.
+        var ed = new RichEditor();
+        Assert.NotEmpty(ed.FontFamilyChoices);
+    }
+
+    [AvaloniaFact]
     public void FontCombo_ListsTargetFontFamilyChoices()
     {
         var ed = new RichEditor { FontFamilyChoices = new[] { "FontA", "FontB" } };

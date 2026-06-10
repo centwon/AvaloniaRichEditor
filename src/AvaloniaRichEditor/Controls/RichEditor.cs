@@ -149,20 +149,38 @@ public partial class RichEditor : Control
         set => SetValue(DefaultFontSizeProperty, value);
     }
 
-    // Widely-available families (metric-compatible substitutes exist on macOS/Linux). Hosts targeting a
-    // specific locale (e.g. Korean) should override FontFamilyChoices rather than relying on this.
-    private static readonly IReadOnlyList<string> DefaultFontChoices =
-        new[] { "Arial", "Times New Roman", "Courier New", "Verdana", "Georgia" };
+    // Cached system font list. The OS reports family names localized to the UI language (e.g.
+    // "맑은 고딕" on Korean Windows), and those names resolve back through the same font manager,
+    // so they are used as-is for both display and application.
+    private static IReadOnlyList<string>? _systemFontChoices;
+
+    private static IReadOnlyList<string> SystemFontChoices()
+    {
+        if (_systemFontChoices != null) return _systemFontChoices;
+        var names = new List<string>();
+        foreach (var f in FontManager.Current.SystemFonts) names.Add(f.Name);
+        names.Sort(StringComparer.Create(System.Globalization.CultureInfo.CurrentUICulture, ignoreCase: true));
+        // Platforms without font enumeration (e.g. headless): widely-available fallback families.
+        if (names.Count == 0)
+            names.AddRange(new[] { "Arial", "Times New Roman", "Courier New", "Verdana", "Georgia" });
+        return _systemFontChoices = names;
+    }
 
     /// <inheritdoc cref="FontFamilyChoices"/>
     public static readonly StyledProperty<IReadOnlyList<string>> FontFamilyChoicesProperty =
         AvaloniaProperty.Register<RichEditor, IReadOnlyList<string>>(
-            nameof(FontFamilyChoices), DefaultFontChoices);
+            nameof(FontFamilyChoices), Array.Empty<string>());
 
-    /// <summary>Font families offered in the right-click "글꼴" submenu. No platform-specific default.</summary>
+    /// <summary>Font families offered in the font pickers (right-click submenu and
+    /// <see cref="RichEditorToolbar"/> combo). Defaults to the installed system fonts, sorted for —
+    /// and with names localized by — the OS UI language; assign a non-empty list to curate.</summary>
     public IReadOnlyList<string> FontFamilyChoices
     {
-        get => GetValue(FontFamilyChoicesProperty);
+        get
+        {
+            var v = GetValue(FontFamilyChoicesProperty);
+            return v.Count > 0 ? v : SystemFontChoices();
+        }
         set => SetValue(FontFamilyChoicesProperty, value);
     }
 
