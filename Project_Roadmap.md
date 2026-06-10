@@ -107,9 +107,9 @@
 > **N1 잔여·N3 잔여(mac/Linux 스모크)·N4 잔여(CI 그린)·`0.1.0-alpha` 체크리스트 전체가 이 하나에 막혀 있었다.** → 저장소 생성·푸시·CI 그린으로 핵심 차단 해제.
 - [x] 푸시 전 정리: `test.json`(스크래치) 추적 해제 + `.gitignore` 추가. (`tests/out`·`roundtrip-out`·`test.html`·corpus `real_*`는 이미 ignore/미추적 확인.)
 - [x] 히스토리 정리: 초기 커밋에 박혀 있던 ~240MB 빌드 산출물(`bin/`·`obj/`)을 `git filter-branch`로 전체 히스토리에서 제거 후 force-push. 결과: 깨끗한 저장소.
-- [x] GitHub 저장소 생성 + 푸시 — **`centwon/AvaloniaRichEditor` (현재 Private)**.
+- [x] GitHub 저장소 생성 + 푸시 — **`centwon/AvaloniaRichEditor`**.
 - [x] **CI 3-OS 매트릭스 첫 실행 그린** — windows/ubuntu/macos 전부 ✓ (Linux 헤드리스 폰트 이슈 없음). → **N3 mac/Linux 스모크 + N4 CI 그린 동시 해소.**
-- [ ] **Public 전환**: CI 그린·저장소 외형 확인 완료 → `gh repo edit --visibility public` (SourceLink·nuget.org 게시의 선행).
+- [x] **Public 전환 완료** (2026-06-10) — 전환 전 스캔(시크릿·1MB+ 파일·개인경로 0건, LICENSE/corpus 합성 확인). https://github.com/centwon/AvaloniaRichEditor
 - [ ] N1 미결 해소: `RepositoryUrl`/`PackageProjectUrl` + SourceLink 채움 (Public 전환 후).
 - [ ] (유지보수) CI 액션 Node 20 → Node 24 deprecation 대응(`actions/checkout`·`setup-dotnet` 버전 갱신).
 
