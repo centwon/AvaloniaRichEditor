@@ -4,6 +4,8 @@ using System.Text;
 
 namespace AvaloniaRichEditor.Documents;
 
+/// <summary>A logical range between two <see cref="TextPointer"/> positions in a <see cref="FlowDocument"/>.
+/// Supports text extraction, deletion, and property (formatting) application across paragraph boundaries.</summary>
 public class TextRange
 {
     private TextPointer _start;

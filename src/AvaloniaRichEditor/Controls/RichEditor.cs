@@ -78,6 +78,8 @@ public partial class RichEditor : Control
     public static readonly StyledProperty<FlowDocument?> DocumentProperty =
         AvaloniaProperty.Register<RichEditor, FlowDocument?>(nameof(Document));
 
+    /// <summary>The document model being edited. Assigning a new instance replaces the document
+    /// and fires <see cref="DocumentChanged"/>.</summary>
     public FlowDocument? Document
     {
         get => GetValue(DocumentProperty);
@@ -87,8 +89,9 @@ public partial class RichEditor : Control
     public static readonly StyledProperty<bool> IsReadOnlyProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(IsReadOnly));
 
-    // When true: text input, edits, paste, and resizing are blocked; selection/copy still work and
-    // the caret is hidden. Used by NativeEditor's ReadOnly mode.
+    /// <summary>When <see langword="true"/>, text input, edits, paste, and resizing are blocked;
+    /// selection and copy still work, and the caret is hidden. Equivalent to
+    /// <c>EditorMode = EditorMode.ReadOnly</c>.</summary>
     public bool IsReadOnly
     {
         get => GetValue(IsReadOnlyProperty);
@@ -486,7 +489,7 @@ public partial class RichEditor : Control
         return Math.Max(100, h - 40); // keep a little overlap between pages
     }
 
-    // Focuses the editor and places a blinking caret at the end of the document (used on startup).
+    /// <summary>Focuses the editor and moves the caret to the end of the last paragraph.</summary>
     public void FocusDocumentEnd()
     {
         var paras = GetAllParagraphsInOrder();
@@ -1733,6 +1736,9 @@ public partial class RichEditor : Control
         return null;
     }
 
+    /// <summary>Inserts plain text at the caret, replacing any current selection.
+    /// Triggers smart-list detection when <paramref name="text"/> is a space
+    /// following a list-prefix pattern at the start of a line.</summary>
     public void InsertText(string text)
     {
         if (Document == null || _caretPosition.Paragraph == null) return;
@@ -2256,6 +2262,7 @@ public partial class RichEditor : Control
         InvalidateVisual();
     }
 
+    /// <summary>Parses an HTML fragment and inserts the resulting blocks at the caret position.</summary>
     public void InsertHtml(string html)
     {
         if (Document == null || string.IsNullOrEmpty(html)) return;
@@ -2335,6 +2342,8 @@ public partial class RichEditor : Control
         UpdateParents(Document);
     }
 
+    /// <summary>Inserts a block image from a <see cref="Avalonia.Media.Imaging.Bitmap"/> at the caret.
+    /// When the encoded bytes are available, prefer <see cref="InsertImageBytes"/> to avoid re-encoding.</summary>
     public void InsertImage(Avalonia.Media.Imaging.Bitmap image)
     {
         if (Document == null || IsReadOnly || !AllowImages) return;
@@ -2344,6 +2353,7 @@ public partial class RichEditor : Control
         InvalidateVisual();
     }
 
+    /// <summary>Inserts an empty <paramref name="rows"/>×<paramref name="cols"/> table at the caret.</summary>
     public void InsertTable(int rows, int cols)
     {
         if (Document == null || IsReadOnly || !AllowTables) return;
@@ -2355,13 +2365,20 @@ public partial class RichEditor : Control
         InvalidateVisual();
     }
 
+    /// <summary>Toggles bold on the current selection (or the caret run).</summary>
     public void ToggleBold() { ApplyStyleToSelection(r => r.FontWeight = r.FontWeight == FontWeight.Bold ? FontWeight.Normal : FontWeight.Bold); }
+    /// <summary>Toggles italic on the current selection (or the caret run).</summary>
     public void ToggleItalic() { ApplyStyleToSelection(r => r.FontStyle = r.FontStyle == FontStyle.Italic ? FontStyle.Normal : FontStyle.Italic); }
+    /// <summary>Sets the font size of the current selection (or the caret run).</summary>
     public void SetFontSize(double size) { ApplyStyleToSelection(r => r.FontSize = size); }
+    /// <summary>Sets the foreground brush of the current selection (or the caret run).</summary>
     public void SetForeground(IBrush brush) { ApplyStyleToSelection(r => r.Foreground = brush); }
+    /// <summary>Sets the font family of the current selection (or the caret run).</summary>
     public void SetFontFamily(string family) { ApplyStyleToSelection(r => r.FontFamily = family); }
+    /// <summary>Sets the highlight (background) brush of the current selection; pass <see langword="null"/> to clear.</summary>
     public void SetHighlight(IBrush? brush) { ApplyStyleToSelection(r => r.Background = brush); }
 
+    /// <summary>Adjusts the indent of the caret paragraph by <paramref name="delta"/> pixels (clamped 0–400).</summary>
     public void Indent(double delta)
     {
         if (_caretPosition.Paragraph == null) return;
@@ -2370,9 +2387,13 @@ public partial class RichEditor : Control
         p.Indent = Math.Clamp(p.Indent + delta, 0, 400);
         InvalidateVisual();
     }
+    /// <summary>Sets the text alignment of the caret paragraph.</summary>
     public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null) { if (Document != null) PushUndo(); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
+    /// <summary>Sets the line height multiplier of the caret paragraph.</summary>
     public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
+    /// <summary>Toggles a bullet list on the selected paragraphs.</summary>
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
+    /// <summary>Toggles a numbered list on the selected paragraphs.</summary>
     public void ToggleNumbering() { SetListType(ListKind.Ordered); }
 
     private void SetListType(ListKind kind)
@@ -2525,8 +2546,8 @@ public partial class RichEditor : Control
         _selectionEnd = new TextPointer(np, 0);
     }
 
-    // Applies a heading level (0 = body) to the caret's paragraph and resizes its runs so it
-    // renders in-editor; the level is also kept for HTML round-trip (<h1>..<h6>).
+    /// <summary>Sets the heading level of the caret paragraph (1–6 = h1–h6, 0 = body).
+    /// Also adjusts run font sizes to match the heading style for in-editor preview.</summary>
     public void SetHeading(int level)
     {
         if (_caretPosition.Paragraph == null) return;
@@ -2539,7 +2560,9 @@ public partial class RichEditor : Control
         InvalidateVisual();
     }
 
+    /// <summary>Toggles strikethrough on the current selection (or the caret run).</summary>
     public void ToggleStrikethrough() { ApplyStyleToSelection(r => r.TextDecorations = ToggleDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)); }
+    /// <summary>Toggles underline on the current selection (or the caret run).</summary>
     public void ToggleUnderline() { ApplyStyleToSelection(r => r.TextDecorations = ToggleDecoration(r.TextDecorations, TextDecorationLocation.Underline)); }
 
     // Toggles a single decoration (underline/strikethrough) while preserving the other, so the two
@@ -2759,6 +2782,8 @@ public partial class RichEditor : Control
 
     // ---------------- Find / Replace ----------------
 
+    /// <summary>Selects the next occurrence of <paramref name="query"/> after the caret, wrapping around.
+    /// Returns <see langword="true"/> if a match was found.</summary>
     public bool FindNext(string query, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
@@ -2767,6 +2792,8 @@ public partial class RichEditor : Control
         return FindCore(query, matchCase, backwards: false, wrap: true, fromPi: pi, fromOff: _selectionEnd.Offset);
     }
 
+    /// <summary>Selects the previous occurrence of <paramref name="query"/> before the caret, wrapping around.
+    /// Returns <see langword="true"/> if a match was found.</summary>
     public bool FindPrev(string query, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
@@ -2775,7 +2802,8 @@ public partial class RichEditor : Control
         return FindCore(query, matchCase, backwards: true, wrap: true, fromPi: pi, fromOff: _selectionStart.Offset);
     }
 
-    // Replaces the current selection if it equals the query, then advances to the next match.
+    /// <summary>Replaces the current selection if it matches <paramref name="query"/>, then advances
+    /// to the next match. Returns <see langword="true"/> if a further match exists.</summary>
     public bool ReplaceNext(string query, string replacement, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
@@ -2791,6 +2819,8 @@ public partial class RichEditor : Control
         return FindNext(query, matchCase);
     }
 
+    /// <summary>Replaces every occurrence of <paramref name="query"/> in the document.
+    /// Returns the number of replacements made.</summary>
     public int ReplaceAll(string query, string replacement, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return 0;
@@ -3177,9 +3207,12 @@ public partial class RichEditor : Control
         catch { }
     }
 
+    /// <summary>Undoes the last edit. No-op when <see cref="CanUndo"/> is <see langword="false"/>.</summary>
     public void Undo() => DoUndo();
+    /// <summary>Redoes the last undone edit. No-op when <see cref="CanRedo"/> is <see langword="false"/>.</summary>
     public void Redo() => DoRedo();
 
+    /// <summary>Opens a file picker and inserts the chosen image at the caret.</summary>
     public async Task InsertImageFromFileAsync()
     {
         if (IsReadOnly || !AllowImages) return;

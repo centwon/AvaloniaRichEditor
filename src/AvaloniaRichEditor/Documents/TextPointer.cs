@@ -2,6 +2,8 @@ using System;
 
 namespace AvaloniaRichEditor.Documents;
 
+/// <summary>An immutable-by-convention position inside a <see cref="Paragraph"/>: the paragraph reference
+/// plus a character offset. Inline images count as one logical character (the U+FFFC placeholder).</summary>
 public class TextPointer : IComparable<TextPointer>
 {
     public Paragraph? Paragraph { get; set; }

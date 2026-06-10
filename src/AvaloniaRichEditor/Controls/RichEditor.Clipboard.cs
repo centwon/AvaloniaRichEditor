@@ -15,6 +15,7 @@ namespace AvaloniaRichEditor.Controls;
 // Part of RichEditor (split out of the main file for readability).
 public partial class RichEditor
 {
+    /// <summary>Pastes from the system clipboard. Priority: internal rich → external HTML → plain text.</summary>
     public async Task PasteFromClipboardAsync()
     {
         if (Document == null) return;

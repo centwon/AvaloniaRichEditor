@@ -6,10 +6,8 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <IsAotCompatible>true</IsAotCompatible>
 
-    <!-- Emit XML docs into the package. Missing-doc warnings are silenced for now (docs are partial;
-         completing them is tracked in roadmap N2). -->
+    <!-- Emit XML docs into the package. All public members are documented (roadmap N2 complete). -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 
