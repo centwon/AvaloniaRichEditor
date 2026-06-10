@@ -6,7 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`RichEditorToolbar`** (N3.6 layer ②): optional formatting toolbar driven by a single
+  `Target` property — calls the editor's public commands, reflects the caret's formatting
+  (B/I/U/S, lists, font family/size, heading, alignment, undo/redo), and follows the editor's
+  feature flags (`AllowImages`/`AllowTables` hide insert buttons; `IsReadOnly` hides the strip).
+  Includes color-palette and table-size-grid flyouts promoted from the demo.
+- **`RichEditorView`** (N3.6 layer ③): one-line drop-in bundling editor + toolbar + scroller,
+  pre-wired. Reach `Editor`/`Toolbar` for everything else.
+- **`RichEditorLocalization`**: key-based UI strings for the built-in chrome (context menus,
+  toolbar, dialogs). Korean and English ship in-box and follow the OS UI language; hosts can
+  add or override languages at runtime via `Register()` (per-key merge, English fallback).
+  AOT-safe (plain dictionaries, no satellite assemblies).
+
 ### Changed
+- **Font pickers list the installed system fonts** by default (`FontFamilyChoices` empty =
+  system list, sorted and localized by the OS UI language — e.g. "맑은 고딕" on Korean Windows);
+  assigning a non-empty list still curates as before.
+- **Default font is the OS UI font** (Windows message font via `SystemParametersInfo`,
+  e.g. Malgun Gothic on Korean Windows) instead of Avalonia's app font; non-Windows platforms
+  keep `FontFamily.Default`. The toolbar's font combo shows the effective default as placeholder
+  text when the text at the caret carries no explicit font.
 - **Image storage model (N6-2)**: images now keep their original encoded bytes
   (`ImageBlock.RawBytes`/`InlineImage.RawBytes` + `MimeType`); the `Bitmap` is a lazy render cache.
   Saving no longer re-encodes to PNG (a pasted ~80KB JPEG stays ~80KB instead of ballooning),
