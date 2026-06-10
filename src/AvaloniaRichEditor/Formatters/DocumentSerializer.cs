@@ -19,9 +19,13 @@ internal partial class DocumentJsonContext : JsonSerializerContext { }
 // AOT/source-generator friendly (no polymorphic serialization).
 public static class DocumentSerializer
 {
+    /// <summary>Current JSON schema version written by <see cref="Serialize"/>. Bump when the on-disk
+    /// shape changes; older documents (no "version" field) are read back as version 1.</summary>
+    public const int CurrentSchemaVersion = 1;
+
     public static string Serialize(FlowDocument document)
     {
-        var dto = new FlowDocumentDto();
+        var dto = new FlowDocumentDto { Version = CurrentSchemaVersion };
         foreach (var block in document.Blocks) dto.Blocks.Add(BlockToDto(block));
         return JsonSerializer.Serialize(dto, DocumentJsonContext.Default.FlowDocumentDto);
     }
@@ -282,6 +286,8 @@ public static class DocumentSerializer
 
 internal class FlowDocumentDto
 {
+    // Schema version. Absent in pre-versioning documents → deserializes to the initializer (1).
+    public int Version { get; set; } = 1;
     public List<BlockDto> Blocks { get; set; } = new();
 }
 

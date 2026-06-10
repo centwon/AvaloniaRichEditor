@@ -127,7 +127,9 @@
 - [x] `<IncludeSymbols>` + `snupkg` 생성.
 - [x] `dotnet pack -c Release` → `AvaloniaRichEditor.0.1.0-alpha.nupkg`/`.snupkg` 생성, nuspec/DLL/XML/README/의존성 확인.
 - [x] **검증**: 별도 빈 net10 프로젝트가 로컬 피드로 패키지 설치 후 공개 API(`RichEditor`/`LoadHtml`/`TextChanged`/`SelectionBrush`/`ToHtml`/`ToJson` 등) 소비 빌드 성공.
-- [ ] **미결**: `RepositoryUrl`/`PackageProjectUrl` + **SourceLink**(공개 저장소 필요), `PackageIcon`, nuget.org 실제 게시. → 저장소 생성 후.
+- [x] `RepositoryUrl`/`PackageProjectUrl` + **SourceLink** (2026-06-10) — .NET 8+ SDK in-box 공급자 사용(`PublishRepositoryUrl`/`EmbedUntrackedSources`, 별도 패키지 없음). pack 결과 nuspec에 `repository url+branch+commit` 박힘 확인.
+- [x] `CHANGELOG.md` 시작 (Keep a Changelog 형식, `0.1.0-alpha` 항목).
+- [ ] **미결**: `PackageIcon`, nuget.org 실제 게시(`v*` 태그 → CI `Pack` 잡, push는 시크릿 추가 후 주석 해제).
 - **참고**: `AvaloniaRichEditor` ID는 nuget.org 미등록(사용 가능). `Avalonia.` 점 프리픽스는 예약이라 회피.
 
 ### 🟡 N2: 공개 API 설계 & 문서화 (대부분 완료 2026-06-08)
@@ -207,9 +209,9 @@
 
 > **배경**: 현재 이미지는 `Bitmap` 객체가 데이터 주체이며, 저장 시 매번 PNG로 재인코딩된다. 원본이 JPEG(~80KB)여도 PNG(~500KB)로 부풀고, 직렬화마다 인코딩 비용이 발생한다. 외부 의존성 추가 없이(Avalonia 내장 + .NET 내장만) 용량·속도·화질을 동시에 개선한다.
 
-#### N6-1: JSON 스키마 버전 필드 (선행 필수 — **`0.1.0-alpha` 체크리스트로 승격, 2026-06-10**)
-- [ ] `FlowDocumentDto`에 `"version": 1` 필드 추가.
-- [ ] 역직렬화 시 버전 미존재 → `1`로 폴백(기존 문서 하위 호환).
+#### 🟢 [완료] N6-1: JSON 스키마 버전 필드 (2026-06-10, alpha 선행)
+- [x] `FlowDocumentDto`에 `Version` 필드 추가(`CurrentSchemaVersion=1`, Serialize가 기록).
+- [x] 역직렬화 시 버전 미존재 → 초기값 `1`로 폴백(기존 문서 하위 호환). 테스트 2건(쓰기 포함·레거시 로드) 추가, 총 35→37.
 - **목적**: 이후 스키마 변경(RawBytes, MimeType, 이미지 해시 참조 등)의 마이그레이션 경로 확보.
 - **티어 변경 사유**: alpha 사용자가 `ToJson()`으로 문서를 저장하기 시작하는 순간 스키마는 사실상 동결된다. "NuGet 배포 전 필수"이므로 1.0이 아니라 **첫 공개(alpha) 전**에 있어야 한다. 30분 작업.
 
@@ -281,8 +283,8 @@
 
 ### ✅ 배포 전 최종 체크리스트 (`0.1.0-alpha`)
 - [ ] **GitHub 저장소 푸시 + CI 첫 실행 그린** (위 "🚨 최우선" 절 — 모든 잔여 항목의 선행 조건)
-- [ ] **N6-1: JSON 스키마 버전 필드(`"version": 1`)** — alpha 사용자가 JSON 저장을 시작하면 스키마가 사실상 동결되므로 첫 공개 전 필수 (1.0에서 승격)
-- [ ] N1(패키징) + N2(최소 공개 API/문서) + N3(Windows 동작 보장, 타 플랫폼 명시) 완료
+- [x] **N6-1: JSON 스키마 버전 필드(`Version`)** (2026-06-10) — 레거시 폴백 + 테스트 2건.
+- [x] N1(패키징, SourceLink 포함) + N2(최소 공개 API/문서) + N3(Windows 동작 보장, 타 플랫폼 명시) 완료
 - [ ] `dotnet pack -c Release` 성공, 빈 앱에서 설치·호스팅 성공
 - [ ] README의 사용 예제가 실제로 컴파일/동작
 - [ ] LICENSE·저작권·서드파티(HtmlAgilityPack) 라이선스 고지

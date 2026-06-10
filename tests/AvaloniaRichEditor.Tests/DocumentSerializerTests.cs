@@ -68,4 +68,21 @@ public class DocumentSerializerTests
         var json2 = DocumentSerializer.Serialize(DocumentSerializer.Deserialize(json1));
         Assert.Equal(json1, json2);
     }
+
+    [Fact]
+    public void Serialize_WritesSchemaVersion()
+    {
+        var json = DocumentSerializer.Serialize(SampleDoc());
+        Assert.Contains("\"Version\": 1", json);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyDocWithoutVersion_StillLoads()
+    {
+        // Pre-versioning documents have no "version" field; they must still round-trip.
+        var legacy = "{\"Blocks\":[{\"Type\":\"Paragraph\",\"Inlines\":[{\"Type\":\"Run\",\"Text\":\"hi\"}]}]}";
+        var doc = DocumentSerializer.Deserialize(legacy);
+        Assert.Single(doc.Blocks);
+        Assert.Equal("hi", Assert.IsType<Paragraph>(doc.Blocks[0]).Text());
+    }
 }
