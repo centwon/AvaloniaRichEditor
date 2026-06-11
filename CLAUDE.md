@@ -67,6 +67,7 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 5. **`NormalizeBlocks`**: 문서 처음/끝과 "연속된 비문단 블록 사이"에만 문단을 보장(빈 줄 강제 안 함). 캐럿이 모든 블록 앞뒤에 닿게 하는 장치. `UpdateParents`에서 호출됨.
 6. **선택/삭제**: 텍스트는 `TextRange`; 큰 이미지/표는 클릭하면 `_selectedBlock` 선택(파란 테두리) 후 Delete/Backspace. 표는 단일클릭=전체선택, 더블클릭=셀 편집.
 7. **클립보드**: 붙여넣기 우선순위 = 내부 리치(블록 구조 보존) → 외부 HTML(`ParseHtml`, 재귀 순회) → 평문. 워드 그림은 VML이라 미지원.
+8. **문서 모델 객체는 UI 스레드에서만 생성**: 모델에 들어가는 `SolidColorBrush`/`TextDecoration` 등은 Avalonia 스레드 친화 객체라, `Task.Run` 안에서 만들면 첫 렌더에서 컴포지터가 크래시한다("calling thread cannot access this object"). 비동기 로더는 파싱(DTO+바이트, `ParseJson`/`ReadPackage`)까지만 백그라운드, `FromDto`(모델 생성)는 UI 스레드에서. 직렬화기가 만드는 브러시는 `ImmutableSolidColorBrush`(친화성 없음) 사용.
 
 ## 안드레 카파시(Andrej Karpathy)의 코딩 스킬
 
