@@ -31,6 +31,7 @@ public partial class RichEditor : Control
     private TextPointer _selectionEnd = new TextPointer(null, 0);
     private bool _isSelecting = false;
     private Point _lastCaretPoint;
+    private double _lastCaretHeight = 20; // line height at the caret (tall on lines with inline images)
     private Block? _selectedBlock; // a block (image/table) selected by clicking it (deletable with Del/Backspace)
     // A "block caret" sits before/after an image/table: Space/Tab indent it, Backspace outdents/deletes,
     // arrows step before -> (table cells) -> after -> next text. Set by clicking or arrow navigation.
@@ -1526,7 +1527,7 @@ public partial class RichEditor : Control
     }
 
     // Caret position in this control's coordinate space, used to place the IME candidate window.
-    private Rect GetCaretRectangle() => new Rect(_lastCaretPoint.X, _lastCaretPoint.Y, 1, 20);
+    private Rect GetCaretRectangle() => new Rect(_lastCaretPoint.X, _lastCaretPoint.Y, 1, _lastCaretHeight);
 
     private void SetPreedit(string? text)
     {

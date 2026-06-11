@@ -113,6 +113,10 @@ public partial class RichEditor
         double maxWidth = Bounds.Width;
         double listIndent = 10;
         Point? caretPoint = null;
+        // Caret bar height = line height at the caret (HitTest rect). Tall lines (an inline image
+        // treated as a character) get a caret spanning the full line, like HWP/Word — without this,
+        // a fixed-height caret would blink at the line top, far above the baseline-aligned text.
+        double caretHeight = 20;
         Rect? blockCaretRect = null; // when a block caret is active, the image/table it sits in front of
         int orderedIndex = 0; // running counter for consecutive ordered-list paragraphs
 
@@ -200,6 +204,7 @@ public partial class RichEditor
                         int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
                         var cr = layout.HitTestTextPosition(caretDisp);
                         caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y);
+                        caretHeight = cr.Height > 0 ? cr.Height : 20;
                         _lastCaretPoint = caretPoint.Value;
                     }
 
@@ -303,6 +308,7 @@ public partial class RichEditor
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
                     var cr = layout.HitTestTextPosition(caretDisp);
                     caretPoint = new Point(px + cr.X, yOffset + cr.Y);
+                    caretHeight = cr.Height > 0 ? cr.Height : 20;
                     _lastCaretPoint = caretPoint.Value;
                 }
 
@@ -375,9 +381,10 @@ public partial class RichEditor
         else if (caretPoint.HasValue)
         {
             _lastCaretPoint = caretPoint.Value;
+            _lastCaretHeight = caretHeight;
             if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
-                context.DrawLine(new Pen(CaretBrush, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + 20));
+                context.DrawLine(new Pen(CaretBrush, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + caretHeight));
             }
         }
 
@@ -391,7 +398,7 @@ public partial class RichEditor
             const double m = 40;
             Rect target = blockCaretRect is { } br
                 ? new Rect(br.X, Math.Max(0, br.Y - m), 2, br.Height + 2 * m)
-                : new Rect(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - m), 2, 20 + 2 * m);
+                : new Rect(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - m), 2, _lastCaretHeight + 2 * m);
             Avalonia.Threading.Dispatcher.UIThread.Post(() => { try { this.BringIntoView(target); } catch { } });
         }
     }
