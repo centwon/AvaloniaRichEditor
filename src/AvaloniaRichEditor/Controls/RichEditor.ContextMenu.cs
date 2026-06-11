@@ -110,10 +110,12 @@ public partial class RichEditor
             }
             if (inlineImg != null && tp.Paragraph != null)
             {
+                _selectedInline = (tp.Paragraph, inlineImg); // show selection chrome for the menu target
                 BuildInlineImageMenu(items, tp.Paragraph, inlineImg);
             }
             else
             {
+                _selectedInline = null;
                 var link = GetLinkRunAtPoint(point);
                 if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
                     BuildLinkMenu(items, hasSelection, link);

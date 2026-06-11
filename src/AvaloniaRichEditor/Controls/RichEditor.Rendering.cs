@@ -91,6 +91,8 @@ public partial class RichEditor
         _columnBoundaries.Clear();
         _rowBoundaries.Clear();
         _imageHandles.Clear();
+        _inlineImageRects.Clear();
+        _inlineHandles.Clear();
 
         TextPointer? selStart = null, selEnd = null;
         HashSet<Paragraph>? selectedParagraphs = null;
@@ -113,9 +115,9 @@ public partial class RichEditor
         double maxWidth = Bounds.Width;
         double listIndent = 10;
         Point? caretPoint = null;
-        // Caret bar height = line height at the caret (HitTest rect). Tall lines (an inline image
-        // treated as a character) get a caret spanning the full line, like HWP/Word — without this,
-        // a fixed-height caret would blink at the line top, far above the baseline-aligned text.
+        // Caret bar = glyph-sized and bottom-aligned in its line. On tall lines (an inline image
+        // treated as a character) the caret keeps the adjacent text's height down at the baseline,
+        // instead of a fixed-height bar floating at the line top far above the text.
         double caretHeight = 20;
         Rect? blockCaretRect = null; // when a block caret is active, the image/table it sits in front of
         int orderedIndex = 0; // running counter for consecutive ordered-list paragraphs
@@ -203,12 +205,15 @@ public partial class RichEditor
                     {
                         int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
                         var cr = layout.HitTestTextPosition(caretDisp);
-                        caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y);
-                        caretHeight = cr.Height > 0 ? cr.Height : 20;
+                        double th = CaretTextHeight(cell, _caretPosition.Offset);
+                        if (cr.Height > 0 && th > cr.Height) th = cr.Height;
+                        caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y + Math.Max(0, cr.Height - th));
+                        caretHeight = th;
                         _lastCaretPoint = caretPoint.Value;
                     }
 
                     layout.Draw(context, new Point(rect.X + 5, rect.Y + 5));
+                    RegisterInlineImages(context, cell, layout, rect.X + 5, rect.Y + 5);
                 }
 
                 // Resize handles live on the physical grid lines (independent of merges). Internal column
@@ -307,12 +312,15 @@ public partial class RichEditor
                 {
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
                     var cr = layout.HitTestTextPosition(caretDisp);
-                    caretPoint = new Point(px + cr.X, yOffset + cr.Y);
-                    caretHeight = cr.Height > 0 ? cr.Height : 20;
+                    double th = CaretTextHeight(paragraph, _caretPosition.Offset);
+                    if (cr.Height > 0 && th > cr.Height) th = cr.Height;
+                    caretPoint = new Point(px + cr.X, yOffset + cr.Y + Math.Max(0, cr.Height - th));
+                    caretHeight = th;
                     _lastCaretPoint = caretPoint.Value;
                 }
 
                 layout.Draw(context, new Point(px, yOffset));
+                RegisterInlineImages(context, paragraph, layout, px, yOffset);
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
             else if (block is ImageBlock img)
@@ -400,6 +408,38 @@ public partial class RichEditor
                 ? new Rect(br.X, Math.Max(0, br.Y - m), 2, br.Height + 2 * m)
                 : new Rect(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - m), 2, _lastCaretHeight + 2 * m);
             Avalonia.Threading.Dispatcher.UIThread.Post(() => { try { this.BringIntoView(target); } catch { } });
+        }
+    }
+
+    // Registers the on-screen rect of each inline image in `p` (click hit-testing for selection)
+    // and, for the selected one, draws the selection border + corner resize handle. The image is
+    // baseline-aligned in its line, so its rect hangs from the bottom of the hit-test box.
+    private void RegisterInlineImages(DrawingContext context, Paragraph p, TextLayout layout, double ox, double oy)
+    {
+        int off = 0;
+        foreach (var inl in p.Inlines)
+        {
+            if (inl is InlineImage ii)
+            {
+                foreach (var r in layout.HitTestTextRange(off, 1))
+                {
+                    double w = Math.Max(8, ii.Width > 0 ? ii.Width : 16);
+                    double h = Math.Max(8, ii.Height > 0 ? ii.Height : 16);
+                    var ir = new Rect(ox + r.X, oy + r.Bottom - h, w, h);
+                    _inlineImageRects.Add((ir, p, ii));
+                    if (_selectedInline is { } sel && ReferenceEquals(sel.img, ii))
+                    {
+                        var accent = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215));
+                        context.DrawRectangle(null, new Pen(accent, 2), ir);
+                        var knob = new Rect(ir.Right - 5, ir.Bottom - 5, 10, 10);
+                        context.FillRectangle(Brushes.White, knob);
+                        context.DrawRectangle(null, new Pen(accent, 1.5), knob);
+                        _inlineHandles.Add((new Rect(ir.Right - 9, ir.Bottom - 9, 18, 18), p, ii));
+                    }
+                    break;
+                }
+            }
+            off += InlineLen(inl);
         }
     }
 }

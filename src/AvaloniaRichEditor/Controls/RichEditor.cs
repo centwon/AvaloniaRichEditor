@@ -79,6 +79,15 @@ public partial class RichEditor : Control
     private double _initialImageMouseX;
     private double _imageAspect;
 
+    // Inline-image selection + resize (mirrors the block-image handle pattern). The on-screen rect
+    // of every visible inline image is rebuilt each Render pass for click hit-testing; the resize
+    // handle exists only for the selected image. Initial size/aspect state above is shared.
+    private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img)> _inlineImageRects = new();
+    private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img)> _inlineHandles = new();
+    private (Paragraph p, InlineImage img)? _selectedInline;
+    private bool _isResizingInline;
+    private InlineImage? _resizingInline;
+
     /// <inheritdoc cref="Document"/>
     public static readonly StyledProperty<FlowDocument?> DocumentProperty =
         AvaloniaProperty.Register<RichEditor, FlowDocument?>(nameof(Document));
@@ -305,6 +314,26 @@ public partial class RichEditor : Control
             }
 
         if (!IsReadOnly)
+            foreach (var h in _inlineHandles)
+            {
+                if (h.rect.Contains(point))
+                {
+                    if (Document != null) PushUndo();
+                    _isResizingInline = true;
+                    _resizingInline = h.img;
+                    _selectedInline = (h.p, h.img); // keep the selection chrome through the drag
+                    _initialImageWidth = h.img.Width > 0 ? h.img.Width : 16;
+                    _initialImageHeight = h.img.Height > 0 ? h.img.Height : 16;
+                    _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
+                    _initialImageMouseX = point.X;
+                    e.Pointer.Capture(this);
+                    return;
+                }
+            }
+
+        _selectedInline = null; // any other press clears the inline-image selection (may re-set below)
+
+        if (!IsReadOnly)
             foreach (var b in _columnBoundaries)
             {
                 if (b.rect.Contains(point))
@@ -408,6 +437,18 @@ public partial class RichEditor : Control
         _caretPosition = GetPositionFromPoint(point);
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+
+        // A single click on an inline image selects it (border + corner resize handle), mirroring
+        // block images. The caret was already placed at the image edge above.
+        if (e.ClickCount == 1)
+            foreach (var ir in _inlineImageRects)
+                if (ir.rect.Contains(point))
+                {
+                    _selectedInline = (ir.p, ir.img);
+                    ResetCaretBlink();
+                    InvalidateVisual();
+                    return; // no drag-selection from this press
+                }
 
         // Double-click selects the word under the caret; triple-click selects the whole paragraph.
         if (e.ClickCount >= 2 && _caretPosition.Paragraph != null)
@@ -807,6 +848,16 @@ public partial class RichEditor : Control
         base.OnPointerMoved(e);
         var point = e.GetPosition(this);
 
+        if (_isResizingInline && _resizingInline != null)
+        {
+            double diff = point.X - _initialImageMouseX;
+            double newW = Math.Max(8, _initialImageWidth + diff);
+            _resizingInline.Width = newW;
+            _resizingInline.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingInline.Height; // keep aspect ratio
+            InvalidateVisual();
+            return;
+        }
+
         if (_isResizingImage && _resizingImage != null)
         {
             double diff = point.X - _initialImageMouseX;
@@ -882,6 +933,15 @@ public partial class RichEditor : Control
             }
         }
 
+        foreach (var h in _inlineHandles)
+        {
+            if (h.rect.Contains(point))
+            {
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.BottomRightCorner);
+                return;
+            }
+        }
+
         foreach (var b in _columnBoundaries)
         {
             if (b.rect.Contains(point))
@@ -923,6 +983,15 @@ public partial class RichEditor : Control
             // Pre-resize state already pushed on press; undo restores original size in one step.
             _isResizingImage = false;
             _resizingImage = null;
+            e.Pointer.Capture(null);
+            return;
+        }
+
+        if (_isResizingInline)
+        {
+            // Pre-resize state already pushed on press; undo restores original size in one step.
+            _isResizingInline = false;
+            _resizingInline = null;
             e.Pointer.Capture(null);
             return;
         }
@@ -1065,6 +1134,12 @@ public partial class RichEditor : Control
         if (_selectedBlock != null && e.Key != Key.Back && e.Key != Key.Delete)
         {
             _selectedBlock = null;
+            InvalidateVisual();
+        }
+        // Same for an inline-image selection.
+        if (_selectedInline != null && e.Key != Key.Back && e.Key != Key.Delete)
+        {
+            _selectedInline = null;
             InvalidateVisual();
         }
 
@@ -1220,6 +1295,14 @@ public partial class RichEditor : Control
             else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink();
             e.Handled = true;
+            return;
+        }
+        else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedInline is { } selInl && Document != null)
+        {
+            // A selected inline image deletes as a unit (state was pushed above).
+            selInl.p.Inlines.Remove(selInl.img);
+            _selectedInline = null;
+            ResetCaretBlink(); e.Handled = true;
             return;
         }
         else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedBlock != null && Document != null)
@@ -1528,6 +1611,15 @@ public partial class RichEditor : Control
 
     // Caret position in this control's coordinate space, used to place the IME candidate window.
     private Rect GetCaretRectangle() => new Rect(_lastCaretPoint.X, _lastCaretPoint.Y, 1, _lastCaretHeight);
+
+    // Caret bar height from the font size at the caret (not the line height), so the caret stays
+    // glyph-sized and baseline-anchored next to tall inline content. 1.4 ≈ line height per em.
+    private double CaretTextHeight(Paragraph p, int offset)
+    {
+        var run = RunAtOffset(p, offset > 0 ? offset - 1 : 0);
+        double fs = run != null && run.FontSize > 0 ? run.FontSize : DefaultFontSize;
+        return Math.Ceiling(fs * 1.4);
+    }
 
     private void SetPreedit(string? text)
     {
@@ -3243,6 +3335,7 @@ public partial class RichEditor : Control
         if (atEnd) anchor.Inlines.Add(im);
         else anchor.Inlines.Insert(0, im);
         if (_selectedBlock == ib) _selectedBlock = null;
+        _selectedInline = (anchor, im); // show the inline selection chrome right away
         UpdateParents(Document);
 
         // Caret right after the image character so typing continues next to it.
@@ -3270,6 +3363,7 @@ public partial class RichEditor : Control
         p.Inlines.Remove(im);
         Document.Blocks.Insert(idx + 1, ib);
         UpdateParents(Document);
+        _selectedInline = null;
         _selectedBlock = ib;
         ResetCaretBlink();
         InvalidateVisual();
@@ -3280,6 +3374,7 @@ public partial class RichEditor : Control
         if (Document == null) return;
         PushUndo();
         p.Inlines.Remove(img);
+        if (_selectedInline is { } s && ReferenceEquals(s.img, img)) _selectedInline = null;
         InvalidateVisual();
     }
 
