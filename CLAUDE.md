@@ -48,7 +48,7 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 - `Documents/` — 문서 모델. `FlowDocument.Blocks`(AvaloniaList<Block>)에 `Paragraph`/`TableBlock`/`ImageBlock`이 **형제(sibling)**로 들어감.
   - `Paragraph.Inlines`: `Run`(텍스트) 또는 `InlineImage`(인라인 아이콘).
   - `TextPointer`(Paragraph+Offset), `TextRange`(삭제/복사/서식/구조).
-- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`). 입력·캐럿·선택·편집·히트테스트·표 연산(~3,160줄). 부분 클래스로 분리: `RichEditor.ContextMenu.cs`(우클릭 메뉴), `RichEditor.Clipboard.cs`(붙여넣기·드래그드롭), `RichEditor.Rendering.cs`(Measure/Render/AutomationPeer 훅). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal). 접근성 `RichEditorAutomationPeer`(IValueProvider).
+- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`, 본체 ~1,270줄: 속성/이벤트·undo·편집 코어·`BuildTextLayout` 레이아웃 캐시). 부분 클래스 분리: `Input`(포인터·키보드·IME·블록 횡단 캐럿), `HitTesting`(GetPositionFromPoint 등 + `LayoutTable` 공유 표 기하), `Formatting`(서식 명령·리스트·하이퍼링크·포맷 페인터), `DocumentApi`(HTML/JSON/.ardx 입출력), `Tables`(셀 탐색·Tab·행/열 연산), `Images`(크기/교체/블록↔인라인 변환), `FindReplace`, `ContextMenu`(우클릭 메뉴), `Clipboard`(붙여넣기·드래그드롭), `Rendering`(Measure/Render/AutomationPeer), `Modes`(EditorMode·기능 플래그·이미지 소프트 제한). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal). 접근성 `RichEditorAutomationPeer`(IValueProvider). 호스트 교체용 아이콘 훅 `RichEditorIcons`(전역 Provider).
 - `Formatters/` — `DocumentSerializer`(JSON), `HtmlDocumentFormatter`(HTML 입출력 파서), `RoundTripHarness`(`--roundtrip` CLI 검증).
 
 **데모/테스트 앱** `samples/AvaloniaRichEditor.Demo/` (네임스페이스 `AvaloniaRichEditor.Demo.*`):
