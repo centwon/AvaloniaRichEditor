@@ -3291,6 +3291,17 @@ public partial class RichEditor : Control
         InvalidateVisual();
     }
 
+    // Sets the display size to a fraction of the natural size (context-menu presets), mirroring
+    // the block-image presets. Display size only — the encoded bytes are untouched.
+    private void ScaleInlineImageSize(InlineImage img, double factor)
+    {
+        if (Document == null || img.Image == null) return;
+        PushUndo();
+        img.Width = Math.Max(1, img.Image.Size.Width * factor);
+        img.Height = Math.Max(1, img.Image.Size.Height * factor);
+        InvalidateVisual();
+    }
+
     private async Task ReplaceInlineImageAsync(InlineImage img)
     {
         var top = TopLevel.GetTopLevel(this);

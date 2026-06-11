@@ -283,6 +283,9 @@ public partial class RichEditor
         items.Add(Mi(Loc("Delete"), () => DeleteInlineImage(p, img)));
         items.Add(new Separator());
         items.Add(Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), img.Image != null));
+        items.Add(Mi(Loc("HalfSize"), () => ScaleInlineImageSize(img, 1.0 / 2), img.Image != null));
+        items.Add(Mi(Loc("ThirdSize"), () => ScaleInlineImageSize(img, 1.0 / 3), img.Image != null));
+        items.Add(Mi(Loc("QuarterSize"), () => ScaleInlineImageSize(img, 1.0 / 4), img.Image != null));
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceInlineImageAsync(img); }));
         items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveBitmapAsync(img.Image); }, img.Image != null));
         items.Add(new Separator());
