@@ -72,6 +72,11 @@ public static class RichEditorLocalization
             ["Indent"] = "Indent",
             ["IndentIncrease"] = "Increase Indent",
             ["IndentDecrease"] = "Decrease Indent",
+            ["Margin"] = "Margin",
+            ["MarginTop"] = "Top Margin",
+            ["MarginBottom"] = "Bottom Margin",
+            ["MarginLeft"] = "Left Margin",
+            ["MarginRight"] = "Right Margin",
             ["LineSpacing"] = "Line Spacing",
             ["LineSpacingFormat"] = "Spacing {0}",
             // Links
@@ -174,6 +179,11 @@ public static class RichEditorLocalization
             ["Indent"] = "들여쓰기",
             ["IndentIncrease"] = "들여쓰기 +",
             ["IndentDecrease"] = "내어쓰기 -",
+            ["Margin"] = "여백",
+            ["MarginTop"] = "위 여백",
+            ["MarginBottom"] = "아래 여백",
+            ["MarginLeft"] = "왼쪽 여백",
+            ["MarginRight"] = "오른쪽 여백",
             ["LineSpacing"] = "줄 간격",
             ["LineSpacingFormat"] = "줄간격 {0}",
             // Links

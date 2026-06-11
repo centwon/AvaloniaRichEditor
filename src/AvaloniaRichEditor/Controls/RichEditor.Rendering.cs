@@ -24,15 +24,16 @@ public partial class RichEditor
         double yOffset = 0;
         foreach (var block in Document.Blocks)
         {
-            if (block is TableBlock tb) yOffset += LayoutTable(tb, 10 + tb.Indent, yOffset).TotalHeight + 10;
-            else if (block is ImageBlock img) yOffset += (img.Height > 0 ? img.Height : 200) + 10;
-            else if (block is DividerBlock) yOffset += DividerHeight;
+            yOffset += block.MarginTop;
+            if (block is TableBlock tb) yOffset += LayoutTable(tb, 10 + tb.Indent, yOffset).TotalHeight + tb.MarginBottom;
+            else if (block is ImageBlock img) yOffset += (img.Height > 0 ? img.Height : 200) + img.MarginBottom;
+            else if (block is DividerBlock dv) yOffset += DividerHeight + dv.MarginBottom;
             else if (block is Paragraph p)
             {
                 if (BuildPlain(p) == "")
                     yOffset += p.MarginBottom + (!double.IsNaN(p.LineHeight) ? p.LineHeight : 20);
                 else
-                    yOffset += BuildTextLayout(p, Math.Max(10, width - 20 - ParaLeft(p))).Height + p.MarginBottom;
+                    yOffset += BuildTextLayout(p, Math.Max(10, width - 20 - ParaLeft(p) - p.MarginRight)).Height + p.MarginBottom;
             }
         }
         return yOffset + 40; // a little breathing room at the bottom
@@ -141,6 +142,7 @@ public partial class RichEditor
 
         foreach (var block in Document.Blocks)
         {
+            yOffset += block.MarginTop;
             if (block is TableBlock tb)
             {
                 orderedIndex = 0;
@@ -158,7 +160,7 @@ public partial class RichEditor
                     || ReferenceEquals(tb, _caretBlock) || ReferenceEquals(tb, _selectedBlock);
                 if (!tbVisible)
                 {
-                    yOffset = tableTop + tl.TotalHeight + 10;
+                    yOffset = tableTop + tl.TotalHeight + tb.MarginBottom;
                     continue;
                 }
 
@@ -257,7 +259,7 @@ public partial class RichEditor
                     continue;
                 }
 
-                double pWidth = Math.Max(10, maxWidth - 20 - px);
+                double pWidth = Math.Max(10, maxWidth - 20 - px - paragraph.MarginRight);
                 var layout = hasPreedit
                     ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
                     : BuildTextLayout(paragraph, pWidth);
@@ -335,7 +337,7 @@ public partial class RichEditor
                 if ((yOffset + cullHeight < visTop || yOffset > visBottom)
                     && !ReferenceEquals(img, _caretBlock) && !ReferenceEquals(img, _selectedBlock))
                 {
-                    yOffset += cullHeight + 10;
+                    yOffset += cullHeight + img.MarginBottom;
                     continue;
                 }
                 if (img.Image != null)
@@ -361,10 +363,10 @@ public partial class RichEditor
                     // Slightly larger hit area than the visual handle for easier grabbing.
                     _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img));
 
-                    yOffset += height + 10;
+                    yOffset += height + img.MarginBottom;
                 }
             }
-            else if (block is DividerBlock)
+            else if (block is DividerBlock dv)
             {
                 orderedIndex = 0;
                 if (yOffset + DividerHeight >= visTop && yOffset <= visBottom)
@@ -372,7 +374,7 @@ public partial class RichEditor
                     double y = yOffset + DividerHeight / 2;
                     context.DrawLine(new Pen(Brushes.Gray, 1), new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
                 }
-                yOffset += DividerHeight;
+                yOffset += DividerHeight + dv.MarginBottom;
             }
         }
 

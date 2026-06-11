@@ -39,6 +39,45 @@ public partial class RichEditor
         return mi;
     }
 
+    // "Margin" submenu with per-side presets for a block (paragraph, image, or table). The current
+    // value is radio-checked; picking one pushes an undo checkpoint and re-measures. Left maps to
+    // Block.Indent (the existing left offset); right exists for paragraphs only — nothing flows
+    // around images/tables, so a right margin would be invisible there.
+    private MenuItem MarginMenu(Block target)
+    {
+        Control[] Presets(Func<double> get, Action<double> set)
+        {
+            var items = new List<Control>();
+            foreach (double v in new[] { 0d, 5, 10, 20, 30 })
+            {
+                var mi = new MenuItem
+                {
+                    Header = $"{v:0} px",
+                    ToggleType = MenuItemToggleType.Radio,
+                    IsChecked = Math.Abs(get() - v) < 0.5,
+                };
+                mi.Click += (_, _) =>
+                {
+                    if (Document != null) PushUndo();
+                    set(v);
+                    NotifyStatus(); // content size changed -> re-measure scroll extent
+                    InvalidateVisual();
+                };
+                items.Add(mi);
+            }
+            return items.ToArray();
+        }
+        var sides = new List<Control>
+        {
+            Sub(Loc("MarginTop"), Presets(() => target.MarginTop, v => target.MarginTop = v)),
+            Sub(Loc("MarginBottom"), Presets(() => target.MarginBottom, v => target.MarginBottom = v)),
+            Sub(Loc("MarginLeft"), Presets(() => target.Indent, v => target.Indent = v)),
+        };
+        if (target is Paragraph mp)
+            sides.Add(Sub(Loc("MarginRight"), Presets(() => mp.MarginRight, v => mp.MarginRight = v)));
+        return Sub(Loc("Margin"), sides.ToArray());
+    }
+
     // A context menu with a compact look: smaller font and tight row height/padding so long menus don't
     // dominate the screen. The MenuItem style applies to nested submenu items too.
     private static ContextMenu NewContextMenu()
@@ -226,6 +265,10 @@ public partial class RichEditor
         AddClipboardItems(items, hasSelection);
         items.Add(new Separator());
         AddFormatItems(items, hasSelection);
+        // Top-level paragraphs only — cell paragraphs (BuildCellTextMenu) lay out inside the cell,
+        // where block margins don't apply.
+        if (_caretPosition.Paragraph is { } mp && Document != null && Document.Blocks.IndexOf(mp) >= 0)
+            items.Add(MarginMenu(mp));
         items.Add(new Separator());
         if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
         {
@@ -261,6 +304,7 @@ public partial class RichEditor
         items.Add(Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), img.Image != null));
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
         items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveImageAsync(img); }, img.Image != null, RichEditorIcon.SaveImageAs));
+        items.Add(MarginMenu(img));
         items.Add(new Separator());
         // HWP-style toggle: unchecked here (block image); checking it demotes to an inline character.
         var asChar = new MenuItem { Header = Loc("InlineWithText"), ToggleType = MenuItemToggleType.CheckBox, IsChecked = false };
@@ -340,6 +384,7 @@ public partial class RichEditor
             InvalidateVisual();
         }, canUnmerge, RichEditorIcon.UnmergeCells));
         items.Add(new Separator());
+        items.Add(MarginMenu(tb));
         items.Add(Mi(Loc("DeleteTable"), () => DeleteBlock(tb), icon: RichEditorIcon.DeleteTable));
     }
 }

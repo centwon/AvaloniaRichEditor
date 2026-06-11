@@ -343,6 +343,8 @@ public class TableBlock : Block
         EnsureSpanConsistency();
         var tb = new TableBlock(Rows, Columns);
         tb.Indent = Indent;
+        tb.MarginTop = MarginTop;
+        tb.MarginBottom = MarginBottom;
         tb.Cells.Clear();
         tb.ColSpans.Clear();
         tb.RowSpans.Clear();

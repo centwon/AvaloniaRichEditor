@@ -154,6 +154,10 @@ AvaloniaRichEditor.Documents.Block
 AvaloniaRichEditor.Documents.Block.Block() -> void
 AvaloniaRichEditor.Documents.Block.Indent.get -> double
 AvaloniaRichEditor.Documents.Block.Indent.set -> void
+AvaloniaRichEditor.Documents.Block.MarginBottom.get -> double
+AvaloniaRichEditor.Documents.Block.MarginBottom.set -> void
+AvaloniaRichEditor.Documents.Block.MarginTop.get -> double
+AvaloniaRichEditor.Documents.Block.MarginTop.set -> void
 AvaloniaRichEditor.Documents.DividerBlock
 AvaloniaRichEditor.Documents.DividerBlock.DividerBlock() -> void
 AvaloniaRichEditor.Documents.FlowDocument
@@ -202,12 +206,10 @@ AvaloniaRichEditor.Documents.Paragraph.LineHeight.get -> double
 AvaloniaRichEditor.Documents.Paragraph.LineHeight.set -> void
 AvaloniaRichEditor.Documents.Paragraph.ListLevel.get -> int
 AvaloniaRichEditor.Documents.Paragraph.ListLevel.set -> void
+AvaloniaRichEditor.Documents.Paragraph.MarginRight.get -> double
+AvaloniaRichEditor.Documents.Paragraph.MarginRight.set -> void
 AvaloniaRichEditor.Documents.Paragraph.ListType.get -> AvaloniaRichEditor.Documents.ListKind
 AvaloniaRichEditor.Documents.Paragraph.ListType.set -> void
-AvaloniaRichEditor.Documents.Paragraph.MarginBottom.get -> double
-AvaloniaRichEditor.Documents.Paragraph.MarginBottom.set -> void
-AvaloniaRichEditor.Documents.Paragraph.MarginTop.get -> double
-AvaloniaRichEditor.Documents.Paragraph.MarginTop.set -> void
 AvaloniaRichEditor.Documents.Paragraph.Paragraph() -> void
 AvaloniaRichEditor.Documents.Paragraph.TextAlignment.get -> Avalonia.Media.TextAlignment
 AvaloniaRichEditor.Documents.Paragraph.TextAlignment.set -> void

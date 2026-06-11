@@ -97,8 +97,8 @@ public static class DocumentSerializer
         {
             case Paragraph p:
                 return ParagraphToDto(p, pool);
-            case DividerBlock:
-                return new BlockDto { Type = "Divider" };
+            case DividerBlock dv:
+                return new BlockDto { Type = "Divider", MarginTop = dv.MarginTop, MarginBottom = dv.MarginBottom };
             case ImageBlock img:
                 // Bytes go to the document image pool (deduplicated by hash); the block stores only
                 // the pool key. A bitmap set without bytes (legacy/consumer path) is PNG-encoded once.
@@ -110,7 +110,9 @@ public static class DocumentSerializer
                     ImageRef = PoolImage(pool, img.RawBytes, img.MimeType, img.RawBytes == null ? img.Image : null),
                     Width = NanToNull(img.Width),
                     Height = NanToNull(img.Height),
-                    Indent = img.Indent
+                    Indent = img.Indent,
+                    MarginTop = img.MarginTop,
+                    MarginBottom = img.MarginBottom
                 };
             case TableBlock tb:
                 var td = new BlockDto
@@ -119,6 +121,8 @@ public static class DocumentSerializer
                     Rows = tb.Rows,
                     Columns = tb.Columns,
                     Indent = tb.Indent,
+                    MarginTop = tb.MarginTop,
+                    MarginBottom = tb.MarginBottom,
                     ColumnWidths = new List<double>(tb.ColumnWidths),
                     RowHeights = new List<double>(tb.RowHeights),
                     Cells = new List<List<BlockDto>>()
@@ -149,6 +153,7 @@ public static class DocumentSerializer
             LineHeight = NanToNull(p.LineHeight),
             MarginTop = p.MarginTop,
             MarginBottom = p.MarginBottom,
+            MarginRight = p.MarginRight,
             ListType = p.ListType.ToString(),
             HeadingLevel = p.HeadingLevel,
             Background = BrushToString(p.Background),
@@ -192,7 +197,7 @@ public static class DocumentSerializer
         switch (d.Type)
         {
             case "Divider":
-                return new DividerBlock();
+                return new DividerBlock { MarginTop = d.MarginTop ?? 0, MarginBottom = d.MarginBottom ?? 0 };
             case "Image":
                 {
                     // Bytes are kept encoded; the Bitmap is decoded lazily on first render.
@@ -200,7 +205,9 @@ public static class DocumentSerializer
                     {
                         Width = d.Width ?? double.NaN,
                         Height = d.Height ?? double.NaN,
-                        Indent = d.Indent
+                        Indent = d.Indent,
+                        MarginTop = d.MarginTop ?? 0,
+                        MarginBottom = d.MarginBottom ?? 10
                     };
                     if (ResolveImage(d.ImageRef, d.ImageBase64, d.MimeType, pool) is { } img)
                         ib.SetImageData(img.Bytes, img.Mime);
@@ -209,6 +216,8 @@ public static class DocumentSerializer
             case "Table":
                 var tb = new TableBlock(Math.Max(1, d.Rows), Math.Max(1, d.Columns));
                 tb.Indent = d.Indent;
+                tb.MarginTop = d.MarginTop ?? 0;
+                tb.MarginBottom = d.MarginBottom ?? 10;
                 tb.Cells.Clear();
                 tb.ColumnWidths.Clear();
                 tb.RowHeights.Clear();
@@ -249,8 +258,9 @@ public static class DocumentSerializer
         var p = new Paragraph
         {
             LineHeight = d.LineHeight ?? double.NaN,
-            MarginTop = d.MarginTop,
-            MarginBottom = d.MarginBottom,
+            MarginTop = d.MarginTop ?? 0,
+            MarginBottom = d.MarginBottom ?? 10,
+            MarginRight = d.MarginRight ?? 0,
             HeadingLevel = d.HeadingLevel,
             Background = StringToBrush(d.Background),
             Indent = d.Indent,
@@ -388,8 +398,11 @@ internal class BlockDto
     public List<InlineDto>? Inlines { get; set; }
     public string? TextAlignment { get; set; }
     public double? LineHeight { get; set; }
-    public double MarginTop { get; set; }
-    public double MarginBottom { get; set; }
+    // Nullable so pre-margin documents (field absent) fall back to the per-block-type defaults
+    // instead of 0 — images/tables historically rendered with a fixed 10px bottom gap.
+    public double? MarginTop { get; set; }
+    public double? MarginBottom { get; set; }
+    public double? MarginRight { get; set; } // paragraphs only (narrows the wrap width)
     public bool IsListItem { get; set; } // legacy (read fallback); replaced by ListType
     public string? ListType { get; set; }
     public int HeadingLevel { get; set; }

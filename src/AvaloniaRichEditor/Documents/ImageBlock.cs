@@ -60,7 +60,9 @@ public class ImageBlock : Block
         {
             Width = this.Width,
             Height = this.Height,
-            Indent = this.Indent
+            Indent = this.Indent,
+            MarginTop = this.MarginTop,
+            MarginBottom = this.MarginBottom
         };
         c.RawBytes = RawBytes;
         c.MimeType = MimeType;

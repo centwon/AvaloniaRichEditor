@@ -1050,27 +1050,28 @@ public partial class RichEditor
         double yOffset = 0, maxWidth = Bounds.Width;
         foreach (var block in Document.Blocks)
         {
+            yOffset += block.MarginTop;
             double top = yOffset;
             if (block is TableBlock tb)
             {
                 double h = LayoutTable(tb, 10 + tb.Indent, yOffset).TotalHeight;
                 if (y >= top && y <= top + h) return tb;
-                yOffset += h + 10;
+                yOffset += h + tb.MarginBottom;
             }
             else if (block is ImageBlock img)
             {
                 double h = img.Height > 0 ? img.Height : 200;
                 if (y >= top && y <= top + h) return img;
-                yOffset += h + 10;
+                yOffset += h + img.MarginBottom;
             }
             else if (block is Paragraph paragraph)
             {
                 if (BuildPlain(paragraph) == "")
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                 else
-                    yOffset += BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph))).Height + paragraph.MarginBottom;
+                    yOffset += BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph) - paragraph.MarginRight)).Height + paragraph.MarginBottom;
             }
-            else if (block is DividerBlock) yOffset += DividerHeight;
+            else if (block is DividerBlock dv) yOffset += DividerHeight + dv.MarginBottom;
         }
         return null;
     }

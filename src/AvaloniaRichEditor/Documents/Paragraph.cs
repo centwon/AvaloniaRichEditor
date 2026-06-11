@@ -25,10 +25,10 @@ public class Paragraph : Block
     public TextAlignment TextAlignment { get; set; } = TextAlignment.Left;
     /// <summary>Line height multiplier. <see cref="double.NaN"/> = single spacing (default).</summary>
     public double LineHeight { get; set; } = double.NaN;
-    /// <summary>Top margin in device-independent pixels. Default: 0.</summary>
-    public double MarginTop { get; set; } = 0;
-    /// <summary>Bottom margin in device-independent pixels. Default: 10.</summary>
-    public double MarginBottom { get; set; } = 10;
+    /// <summary>Right margin in device-independent pixels — narrows the wrap width. Paragraph-only:
+    /// nothing flows around images/tables, so a right margin would be invisible there
+    /// (the left margin is <see cref="Block.Indent"/>). Default: 0.</summary>
+    public double MarginRight { get; set; } = 0;
     /// <summary>List style for this paragraph. Default: None.</summary>
     public ListKind ListType { get; set; } = ListKind.None;
     /// <summary>Heading level: 0 = body text, 1–6 = h1–h6.</summary>
@@ -50,6 +50,7 @@ public class Paragraph : Block
         {
             MarginTop = this.MarginTop,
             MarginBottom = this.MarginBottom,
+            MarginRight = this.MarginRight,
             TextAlignment = this.TextAlignment,
             LineHeight = this.LineHeight,
             ListType = this.ListType,
