@@ -828,6 +828,34 @@ public partial class RichEditor : Control
         return null;
     }
 
+    // The inline image whose logical position ends exactly at `offset` (i.e. the caret sits right
+    // after it). Used to correct the caret X next to a trailing image.
+    private static InlineImage? InlineImageEndingAt(Paragraph p, int offset)
+    {
+        int idx = 0;
+        foreach (var inl in p.Inlines)
+        {
+            idx += InlineLen(inl);
+            if (inl is InlineImage img && idx == offset) return img;
+            if (idx > offset) break;
+        }
+        return null;
+    }
+
+    // Works around an Avalonia hit-test quirk: a DrawableTextRun at the very end of a line is
+    // excluded from caret-distance computation, so the position right after a trailing inline
+    // image collapses to the image's *left* edge (typing there visibly lands "behind" the image
+    // and Right-arrow appears stuck). When the caret sits right after an image and the reported X
+    // didn't advance past the image's start, pin it to the image's right edge.
+    internal static Rect FixCaretAfterTrailingImage(Avalonia.Media.TextFormatting.TextLayout layout,
+        Paragraph p, int logicalOffset, int displayIndex, Rect cr)
+    {
+        if (displayIndex <= 0 || InlineImageEndingAt(p, logicalOffset) is not { } img) return cr;
+        var ir = layout.HitTestTextPosition(displayIndex - 1);
+        double w = Math.Max(8, img.Width > 0 ? img.Width : 16);
+        return cr.X <= ir.X + 0.5 ? cr.WithX(ir.X + w) : cr;
+    }
+
     // The inline image occupying the logical position at `offset`. An image is one position wide, so a
     // click on it can land on either edge — check both the position and the one before it.
     private static InlineImage? InlineImageAt(Paragraph p, int offset)

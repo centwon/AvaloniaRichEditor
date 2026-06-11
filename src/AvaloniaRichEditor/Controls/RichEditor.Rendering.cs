@@ -205,6 +205,7 @@ public partial class RichEditor
                     {
                         int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
                         var cr = layout.HitTestTextPosition(caretDisp);
+                        cr = FixCaretAfterTrailingImage(layout, cell, _caretPosition.Offset, caretDisp, cr);
                         double th = CaretTextHeight(cell, _caretPosition.Offset);
                         if (cr.Height > 0 && th > cr.Height) th = cr.Height;
                         caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y + Math.Max(0, cr.Height - th));
@@ -312,6 +313,7 @@ public partial class RichEditor
                 {
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
                     var cr = layout.HitTestTextPosition(caretDisp);
+                    cr = FixCaretAfterTrailingImage(layout, paragraph, _caretPosition.Offset, caretDisp, cr);
                     double th = CaretTextHeight(paragraph, _caretPosition.Offset);
                     if (cr.Height > 0 && th > cr.Height) th = cr.Height;
                     caretPoint = new Point(px + cr.X, yOffset + cr.Y + Math.Max(0, cr.Height - th));
