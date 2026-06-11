@@ -255,6 +255,11 @@ public partial class RichEditor
         items.Add(Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), img.Image != null));
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceImageAsync(img); }));
         items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveImageAsync(img); }, img.Image != null));
+        items.Add(new Separator());
+        // HWP-style toggle: unchecked here (block image); checking it demotes to an inline character.
+        var asChar = new MenuItem { Header = Loc("InlineWithText"), ToggleType = MenuItemToggleType.CheckBox, IsChecked = false };
+        asChar.Click += (_, _) => ConvertImageBlockToInline(img);
+        items.Add(asChar);
     }
 
     // Concise menu shown when right-clicking a hyperlink: link actions + copy, no formatting clutter.
@@ -280,6 +285,13 @@ public partial class RichEditor
         items.Add(Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), img.Image != null));
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceInlineImageAsync(img); }));
         items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveBitmapAsync(img.Image); }, img.Image != null));
+        items.Add(new Separator());
+        // Checked here (inline = treated as a character). Unchecking promotes back to a block image;
+        // disabled inside table cells, which cannot host block siblings.
+        bool canBlock = Document != null && Document.Blocks.IndexOf(p) >= 0;
+        var asChar = new MenuItem { Header = Loc("InlineWithText"), ToggleType = MenuItemToggleType.CheckBox, IsChecked = true, IsEnabled = canBlock };
+        asChar.Click += (_, _) => ConvertInlineImageToBlock(p, img);
+        items.Add(asChar);
     }
 
     private void BuildTableMenu(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)

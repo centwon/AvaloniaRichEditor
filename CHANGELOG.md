@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   add or override languages at runtime via `Register()` (per-key merge, English fallback).
   AOT-safe (plain dictionaries, no satellite assemblies).
 
+### Added (editing)
+- **HWP-style "Inline with text" (글자처럼 취급) toggle** on the image context menu: a block image
+  can be demoted to an inline image that flows with the text as a single character, and an inline
+  image promoted back to a block (disabled inside table cells, which cannot host blocks). Bytes,
+  mime type and display size survive the round trip; both directions are undoable.
+
 ### Changed
 - **JSON schema v2 — image pool deduplication**: identical images (same encoded bytes) are now
   stored once in a document-level pool keyed by SHA-256 and referenced from blocks, instead of

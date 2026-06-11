@@ -95,6 +95,7 @@ public static class RichEditorLocalization
             ["ReplaceImage"] = "Replace Image...",
             ["SaveImageAs"] = "Save As...",
             ["SelectImage"] = "Select Image",
+            ["InlineWithText"] = "Inline with Text",
             ["SaveImage"] = "Save Image",
             // Tables
             ["InsertRowAbove"] = "Insert Row Above",
@@ -197,6 +198,7 @@ public static class RichEditorLocalization
             ["SaveImageAs"] = "다른 이름으로 저장...",
             ["SelectImage"] = "이미지 선택",
             ["SaveImage"] = "이미지 저장",
+            ["InlineWithText"] = "글자처럼 취급",
             // Tables
             ["InsertRowAbove"] = "위에 행 삽입",
             ["InsertRowBelow"] = "아래에 행 삽입",

@@ -3214,6 +3214,66 @@ public partial class RichEditor : Control
         catch { }
     }
 
+    // HWP-style "글자처럼 취급" (treat as character): demote a block image into an InlineImage,
+    // anchored at the end of the preceding paragraph (NormalizeBlocks guarantees paragraphs around
+    // every block) so it flows with the text as one character.
+    internal void ConvertImageBlockToInline(ImageBlock ib)
+    {
+        if (Document == null) return;
+        int idx = Document.Blocks.IndexOf(ib);
+        if (idx < 0) return;
+        Paragraph? anchor = null;
+        bool atEnd = true;
+        if (idx > 0 && Document.Blocks[idx - 1] is Paragraph prev) anchor = prev;
+        else
+            for (int i = idx + 1; i < Document.Blocks.Count && anchor == null; i++)
+                if (Document.Blocks[i] is Paragraph next) { anchor = next; atEnd = false; }
+        if (anchor == null) return;
+
+        PushUndo();
+        var im = new InlineImage
+        {
+            Width = double.IsNaN(ib.Width) ? (ib.Image?.Size.Width ?? 16) : ib.Width,
+            Height = double.IsNaN(ib.Height) ? (ib.Image?.Size.Height ?? 16) : ib.Height
+        };
+        if (ib.RawBytes != null) im.SetImageData(ib.RawBytes, ib.MimeType, ib.Image);
+        else im.Image = ib.Image;
+        Document.Blocks.Remove(ib);
+        if (atEnd) anchor.Inlines.Add(im);
+        else anchor.Inlines.Insert(0, im);
+        if (_selectedBlock == ib) _selectedBlock = null;
+        UpdateParents(Document);
+
+        // Caret right after the image character so typing continues next to it.
+        int off = 0;
+        foreach (var inl in anchor.Inlines) { off += InlineLen(inl); if (ReferenceEquals(inl, im)) break; }
+        _caretPosition = new TextPointer(anchor, off);
+        CollapseSelectionToCaret();
+        ResetCaretBlink();
+        InvalidateVisual();
+    }
+
+    // Reverse of ConvertImageBlockToInline: promote an inline image to a sibling ImageBlock after
+    // its paragraph. Top-level paragraphs only — table cells cannot host block siblings, so the
+    // context menu disables this inside cells.
+    internal void ConvertInlineImageToBlock(Paragraph p, InlineImage im)
+    {
+        if (Document == null) return;
+        int idx = Document.Blocks.IndexOf(p);
+        if (idx < 0) return;
+
+        PushUndo();
+        var ib = new ImageBlock { Width = im.Width, Height = im.Height };
+        if (im.RawBytes != null) ib.SetImageData(im.RawBytes, im.MimeType, im.Image);
+        else ib.Image = im.Image;
+        p.Inlines.Remove(im);
+        Document.Blocks.Insert(idx + 1, ib);
+        UpdateParents(Document);
+        _selectedBlock = ib;
+        ResetCaretBlink();
+        InvalidateVisual();
+    }
+
     private void DeleteInlineImage(Paragraph p, InlineImage img)
     {
         if (Document == null) return;
