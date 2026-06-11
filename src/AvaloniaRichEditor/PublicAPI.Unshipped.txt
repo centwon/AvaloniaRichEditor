@@ -288,3 +288,8 @@ AvaloniaRichEditor.Controls.RichEditorView
 AvaloniaRichEditor.Controls.RichEditorView.Editor.get -> AvaloniaRichEditor.Controls.RichEditor!
 AvaloniaRichEditor.Controls.RichEditorView.RichEditorView() -> void
 AvaloniaRichEditor.Controls.RichEditorView.Toolbar.get -> AvaloniaRichEditor.Controls.RichEditorToolbar!
+AvaloniaRichEditor.Controls.RichEditor.SavePackageAsync(System.IO.Stream! destination) -> System.Threading.Tasks.Task!
+AvaloniaRichEditor.Controls.RichEditor.LoadPackageAsync(System.IO.Stream! source) -> System.Threading.Tasks.Task!
+AvaloniaRichEditor.Formatters.DocumentPackage
+static AvaloniaRichEditor.Formatters.DocumentPackage.Save(AvaloniaRichEditor.Documents.FlowDocument! document, System.IO.Stream! destination) -> void
+static AvaloniaRichEditor.Formatters.DocumentPackage.Load(System.IO.Stream! source) -> AvaloniaRichEditor.Documents.FlowDocument!

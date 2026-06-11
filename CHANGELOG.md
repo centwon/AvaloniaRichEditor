@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image promoted back to a block (disabled inside table cells, which cannot host blocks). Bytes,
   mime type and display size survive the round trip; both directions are undoable.
 
+### Added (file format)
+- **`.ardx` package format**: a ZIP container with `document.json` plus raw image entries keyed by
+  content hash (stored uncompressed — the win over plain JSON is dropping the ~33% base64
+  overhead). New APIs: `RichEditor.SavePackageAsync(Stream)` / `LoadPackageAsync(Stream)`
+  (snapshot + background, like the JSON async pair) and `DocumentPackage.Save/Load`. The JSON
+  string contract is unchanged.
+
 ### Changed
 - **JSON schema v2 — image pool deduplication**: identical images (same encoded bytes) are now
   stored once in a document-level pool keyed by SHA-256 and referenced from blocks, instead of

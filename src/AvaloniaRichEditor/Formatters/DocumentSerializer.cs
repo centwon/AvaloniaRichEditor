@@ -28,18 +28,31 @@ public static class DocumentSerializer
     /// <summary>Serializes <paramref name="document"/> to a JSON string.</summary>
     public static string Serialize(FlowDocument document)
     {
-        var pool = new Dictionary<string, ImagePoolDto>();
-        var dto = new FlowDocumentDto { Version = CurrentSchemaVersion };
-        foreach (var block in document.Blocks) dto.Blocks.Add(BlockToDto(block, pool));
-        if (pool.Count > 0) dto.Images = pool;
+        var images = new Dictionary<string, (byte[] Bytes, string Mime)>();
+        var dto = ToDto(document, images);
+        if (images.Count > 0)
+        {
+            dto.Images = new Dictionary<string, ImagePoolDto>();
+            foreach (var (key, img) in images)
+                dto.Images[key] = new ImagePoolDto { Data = Convert.ToBase64String(img.Bytes), MimeType = img.Mime };
+        }
         return JsonSerializer.Serialize(dto, DocumentJsonContext.Default.FlowDocumentDto);
+    }
+
+    // Builds the wire DTO; image bytes land in `images` keyed by content hash (the dto references
+    // them via ImageRef). The caller picks the byte representation: base64 in the JSON pool
+    // (Serialize) or zip entries (DocumentPackage).
+    internal static FlowDocumentDto ToDto(FlowDocument document, Dictionary<string, (byte[] Bytes, string Mime)> images)
+    {
+        var dto = new FlowDocumentDto { Version = CurrentSchemaVersion };
+        foreach (var block in document.Blocks) dto.Blocks.Add(BlockToDto(block, images));
+        return dto;
     }
 
     /// <summary>Deserializes a <see cref="FlowDocument"/> from a JSON string produced by <see cref="Serialize"/>.
     /// Returns an empty document on parse errors. Image decoding is deferred to first render.</summary>
     public static FlowDocument Deserialize(string json)
     {
-        var doc = new FlowDocument();
         var dto = JsonSerializer.Deserialize(json, DocumentJsonContext.Default.FlowDocumentDto);
         // Decode each pool entry once; blocks referencing the same hash share one byte[] instance.
         var pool = new Dictionary<string, (byte[] Bytes, string Mime)>();
@@ -49,6 +62,14 @@ public static class DocumentSerializer
                 var bytes = TryFromBase64(entry.Data);
                 if (bytes != null) pool[key] = (bytes, entry.MimeType ?? "image/png");
             }
+        return FromDto(dto, pool);
+    }
+
+    // Rebuilds the document from a DTO plus the resolved image pool (bytes already decoded from
+    // base64 or read from package entries).
+    internal static FlowDocument FromDto(FlowDocumentDto? dto, Dictionary<string, (byte[] Bytes, string Mime)> pool)
+    {
+        var doc = new FlowDocument();
         if (dto?.Blocks != null)
             foreach (var bd in dto.Blocks)
             {
@@ -60,7 +81,7 @@ public static class DocumentSerializer
 
     // ---- model -> dto ----
 
-    private static BlockDto BlockToDto(Block block, Dictionary<string, ImagePoolDto> pool)
+    private static BlockDto BlockToDto(Block block, Dictionary<string, (byte[] Bytes, string Mime)> pool)
     {
         switch (block)
         {
@@ -74,7 +95,9 @@ public static class DocumentSerializer
                 return new BlockDto
                 {
                     Type = "Image",
-                    ImageRef = PoolImage(pool, img.RawBytes, img.MimeType, img.Image),
+                    // Only touch .Image (lazy decode) when there are no raw bytes — keeps "save"
+                    // decode-free for byte-backed images (N6-2).
+                    ImageRef = PoolImage(pool, img.RawBytes, img.MimeType, img.RawBytes == null ? img.Image : null),
                     Width = NanToNull(img.Width),
                     Height = NanToNull(img.Height),
                     Indent = img.Indent
@@ -106,7 +129,7 @@ public static class DocumentSerializer
         }
     }
 
-    private static BlockDto ParagraphToDto(Paragraph p, Dictionary<string, ImagePoolDto> pool)
+    private static BlockDto ParagraphToDto(Paragraph p, Dictionary<string, (byte[] Bytes, string Mime)> pool)
     {
         var d = new BlockDto
         {
@@ -144,7 +167,7 @@ public static class DocumentSerializer
                 d.Inlines.Add(new InlineDto
                 {
                     Type = "Image",
-                    ImageRef = PoolImage(pool, im.RawBytes, im.MimeType, im.Image),
+                    ImageRef = PoolImage(pool, im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null),
                     Width = im.Width,
                     Height = im.Height
                 });
@@ -289,14 +312,13 @@ public static class DocumentSerializer
     // Adds the image bytes to the document pool (deduplicated by content hash) and returns the
     // pool key, or null when there is no image data. RawBytes are stored as-is (no re-encoding);
     // a bitmap without bytes falls back to PNG encoding.
-    private static string? PoolImage(Dictionary<string, ImagePoolDto> pool, byte[]? rawBytes, string? mimeType, Bitmap? bmp)
+    private static string? PoolImage(Dictionary<string, (byte[] Bytes, string Mime)> pool, byte[]? rawBytes, string? mimeType, Bitmap? bmp)
     {
         byte[]? bytes = rawBytes ?? BitmapToBytes(bmp);
         if (bytes == null) return null;
         string mime = rawBytes != null ? (mimeType ?? "image/png") : "image/png";
         string key = Convert.ToHexString(SHA256.HashData(bytes));
-        if (!pool.ContainsKey(key))
-            pool[key] = new ImagePoolDto { Data = Convert.ToBase64String(bytes), MimeType = mime };
+        if (!pool.ContainsKey(key)) pool[key] = (bytes, mime);
         return key;
     }
 

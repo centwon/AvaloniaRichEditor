@@ -217,15 +217,29 @@ public partial class MainWindow : Window
         var file = await topLevel.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
             Title = "Save Document",
-            DefaultExtension = "json"
+            DefaultExtension = "json",
+            FileTypeChoices = new[]
+            {
+                new Avalonia.Platform.Storage.FilePickerFileType("JSON document") { Patterns = new[] { "*.json" } },
+                new Avalonia.Platform.Storage.FilePickerFileType("ARDX package") { Patterns = new[] { "*.ardx" } },
+            }
         });
 
         if (file != null)
         {
-            string json = await richTextBox.ToJsonAsync(); // serialize off the UI thread (N6-3)
-            using var stream = await file.OpenWriteAsync();
-            using var writer = new System.IO.StreamWriter(stream);
-            await writer.WriteAsync(json);
+            // .ardx = ZIP package (raw image bytes, no base64); anything else = plain JSON.
+            if (file.Name.EndsWith(".ardx", System.StringComparison.OrdinalIgnoreCase))
+            {
+                using var stream = await file.OpenWriteAsync();
+                await richTextBox.SavePackageAsync(stream);
+            }
+            else
+            {
+                string json = await richTextBox.ToJsonAsync(); // serialize off the UI thread (N6-3)
+                using var stream = await file.OpenWriteAsync();
+                using var writer = new System.IO.StreamWriter(stream);
+                await writer.WriteAsync(json);
+            }
         }
     }
 
@@ -245,12 +259,23 @@ public partial class MainWindow : Window
             try
             {
                 using var stream = await file[0].OpenReadAsync();
-                using var reader = new System.IO.StreamReader(stream);
-                string json = await reader.ReadToEndAsync();
+                using var ms = new System.IO.MemoryStream();
+                await stream.CopyToAsync(ms);
+                ms.Position = 0;
 
                 var richTextBox = this.FindControl<RichEditor>("RichTextBox");
-                if (richTextBox != null)
+                if (richTextBox == null) return;
+
+                // Sniff the content: ZIP magic ("PK") = .ardx package, anything else = JSON text.
+                if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
+                {
+                    await richTextBox.LoadPackageAsync(ms);
+                }
+                else
+                {
+                    string json = System.Text.Encoding.UTF8.GetString(ms.ToArray());
                     await richTextBox.LoadJsonAsync(json); // parse off the UI thread (N6-3)
+                }
             }
             catch (System.Exception ex)
             {

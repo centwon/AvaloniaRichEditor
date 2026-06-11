@@ -2419,6 +2419,24 @@ public partial class RichEditor : Control
         LoadDocument(doc);
     }
 
+    /// <summary>Writes the document to <paramref name="destination"/> as an <c>.ardx</c> package
+    /// (ZIP: document.json + raw image entries, no base64 overhead) on a background thread. The
+    /// document is snapshotted on the calling thread first, like <see cref="ToJsonAsync"/>.</summary>
+    public Task SavePackageAsync(System.IO.Stream destination)
+    {
+        var snapshot = Document?.Clone() ?? new FlowDocument();
+        return Task.Run(() => Formatters.DocumentPackage.Save(snapshot, destination));
+    }
+
+    /// <summary>Reads an <c>.ardx</c> package from <paramref name="source"/> on a background thread
+    /// (image decoding is already deferred to first render), then swaps the document in. Call (and
+    /// await) from the UI thread.</summary>
+    public async Task LoadPackageAsync(System.IO.Stream source)
+    {
+        var doc = await Task.Run(() => Formatters.DocumentPackage.Load(source));
+        LoadDocument(doc);
+    }
+
     /// <summary>Clears the document to a single empty paragraph.</summary>
     public void Clear() => LoadDocument(new FlowDocument());
 

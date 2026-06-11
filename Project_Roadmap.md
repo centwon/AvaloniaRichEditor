@@ -279,21 +279,15 @@
 - **방침**: 하드 제한(입력 거부)이 아니라 **소프트 제한(경고)**. 데이터 손실 없음.
 - **배경**: 가상화 없는 현재 아키텍처에서 편집 모드의 병목은 Undo Clone·입력 처리·이미지 저장 인코딩 3가지인데, ReadOnly에서는 전부 사라지고 Draw 호출만 남는다. 레이아웃 캐싱이 적용되어 있으므로 뷰어 용도는 상한이 훨씬 높음. 경쟁 비교 결과 무료/내장 에디터(웹 기반, WPF RTB 등)도 100장 이상에서 동일하게 고전.
 
-#### N6-7: `.ardx` 패키지 파일 포맷 (선택, **N6-2 의존**)
+#### 🟢 [완료] N6-7: `.ardx` 패키지 파일 포맷 (2026-06-11)
 
 > **방침**: 기존 JSON **문자열** 계약(`ToJson()`/`LoadJson()`)은 **그대로 유지**(이식·임베드·DB TEXT 컬럼·diff 용도). 그 **위에** 파일 저장용 ZIP 컨테이너 포맷을 **추가**한다. 치환이 아니라 계층 추가.
 
-- [ ] **파일 포맷 `.ardx`** (Avalonia Rich Document, ZIP 컨테이너 — `System.IO.Compression.ZipArchive`, 외부 의존성 없음·AOT 호환):
-  ```text
-  내문서.ardx  (ZIP)
-   ├── document.json   ← 뼈대+텍스트 (ToJson 재사용, 이미지는 인덱스 참조만)
-   ├── images/img_001.jpg / img_002.png  ← 원본 byte[] 그대로
-   └── meta.json       ← (선택) 저자/생성일/schema version
-  ```
-- [ ] **추가 API**: `Task SavePackageAsync(Stream)` / `Task LoadPackageAsync(Stream)`. `ToJson`/`LoadJson`은 변경 없음.
-- [ ] **이미지 엔트리는 무압축(Stored, `CompressionLevel.NoCompression`)**: JPEG/PNG는 이미 압축돼 있어 Deflate해도 용량 ~0%·CPU만 낭비. ZIP의 이득은 "압축"이 아니라 **base64 제거(텍스트 ~33% 오버헤드 소거) + 지연 디코드**.
-- [ ] **지연 로딩**: `document.json`으로 뼈대 먼저 렌더 → 이미지 바이트는 백그라운드(N6-3 비동기와 연계)에서 디코드해 채움.
-- **의존성**: N6-2(원본 byte[] 보존)가 선행 필수 — 그래야 "원본 JPEG 무손실 저장"이 성립(현재는 PNG 재인코딩이라 불가).
+- [x] **파일 포맷 `.ardx`** (ZIP 컨테이너 — `System.IO.Compression.ZipArchive`, 외부 의존성 없음·AOT 호환): `document.json`(스키마 v2, 풀 항목은 MimeType만) + `images/<sha256>`(원본 바이트 — N6-4 해시 키 재사용, 중복 제거 그대로). meta.json은 생략(스키마 버전이 document.json에 있음).
+- [x] **추가 API**: `RichEditor.SavePackageAsync(Stream)`/`LoadPackageAsync(Stream)`(스냅샷·백그라운드 — ToJsonAsync 패턴) + `Formatters.DocumentPackage.Save/Load`(동기). PublicAPI 등재. 데모 저장/열기 피커에 .ardx 추가(로드는 ZIP 매직 "PK" 스니핑).
+- [x] **이미지 엔트리 무압축(Stored)** 확인 — document.json만 Deflate. 테스트 5건(왕복=JSON 동치, 바이트/MIME 복원+byte[] 공유, 1회 저장·무압축·base64 부재, 깨진 입력=빈 문서, 용량<JSON) — **총 113건 통과.**
+- [x] **(보너스) 저장 시 강제 디코드 회귀 수정**: N6-4 풀 리팩터가 `PoolImage` 인자로 `.Image`(지연 디코드 게터)를 무조건 평가하던 문제 — RawBytes 있으면 게터를 건드리지 않게 복원(저장이 다시 디코드-프리, 디코드 실패 시 RawBytes 소실 가능성도 제거).
+- 잔여(낮은 우선순위): 지연 로딩(뼈대 먼저 렌더 → 이미지 바이트 백그라운드 채움) — 현재도 디코드는 첫 렌더까지 지연되므로 바이트 복사 비용만 남음.
 - **참고**: DB(SQLite) 저장 용도라면 `.ardx`보다 `ToJson()` 문자열을 TEXT 컬럼에 넣는 편이 검색 텍스트 분리·쿼리에 유리. `.ardx`는 **파일로 주고받는** 시나리오용.
 
 ---
