@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RichEditor.ToJsonAsync()` / `LoadJsonAsync()` — JSON save/load on a background thread (N6-3).
   `ToJsonAsync` snapshots the document first, so edits made during serialization can't tear the
   output. The synchronous `ToJson`/`LoadJson` remain unchanged.
+- **Block margins**: `MarginTop`/`MarginBottom` moved up to `Block`, so images, tables, and
+  dividers now have adjustable vertical spacing (previously a fixed 10px gap); paragraphs gain
+  `MarginRight` (narrows the wrap width — paragraph-only, since nothing flows around blocks),
+  and the left margin reuses the existing `Indent`. A right-click "Margin" submenu offers per-side
+  presets. Documents saved before these fields existed load with the historical fixed spacing.
 - **Pluggable chrome icons**: `RichEditorIcons.Provider` lets a host swap the built-in text glyphs
   on the toolbar and context menus for any icon library (e.g. FluentIcons.Avalonia), keyed by the
   `RichEditorIcon` slot enum (41 slots). The library still ships no icon assets; a null provider
