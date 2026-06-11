@@ -1,9 +1,11 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
@@ -37,6 +39,27 @@ public class RichEditorToolbar : UserControl
     private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _undoBtn, _redoBtn;
     private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo, _spacingCombo;
     private Control? _tableBtn, _imageBtn, _dividerBtn;
+    // Color-picker faces, synced to the caret's run: either a swatch bar under the built-in glyph,
+    // or (with a host icon) a wrapper whose Foreground tints the icon's colour-inheriting layers.
+    private Border? _colorSwatch, _highlightSwatch;
+    private ContentControl? _colorIconHost, _highlightIconHost;
+
+    private static readonly IBrush NoColorBrush = new SolidColorBrush(Color.Parse("#DDDDDD"));
+
+    // Shows `brush` as the picker's current colour, whichever face style is in use.
+    private void ReflectPickerColor(bool highlight, IBrush brush)
+    {
+        if (highlight)
+        {
+            if (_highlightSwatch != null) _highlightSwatch.Background = brush;
+            if (_highlightIconHost != null) _highlightIconHost.Foreground = brush;
+        }
+        else
+        {
+            if (_colorSwatch != null) _colorSwatch.Background = brush;
+            if (_colorIconHost != null) _colorIconHost.Foreground = brush;
+        }
+    }
     private bool _suppress; // guards combo SelectionChanged while syncing toolbar -> caret state
 
     private static string Loc(string key) => RichEditorLocalization.GetString(key);
@@ -44,6 +67,16 @@ public class RichEditorToolbar : UserControl
     /// <summary>Creates the toolbar. Assign <see cref="Target"/> to connect it to an editor.</summary>
     public RichEditorToolbar()
     {
+        // Disabled buttons (undo/redo) dim via opacity instead of the theme's grey fill, which
+        // reads as a stray box on this flat transparent strip.
+        Styles.Add(new Style(x => x.OfType<Button>().Class(":disabled"))
+        {
+            Setters = { new Setter(OpacityProperty, 0.35) },
+        });
+        Styles.Add(new Style(x => x.OfType<Button>().Class(":disabled").Template().OfType<ContentPresenter>())
+        {
+            Setters = { new Setter(ContentPresenter.BackgroundProperty, Brushes.Transparent) },
+        });
         Build();
     }
 
@@ -103,14 +136,15 @@ public class RichEditorToolbar : UserControl
 
     private void Build()
     {
-        var panel = new WrapPanel { Orientation = Orientation.Horizontal };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
         void Add(Control c) => panel.Children.Add(c);
 
-        Button Btn(object content, string tip, Action click)
+        Button Btn(object content, string tip, Action click, RichEditorIcon? icon = null)
         {
+            // Host-provided icon (RichEditorIcons.Provider) wins over the built-in text glyph.
             var b = new Button
             {
-                Content = content,
+                Content = (icon is { } k ? RichEditorIcons.TryCreate(k) : null) ?? content,
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(5),
@@ -126,7 +160,16 @@ public class RichEditorToolbar : UserControl
         }
         ComboBox Combo(string tip, double minWidth = 0)
         {
-            var cb = new ComboBox { Margin = new Thickness(2, 0), MinHeight = 30, MinWidth = minWidth, VerticalAlignment = VerticalAlignment.Center };
+            var cb = new ComboBox
+            {
+                Margin = new Thickness(2, 0),
+                MinHeight = 30,
+                MinWidth = minWidth,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 12,
+                // The Fluent theme's default combo border is much darker than the rest of the strip.
+                BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
+            };
             ToolTip.SetTip(cb, tip);
             return cb;
         }
@@ -138,11 +181,11 @@ public class RichEditorToolbar : UserControl
         };
 
         // Character toggles
-        _boldBtn = Btn(new TextBlock { Text = "B", FontWeight = FontWeight.Bold }, Loc("Bold") + " (Ctrl+B)", () => Target?.ToggleBold());
-        _italicBtn = Btn(new TextBlock { Text = "I", FontStyle = FontStyle.Italic }, Loc("Italic") + " (Ctrl+I)", () => Target?.ToggleItalic());
-        _underlineBtn = Btn(new TextBlock { Text = "U", TextDecorations = TextDecorations.Underline }, Loc("Underline") + " (Ctrl+U)", () => Target?.ToggleUnderline());
-        _strikeBtn = Btn(new TextBlock { Text = "S", TextDecorations = TextDecorations.Strikethrough }, Loc("Strikethrough"), () => Target?.ToggleStrikethrough());
-        _painterBtn = Btn("🖌", Loc("FormatPainterTip"), () => Target?.StartFormatPainter());
+        _boldBtn = Btn(new TextBlock { Text = "B", FontWeight = FontWeight.Bold }, Loc("Bold") + " (Ctrl+B)", () => Target?.ToggleBold(), RichEditorIcon.Bold);
+        _italicBtn = Btn(new TextBlock { Text = "I", FontStyle = FontStyle.Italic }, Loc("Italic") + " (Ctrl+I)", () => Target?.ToggleItalic(), RichEditorIcon.Italic);
+        _underlineBtn = Btn(new TextBlock { Text = "U", TextDecorations = TextDecorations.Underline }, Loc("Underline") + " (Ctrl+U)", () => Target?.ToggleUnderline(), RichEditorIcon.Underline);
+        _strikeBtn = Btn(new TextBlock { Text = "S", TextDecorations = TextDecorations.Strikethrough }, Loc("Strikethrough"), () => Target?.ToggleStrikethrough(), RichEditorIcon.Strikethrough);
+        _painterBtn = Btn("🖌", Loc("FormatPainterTip"), () => Target?.StartFormatPainter(), RichEditorIcon.FormatPainter);
         Add(_boldBtn); Add(_italicBtn); Add(_underlineBtn); Add(_strikeBtn); Add(_painterBtn);
         Add(Div());
 
@@ -201,11 +244,11 @@ public class RichEditorToolbar : UserControl
         Add(Div());
 
         // Lists / indent
-        _bulletBtn = Btn("•", Loc("BulletList"), () => Target?.ToggleBullet());
-        _numberBtn = Btn("1.", Loc("NumberedList"), () => Target?.ToggleNumbering());
+        _bulletBtn = Btn("•", Loc("BulletList"), () => Target?.ToggleBullet(), RichEditorIcon.BulletList);
+        _numberBtn = Btn("1.", Loc("NumberedList"), () => Target?.ToggleNumbering(), RichEditorIcon.NumberedList);
         Add(_bulletBtn); Add(_numberBtn);
-        Add(Btn("→|", Loc("IndentIncrease"), () => Target?.Indent(20)));
-        Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20)));
+        Add(Btn("→|", Loc("IndentIncrease"), () => Target?.Indent(20), RichEditorIcon.IndentIncrease));
+        Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20), RichEditorIcon.IndentDecrease));
         Add(Div());
 
         // Line spacing (1.0 = natural, 1.5/2.0 = fixed line heights, matching the demo's presets)
@@ -223,20 +266,27 @@ public class RichEditorToolbar : UserControl
 
         // Block inserts (gated by the target's feature flags in ApplyFlags)
         _tableBtn = BuildTableButton();
-        _imageBtn = Btn("🖼", Loc("InsertImage"), () => { _ = Target?.InsertImageFromFileAsync(); });
-        _dividerBtn = Btn("―", Loc("InsertDivider"), () => Target?.InsertDivider());
+        _imageBtn = Btn("🖼", Loc("InsertImage"), () => { _ = Target?.InsertImageFromFileAsync(); }, RichEditorIcon.InsertImage);
+        _dividerBtn = Btn("―", Loc("InsertDivider"), () => Target?.InsertDivider(), RichEditorIcon.InsertDivider);
         Add(_tableBtn); Add(_imageBtn); Add(_dividerBtn);
         Add(Div());
 
-        _undoBtn = Btn("↶", Loc("Undo") + " (Ctrl+Z)", () => Target?.Undo());
-        _redoBtn = Btn("↷", Loc("Redo") + " (Ctrl+Y)", () => Target?.Redo());
+        _undoBtn = Btn("↶", Loc("Undo") + " (Ctrl+Z)", () => Target?.Undo(), RichEditorIcon.Undo);
+        _redoBtn = Btn("↷", Loc("Redo") + " (Ctrl+Y)", () => Target?.Redo(), RichEditorIcon.Redo);
         Add(_undoBtn); Add(_redoBtn);
 
         Content = new Border
         {
             Background = new SolidColorBrush(Color.Parse("#F5F6F8")),
             Padding = new Thickness(8, 4),
-            Child = panel,
+            // Single-line strip: when the host is narrower than the strip, scroll horizontally
+            // instead of clipping the trailing buttons (undo/redo).
+            Child = new ScrollViewer
+            {
+                Content = panel,
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            },
         };
         ApplyFlags();
     }
@@ -255,16 +305,36 @@ public class RichEditorToolbar : UserControl
     // as text foreground or as a highlight (background) brush.
     private Button BuildColorButton(bool highlight)
     {
-        // Button face: a glyph over a colour bar that shows the last-picked colour.
-        var swatch = new Border
+        // Button face. With a host-provided icon the icon is the whole face: the current colour is
+        // pushed through the host wrapper's Foreground, which icon layers without an explicit
+        // Foreground inherit — so a layered icon (mono letter over an accent bar) shows the colour
+        // in its own bar, with no separate swatch. Without a provider the face is the built-in
+        // glyph over a swatch bar.
+        var initial = new SolidColorBrush(highlight ? Color.Parse("#FFF176") : Colors.Black);
+        Control face;
+        if (RichEditorIcons.TryCreate(highlight ? RichEditorIcon.Highlight : RichEditorIcon.TextColor) is { } icon)
         {
-            Height = 4, MinWidth = 18,
-            Background = new SolidColorBrush(highlight ? Color.Parse("#FFF176") : Colors.Black),
-            Margin = new Thickness(0, 1, 0, 0),
-        };
-        var face = new StackPanel();
-        face.Children.Add(new TextBlock { Text = highlight ? "🖍" : "A", FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center });
-        face.Children.Add(swatch);
+            var host = new ContentControl { Content = icon, Foreground = initial };
+            if (highlight) { _highlightIconHost = host; _highlightSwatch = null; }
+            else { _colorIconHost = host; _colorSwatch = null; }
+            face = host;
+        }
+        else
+        {
+            var swatch = new Border
+            {
+                Height = 6, MinWidth = 24,
+                CornerRadius = new CornerRadius(1),
+                Background = initial,
+                Margin = new Thickness(0, 2, 0, 0),
+            };
+            if (highlight) { _highlightSwatch = swatch; _highlightIconHost = null; }
+            else { _colorSwatch = swatch; _colorIconHost = null; }
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock { Text = highlight ? "🖍" : "A", FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center });
+            stack.Children.Add(swatch);
+            face = stack;
+        }
 
         var btn = new Button
         {
@@ -272,7 +342,9 @@ public class RichEditorToolbar : UserControl
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             CornerRadius = new CornerRadius(5),
-            Padding = new Thickness(9, 3),
+            // The stacked glyph+swatch face is taller, so it gets less vertical padding; an
+            // icon-only face uses the same padding as the other toolbar buttons.
+            Padding = face is StackPanel ? new Thickness(9, 3) : new Thickness(9, 5),
             Margin = new Thickness(1, 0),
             MinWidth = 30,
             VerticalAlignment = VerticalAlignment.Center,
@@ -285,8 +357,8 @@ public class RichEditorToolbar : UserControl
             IBrush? brush = c.HasValue ? new SolidColorBrush(c.Value) : null;
             if (highlight) Target.SetHighlight(brush);
             else Target.SetForeground(brush ?? Brushes.Black);
-            // Reflect the chosen colour on the button's bar (cleared highlight -> light grey).
-            swatch.Background = c.HasValue ? new SolidColorBrush(c.Value) : new SolidColorBrush(Color.Parse("#DDDDDD"));
+            // Reflect the chosen colour on the button (cleared highlight -> light grey).
+            ReflectPickerColor(highlight, c.HasValue ? new SolidColorBrush(c.Value) : NoColorBrush);
             (btn.Flyout as FlyoutBase)?.Hide();
         }
 
@@ -329,9 +401,18 @@ public class RichEditorToolbar : UserControl
     // A drag-to-size table picker (hover the grid to choose rows×columns, click to insert).
     private Button BuildTableButton()
     {
+        // Host icon (if any) replaces the grid glyph; the dropdown chevron stays.
+        object tableFace = "▦ ▾";
+        if (RichEditorIcons.TryCreate(RichEditorIcon.InsertTable) is { } tableIcon)
+        {
+            var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3 };
+            face.Children.Add(tableIcon);
+            face.Children.Add(new TextBlock { Text = "▾", VerticalAlignment = VerticalAlignment.Center });
+            tableFace = face;
+        }
         var btn = new Button
         {
-            Content = "▦ ▾",
+            Content = tableFace,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             CornerRadius = new CornerRadius(5),
@@ -416,6 +497,11 @@ public class RichEditorToolbar : UserControl
         SetActive(_painterBtn, rt.IsFormatPainterActive);
         if (_undoBtn != null) _undoBtn.IsEnabled = rt.CanUndo;
         if (_redoBtn != null) _redoBtn.IsEnabled = rt.CanRedo;
+
+        // Picker colours follow the caret's run: explicit colours show as-is, defaults fall back to
+        // black text / "no highlight" grey (same brush Apply() uses for a cleared highlight).
+        ReflectPickerColor(highlight: false, f.Foreground ?? Brushes.Black);
+        ReflectPickerColor(highlight: true, f.Background ?? NoColorBrush);
 
         _suppress = true;
         if (_sizeCombo != null) SelectByContent(_sizeCombo, ((int)f.FontSize).ToString());

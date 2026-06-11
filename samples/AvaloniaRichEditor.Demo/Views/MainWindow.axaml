@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="using:AvaloniaRichEditor.Controls"
+        xmlns:ic="using:FluentIcons.Avalonia"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="AvaloniaRichEditor.Demo.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -55,7 +56,7 @@
             <DockPanel Margin="8,7,8,0">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Name="ZoomOutButton" Content="−" Click="ZoomOut_Click"/>
-                    <ComboBox Name="ZoomCombo" Width="84" SelectedIndex="0" SelectionChanged="ZoomCombo_SelectionChanged">
+                    <ComboBox Name="ZoomCombo" Width="84" SelectedIndex="0" FontSize="12" BorderBrush="#DCDCDC" SelectionChanged="ZoomCombo_SelectionChanged">
                         <ComboBoxItem Name="ZoomFitItem">맞춤</ComboBoxItem>
                         <ComboBoxItem>50%</ComboBoxItem>
                         <ComboBoxItem>75%</ComboBoxItem>
@@ -67,10 +68,10 @@
                     <Button Name="ZoomInButton" Content="+" Click="ZoomIn_Click"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <Button Name="SaveButton" Content="💾" FontSize="15" Click="SaveButton_Click"/>
-                    <Button Name="LoadButton" Content="📂" FontSize="15" Click="LoadButton_Click"/>
+                    <Button Name="SaveButton" Click="SaveButton_Click"><ic:SymbolIcon Symbol="Save" FontSize="16"/></Button>
+                    <Button Name="LoadButton" Click="LoadButton_Click"><ic:SymbolIcon Symbol="FolderOpen" FontSize="16"/></Button>
                     <Border Classes="div"/>
-                    <Button Name="ExportHtmlButton" Content="📤" FontSize="15" Click="ExportHtmlButton_Click"/>
+                    <Button Name="ExportHtmlButton" Click="ExportHtmlButton_Click"><ic:SymbolIcon Symbol="ArrowExport" FontSize="16"/></Button>
                 </StackPanel>
             </DockPanel>
 
@@ -111,6 +112,7 @@
         <Border Grid.Row="4" Background="#EEEEEE" Padding="12,3" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
             <DockPanel>
                 <TextBlock Name="ZoomLabel" DockPanel.Dock="Right" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Name="LimitWarning" DockPanel.Dock="Right" Foreground="#CC6600" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 <TextBlock Name="StatusBar" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
             </DockPanel>
         </Border>

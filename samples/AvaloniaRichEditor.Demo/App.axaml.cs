@@ -18,6 +18,9 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Swap the editor chrome's text glyphs for Fluent icons (before the first toolbar builds).
+        FluentIconProvider.Install();
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.MainWindow = BenchHarness.Enabled

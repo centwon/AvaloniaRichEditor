@@ -59,6 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RichEditor.ToJsonAsync()` / `LoadJsonAsync()` — JSON save/load on a background thread (N6-3).
   `ToJsonAsync` snapshots the document first, so edits made during serialization can't tear the
   output. The synchronous `ToJson`/`LoadJson` remain unchanged.
+- **Pluggable chrome icons**: `RichEditorIcons.Provider` lets a host swap the built-in text glyphs
+  on the toolbar and context menus for any icon library (e.g. FluentIcons.Avalonia), keyed by the
+  `RichEditorIcon` slot enum (41 slots). The library still ships no icon assets; a null provider
+  (or null per slot) keeps the lightweight built-in glyphs. The demo app maps all slots to
+  Fluent UI System Icons as a reference.
+- **Soft image-count limit (N6-6)**: `MaxRecommendedImages` styled property (default 50, ≤0
+  disables) and the edge-triggered `RecommendedImageLimitExceeded` event let hosts warn the user
+  when a document grows past the smooth-editing range measured in benchmarks; editing is never
+  blocked. `GetImageCount()` reports the current count (block + inline + table-cell images).
 
 ## [0.1.0-alpha] - 2026-06-10
 

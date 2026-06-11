@@ -1585,7 +1585,11 @@ public partial class RichEditor : Control
         if (!text && !sel) return;
         Dispatcher.UIThread.Post(() =>
         {
-            if (text) TextChanged?.Invoke(this, EventArgs.Empty);
+            if (text)
+            {
+                TextChanged?.Invoke(this, EventArgs.Empty);
+                CheckImageLimit();
+            }
             if (sel) SelectionChanged?.Invoke(this, EventArgs.Empty);
         });
     }
@@ -1599,7 +1603,8 @@ public partial class RichEditor : Control
     /// <summary>Snapshot of the formatting at the caret position, for toolbar state reflection.
     /// Obtain via <see cref="GetCaretFormat"/>.</summary>
     public readonly record struct CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike,
-        double FontSize, string? FontFamily, TextAlignment Align, ListKind List, int Heading);
+        double FontSize, string? FontFamily, TextAlignment Align, ListKind List, int Heading,
+        IBrush? Foreground = null, IBrush? Background = null);
 
     private static bool HasDeco(Run? r, TextDecorationLocation loc)
     {
@@ -1629,7 +1634,9 @@ public partial class RichEditor : Control
             run?.FontFamily,
             p?.TextAlignment ?? TextAlignment.Left,
             p?.ListType ?? ListKind.None,
-            p?.HeadingLevel ?? 0);
+            p?.HeadingLevel ?? 0,
+            run?.Foreground,
+            run?.Background);
     }
 
     /// <summary>Returns document statistics: total character count, word count, and the caret's

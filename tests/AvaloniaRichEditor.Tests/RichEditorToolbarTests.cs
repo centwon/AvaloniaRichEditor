@@ -10,7 +10,8 @@ namespace AvaloniaRichEditor.Tests;
 // hide insert buttons, ReadOnly hides the strip), and caret-state reflection on the toggle buttons.
 public class RichEditorToolbarTests
 {
-    private static WrapPanel Strip(RichEditorToolbar tb) => (WrapPanel)((Border)tb.Content!).Child!;
+    private static Panel Strip(RichEditorToolbar tb) =>
+        (Panel)((ScrollViewer)((Border)tb.Content!).Child!).Content!;
 
     private static Button ButtonByContent(RichEditorToolbar tb, string content) =>
         Strip(tb).Children.OfType<Button>().First(b => Equals(b.Content, content));

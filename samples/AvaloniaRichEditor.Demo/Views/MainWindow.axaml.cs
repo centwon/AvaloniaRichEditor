@@ -42,6 +42,8 @@ public partial class MainWindow : Window
 
             // Status bar follows the caret/text (the toolbar subscribes on its own).
             richTextBox.StatusChanged += (_, _) => UpdateStatusBar();
+            // Soft image-count limit (N6-6): warn once when exceeded; cleared in UpdateStatusBar.
+            richTextBox.RecommendedImageLimitExceeded += (_, _) => UpdateLimitWarning();
             UpdateStatusBar();
         }
         RegisterDemoStrings();
@@ -73,6 +75,7 @@ public partial class MainWindow : Window
             ["Demo.ZoomOut"] = "Zoom out (Ctrl+-)",
             ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = fit)",
             ["Demo.Fit"] = "Fit",
+            ["Demo.ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
         {
@@ -83,6 +86,7 @@ public partial class MainWindow : Window
             ["Demo.ZoomOut"] = "축소 (Ctrl+-)",
             ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=맞춤)",
             ["Demo.Fit"] = "맞춤",
+            ["Demo.ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
         });
     }
 
@@ -202,6 +206,21 @@ public partial class MainWindow : Window
         if (richTextBox == null || status == null) return;
         var (chars, words, line, col) = richTextBox.GetStatus();
         status.Text = string.Format(Loc("StatusFormat"), chars, words, line, col);
+
+        // Clear the soft-limit warning once the image count is back within bounds.
+        var warning = this.FindControl<TextBlock>("LimitWarning");
+        if (warning != null && !string.IsNullOrEmpty(warning.Text)
+            && richTextBox.GetImageCount() <= richTextBox.MaxRecommendedImages)
+            warning.Text = "";
+    }
+
+    private void UpdateLimitWarning()
+    {
+        var richTextBox = this.FindControl<RichEditor>("RichTextBox");
+        var warning = this.FindControl<TextBlock>("LimitWarning");
+        if (richTextBox == null || warning == null) return;
+        warning.Text = string.Format(Loc("Demo.ImageLimitWarning"),
+            richTextBox.GetImageCount(), richTextBox.MaxRecommendedImages);
     }
 
     // ---- File actions ----

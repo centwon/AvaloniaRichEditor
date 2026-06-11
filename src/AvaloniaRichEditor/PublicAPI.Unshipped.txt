@@ -24,7 +24,11 @@ AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Align.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Bold.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Bold.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat() -> void
-AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading) -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Background.get -> Avalonia.Media.IBrush?
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Background.init -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null) -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Foreground.get -> Avalonia.Media.IBrush?
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Foreground.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.FontFamily.get -> string?
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.FontFamily.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.FontSize.get -> double
@@ -55,6 +59,7 @@ AvaloniaRichEditor.Controls.RichEditor.FocusDocumentEnd() -> void
 AvaloniaRichEditor.Controls.RichEditor.FontFamilyChoices.get -> System.Collections.Generic.IReadOnlyList<string!>!
 AvaloniaRichEditor.Controls.RichEditor.FontFamilyChoices.set -> void
 AvaloniaRichEditor.Controls.RichEditor.GetCaretFormat() -> AvaloniaRichEditor.Controls.RichEditor.CaretFormat
+AvaloniaRichEditor.Controls.RichEditor.GetImageCount() -> int
 AvaloniaRichEditor.Controls.RichEditor.GetPlainText() -> string!
 AvaloniaRichEditor.Controls.RichEditor.GetStatus() -> (int chars, int words, int line, int col)
 AvaloniaRichEditor.Controls.RichEditor.Indent(double delta) -> void
@@ -71,7 +76,10 @@ AvaloniaRichEditor.Controls.RichEditor.IsReadOnly.set -> void
 AvaloniaRichEditor.Controls.RichEditor.LoadHtml(string? html) -> void
 AvaloniaRichEditor.Controls.RichEditor.LoadJson(string! json) -> void
 AvaloniaRichEditor.Controls.RichEditor.LoadJsonAsync(string! json) -> System.Threading.Tasks.Task!
+AvaloniaRichEditor.Controls.RichEditor.MaxRecommendedImages.get -> int
+AvaloniaRichEditor.Controls.RichEditor.MaxRecommendedImages.set -> void
 AvaloniaRichEditor.Controls.RichEditor.PasteFromClipboardAsync() -> System.Threading.Tasks.Task!
+AvaloniaRichEditor.Controls.RichEditor.RecommendedImageLimitExceeded -> System.EventHandler?
 AvaloniaRichEditor.Controls.RichEditor.Redo() -> void
 AvaloniaRichEditor.Controls.RichEditor.ReplaceAll(string! query, string! replacement, bool matchCase) -> int
 AvaloniaRichEditor.Controls.RichEditor.ReplaceNext(string! query, string! replacement, bool matchCase) -> bool
@@ -99,6 +107,49 @@ AvaloniaRichEditor.Controls.RichEditor.ToHtml() -> string!
 AvaloniaRichEditor.Controls.RichEditor.ToJson() -> string!
 AvaloniaRichEditor.Controls.RichEditor.ToJsonAsync() -> System.Threading.Tasks.Task<string!>!
 AvaloniaRichEditor.Controls.RichEditor.Undo() -> void
+AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Bold = 0 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Italic = 1 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Underline = 2 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Strikethrough = 3 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.FormatPainter = 4 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.TextColor = 5 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Highlight = 6 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.BulletList = 7 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.NumberedList = 8 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.IndentIncrease = 9 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.IndentDecrease = 10 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertTable = 11 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertImage = 12 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertDivider = 13 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Undo = 14 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Redo = 15 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Cut = 16 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Copy = 17 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Paste = 18 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Delete = 19 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.SelectAll = 20 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.ClearFormatting = 21 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.AlignLeft = 22 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.AlignCenter = 23 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.AlignRight = 24 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.OpenLink = 25 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.EditLink = 26 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.RemoveLink = 27 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.CopyLink = 28 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertLink = 29 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.ReplaceImage = 30 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.SaveImageAs = 31 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertRowAbove = 32 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertRowBelow = 33 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.DeleteRow = 34 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertColumnLeft = 35 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.InsertColumnRight = 36 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.DeleteColumn = 37 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.MergeCells = 38 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.UnmergeCells = 39 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.DeleteTable = 40 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcons
 AvaloniaRichEditor.Documents.Block
 AvaloniaRichEditor.Documents.Block.Block() -> void
 AvaloniaRichEditor.Documents.Block.Indent.get -> double
@@ -269,6 +320,7 @@ static readonly AvaloniaRichEditor.Controls.RichEditor.DocumentProperty -> Avalo
 static readonly AvaloniaRichEditor.Controls.RichEditor.EditorModeProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.EditorMode>!
 static readonly AvaloniaRichEditor.Controls.RichEditor.FontFamilyChoicesProperty -> Avalonia.StyledProperty<System.Collections.Generic.IReadOnlyList<string!>!>!
 static readonly AvaloniaRichEditor.Controls.RichEditor.IsReadOnlyProperty -> Avalonia.StyledProperty<bool>!
+static readonly AvaloniaRichEditor.Controls.RichEditor.MaxRecommendedImagesProperty -> Avalonia.StyledProperty<int>!
 static readonly AvaloniaRichEditor.Controls.RichEditor.SelectionBrushProperty -> Avalonia.StyledProperty<Avalonia.Media.IBrush!>!
 AvaloniaRichEditor.Controls.RichEditorToolbar
 AvaloniaRichEditor.Controls.RichEditorToolbar.RichEditorToolbar() -> void
@@ -278,6 +330,8 @@ override AvaloniaRichEditor.Controls.RichEditorToolbar.OnAttachedToVisualTree(Av
 override AvaloniaRichEditor.Controls.RichEditorToolbar.OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
 override AvaloniaRichEditor.Controls.RichEditorToolbar.OnPropertyChanged(Avalonia.AvaloniaPropertyChangedEventArgs! change) -> void
 static readonly AvaloniaRichEditor.Controls.RichEditorToolbar.TargetProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.RichEditor?>!
+static AvaloniaRichEditor.Controls.RichEditorIcons.Provider.get -> System.Func<AvaloniaRichEditor.Controls.RichEditorIcon, Avalonia.Controls.Control?>?
+static AvaloniaRichEditor.Controls.RichEditorIcons.Provider.set -> void
 AvaloniaRichEditor.RichEditorLocalization
 static AvaloniaRichEditor.RichEditorLocalization.GetString(string! key) -> string!
 static AvaloniaRichEditor.RichEditorLocalization.Language.get -> string!

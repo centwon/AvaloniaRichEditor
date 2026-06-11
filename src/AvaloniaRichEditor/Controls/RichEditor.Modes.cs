@@ -1,4 +1,6 @@
+using System;
 using Avalonia;
+using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
 
@@ -78,6 +80,80 @@ public partial class RichEditor
     {
         get => GetValue(AllowFindReplaceProperty);
         set => SetValue(AllowFindReplaceProperty, value);
+    }
+
+    /// <inheritdoc cref="MaxRecommendedImages"/>
+    public static readonly StyledProperty<int> MaxRecommendedImagesProperty =
+        AvaloniaProperty.Register<RichEditor, int>(nameof(MaxRecommendedImages), 50);
+
+    /// <summary>
+    /// Soft limit on the document's image count (block, inline, and table-cell images). When the count
+    /// first exceeds this value, <see cref="RecommendedImageLimitExceeded"/> is raised once; editing is
+    /// never blocked. Benchmarks (800×600 photos): smooth up to ~50 images, scroll fps and the first
+    /// keystroke's undo clone degrade around 100. Viewer (ReadOnly) hosts can safely raise this to 100+.
+    /// Zero or negative disables the warning. Default 50.
+    /// </summary>
+    public int MaxRecommendedImages
+    {
+        get => GetValue(MaxRecommendedImagesProperty);
+        set => SetValue(MaxRecommendedImagesProperty, value);
+    }
+
+    /// <summary>
+    /// Raised (once per crossing) when the document's image count exceeds <see cref="MaxRecommendedImages"/>,
+    /// so the host can warn the user about likely performance degradation. Re-arms when the count drops
+    /// back to the limit or below. Query <see cref="GetImageCount"/> for the current count.
+    /// </summary>
+    public event EventHandler? RecommendedImageLimitExceeded;
+
+    // True after the limit warning fired; cleared when the count returns to the limit or below.
+    private bool _imageLimitNotified;
+
+    /// <summary>Counts the document's images: top-level <see cref="ImageBlock"/>s plus
+    /// <see cref="InlineImage"/>s in paragraphs and table cells.</summary>
+    public int GetImageCount()
+    {
+        var doc = Document;
+        if (doc == null) return 0;
+        int n = 0;
+        foreach (var b in doc.Blocks)
+        {
+            switch (b)
+            {
+                case ImageBlock: n++; break;
+                case Paragraph p: n += CountInlineImages(p); break;
+                case TableBlock t:
+                    foreach (var (_, _, cell) in t.LogicalCells()) n += CountInlineImages(cell);
+                    break;
+            }
+        }
+        return n;
+
+        static int CountInlineImages(Paragraph p)
+        {
+            int k = 0;
+            foreach (var i in p.Inlines) if (i is InlineImage) k++;
+            return k;
+        }
+    }
+
+    // Edge-triggered soft-limit check, run after each flushed text change (see RaisePendingChangeEvents).
+    internal void CheckImageLimit()
+    {
+        int limit = MaxRecommendedImages;
+        if (limit <= 0) { _imageLimitNotified = false; return; }
+        if (GetImageCount() > limit)
+        {
+            if (!_imageLimitNotified)
+            {
+                _imageLimitNotified = true;
+                RecommendedImageLimitExceeded?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        else
+        {
+            _imageLimitNotified = false;
+        }
     }
 
     // Writes the flag bundle for the chosen preset. Setting IsReadOnly here cascades into
