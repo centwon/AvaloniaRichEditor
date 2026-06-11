@@ -247,6 +247,7 @@ public partial class RichEditor
 
     private void BuildImageMenu(List<Control> items, ImageBlock img)
     {
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image); }, img.RawBytes != null || img.Image != null));
         items.Add(Mi(Loc("Delete"), () => DeleteBlock(img)));
         items.Add(new Separator());
         items.Add(Mi(Loc("OriginalSize"), () => ResetImageSize(img), img.Image != null));
@@ -282,6 +283,7 @@ public partial class RichEditor
     // the InlineImage in place.
     private void BuildInlineImageMenu(List<Control> items, Paragraph p, InlineImage img)
     {
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image); }, img.RawBytes != null || img.Image != null));
         items.Add(Mi(Loc("Delete"), () => DeleteInlineImage(p, img)));
         items.Add(new Separator());
         items.Add(Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), img.Image != null));

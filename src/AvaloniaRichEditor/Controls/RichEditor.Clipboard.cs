@@ -194,6 +194,52 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         catch { return bmp; }
     }
 
+    // Application-private clipboard format carrying an image's original encoded bytes, so copying
+    // an image inside the editor round-trips without re-encoding. A decoded Bitmap is written
+    // alongside it for other applications.
+    private static readonly DataFormat<byte[]> AreImageFormat =
+        DataFormat.CreateBytesApplicationFormat("AvaloniaRichEditor.Image");
+
+    // Copies an image (block or inline) to the OS clipboard. Paste re-enters through the image
+    // branch of PasteFromClipboardAsync, which prefers the original-bytes format.
+    private async Task CopyImageToClipboardAsync(byte[]? rawBytes, Bitmap? bmp)
+    {
+        byte[]? bytes = rawBytes;
+        if (bytes == null && bmp != null)
+        {
+            try
+            {
+                using var ms = new System.IO.MemoryStream();
+                bmp.Save(ms);
+                bytes = ms.ToArray();
+            }
+            catch { return; }
+        }
+        if (bytes == null) return;
+        if (bmp == null)
+        {
+            try { using var ms = new System.IO.MemoryStream(bytes); bmp = new Bitmap(ms); }
+            catch { return; }
+        }
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) return;
+
+        // The text-based internal slots are stale now; they must not hijack the next paste.
+        _internalClipboard = null;
+        _internalClipboardText = null;
+        _internalClipboardBlocks = null;
+
+        try
+        {
+            var item = DataTransferItem.Create(AreImageFormat, bytes);
+            item.Set(DataFormat.Bitmap, bmp);
+            var dt = new DataTransfer();
+            dt.Add(item);
+            await clipboard.SetDataAsync(dt);
+        }
+        catch { }
+    }
+
     // Returns the decoded bitmap plus, when the clipboard handed us encoded bytes, those original
     // bytes (so the document can keep them without re-encoding). Bytes are null when the clipboard
     // produced a Bitmap object directly.
@@ -206,6 +252,23 @@ public partial class RichEditor  // doc comment lives on the primary declaration
 
         try
         {
+            // First pass: our own format — original encoded bytes, no generation loss.
+            foreach (var item in dt.Items)
+            {
+                foreach (var fmt in item.Formats)
+                {
+                    if (fmt.Identifier != AreImageFormat.Identifier) continue;
+                    object? raw;
+                    try { raw = await item.TryGetRawAsync(fmt); }
+                    catch { continue; }
+                    if (raw is byte[] { Length: > 0 } ob)
+                    {
+                        try { using var ms = new System.IO.MemoryStream(ob); return (new Bitmap(ms), ob); }
+                        catch { }
+                    }
+                }
+            }
+
             foreach (var item in dt.Items)
             {
                 foreach (var fmt in item.Formats)

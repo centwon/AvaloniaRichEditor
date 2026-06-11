@@ -1192,8 +1192,14 @@ public partial class RichEditor : Control
             return;
         }
 
+        bool hasTextSel = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
+            && _selectionStart.CompareTo(_selectionEnd) != 0;
+
         if (e.Key == Key.C && ctrl)
         {
+            // No text selection but an image is selected (clicked block / inline / block caret)
+            // -> copy the image itself.
+            if (!hasTextSel && TryCopySelectedImage()) { e.Handled = true; return; }
             CopySelectionToClipboard();
             e.Handled = true;
             return;
@@ -1201,6 +1207,27 @@ public partial class RichEditor : Control
 
         if (e.Key == Key.X && ctrl)
         {
+            if (!hasTextSel && Document != null && !IsReadOnly)
+            {
+                // Cut a selected image as a unit: copy, then remove it.
+                if ((_selectedBlock as ImageBlock ?? _caretBlock as ImageBlock) is { } xb)
+                {
+                    _ = CopyImageToClipboardAsync(xb.RawBytes, xb.Image);
+                    PushUndo();
+                    _selectedBlock = null; _caretBlock = null;
+                    Document.Blocks.Remove(xb);
+                    NormalizeBlocks(Document);
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
+                if (_selectedInline is { } xi)
+                {
+                    _ = CopyImageToClipboardAsync(xi.img.RawBytes, xi.img.Image);
+                    PushUndo();
+                    xi.p.Inlines.Remove(xi.img);
+                    _selectedInline = null;
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
+            }
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
             DeleteSelection();
@@ -2818,6 +2845,24 @@ public partial class RichEditor : Control
         _selectionEnd = new TextPointer(lastPara, GetParagraphLength(lastPara));
         _caretPosition = new TextPointer(_selectionEnd.Paragraph, _selectionEnd.Offset);
         InvalidateVisual();
+    }
+
+    // Copies the currently selected image, if any: right-click-selected block image, block caret
+    // sitting on an image, or a selected inline image. Returns false when nothing image-like is
+    // selected (the caller falls back to the text-selection copy).
+    private bool TryCopySelectedImage()
+    {
+        if ((_selectedBlock as ImageBlock ?? _caretBlock as ImageBlock) is { } ib)
+        {
+            _ = CopyImageToClipboardAsync(ib.RawBytes, ib.Image);
+            return true;
+        }
+        if (_selectedInline is { } si)
+        {
+            _ = CopyImageToClipboardAsync(si.img.RawBytes, si.img.Image);
+            return true;
+        }
+        return false;
     }
 
     private async void CopySelectionToClipboard()
