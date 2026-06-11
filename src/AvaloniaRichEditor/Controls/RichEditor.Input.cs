@@ -585,7 +585,8 @@ public partial class RichEditor
             }
             if (e.Key is Key.Left or Key.Up or Key.Right or Key.Down)
             {
-                HandleBlockCaretArrow(forward: e.Key is Key.Right or Key.Down);
+                HandleBlockCaretArrow(forward: e.Key is Key.Right or Key.Down,
+                                      vertical: e.Key is Key.Up or Key.Down);
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             // Any other key dismisses the block caret and continues normally.
@@ -724,6 +725,15 @@ public partial class RichEditor
                 _caretBlock = lb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
+            // Inside a table: ← at the very start of the first cell steps onto the table's "before"
+            // caret (symmetric with → entering the first cell from that caret).
+            if (!shift && _caretPosition.Offset == 0 && _caretPosition.Paragraph != null
+                && FindCell(_caretPosition.Paragraph) is { } lc
+                && ReferenceEquals(lc.tb.LogicalCells().First().cell, _caretPosition.Paragraph))
+            {
+                _caretBlock = lc.tb; _caretBlockAfter = false;
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
             MoveCaretLeft();
             if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
             else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -736,6 +746,16 @@ public partial class RichEditor
             if (!shift && _caretPosition.Offset >= GetParagraphLength(_caretPosition.Paragraph) && AdjacentBlock(before: false) is { } rb)
             {
                 _caretBlock = rb; _caretBlockAfter = false;
+                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+            }
+            // Inside a table: → at the very end of the last cell steps onto the table's "after"
+            // caret (mirrors ← from the following paragraph; it used to skip straight past it).
+            if (!shift && _caretPosition.Paragraph != null
+                && _caretPosition.Offset >= GetParagraphLength(_caretPosition.Paragraph)
+                && FindCell(_caretPosition.Paragraph) is { } rc
+                && ReferenceEquals(rc.tb.LogicalCells().Last().cell, _caretPosition.Paragraph))
+            {
+                _caretBlock = rc.tb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             MoveCaretRight();
@@ -979,13 +999,16 @@ public partial class RichEditor
         _selectionEnd = new TextPointer(p, off);
     }
 
-    // Steps a block caret: before -> (table cells | image after) -> after -> next text, and the reverse.
-    private void HandleBlockCaretArrow(bool forward)
+    // Steps a block caret. Horizontal (←/→) walks through the block: before -> (table cells |
+    // image after) -> after -> next text, and the reverse. Vertical (↑/↓) treats the block as one
+    // opaque unit and skips straight to the neighboring paragraph — cells are entered with →,
+    // Tab, or a click, not by arrowing down through the document.
+    private void HandleBlockCaretArrow(bool forward, bool vertical = false)
     {
         var blk = _caretBlock!;
         if (forward)
         {
-            if (!_caretBlockAfter)
+            if (!_caretBlockAfter && !vertical)
             {
                 if (blk is TableBlock tb && tb.LogicalCells().Any())
                 { _caretBlock = null; var c = tb.LogicalCells().First().cell; SetCaretCollapsed(c, 0); }
@@ -995,7 +1018,7 @@ public partial class RichEditor
         }
         else
         {
-            if (_caretBlockAfter)
+            if (_caretBlockAfter && !vertical)
             {
                 if (blk is TableBlock tb && tb.LogicalCells().Any())
                 { _caretBlock = null; var c = tb.LogicalCells().Last().cell; SetCaretCollapsed(c, GetParagraphLength(c)); }

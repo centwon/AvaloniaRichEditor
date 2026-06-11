@@ -80,6 +80,96 @@ public class BlockCaretTests
     }
 
     [AvaloniaFact]
+    public void Right_FromLastCellEnd_EntersAfterTableCaret()
+    {
+        var (ed, tb) = EditorWithTable();
+        PlaceCaret(ed, tb.Cells[1][1], 1); // end of "w" (last logical cell)
+
+        Press(ed, Key.Right);
+
+        Assert.Same(tb, CaretBlockField.GetValue(ed));
+        Assert.True((bool)CaretBlockAfterField.GetValue(ed)!);
+
+        Press(ed, Key.Right); // and out to the following paragraph
+        Assert.Null(CaretBlockField.GetValue(ed));
+        var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
+        Assert.Equal("after", caret.Paragraph!.Text());
+    }
+
+    [AvaloniaFact]
+    public void Left_FromFirstCellStart_EntersBeforeTableCaret()
+    {
+        var (ed, tb) = EditorWithTable();
+        PlaceCaret(ed, tb.Cells[0][0], 0); // start of "x" (first logical cell)
+
+        Press(ed, Key.Left);
+
+        Assert.Same(tb, CaretBlockField.GetValue(ed));
+        Assert.False((bool)CaretBlockAfterField.GetValue(ed)!);
+
+        Press(ed, Key.Left); // and out to the preceding paragraph's end
+        Assert.Null(CaretBlockField.GetValue(ed));
+        var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
+        Assert.Equal("before", caret.Paragraph!.Text());
+    }
+
+    [AvaloniaFact]
+    public void Right_FromNonLastCellEnd_MovesToNextCell()
+    {
+        var (ed, tb) = EditorWithTable();
+        PlaceCaret(ed, tb.Cells[0][0], 1); // end of "x" — not the last cell
+
+        Press(ed, Key.Right);
+
+        Assert.Null(CaretBlockField.GetValue(ed)); // no block caret: plain move into the next cell
+        var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
+        Assert.Same(tb.Cells[0][1], caret.Paragraph);
+    }
+
+    [AvaloniaFact]
+    public void Down_FromBeforeTableCaret_SkipsCells_ToFollowingParagraph()
+    {
+        var (ed, tb) = EditorWithTable();
+        PlaceCaret(ed, tb.Cells[0][0], 0);
+        Press(ed, Key.Up);   // -> before-table caret
+
+        Press(ed, Key.Down); // vertical: skip the table as one unit
+
+        Assert.Null(CaretBlockField.GetValue(ed));
+        var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
+        Assert.Equal("after", caret.Paragraph!.Text());
+    }
+
+    [AvaloniaFact]
+    public void Up_FromAfterTableCaret_SkipsCells_ToPrecedingParagraph()
+    {
+        var (ed, tb) = EditorWithTable();
+        PlaceCaret(ed, tb.Cells[1][1], 1);
+        Press(ed, Key.Down); // -> after-table caret
+
+        Press(ed, Key.Up);   // vertical: skip the table as one unit
+
+        Assert.Null(CaretBlockField.GetValue(ed));
+        var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
+        Assert.Equal("before", caret.Paragraph!.Text());
+    }
+
+    [AvaloniaFact]
+    public void Right_FromBeforeTableCaret_EntersFirstCell()
+    {
+        var (ed, tb) = EditorWithTable();
+        PlaceCaret(ed, tb.Cells[0][0], 0);
+        Press(ed, Key.Up);    // -> before-table caret
+
+        Press(ed, Key.Right); // horizontal: walk into the cells
+
+        Assert.Null(CaretBlockField.GetValue(ed));
+        var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
+        Assert.Same(tb.Cells[0][0], caret.Paragraph);
+        Assert.Equal(0, caret.Offset);
+    }
+
+    [AvaloniaFact]
     public void Up_FromFirstCell_EntersBeforeTableCaret()
     {
         var (ed, tb) = EditorWithTable();

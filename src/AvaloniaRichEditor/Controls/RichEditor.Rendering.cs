@@ -378,11 +378,13 @@ public partial class RichEditor
 
         if (blockCaretRect.HasValue)
         {
-            // Blinking bar at the block's left edge: top = caret before the block, bottom = caret after.
+            // Blinking bar: "before" = top of the left edge, "after" = bottom of the RIGHT edge —
+            // mirroring a text caret before/after a character. (Drawing both on the left read as
+            // "in front of the table" even when the caret was logically after it.)
             if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
                 var r = blockCaretRect.Value;
-                double cx = r.X - 3;
+                double cx = _caretBlockAfter ? r.Right + 3 : r.X - 3;
                 double cy1 = _caretBlockAfter ? Math.Max(r.Y, r.Bottom - 20) : r.Y;
                 double cy2 = _caretBlockAfter ? r.Bottom : Math.Min(r.Bottom, r.Y + 20);
                 context.DrawLine(new Pen(Brushes.Black, 2), new Point(cx, cy1), new Point(cx, cy2));
