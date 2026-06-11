@@ -53,6 +53,16 @@ public static class DocumentSerializer
     /// Returns an empty document on parse errors. Image decoding is deferred to first render.</summary>
     public static FlowDocument Deserialize(string json)
     {
+        var (dto, pool) = ParseJson(json);
+        return FromDto(dto, pool);
+    }
+
+    // Thread-free half of Deserialize: JSON parsing + base64 decode only, no model objects. Async
+    // loaders run this on a background thread and then build the model with FromDto on the UI
+    // thread — model brushes/decorations are Avalonia thread-affine objects and must be created on
+    // the thread that will render them.
+    internal static (FlowDocumentDto? Dto, Dictionary<string, (byte[] Bytes, string Mime)> Pool) ParseJson(string json)
+    {
         var dto = JsonSerializer.Deserialize(json, DocumentJsonContext.Default.FlowDocumentDto);
         // Decode each pool entry once; blocks referencing the same hash share one byte[] instance.
         var pool = new Dictionary<string, (byte[] Bytes, string Mime)>();
@@ -62,7 +72,7 @@ public static class DocumentSerializer
                 var bytes = TryFromBase64(entry.Data);
                 if (bytes != null) pool[key] = (bytes, entry.MimeType ?? "image/png");
             }
-        return FromDto(dto, pool);
+        return (dto, pool);
     }
 
     // Rebuilds the document from a DTO plus the resolved image pool (bytes already decoded from
@@ -306,7 +316,10 @@ public static class DocumentSerializer
     private static IBrush? StringToBrush(string? value)
     {
         if (string.IsNullOrEmpty(value)) return null;
-        try { return new SolidColorBrush(Color.Parse(value)); } catch { return null; }
+        // Immutable: no dispatcher thread affinity (mutable SolidColorBrush created off the UI
+        // thread crashes the compositor on first render) and no per-brush change tracking.
+        try { return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(value)); }
+        catch { return null; }
     }
 
     // Adds the image bytes to the document pool (deduplicated by content hash) and returns the

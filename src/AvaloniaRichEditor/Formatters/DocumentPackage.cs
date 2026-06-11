@@ -48,17 +48,26 @@ public static class DocumentPackage
     /// deferred to first render. The stream is left open.</summary>
     public static FlowDocument Load(Stream source)
     {
+        var (dto, pool) = ReadPackage(source);
+        return DocumentSerializer.FromDto(dto, pool);
+    }
+
+    // Thread-free half of Load: zip + JSON parsing and byte extraction only, no model objects.
+    // Async loaders run this on a background thread and build the model with FromDto on the UI
+    // thread (model brushes/decorations are Avalonia thread-affine objects).
+    internal static (FlowDocumentDto? Dto, Dictionary<string, (byte[] Bytes, string Mime)> Pool) ReadPackage(Stream source)
+    {
+        var pool = new Dictionary<string, (byte[] Bytes, string Mime)>();
         try
         {
             using var zip = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: true);
             var docEntry = zip.GetEntry("document.json");
-            if (docEntry == null) return new FlowDocument();
+            if (docEntry == null) return (null, pool);
             FlowDocumentDto? dto;
             using (var s = docEntry.Open())
                 dto = JsonSerializer.Deserialize(s, DocumentJsonContext.Default.FlowDocumentDto);
 
             // Blocks referencing the same hash share one byte[] instance, like the JSON pool path.
-            var pool = new Dictionary<string, (byte[] Bytes, string Mime)>();
             foreach (var entry in zip.Entries)
             {
                 if (!entry.FullName.StartsWith("images/", StringComparison.Ordinal)) continue;
@@ -73,9 +82,9 @@ public static class DocumentPackage
                     : ImageMime.Detect(bytes);
                 pool[key] = (bytes, mime);
             }
-            return DocumentSerializer.FromDto(dto, pool);
+            return (dto, pool);
         }
-        catch (InvalidDataException) { return new FlowDocument(); }
-        catch (JsonException) { return new FlowDocument(); }
+        catch (InvalidDataException) { return (null, pool); }
+        catch (JsonException) { return (null, pool); }
     }
 }

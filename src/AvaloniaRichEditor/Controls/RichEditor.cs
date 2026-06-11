@@ -2415,8 +2415,11 @@ public partial class RichEditor : Control
     /// deferred to first render), then swaps it in. Call (and await) from the UI thread.</summary>
     public async Task LoadJsonAsync(string json)
     {
-        var doc = await Task.Run(() => Formatters.DocumentSerializer.Deserialize(json));
-        LoadDocument(doc);
+        // Background: parsing + base64 only. Model objects (brushes, decorations) are Avalonia
+        // thread-affine and must be created here on the UI thread, or the compositor crashes on
+        // first render ("the calling thread cannot access this object").
+        var (dto, pool) = await Task.Run(() => Formatters.DocumentSerializer.ParseJson(json));
+        LoadDocument(Formatters.DocumentSerializer.FromDto(dto, pool));
     }
 
     /// <summary>Writes the document to <paramref name="destination"/> as an <c>.ardx</c> package
@@ -2433,8 +2436,10 @@ public partial class RichEditor : Control
     /// await) from the UI thread.</summary>
     public async Task LoadPackageAsync(System.IO.Stream source)
     {
-        var doc = await Task.Run(() => Formatters.DocumentPackage.Load(source));
-        LoadDocument(doc);
+        // Background: zip/JSON parsing + byte extraction only; model built on the UI thread
+        // (model brushes/decorations are thread-affine — see LoadJsonAsync).
+        var (dto, pool) = await Task.Run(() => Formatters.DocumentPackage.ReadPackage(source));
+        LoadDocument(Formatters.DocumentSerializer.FromDto(dto, pool));
     }
 
     /// <summary>Clears the document to a single empty paragraph.</summary>
