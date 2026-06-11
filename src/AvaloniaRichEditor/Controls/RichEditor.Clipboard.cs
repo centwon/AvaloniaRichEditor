@@ -59,13 +59,20 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             catch { /* fall back to plain text */ }
         }
 
-        // 3. Bitmap image on the clipboard (e.g. a screenshot or copied picture).
-        var (clipImage, clipBytes) = AllowImages
+        // 3. Bitmap image on the clipboard (e.g. a screenshot or copied picture). Images copied
+        //    in-app carry a meta string restoring inline-ness and display size.
+        var (clipImage, clipBytes, clipMeta) = AllowImages
             ? await TryGetImageAsync(clipboard)
-            : ((Avalonia.Media.Imaging.Bitmap?)null, (byte[]?)null);
+            : ((Avalonia.Media.Imaging.Bitmap?)null, (byte[]?)null, (string?)null);
         if (clipImage != null)
         {
-            if (clipBytes != null) InsertImageBytes(clipBytes);     // keep the original encoding
+            var meta = ParseImageMeta(clipMeta);
+            if (meta is { Inline: true } im && clipBytes != null)
+            {
+                PushUndo();
+                InsertInlineImageAtCaret(clipBytes, im.W, im.H);
+            }
+            else if (clipBytes != null) InsertImageBytes(clipBytes, meta?.W ?? 0, meta?.H ?? 0); // keep the original encoding
             else InsertImage(Downscale(clipImage));                  // raw Bitmap object: no bytes to keep
             ResetCaretBlink(); // image lands just after the caret block — scroll there
             return;
@@ -154,7 +161,11 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     /// the document's data (<see cref="ImageBlock.RawBytes"/>) so saving never re-encodes. Prefer
     /// this over <see cref="InsertImage"/> when the encoded bytes are available. Oversized images
     /// are downscaled once here (PNG); later drag-handle resizes only change Width/Height.</summary>
-    public void InsertImageBytes(byte[] bytes)
+    public void InsertImageBytes(byte[] bytes) => InsertImageBytes(bytes, 0, 0);
+
+    // Core insert with an optional display size (used by paste to restore the copied image's size;
+    // 0 = natural size).
+    private void InsertImageBytes(byte[] bytes, double displayW, double displayH)
     {
         if (Document == null || IsReadOnly || !AllowImages) return;
         Avalonia.Media.Imaging.Bitmap bmp;
@@ -166,7 +177,11 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         catch { return; }
 
         var scaled = Downscale(bmp);
-        var ib = new ImageBlock { Width = scaled.Size.Width, Height = scaled.Size.Height };
+        var ib = new ImageBlock
+        {
+            Width = displayW > 0 ? displayW : scaled.Size.Width,
+            Height = displayH > 0 ? displayH : scaled.Size.Height
+        };
         if (!ReferenceEquals(scaled, bmp))
         {
             using var ms = new System.IO.MemoryStream();
@@ -194,15 +209,18 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         catch { return bmp; }
     }
 
-    // Application-private clipboard format carrying an image's original encoded bytes, so copying
-    // an image inside the editor round-trips without re-encoding. A decoded Bitmap is written
-    // alongside it for other applications.
+    // Application-private clipboard formats: the image's original encoded bytes (so an in-editor
+    // copy/paste round-trips without re-encoding) plus a small meta string "inline;width;height"
+    // (so an inline image pastes back as inline, keeping its display size). A decoded Bitmap is
+    // written alongside them for other applications.
     private static readonly DataFormat<byte[]> AreImageFormat =
         DataFormat.CreateBytesApplicationFormat("AvaloniaRichEditor.Image");
+    private static readonly DataFormat<string> AreImageMetaFormat =
+        DataFormat.CreateStringApplicationFormat("AvaloniaRichEditor.ImageMeta");
 
     // Copies an image (block or inline) to the OS clipboard. Paste re-enters through the image
     // branch of PasteFromClipboardAsync, which prefers the original-bytes format.
-    private async Task CopyImageToClipboardAsync(byte[]? rawBytes, Bitmap? bmp)
+    private async Task CopyImageToClipboardAsync(byte[]? rawBytes, Bitmap? bmp, bool inline, double width, double height)
     {
         byte[]? bytes = rawBytes;
         if (bytes == null && bmp != null)
@@ -216,11 +234,6 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             catch { return; }
         }
         if (bytes == null) return;
-        if (bmp == null)
-        {
-            try { using var ms = new System.IO.MemoryStream(bytes); bmp = new Bitmap(ms); }
-            catch { return; }
-        }
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) return;
 
@@ -231,8 +244,16 @@ public partial class RichEditor  // doc comment lives on the primary declaration
 
         try
         {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
             var item = DataTransferItem.Create(AreImageFormat, bytes);
-            item.Set(DataFormat.Bitmap, bmp);
+            item.Set(AreImageMetaFormat, $"{(inline ? 1 : 0)};{width.ToString(inv)};{height.ToString(inv)}");
+            // The Bitmap representation is best-effort (for other apps); never let it break the copy.
+            try
+            {
+                if (bmp == null) { using var ms = new System.IO.MemoryStream(bytes); bmp = new Bitmap(ms); }
+                item.Set(DataFormat.Bitmap, bmp);
+            }
+            catch { }
             var dt = new DataTransfer();
             dt.Add(item);
             await clipboard.SetDataAsync(dt);
@@ -240,32 +261,56 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         catch { }
     }
 
+    // Parses the meta string written by CopyImageToClipboardAsync. Null on any mismatch.
+    private static (bool Inline, double W, double H)? ParseImageMeta(string? meta)
+    {
+        if (string.IsNullOrEmpty(meta)) return null;
+        var parts = meta.Split(';');
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (parts.Length != 3
+            || !int.TryParse(parts[0], out int inl)
+            || !double.TryParse(parts[1], System.Globalization.NumberStyles.Float, inv, out double w)
+            || !double.TryParse(parts[2], System.Globalization.NumberStyles.Float, inv, out double h))
+            return null;
+        return (inl == 1, w, h);
+    }
+
     // Returns the decoded bitmap plus, when the clipboard handed us encoded bytes, those original
-    // bytes (so the document can keep them without re-encoding). Bytes are null when the clipboard
-    // produced a Bitmap object directly.
-    private static async Task<(Avalonia.Media.Imaging.Bitmap?, byte[]?)> TryGetImageAsync(IClipboard clipboard)
+    // bytes (so the document can keep them without re-encoding), plus the editor's own meta string
+    // when the image was copied in-app. Bytes are null when the clipboard produced a Bitmap object.
+    private static async Task<(Avalonia.Media.Imaging.Bitmap?, byte[]?, string?)> TryGetImageAsync(IClipboard clipboard)
     {
         Avalonia.Input.IAsyncDataTransfer? dt;
         try { dt = await clipboard.TryGetDataAsync(); }
-        catch { return (null, null); }
-        if (dt == null) return (null, null);
+        catch { return (null, null, null); }
+        if (dt == null) return (null, null, null);
 
         try
         {
             // First pass: our own format — original encoded bytes, no generation loss.
             foreach (var item in dt.Items)
             {
+                byte[]? own = null;
+                string? meta = null;
                 foreach (var fmt in item.Formats)
                 {
-                    if (fmt.Identifier != AreImageFormat.Identifier) continue;
                     object? raw;
-                    try { raw = await item.TryGetRawAsync(fmt); }
-                    catch { continue; }
-                    if (raw is byte[] { Length: > 0 } ob)
+                    if (fmt.Identifier == AreImageFormat.Identifier)
                     {
-                        try { using var ms = new System.IO.MemoryStream(ob); return (new Bitmap(ms), ob); }
-                        catch { }
+                        try { raw = await item.TryGetRawAsync(fmt); } catch { continue; }
+                        if (raw is byte[] { Length: > 0 } ob) own = ob;
                     }
+                    else if (fmt.Identifier == AreImageMetaFormat.Identifier)
+                    {
+                        try { raw = await item.TryGetRawAsync(fmt); } catch { continue; }
+                        if (raw is string ms) meta = ms;
+                        else if (raw is byte[] mb) meta = System.Text.Encoding.UTF8.GetString(mb);
+                    }
+                }
+                if (own != null)
+                {
+                    try { using var ms = new System.IO.MemoryStream(own); return (new Bitmap(ms), own, meta); }
+                    catch { }
                 }
             }
 
@@ -283,7 +328,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     try { raw = await item.TryGetRawAsync(fmt); }
                     catch { continue; }
 
-                    if (raw is Avalonia.Media.Imaging.Bitmap bm) return (bm, null);
+                    if (raw is Avalonia.Media.Imaging.Bitmap bm) return (bm, null, null);
                     byte[]? bytes = raw as byte[];
                     if (bytes == null && raw is System.IO.Stream s)
                     {
@@ -293,14 +338,14 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     }
                     if (bytes is { Length: > 0 })
                     {
-                        try { using var ms = new System.IO.MemoryStream(bytes); return (new Avalonia.Media.Imaging.Bitmap(ms), bytes); }
+                        try { using var ms = new System.IO.MemoryStream(bytes); return (new Avalonia.Media.Imaging.Bitmap(ms), bytes, null); }
                         catch { }
                     }
                 }
             }
         }
         finally { (dt as IDisposable)?.Dispose(); }
-        return (null, null);
+        return (null, null, null);
     }
 
     private static async Task<string?> TryGetHtmlAsync(IClipboard clipboard)

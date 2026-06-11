@@ -1158,14 +1158,15 @@ public partial class RichEditor : Control
             InvalidateVisual();
         }
 
-        // Any key other than the deletion keys cancels a block-image selection.
-        if (_selectedBlock != null && e.Key != Key.Back && e.Key != Key.Delete)
+        // Any key other than the deletion keys cancels a block-image selection — except Ctrl
+        // combos: Ctrl+C/X must still see the selection to copy/cut the image.
+        if (_selectedBlock != null && e.Key != Key.Back && e.Key != Key.Delete && !ctrl)
         {
             _selectedBlock = null;
             InvalidateVisual();
         }
         // Same for an inline-image selection.
-        if (_selectedInline != null && e.Key != Key.Back && e.Key != Key.Delete)
+        if (_selectedInline != null && e.Key != Key.Back && e.Key != Key.Delete && !ctrl)
         {
             _selectedInline = null;
             InvalidateVisual();
@@ -1212,7 +1213,7 @@ public partial class RichEditor : Control
                 // Cut a selected image as a unit: copy, then remove it.
                 if ((_selectedBlock as ImageBlock ?? _caretBlock as ImageBlock) is { } xb)
                 {
-                    _ = CopyImageToClipboardAsync(xb.RawBytes, xb.Image);
+                    _ = CopyImageToClipboardAsync(xb.RawBytes, xb.Image, inline: false, xb.Width, xb.Height);
                     PushUndo();
                     _selectedBlock = null; _caretBlock = null;
                     Document.Blocks.Remove(xb);
@@ -1221,7 +1222,7 @@ public partial class RichEditor : Control
                 }
                 if (_selectedInline is { } xi)
                 {
-                    _ = CopyImageToClipboardAsync(xi.img.RawBytes, xi.img.Image);
+                    _ = CopyImageToClipboardAsync(xi.img.RawBytes, xi.img.Image, inline: true, xi.img.Width, xi.img.Height);
                     PushUndo();
                     xi.p.Inlines.Remove(xi.img);
                     _selectedInline = null;
@@ -2535,7 +2536,7 @@ public partial class RichEditor : Control
     }
 
     /// <summary>Inserts a block image from a <see cref="Avalonia.Media.Imaging.Bitmap"/> at the caret.
-    /// When the encoded bytes are available, prefer <see cref="InsertImageBytes"/> to avoid re-encoding.</summary>
+    /// When the encoded bytes are available, prefer <see cref="InsertImageBytes(byte[])"/> to avoid re-encoding.</summary>
     public void InsertImage(Avalonia.Media.Imaging.Bitmap image)
     {
         if (Document == null || IsReadOnly || !AllowImages) return;
@@ -2854,15 +2855,50 @@ public partial class RichEditor : Control
     {
         if ((_selectedBlock as ImageBlock ?? _caretBlock as ImageBlock) is { } ib)
         {
-            _ = CopyImageToClipboardAsync(ib.RawBytes, ib.Image);
+            _ = CopyImageToClipboardAsync(ib.RawBytes, ib.Image, inline: false, ib.Width, ib.Height);
             return true;
         }
         if (_selectedInline is { } si)
         {
-            _ = CopyImageToClipboardAsync(si.img.RawBytes, si.img.Image);
+            _ = CopyImageToClipboardAsync(si.img.RawBytes, si.img.Image, inline: true, si.img.Width, si.img.Height);
             return true;
         }
         return false;
+    }
+
+    // Pastes an image as an inline (character-like) image at the caret, splitting the run under it
+    // like text insertion. Used when the clipboard meta says the image was inline when copied.
+    private void InsertInlineImageAtCaret(byte[] bytes, double w, double h)
+    {
+        if (Document == null || IsReadOnly || !AllowImages) return;
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+        var p = _caretPosition.Paragraph;
+        if (p == null) return;
+
+        var im = new InlineImage { Width = w > 0 ? w : 16, Height = h > 0 ? h : 16 };
+        im.SetImageData(bytes, ImageMime.Detect(bytes));
+        if (w <= 0 || h <= 0)
+        {
+            // No display size in the meta — fall back to the natural size when decodable.
+            try
+            {
+                using var ms = new System.IO.MemoryStream(bytes);
+                var bmp = new Avalonia.Media.Imaging.Bitmap(ms);
+                if (w <= 0) im.Width = bmp.Size.Width;
+                if (h <= 0) im.Height = bmp.Size.Height;
+            }
+            catch { }
+        }
+
+        int at = SplitInlinesAt(p, _caretPosition.Offset);
+        p.Inlines.Insert(at, im);
+        UpdateParents(Document);
+        _caretPosition.Offset += 1;
+        _selectionStart = new TextPointer(p, _caretPosition.Offset);
+        _selectionEnd = new TextPointer(p, _caretPosition.Offset);
+        MarkTextChanged();
+        InvalidateVisual();
+        NotifyStatus();
     }
 
     private async void CopySelectionToClipboard()
