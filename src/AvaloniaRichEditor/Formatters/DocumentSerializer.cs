@@ -28,8 +28,24 @@ public static class DocumentSerializer
     /// <summary>Serializes <paramref name="document"/> to a JSON string.</summary>
     public static string Serialize(FlowDocument document)
     {
+        var (dto, images) = BuildDto(document);
+        return SerializeDto(dto, images);
+    }
+
+    // Builds the DTO + image pool from the model. Reads thread-affine brush colors (mutable
+    // SolidColorBrush.Color is a StyledProperty), so this MUST run on the UI thread. Async save
+    // paths call this synchronously on the caller's thread, then offload only SerializeDto/WriteDto.
+    internal static (FlowDocumentDto Dto, Dictionary<string, (byte[] Bytes, string Mime)> Images) BuildDto(FlowDocument document)
+    {
         var images = new Dictionary<string, (byte[] Bytes, string Mime)>();
         var dto = ToDto(document, images);
+        return (dto, images);
+    }
+
+    // Pure-data half of Serialize: base64-encodes the image pool into the DTO and writes JSON. No
+    // model/brush reads, so it is safe to run off the UI thread.
+    internal static string SerializeDto(FlowDocumentDto dto, Dictionary<string, (byte[] Bytes, string Mime)> images)
+    {
         if (images.Count > 0)
         {
             dto.Images = new Dictionary<string, ImagePoolDto>();

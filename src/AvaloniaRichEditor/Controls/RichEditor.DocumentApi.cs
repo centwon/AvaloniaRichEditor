@@ -23,13 +23,14 @@ public partial class RichEditor
     public void LoadJson(string json) => LoadDocument(Formatters.DocumentSerializer.Deserialize(json));
 
     /// <summary>Serializes the document to JSON on a background thread, keeping the UI responsive
-    /// for large documents. The document is snapshotted (cloned) on the calling thread first, so
-    /// edits made while serialization runs can't tear the output. Call from the UI thread.</summary>
+    /// for large documents. The DTO (which reads thread-affine brush colors) is built on the calling
+    /// thread; only JSON encoding runs in the background. The built DTO is a value snapshot, so edits
+    /// made while encoding runs can't tear the output. Call from the UI thread.</summary>
     public Task<string> ToJsonAsync()
     {
         if (Document == null) return Task.FromResult("");
-        var snapshot = Document.Clone(); // cheap: image bytes/bitmaps are shared by reference (N6-2)
-        return Task.Run(() => Formatters.DocumentSerializer.Serialize(snapshot));
+        var (dto, images) = Formatters.DocumentSerializer.BuildDto(Document);
+        return Task.Run(() => Formatters.DocumentSerializer.SerializeDto(dto, images));
     }
 
     /// <summary>Parses JSON into a document on a background thread (image decoding is already
@@ -44,12 +45,13 @@ public partial class RichEditor
     }
 
     /// <summary>Writes the document to <paramref name="destination"/> as an <c>.ardx</c> package
-    /// (ZIP: document.json + raw image entries, no base64 overhead) on a background thread. The
-    /// document is snapshotted on the calling thread first, like <see cref="ToJsonAsync"/>.</summary>
+    /// (ZIP: document.json + raw image entries, no base64 overhead) on a background thread. The DTO
+    /// is built on the calling thread (snapshot + thread-affine brush reads), like <see cref="ToJsonAsync"/>;
+    /// only the zip writing runs in the background.</summary>
     public Task SavePackageAsync(System.IO.Stream destination)
     {
-        var snapshot = Document?.Clone() ?? new FlowDocument();
-        return Task.Run(() => Formatters.DocumentPackage.Save(snapshot, destination));
+        var (dto, images) = Formatters.DocumentSerializer.BuildDto(Document ?? new FlowDocument());
+        return Task.Run(() => Formatters.DocumentPackage.WriteDto(dto, images, destination));
     }
 
     /// <summary>Reads an <c>.ardx</c> package from <paramref name="source"/> on a background thread
