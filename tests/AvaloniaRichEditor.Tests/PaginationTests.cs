@@ -169,6 +169,22 @@ public class PaginationTests
     }
 
     [AvaloniaFact]
+    public void SavePdf_WritesParseableMultiPagePdf()
+    {
+        var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray()); // 2 pages
+        using var ms = new System.IO.MemoryStream();
+        ed.SavePdf(ms, dpi: 96); // low dpi keeps the test fast
+        var bytes = ms.ToArray();
+        string head = System.Text.Encoding.ASCII.GetString(bytes, 0, 8);
+        string text = System.Text.Encoding.Latin1.GetString(bytes);
+        Assert.StartsWith("%PDF-1.4", head);
+        Assert.EndsWith("%%EOF\n", text);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(text, "/Type /Page ").Count);
+        Assert.Contains("/Count 2", text);
+        Assert.Contains("/Filter /FlateDecode", text);
+    }
+
+    [AvaloniaFact]
     public void LongParagraph_SplitsAtLineBoundaries()
     {
         // One paragraph, 50 uniform hard lines. Pages must break between lines: every full page

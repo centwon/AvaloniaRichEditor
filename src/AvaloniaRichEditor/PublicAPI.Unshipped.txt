@@ -357,3 +357,4 @@ AvaloniaRichEditor.Controls.RichEditor.PageView.set -> void
 static readonly AvaloniaRichEditor.Controls.RichEditor.PageViewProperty -> Avalonia.StyledProperty<bool>!
 AvaloniaRichEditor.Controls.RichEditor.GetPrintPageCount() -> int
 AvaloniaRichEditor.Controls.RichEditor.RenderPrintPage(int pageIndex, double dpi = 96) -> Avalonia.Media.Imaging.Bitmap!
+AvaloniaRichEditor.Controls.RichEditor.SavePdf(System.IO.Stream! stream, double dpi = 300) -> void

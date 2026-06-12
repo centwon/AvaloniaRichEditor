@@ -77,6 +77,10 @@ public partial class MainWindow : Window
             ["Demo.Fit"] = "Fit",
             ["Demo.PageView"] = "Pages",
             ["Demo.PrintPreview"] = "Print preview",
+            ["Demo.Print"] = "Print",
+            ["Demo.SavePdf"] = "Save PDF",
+            ["Demo.PrintDone"] = "Sent to printer",
+            ["Demo.PdfDone"] = "PDF saved",
             ["Demo.ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
@@ -90,6 +94,10 @@ public partial class MainWindow : Window
             ["Demo.Fit"] = "맞춤",
             ["Demo.PageView"] = "페이지",
             ["Demo.PrintPreview"] = "인쇄 미리보기",
+            ["Demo.Print"] = "인쇄",
+            ["Demo.SavePdf"] = "PDF 저장",
+            ["Demo.PrintDone"] = "프린터로 전송됨",
+            ["Demo.PdfDone"] = "PDF 저장됨",
             ["Demo.ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
         });
     }

@@ -100,6 +100,46 @@ public partial class RichEditor
         return rtb;
     }
 
+    /// <summary>Writes the document as a raster PDF (A4 pages, no external dependencies). Each page
+    /// is one FlateDecode RGB image at the given DPI — 300 (default) is print quality; text-heavy
+    /// pages compress well, photo-heavy documents grow large. Text is not selectable (vector PDF
+    /// would need a DrawingContext PDF backend Avalonia doesn't expose). Must run on the UI thread.</summary>
+    public void SavePdf(System.IO.Stream stream, double dpi = 300)
+    {
+        int pages = GetPrintPageCount();
+        const double ptPerPx = 72.0 / 96.0;
+        Formatters.PdfWriter.Write(stream, A4PageWidth * ptPerPx, A4PageHeight * ptPerPx, pages, i =>
+        {
+            var bmp = RenderPrintPage(i, dpi);
+            try { return BitmapToRgb24(bmp); }
+            finally { (bmp as IDisposable)?.Dispose(); }
+        });
+    }
+
+    // BGRA8888 (RenderTargetBitmap's format) -> packed top-down RGB24. Alpha is always 255 here:
+    // print pages start from an opaque white fill.
+    private static (int width, int height, byte[] rgb) BitmapToRgb24(Avalonia.Media.Imaging.Bitmap bmp)
+    {
+        var ps = bmp.PixelSize;
+        int stride = ps.Width * 4;
+        var bgra = new byte[stride * ps.Height];
+        var handle = System.Runtime.InteropServices.GCHandle.Alloc(bgra, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try
+        {
+            bmp.CopyPixels(new PixelRect(ps), handle.AddrOfPinnedObject(), bgra.Length, stride);
+        }
+        finally { handle.Free(); }
+
+        var rgb = new byte[ps.Width * ps.Height * 3];
+        for (int i = 0, j = 0; i < bgra.Length; i += 4, j += 3)
+        {
+            rgb[j] = bgra[i + 2];
+            rgb[j + 1] = bgra[i + 1];
+            rgb[j + 2] = bgra[i];
+        }
+        return (ps.Width, ps.Height, rgb);
+    }
+
     // --- The single doc<->view coordinate choke point (P-milestone Phase 2). ---
     // Document space = the continuous layout every walker computes in. View space = control
     // coordinates with page chrome (desk centering, paper margins, inter-page gaps) injected.

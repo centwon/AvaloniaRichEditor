@@ -23,6 +23,8 @@
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
     <PackageReference Include="FluentIcons.Avalonia" Version="2.1.328" />
+    <!-- Printer output only (demo/host concern — the library stays dependency-free, P-milestone Phase 4). -->
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
