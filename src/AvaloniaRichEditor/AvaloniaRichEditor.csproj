@@ -16,7 +16,7 @@
     <PackageId>AvaloniaRichEditor</PackageId>
     <Version>0.1.0-alpha</Version>
     <Authors>centwon</Authors>
-    <Description>A from-scratch rich text editor control for Avalonia, built purely on the TextLayout engine. Supports inline formatting, paragraphs, lists, tables (with cell merge), images, hyperlinks, HTML/JSON round-trip, find/replace, undo/redo, and CJK IME.</Description>
+    <Description>A from-scratch rich text editor control for Avalonia, built purely on the TextLayout engine. Supports inline formatting, paragraphs, lists, tables (with cell merge), images, hyperlinks, HTML/JSON round-trip, find/replace, undo/redo, CJK IME, a Word-style A4 page view, and print/PDF page rendering.</Description>
     <PackageTags>avalonia;richtextbox;editor;wysiwyg;rich-text;flowdocument;text</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Copyright>Copyright (c) 2026 centwon</Copyright>

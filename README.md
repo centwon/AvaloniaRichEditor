@@ -19,6 +19,9 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 - HTML and JSON import/export (round-trippable) — see the
   [document format specification](docs/DOCUMENT_FORMAT.md) (JSON schema v2 and the `.ardx` package)
 - Korean/CJK **IME** composition (inline preedit)
+- Word-style **A4 page view** (`PageView`, line-boundary page breaks, headers/footers/page numbers)
+- **Print & PDF**: per-page bitmap rendering (`RenderPrintPage`, 300 DPI) and dependency-free raster
+  PDF export (`SavePdf`)
 
 ## Quick start
 
