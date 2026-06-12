@@ -16,7 +16,8 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 - Inline and block **images** (insert, resize, replace, save)
 - Find / replace, undo / redo, per-object right-click context menus
 - Clipboard: internal rich copy/paste, external **HTML** paste, image paste, Excel/TSV → table
-- HTML and JSON import/export (round-trippable)
+- HTML and JSON import/export (round-trippable) — see the
+  [document format specification](docs/DOCUMENT_FORMAT.md) (JSON schema v2 and the `.ardx` package)
 - Korean/CJK **IME** composition (inline preedit)
 
 ## Quick start
