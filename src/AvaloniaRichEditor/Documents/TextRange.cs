@@ -346,17 +346,11 @@ public class TextRange
 
                     run.Text = text1;
 
-                    var newRun = new Run
-                    {
-                        Text = text2,
-                        FontWeight = run.FontWeight,
-                        FontStyle = run.FontStyle,
-                        FontSize = run.FontSize,
-                        Foreground = run.Foreground,
-                        TextDecorations = run.TextDecorations,
-                        NavigateUri = run.NavigateUri,
-                        Parent = p
-                    };
+                    // Clone() copies every formatting field (a hand-rolled copy once dropped
+                    // FontFamily/Background, losing them on the split tail).
+                    var newRun = (Run)run.Clone();
+                    newRun.Text = text2;
+                    newRun.Parent = p;
 
                     p.Inlines.Insert(i + 1, newRun);
                     return;

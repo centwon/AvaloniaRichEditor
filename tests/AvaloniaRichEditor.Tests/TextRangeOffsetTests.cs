@@ -76,6 +76,26 @@ public class TextRangeOffsetTests
             runs.Select(r => r.FontWeight));
     }
 
+    [Fact]
+    public void ApplyPropertyValue_SubRange_SplitKeepsFontFamilyAndBackground()
+    {
+        // Regression: the boundary split once hand-copied run fields and dropped
+        // FontFamily/Background, so styling part of a styled run lost them on the tail.
+        var p = TestHelpers.Para(new Run
+        {
+            Text = "abcdef",
+            FontFamily = "Consolas",
+            Background = Brushes.Yellow
+        });
+        new TextRange(new TextPointer(p, 2), new TextPointer(p, 4))
+            .ApplyPropertyValue(r => r.FontWeight = FontWeight.Bold); // "cd"
+
+        var runs = p.Inlines.OfType<Run>().ToList();
+        Assert.Equal(new[] { "ab", "cd", "ef" }, runs.Select(r => r.Text));
+        Assert.All(runs, r => Assert.Equal("Consolas", r.FontFamily));
+        Assert.All(runs, r => Assert.Equal(Brushes.Yellow, r.Background));
+    }
+
     // ---- multi-paragraph operations ----
 
     [Fact]

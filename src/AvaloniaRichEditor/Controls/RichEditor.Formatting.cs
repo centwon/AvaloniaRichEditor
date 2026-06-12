@@ -271,6 +271,8 @@ public partial class RichEditor
             r.FontStyle = FontStyle.Normal;
             r.FontSize = 14;
             r.Foreground = Brushes.Black;
+            r.Background = null;
+            r.FontFamily = null;
             r.TextDecorations = null;
             r.NavigateUri = null;
         });

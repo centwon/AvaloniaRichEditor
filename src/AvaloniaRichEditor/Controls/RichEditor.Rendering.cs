@@ -85,7 +85,9 @@ public partial class RichEditor
     {
         // Flush change events after the edit/caret move that scheduled this paint (off the render stack).
         RaisePendingChangeEvents();
-        context.FillRectangle(Brushes.Transparent, new Rect(0, 0, Bounds.Width, 2000));
+        // Transparent fill makes the whole control hit-testable (clicks on empty space below the
+        // text must still reach OnPointerPressed). Must cover the full bounds, not a fixed height.
+        context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         if (Document == null) return;
 
         // Recomputed every render so resize handles track the current layout.

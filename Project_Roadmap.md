@@ -72,11 +72,11 @@
 #### 🔍 2026-06-12 전수 점검 백로그 (코드 리뷰로 발견 — 미착수)
 > 핵심 소스 ~5,000줄 직접 검토 결과. 항목별 파일:줄 위치 명시. P1부터 처리 권장.
 
-**P1 — 버그, 저비용·고체감 (각 30분 이내)**
-- [ ] **B1. `SplitRunAtOffset`이 `FontFamily`/`Background` 누락** — `TextRange.cs:349`. 선택 경계 분할 시 수동 new Run이 두 필드를 빼먹음(같은 역할의 `RichEditor.SplitInlinesAt`은 `Clone()` 사용으로 정상). 글꼴/형광펜 런 중간 선택 후 서식/삭제 → 뒤쪽 절반 서식 소실. **수정: `run.Clone()` 사용 + `TextRangeOffsetTests` 회귀 1건.**
-- [ ] **B2. `CopySelectionToClipboard`가 `async void`** — `RichEditor.cs:1126`. 다른 프로세스가 클립보드 점유 시 `SetTextAsync` 예외 → 프로세스 크래시. try/catch 추가(이미지 경로 `CopyImageToClipboardAsync`는 이미 보호됨).
-- [ ] **B3. 히트테스트 배경 2,000px 하드코딩** — `RichEditor.Rendering.cs:88` `FillRectangle(..., new Rect(0,0,Bounds.Width,2000))`. 긴 문서에서 y>2000 빈 영역 클릭이 컨트롤에 안 잡힘. `Bounds.Size` 사용.
-- [ ] **B4. "서식 지우기"가 글꼴·형광펜 미초기화** — `RichEditor.Formatting.cs:266` `ClearFormatting`에 `FontFamily=null`, `Background=null` 추가.
+**P1 — 버그, 저비용·고체감 — ✅ 전부 해소(2026-06-12, 테스트 133→134 그린)**
+- [x] **B1. `SplitRunAtOffset`이 `FontFamily`/`Background` 누락** — `TextRange.cs`. 선택 경계 분할의 수동 new Run을 `run.Clone()`으로 교체(같은 역할의 `RichEditor.SplitInlinesAt`과 통일). 회귀 테스트 `ApplyPropertyValue_SubRange_SplitKeepsFontFamilyAndBackground` 추가.
+- [x] **B2. `CopySelectionToClipboard`가 `async void`** — `RichEditor.cs`. 다른 프로세스가 클립보드 점유 시 `SetTextAsync` 예외 → 프로세스 크래시이던 것을 try/catch로 보호(이미지 경로와 동일 관례).
+- [x] **B3. 히트테스트 배경 2,000px 하드코딩** — `RichEditor.Rendering.cs`. y>2000 빈 영역 클릭이 안 잡히던 투명 fill을 `new Rect(Bounds.Size)`로.
+- [x] **B4. "서식 지우기"가 글꼴·형광펜 미초기화** — `ClearFormatting`에 `Background=null`, `FontFamily=null` 추가.
 
 **P2 — 버그, 중간 작업량**
 - [ ] **B5. HTML 붙여넣기 원격 이미지를 UI 스레드 동기 다운로드** — `HtmlDocumentFormatter.cs:311` `GetByteArrayAsync(src).Result`, 이미지당 최대 5초 + 매번 `new HttpClient`. 정적 HttpClient 공유 + 총 시간 상한(또는 ParseHtml async화).

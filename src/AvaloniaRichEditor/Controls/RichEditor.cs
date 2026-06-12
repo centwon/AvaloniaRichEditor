@@ -1135,7 +1135,12 @@ public partial class RichEditor : Control
 
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard != null && !string.IsNullOrEmpty(text))
-            await clipboard.SetTextAsync(text);
+        {
+            // Another process can hold the clipboard open; an unhandled throw here would
+            // crash the process (async void). The internal rich slots above are already set.
+            try { await clipboard.SetTextAsync(text); }
+            catch { }
+        }
     }
 
     // If the selection spans whole tables/images or crosses multiple top-level blocks, clone the
