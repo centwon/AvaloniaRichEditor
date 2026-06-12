@@ -1,6 +1,7 @@
 using System.Linq;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Media;
 using AvaloniaRichEditor.Controls;
 using AvaloniaRichEditor.Documents;
 using Xunit;
@@ -193,6 +194,44 @@ public class RichEditorKeyInputTests
         Press(ed, Key.Left);  // one step crosses the whole pair (1)
         Press(ed, Key.Delete);
         Assert.Equal("ab", Para(ed, 0).Text());
+    }
+
+    [AvaloniaFact]
+    public void ToggleBold_CaretInsideWord_BoldsOnlyThatWord()
+    {
+        var ed = Editor("<p>hello world</p>");
+        Press(ed, Key.Home, KeyModifiers.Control);
+        Press(ed, Key.Right);
+        Press(ed, Key.Right); // caret inside "hello"
+        ed.ToggleBold();
+
+        var runs = Para(ed, 0).Inlines.OfType<Run>().ToList();
+        Assert.Equal("hello", string.Concat(runs.Where(r => r.FontWeight == FontWeight.Bold).Select(r => r.Text)));
+        Assert.Contains(runs, r => r.FontWeight == FontWeight.Normal && r.Text!.Contains("world"));
+    }
+
+    [AvaloniaFact]
+    public void ToggleBold_AtEmptyPosition_AppliesToNextTypedText()
+    {
+        var ed = Editor("<p>ab </p>"); // caret after the space — not inside a word
+        ed.ToggleBold();               // pending: nothing in the document changes yet
+        Assert.All(Para(ed, 0).Inlines.OfType<Run>(), r => Assert.Equal(FontWeight.Normal, r.FontWeight));
+
+        Type(ed, "c");
+        var runs = Para(ed, 0).Inlines.OfType<Run>().ToList();
+        Assert.Equal("c", string.Concat(runs.Where(r => r.FontWeight == FontWeight.Bold).Select(r => r.Text)));
+        Assert.Contains(runs, r => r.FontWeight == FontWeight.Normal && r.Text!.StartsWith("ab"));
+    }
+
+    [AvaloniaFact]
+    public void PendingCaretFormat_ClearsOnCaretMove()
+    {
+        var ed = Editor("<p>ab </p>");
+        ed.ToggleBold();      // pending
+        Press(ed, Key.Left);  // caret move cancels it
+        Press(ed, Key.Right);
+        Type(ed, "c");
+        Assert.All(Para(ed, 0).Inlines.OfType<Run>(), r => Assert.Equal(FontWeight.Normal, r.FontWeight));
     }
 
     [AvaloniaFact]

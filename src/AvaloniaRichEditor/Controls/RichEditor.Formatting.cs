@@ -252,16 +252,31 @@ public partial class RichEditor
         // Keyboard shortcuts are blocked in OnKeyDown, but the public commands (ToggleBold etc.)
         // must not mutate a ReadOnly document either.
         if (IsReadOnly) return;
-        if (Document != null) PushUndo();
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
+            if (Document != null) PushUndo();
             var range = new TextRange(_selectionStart, _selectionEnd);
             range.ApplyPropertyValue(styleAction);
         }
-        else if (_caretPosition.Paragraph != null)
+        else if (_caretPosition.Paragraph is { } p)
         {
-            foreach (var inline in _caretPosition.Paragraph.Inlines)
-                if (inline is Run r) styleAction(r);
+            // No selection (Word behaviour): a caret inside a word styles that word; on a word
+            // boundary / empty line the toggle becomes pending and applies to the next typed text.
+            string plain = BuildPlain(p);
+            int off = Math.Clamp(_caretPosition.Offset, 0, plain.Length);
+            static bool IsWord(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
+            bool inWord = (off < plain.Length && IsWord(plain[off])) || (off > 0 && IsWord(plain[off - 1]));
+            if (inWord)
+            {
+                var (ws, we) = WordBoundsAt(plain, off);
+                if (Document != null) PushUndo();
+                new TextRange(new TextPointer(p, ws), new TextPointer(p, we)).ApplyPropertyValue(styleAction);
+            }
+            else
+            {
+                // No document change yet — the undo checkpoint comes with the typing that applies it.
+                (_pendingCaretStyles ??= new List<Action<Run>>()).Add(styleAction);
+            }
         }
         InvalidateVisual();
     }

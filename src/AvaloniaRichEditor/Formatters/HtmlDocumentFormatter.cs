@@ -34,11 +34,17 @@ namespace AvaloniaRichEditor.Formatters
         private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
         private static readonly TimeSpan RemoteImageBudget = TimeSpan.FromSeconds(5);
         [ThreadStatic] private static DateTime _remoteImageDeadline;
+        // Per-parse flag (set from the parameter below); LoadImage is deeply nested, so this rides
+        // alongside the deadline instead of being threaded through every walker.
+        [ThreadStatic] private static bool _blockLocalFileImages;
 
-        /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.</summary>
-        public static FlowDocument ParseHtml(string html)
+        /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.
+        /// When <paramref name="allowLocalFileImages"/> is false, <c>file://</c> image sources are
+        /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).</summary>
+        public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true)
         {
             _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget;
+            _blockLocalFileImages = !allowLocalFileImages;
             // Excel's CF_HTML fragment markers can sit *inside* the <table>, so the extracted
             // fragment has orphan <tr>/<td> with no wrapping <table>. Wrap it so it's recognized.
             if (System.Text.RegularExpressions.Regex.IsMatch(html, "<tr[\\s>]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
@@ -325,6 +331,7 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (src.StartsWith("file:"))
                 {
+                    if (_blockLocalFileImages) return (null, null, 0, 0);
                     var path = new Uri(src).LocalPath;
                     if (System.IO.File.Exists(path)) bytes = System.IO.File.ReadAllBytes(path);
                 }

@@ -323,11 +323,16 @@ public partial class RichEditor : Control
         // current key handler re-armed it (Backspace/Delete move the caret by design).
         _editRun = _editRunRearm;
         _editRunRearm = EditRunKind.None;
+        _pendingCaretStyles = null; // a pending caret format only survives until the caret moves
         InvalidateVisual();
         NotifyStatus();
     }
 
     private bool _bringCaretIntoView;
+
+    // Word-style pending format: style toggles made at an empty caret position (no selection,
+    // not inside a word) queue here and apply to the next typed text. Any caret move clears them.
+    private List<Action<Run>>? _pendingCaretStyles;
 
     /// <summary>Raised whenever the caret moves or the document changes, so a host status bar can refresh.
     /// Coarse signal — prefer <see cref="TextChanged"/> or <see cref="SelectionChanged"/> for new code.</summary>
@@ -452,6 +457,14 @@ public partial class RichEditor : Control
             run = RunAtOffset(p, _caretPosition.Offset > 0 ? _caretPosition.Offset - 1 : 0);
             if (run == null) foreach (var inl in p.Inlines) if (inl is Run r0) { run = r0; break; }
         }
+        // A pending caret format (toggle at an empty position) shows in the toolbar before any
+        // text is typed — preview it on a clone so the document stays untouched.
+        if (_pendingCaretStyles is { Count: > 0 } pend)
+        {
+            var probe = run != null ? (Run)run.Clone() : new Run();
+            foreach (var a in pend) a(probe);
+            run = probe;
+        }
         return new CaretFormat(
             run?.FontWeight == FontWeight.Bold,
             run?.FontStyle == FontStyle.Italic,
@@ -562,6 +575,16 @@ public partial class RichEditor : Control
         _caretPosition.Offset += text.Length;
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        // Word-style pending format: a toggle made at an empty caret position applies to the text
+        // typed right after it. Splitting confines it to exactly the inserted range; subsequent
+        // keystrokes land in (and inherit from) the styled run.
+        if (_pendingCaretStyles is { Count: > 0 } pend)
+        {
+            _pendingCaretStyles = null;
+            new TextRange(new TextPointer(_caretPosition.Paragraph, preCaret),
+                          new TextPointer(_caretPosition.Paragraph, preCaret + text.Length))
+                .ApplyPropertyValue(r => { foreach (var a in pend) a(r); });
+        }
         // Auto-link: typing a space right after a web URL turns the URL into a hyperlink.
         // Runs after the insertion so the space itself stays outside the linked range.
         if (text == " ") TryAutoLink(preCaret);

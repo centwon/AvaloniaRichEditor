@@ -14,7 +14,7 @@ public partial class RichEditor
 
     /// <summary>Replaces the document with one parsed from HTML (empty document if null/empty).</summary>
     public void LoadHtml(string? html)
-        => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html));
+        => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages));
 
     /// <summary>Serializes the document to the library's JSON format.</summary>
     public string ToJson() => Document != null ? Formatters.DocumentSerializer.Serialize(Document) : "";
@@ -103,7 +103,7 @@ public partial class RichEditor
     public void InsertHtml(string html)
     {
         if (Document == null || string.IsNullOrEmpty(html)) return;
-        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html);
+        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages);
         if (parsed.Blocks.Count == 0) return;
         PushUndo();
         InsertParsedDocument(parsed);

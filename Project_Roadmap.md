@@ -95,8 +95,8 @@
 - [x] **Shift+Enter 소프트 줄바꿈** — 최상위 문단에서 `\n` 삽입(셀 안 Enter와 동일 경로). 문단 분할 없이 한 문단 여러 줄.
 - [x] **Ctrl+Shift+V 서식 없이 붙여넣기** — `PastePlainTextAsync`(private): 평문만, TSV→표 휴리스틱도 미적용("평문 붙여넣기"는 구조를 만들지 않음).
 - [x] **URL 자동 링크화** — `TryAutoLink`: URL 뒤 공백 입력 시 직전 토큰(http/https + 호스트 `.` 필요)에 `NavigateUri`. 공백 삽입 *후* 토큰 범위에만 적용해 공백이 링크를 상속하지 않음. 이미 링크면 무시.
-- [ ] **pending caret format(보류 — UX 결정 필요)**: 선택 없는 서식 토글이 현재 문단 전체에 적용되는데, WPF/Word식 "다음 입력에 적용"으로 바꿀지부터 결정. 타이핑 코얼레싱·IME·툴바 상태 반영(`GetCaretFormat`)과 얽혀 구현 비용 중간.
-- [ ] **HTML `file:` 이미지 로드 옵션화(보류 — 정책 결정 필요)**: 외부 HTML이 로컬 파일을 문서에 끌어들이는 통로. 차단하면 정상적인 로컬 HTML 워크플로(자기 파일 붙여넣기)도 깨지므로 기본값 결정 필요. 신규 공개 속성 → PublicAPI 등재 동반.
+- [x] **pending caret format — Word식 채택(사용자 결정, 2026-06-12)**: 선택 없는 서식 토글은 ① 캐럿이 단어 안이면 그 단어에 적용(`WordBoundsAt` 재사용), ② 빈 위치면 보류 서식(`_pendingCaretStyles`)으로 다음 입력에 적용(캐럿 이동 시 해제, `GetCaretFormat`이 클론 프로브로 미리 반영 — 툴바 즉시 표시). 보류 상태는 문서 무변경이라 undo 체크포인트는 적용 시점(타이핑 코얼레싱)에 합류. 기존 "문단 전체 적용" 제거. 테스트 3건.
+- [x] **HTML `file:` 이미지 로드 옵션화 — 기본 허용 채택(사용자 결정, 2026-06-12)**: `AllowLocalFileImages` StyledProperty(기본 true, 프리셋 번들 미포함 — 보안 플래그) + `ParseHtml(html, allowLocalFileImages=true)` 파라미터(LoadImage까지는 ThreadStatic으로 전달 — 원격 데드라인과 동일 패턴). 붙여넣기/`LoadHtml`/`InsertHtml` 3개 인제스천 경로 모두 적용. PublicAPI 4건 갱신. 테스트 1건(1×1 PNG 실파일 허용/차단). **점검 백로그 전 항목 완료 — 테스트 144→148 그린.**
 
 **문서 후속**
 - [ ] 왕복 하네스(`--roundtrip`)에 `docs/DOCUMENT_FORMAT.md` 예제 JSON 로드 검증 추가(명세-코드 표류를 CI에서 감지)

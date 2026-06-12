@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (2026-06-12 audit sweep)
+- Partial formatting/deletion inside a styled run no longer drops the font family and highlight
+  on the tail half (run split now clones every field).
+- Copy no longer crashes the process when another application holds the clipboard open.
+- Clicks on empty space below ~2,000px of content now place the caret (hit-test fill covered a
+  fixed height instead of the control bounds).
+- "Clear formatting" also resets font family and highlight.
+- Pasting HTML with remote images no longer freezes the UI for 5s per image (shared HttpClient
+  plus a 5-second total budget per paste; over-budget images are skipped).
+- Backspace/Delete/arrows treat emoji (surrogate pairs) as one character instead of leaving a
+  broken half behind.
+- Deleting a selection that spans table cells keeps the cell structure (text no longer migrates
+  across the grid).
+- Mutating public APIs (`InsertText`, paste, formatting commands) consistently no-op when
+  `IsReadOnly` is set.
+- Tab-indented plain text no longer pastes as a bogus table (tighter TSV grid heuristic).
+
+### Changed (editing behaviour)
+- **Formatting toggles without a selection are now Word-style**: a caret inside a word styles
+  that word; at an empty position the toggle becomes a *pending format* applied to the next
+  typed text (previously the whole paragraph was styled). The pending state shows in
+  `GetCaretFormat()` and clears on any caret move.
+- Backspace/Delete runs coalesce into one undo checkpoint per run (like typing), removing the
+  per-keypress full-document clone hitch on large documents.
+
+### Added (editing)
+- **Shift+Enter** inserts a soft line break (no paragraph split).
+- **Ctrl+Shift+V** pastes as plain text (skips rich/HTML/image formats and the TSV-table heuristic).
+- **URL auto-link**: typing a space after `http(s)://…` turns the URL into a hyperlink
+  (the space stays unlinked).
+- **`AllowLocalFileImages`** styled property (default `true`): when `false`, `file://` image
+  sources in ingested HTML are skipped instead of read from disk — closes the path by which
+  untrusted HTML pulls local files into the document. `HtmlDocumentFormatter.ParseHtml` gains a
+  matching optional parameter.
+
 ### Added
 - **`RichEditorToolbar`** (N3.6 layer ②): optional formatting toolbar driven by a single
   `Target` property — calls the editor's public commands, reflects the caret's formatting

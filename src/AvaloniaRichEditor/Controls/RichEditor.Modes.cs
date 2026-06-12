@@ -82,6 +82,20 @@ public partial class RichEditor
         set => SetValue(AllowFindReplaceProperty, value);
     }
 
+    /// <inheritdoc cref="AllowLocalFileImages"/>
+    public static readonly StyledProperty<bool> AllowLocalFileImagesProperty =
+        AvaloniaProperty.Register<RichEditor, bool>(nameof(AllowLocalFileImages), true);
+
+    /// <summary>When false, <c>file://</c> image sources in ingested HTML (paste, <see cref="LoadHtml"/>,
+    /// <see cref="InsertHtml"/>) are skipped instead of being read from disk and embedded — closing the
+    /// path by which untrusted HTML can pull local files into the document. Default true (HTML copied
+    /// from local files keeps its images). Not part of the <see cref="EditorMode"/> presets.</summary>
+    public bool AllowLocalFileImages
+    {
+        get => GetValue(AllowLocalFileImagesProperty);
+        set => SetValue(AllowLocalFileImagesProperty, value);
+    }
+
     /// <inheritdoc cref="MaxRecommendedImages"/>
     public static readonly StyledProperty<int> MaxRecommendedImagesProperty =
         AvaloniaProperty.Register<RichEditor, int>(nameof(MaxRecommendedImages), 50);

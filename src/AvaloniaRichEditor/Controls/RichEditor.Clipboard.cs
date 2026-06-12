@@ -47,7 +47,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             try
             {
                 string fragment = ExtractHtmlFragment(html!);
-                var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(fragment);
+                var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(fragment, AllowLocalFileImages);
                 if (parsed.Blocks.Count > 0)
                 {
                     PushUndo();

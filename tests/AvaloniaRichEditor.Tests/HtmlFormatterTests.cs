@@ -1,4 +1,7 @@
+using System;
+using System.IO;
 using System.Linq;
+using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using AvaloniaRichEditor.Documents;
 using AvaloniaRichEditor.Formatters;
@@ -45,6 +48,27 @@ public class HtmlFormatterTests
         var tb = doc.Blocks.OfType<TableBlock>().Single();
         Assert.Equal(2, tb.Columns);
         Assert.Equal("A", tb.Cells[0][0].Text());
+    }
+
+    [AvaloniaFact] // needs the Avalonia session: the allowed path decodes the image bitmap
+    public void ParseHtml_FileImage_RespectsAllowLocalFileImages()
+    {
+        // Minimal valid 1×1 PNG.
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+        var path = Path.Combine(Path.GetTempPath(), "are_filegate_" + Guid.NewGuid().ToString("N") + ".png");
+        File.WriteAllBytes(path, png);
+        try
+        {
+            string html = $"<p>x</p><img src=\"file:///{path.Replace('\\', '/')}\" width=\"100\" height=\"100\">";
+
+            var allowed = HtmlDocumentFormatter.ParseHtml(html, allowLocalFileImages: true);
+            Assert.Contains(allowed.Blocks, b => b is ImageBlock);
+
+            var blocked = HtmlDocumentFormatter.ParseHtml(html, allowLocalFileImages: false);
+            Assert.DoesNotContain(blocked.Blocks, b => b is ImageBlock);
+        }
+        finally { File.Delete(path); }
     }
 
     [Fact]
