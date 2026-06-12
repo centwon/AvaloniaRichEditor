@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (page layout & print, 2026-06-12)
+- **Word-style page view**: the `PageView` styled property (default `false` — existing hosts are
+  unaffected) renders the document as a stack of A4 pages on a grey desk, breaking content at
+  line boundaries; paragraphs straddling a page boundary continue on the next page. Editing,
+  hit-testing, IME and selection all work across pages.
+- **Print rendering**: `GetPrintPageCount()` and `RenderPrintPage(pageIndex, dpi = 96)` render
+  one A4 page to a bitmap (300 DPI = print quality) with editing chrome (caret, selection,
+  resize handles) stripped. Printing paginates even when `PageView` is off.
+- **PDF export**: `SavePdf(Stream, dpi = 300)` writes a raster PDF (one image per page,
+  Flate-compressed, no external dependencies). Text is not selectable in the output —
+  full-fidelity for print/archive; vector PDF is a possible future addition.
+- The demo gains a "Pages" view toggle and a print-preview window with printer selection,
+  print (Windows, `System.Drawing.Printing` — demo-side only), and save-as-PDF.
+
+### Fixed
+- Tables with a custom bottom margin rendered with a hardcoded 10px gap (measure/hit-testing
+  already honored `MarginBottom`; the render pass now matches).
+
 ### Fixed (2026-06-12 audit sweep)
 - Partial formatting/deletion inside a styled run no longer drops the font family and highlight
   on the tail half (run split now clones every field).
