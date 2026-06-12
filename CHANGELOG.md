@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha] - 2026-06-13
+
+Second pre-release: page layout, print/PDF output, the library toolbar/localization layer,
+the `.ardx` package format, and a large editing-behaviour audit. First version published to NuGet.
+
 ### Added (page layout & print, 2026-06-12)
 - **Word-style page view**: the `PageView` styled property (default `false` — existing hosts are
   unaffected) renders the document as a stack of A4 pages on a grey desk, breaking content at
@@ -162,5 +167,6 @@ editing on Windows; the public API may still change before `1.0`.
 - Word images exported as VML (not standard `<img>`) are not imported.
 - Precise pagination / PDF printing is not implemented (browser print fallback only).
 
-[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.1.0-alpha...HEAD
+[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.2.0-alpha...HEAD
+[0.2.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/releases/tag/v0.1.0-alpha

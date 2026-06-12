@@ -14,13 +14,14 @@
   <!-- NuGet package metadata (roadmap N1, target 0.1.0-alpha) -->
   <PropertyGroup>
     <PackageId>AvaloniaRichEditor</PackageId>
-    <Version>0.1.0-alpha</Version>
+    <Version>0.2.0-alpha</Version>
     <Authors>centwon</Authors>
     <Description>A from-scratch rich text editor control for Avalonia, built purely on the TextLayout engine. Supports inline formatting, paragraphs, lists, tables (with cell merge), images, hyperlinks, HTML/JSON round-trip, find/replace, undo/redo, CJK IME, a Word-style A4 page view, and print/PDF page rendering.</Description>
     <PackageTags>avalonia;richtextbox;editor;wysiwyg;rich-text;flowdocument;text</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Copyright>Copyright (c) 2026 centwon</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
@@ -36,6 +37,7 @@
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+    <None Include="icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

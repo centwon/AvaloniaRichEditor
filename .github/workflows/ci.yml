@@ -28,10 +28,15 @@ jobs:
         run: dotnet test tests/AvaloniaRichEditor.Tests/AvaloniaRichEditor.Tests.csproj -c Release --no-build
 
   pack:
-    name: Pack (on tag)
+    name: Pack & Publish (on tag)
     needs: build-test
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # Trusted Publishing (OIDC): nuget.org must have a publishing policy registered for this
+    # repository + this workflow file (owner: centwon). No long-lived API key is stored.
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v5
@@ -44,6 +49,10 @@ jobs:
         with:
           name: nuget
           path: artifacts/*.*nupkg
-      # To publish to nuget.org, add a NUGET_API_KEY secret and uncomment:
-      # - name: Push
-      #   run: dotnet nuget push "artifacts/*.nupkg" -k ${{ secrets.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: NuGet login (Trusted Publishing)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: centwon
+      - name: Push to nuget.org
+        run: dotnet nuget push "artifacts/*.nupkg" -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate
