@@ -144,4 +144,20 @@ public class RichEditorControlTests
         Assert.Contains("before", json);
         Assert.DoesNotContain("-after", json);
     }
+
+    // Regression (issue #1): colored text uses a mutable SolidColorBrush whose Color is a
+    // thread-affine StyledProperty. The async save built the DTO on a thread-pool thread and threw
+    // "the calling thread cannot access this object". The DTO must be built on the UI thread.
+    [AvaloniaFact]
+    public async System.Threading.Tasks.Task ToJsonAsync_ColoredText_DoesNotThrowOffThread()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p><span style=\"color:red\">hi</span></p>");
+
+        var json = await ed.ToJsonAsync();
+
+        var ed2 = new RichEditor();
+        await ed2.LoadJsonAsync(json);
+        Assert.Equal("hi", FirstParagraphText(ed2));
+    }
 }

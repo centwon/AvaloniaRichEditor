@@ -20,8 +20,14 @@ public static class DocumentPackage
     /// package. The stream is left open.</summary>
     public static void Save(FlowDocument document, Stream destination)
     {
-        var images = new Dictionary<string, (byte[] Bytes, string Mime)>();
-        var dto = DocumentSerializer.ToDto(document, images);
+        var (dto, images) = DocumentSerializer.BuildDto(document);
+        WriteDto(dto, images, destination);
+    }
+
+    // Pure-data half of Save: strips bytes from the DTO pool and writes the zip. No model/brush
+    // reads, so async save paths can run this off the UI thread after building the DTO on it.
+    internal static void WriteDto(FlowDocumentDto dto, Dictionary<string, (byte[] Bytes, string Mime)> images, Stream destination)
+    {
         if (images.Count > 0)
         {
             // Pool entries carry only the mime type; the bytes live in zip entries with the same key.
