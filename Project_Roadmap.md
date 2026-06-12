@@ -79,8 +79,8 @@
 - [x] **B4. "서식 지우기"가 글꼴·형광펜 미초기화** — `ClearFormatting`에 `Background=null`, `FontFamily=null` 추가.
 
 **P2 — 버그, 중간 작업량**
-- [ ] **B5. HTML 붙여넣기 원격 이미지를 UI 스레드 동기 다운로드** — `HtmlDocumentFormatter.cs:311` `GetByteArrayAsync(src).Result`, 이미지당 최대 5초 + 매번 `new HttpClient`. 정적 HttpClient 공유 + 총 시간 상한(또는 ParseHtml async화).
-- [ ] **B6. 서로게이트 쌍(이모지) 미처리** — `RichEditor.Input.cs` Backspace/Delete가 UTF-16 1유닛 삭제, ←/→ 1유닛 이동 → 이모지 깨짐. `Rune`/`StringInfo` 그래핌 경계 처리.
+- [x] **B5. HTML 붙여넣기 원격 이미지를 UI 스레드 동기 다운로드 (2026-06-12)** — 정적 `HttpClient` 공유(소켓 누수 제거) + **붙여넣기(ParseHtml 1회)당 총 5초 예산**(`[ThreadStatic]` 데드라인, 초과분 이미지는 생략하고 나머지 콘텐츠는 유지). 종전엔 이미지당 5초 × N이라 UI가 수십 초 멈출 수 있었음. 완전 async화는 모델 객체 UI 스레드 제약(핵심 규칙 8) 때문에 보류.
+- [x] **B6. 서로게이트 쌍(이모지) 미처리 (2026-06-12)** — `PrevCharBoundary`/`NextCharBoundary` 헬퍼로 Backspace/Delete/←/→가 쌍을 1글자로 취급(반쪽 서로게이트 잔류 → 깨진 글리프 방지). 회귀 테스트 2건(총 136). ZWJ 시퀀스 등 완전한 그래핌 클러스터 단위는 추후(현재는 쌍 단위로 손상만 방지).
 - [ ] **B7. 표 셀 횡단 선택 삭제 시 셀 내용 병합** — `TextRange.cs:72` `Delete`→`MergeParagraphs`가 끝 셀 잔여 텍스트를 시작 셀로 이동. 기대 동작: 각 셀에서 선택 부분만 삭제, 셀 구조 유지.
 - [ ] **B8. 공개 API의 ReadOnly 가드 불일치** — `InsertText`(`RichEditor.cs:531`)/`PasteFromClipboardAsync`/`ApplyStyleToSelection` 계열이 `IsReadOnly` 미검사(키보드 경로만 차단됨). `InsertImage`/`InsertTable`과 일관화.
 - [ ] **B9. TSV 휴리스틱 과민** — `RichEditor.Clipboard.cs:100` `LooksTabular`: 탭 들여쓰기 코드(`"\tfoo"`=2열 판정)가 표로 변환됨. "2줄 이상+첫 칸 비지 않음" 등으로 조이기.

@@ -828,10 +828,11 @@ public partial class RichEditor
         else if (e.Key == Key.Back)
         {
             if (_selectionStart != _selectionEnd) DeleteSelection();
-            else if (_caretPosition.Offset > 0)
+            else if (_caretPosition.Offset > 0 && _caretPosition.Paragraph is { } bp)
             {
-                DeleteLocalText(_caretPosition.Paragraph, _caretPosition.Offset - 1, 1);
-                _caretPosition.Offset--;
+                int nb = PrevCharBoundary(BuildPlain(bp), _caretPosition.Offset);
+                DeleteLocalText(bp, nb, _caretPosition.Offset - nb);
+                _caretPosition.Offset = nb;
             }
             else if (_caretPosition.Paragraph?.Parent is FlowDocument && Document != null)
             {
@@ -862,8 +863,9 @@ public partial class RichEditor
         else if (e.Key == Key.Delete)
         {
             if (_selectionStart != _selectionEnd) DeleteSelection();
-            else if (_caretPosition.Offset < GetParagraphLength(_caretPosition.Paragraph))
-                DeleteLocalText(_caretPosition.Paragraph, _caretPosition.Offset, 1);
+            else if (_caretPosition.Paragraph is { } dp && _caretPosition.Offset < GetParagraphLength(dp))
+                DeleteLocalText(dp, _caretPosition.Offset,
+                    NextCharBoundary(BuildPlain(dp), _caretPosition.Offset) - _caretPosition.Offset);
             else if (_caretPosition.Paragraph?.Parent is FlowDocument && Document != null)
             {
                 int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
@@ -1076,13 +1078,31 @@ public partial class RichEditor
         return null;
     }
 
+    // One caret/delete step treats a surrogate pair (e.g. an emoji) as a single character.
+    // Splitting a pair leaves a lone half behind, which renders as a broken glyph.
+    private static int PrevCharBoundary(string text, int offset)
+    {
+        if (offset >= 2 && offset <= text.Length
+            && char.IsLowSurrogate(text[offset - 1]) && char.IsHighSurrogate(text[offset - 2]))
+            return offset - 2;
+        return offset - 1;
+    }
+
+    private static int NextCharBoundary(string text, int offset)
+    {
+        if (offset >= 0 && offset + 1 < text.Length
+            && char.IsHighSurrogate(text[offset]) && char.IsLowSurrogate(text[offset + 1]))
+            return offset + 2;
+        return offset + 1;
+    }
+
     private void MoveCaretRight()
     {
         if (_caretPosition.Paragraph == null) return;
         int pLen = GetParagraphLength(_caretPosition.Paragraph);
         if (_caretPosition.Offset < pLen)
         {
-            _caretPosition.Offset++;
+            _caretPosition.Offset = NextCharBoundary(BuildPlain(_caretPosition.Paragraph), _caretPosition.Offset);
         }
         else
         {
@@ -1100,7 +1120,7 @@ public partial class RichEditor
         if (_caretPosition.Paragraph == null) return;
         if (_caretPosition.Offset > 0)
         {
-            _caretPosition.Offset--;
+            _caretPosition.Offset = PrevCharBoundary(BuildPlain(_caretPosition.Paragraph), _caretPosition.Offset);
         }
         else
         {

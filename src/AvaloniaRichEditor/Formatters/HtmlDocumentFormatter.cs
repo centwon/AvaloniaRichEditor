@@ -28,9 +28,17 @@ namespace AvaloniaRichEditor.Formatters
             "figure","figcaption","header","footer","main","aside","pre","caption"
         };
 
+        // Shared across all parses: a new HttpClient per <img> leaks sockets. Remote fetches run
+        // synchronously on the caller's (UI) thread, so the per-parse deadline below caps the total
+        // stall for one paste — without it, N remote images could block the UI for N × 5 s.
+        private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
+        private static readonly TimeSpan RemoteImageBudget = TimeSpan.FromSeconds(5);
+        [ThreadStatic] private static DateTime _remoteImageDeadline;
+
         /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.</summary>
         public static FlowDocument ParseHtml(string html)
         {
+            _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget;
             // Excel's CF_HTML fragment markers can sit *inside* the <table>, so the extracted
             // fragment has orphan <tr>/<td> with no wrapping <table>. Wrap it so it's recognized.
             if (System.Text.RegularExpressions.Regex.IsMatch(html, "<tr[\\s>]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
@@ -310,8 +318,10 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (src.StartsWith("http"))
                 {
-                    using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-                    bytes = client.GetByteArrayAsync(src).Result;
+                    var remaining = _remoteImageDeadline - DateTime.UtcNow;
+                    if (remaining <= TimeSpan.Zero) return (null, null, 0, 0); // budget spent: skip, keep the rest of the paste
+                    using var cts = new System.Threading.CancellationTokenSource(remaining);
+                    bytes = Http.GetByteArrayAsync(src, cts.Token).GetAwaiter().GetResult();
                 }
                 else if (src.StartsWith("file:"))
                 {

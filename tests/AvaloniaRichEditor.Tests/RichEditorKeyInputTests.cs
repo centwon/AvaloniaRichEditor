@@ -145,6 +145,28 @@ public class RichEditorKeyInputTests
     }
 
     [AvaloniaFact]
+    public void Backspace_RemovesWholeSurrogatePair()
+    {
+        // A 1-unit delete used to leave a lone surrogate half behind (broken glyph).
+        var ed = Editor("<p>a</p>");
+        Type(ed, "\U0001F600"); // 😀 = surrogate pair (2 UTF-16 units)
+        Press(ed, Key.Back);
+        Assert.Equal("a", Para(ed, 0).Text());
+    }
+
+    [AvaloniaFact]
+    public void ArrowsAndDelete_TreatSurrogatePairAsOneCharacter()
+    {
+        var ed = Editor("<p>a</p>");
+        Type(ed, "\U0001F600");
+        Type(ed, "b");        // "a😀b", caret at offset 4
+        Press(ed, Key.Left);  // before 'b' (3)
+        Press(ed, Key.Left);  // one step crosses the whole pair (1)
+        Press(ed, Key.Delete);
+        Assert.Equal("ab", Para(ed, 0).Text());
+    }
+
+    [AvaloniaFact]
     public void ReadOnly_IgnoresTypingAndDeletion()
     {
         var ed = Editor("<p>abc</p>");
