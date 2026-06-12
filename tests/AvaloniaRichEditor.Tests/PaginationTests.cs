@@ -169,6 +169,37 @@ public class PaginationTests
     }
 
     [AvaloniaFact]
+    public void TallTable_SplitsAtRowBoundaries()
+    {
+        // 10 rows forced to exactly 100px each (RowHeights override beats empty-cell content);
+        // page capacity 250 holds 2 rows -> breaks at 200/400/600/800, all row boundaries.
+        var ed = new RichEditor();
+        ed.LoadHtml("<table>" + string.Concat(Enumerable.Repeat("<tr><td></td></tr>", 10)) + "</table>");
+        var tb = ed.Document!.Blocks.OfType<TableBlock>().Single();
+        for (int r = 0; r < 10; r++) tb.RowHeights.Add(100);
+        tb.MarginTop = 0;
+        foreach (var b in ed.Document.Blocks) { b.MarginTop = 0; b.MarginBottom = 0; }
+        if (ed.Document.Blocks[0] is Paragraph p0) p0.LineHeight = 0; // NormalizeBlocks pads ends
+
+        var breaks = ed.ComputePageBreaks(698, 250);
+        Assert.True(breaks.Count >= 4, $"expected row-boundary splits, got {breaks.Count} page(s)");
+        foreach (double b in breaks.Skip(1))
+            Assert.True(System.Math.Abs(b % 100) < 0.01, $"break {b:F1} is not at a row boundary");
+    }
+
+    [AvaloniaFact]
+    public void PageMarginChrome_RendersInPrintOutput()
+    {
+        var ed = EditorWith(EmptyPara(50));
+        ed.PageHeader = "Header";
+        ed.PageFooter = "Footer";
+        ed.ShowPageNumbers = true;
+        var bmp = ed.RenderPrintPage(0); // smoke: margin chrome must not throw or affect paging
+        Assert.Equal(1, ed.GetPrintPageCount());
+        Assert.Equal(794, bmp.PixelSize.Width);
+    }
+
+    [AvaloniaFact]
     public void SavePdf_WritesParseableMultiPagePdf()
     {
         var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray()); // 2 pages

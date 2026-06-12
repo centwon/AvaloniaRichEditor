@@ -24,6 +24,9 @@ public partial class MainWindow : Window
             if (this.FindControl<RichEditorToolbar>("EditorToolbar") is { } toolbar)
                 toolbar.Target = richTextBox;
 
+            // Page-margin chrome demo: numbers show in page view and print/PDF output.
+            richTextBox.ShowPageNumbers = true;
+
             var doc = new FlowDocument();
 
             var p1 = new Paragraph();

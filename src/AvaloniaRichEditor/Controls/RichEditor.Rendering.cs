@@ -162,6 +162,7 @@ public partial class RichEditor
                 if (paper.Bottom < visTop || paper.Y > visBottom) continue;
                 context.FillRectangle(Brushes.White, paper);
                 context.DrawRectangle(null, GrayBorderPen, paper);
+                DrawPageMarginChrome(context, paper, i, breaks.Count);
                 var contentBox = new Rect(paper.X + PagePadX, paper.Y + PagePadY,
                     paper.Width - 2 * PagePadX, paper.Height - 2 * PagePadY);
                 double sliceTop = breaks[i];

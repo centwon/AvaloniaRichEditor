@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia;
+using Avalonia.Media;
 using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
@@ -36,6 +37,61 @@ public partial class RichEditor
     {
         get => GetValue(PageViewProperty);
         set => SetValue(PageViewProperty, value);
+    }
+
+    /// <summary>Header text drawn in each page's top margin (page view and print/PDF output).
+    /// Null or empty = no header. Does not affect pagination — the margin band hosts it.</summary>
+    public static readonly StyledProperty<string?> PageHeaderProperty =
+        AvaloniaProperty.Register<RichEditor, string?>(nameof(PageHeader));
+
+    /// <summary>Gets or sets the page header text (top margin, page view and print).</summary>
+    public string? PageHeader
+    {
+        get => GetValue(PageHeaderProperty);
+        set => SetValue(PageHeaderProperty, value);
+    }
+
+    /// <summary>Footer text drawn in each page's bottom margin (page view and print/PDF output).
+    /// Null or empty = no footer.</summary>
+    public static readonly StyledProperty<string?> PageFooterProperty =
+        AvaloniaProperty.Register<RichEditor, string?>(nameof(PageFooter));
+
+    /// <summary>Gets or sets the page footer text (bottom margin, page view and print).</summary>
+    public string? PageFooter
+    {
+        get => GetValue(PageFooterProperty);
+        set => SetValue(PageFooterProperty, value);
+    }
+
+    /// <summary>Draws "page / total" in each page's bottom-right margin (page view and print/PDF
+    /// output). Default false.</summary>
+    public static readonly StyledProperty<bool> ShowPageNumbersProperty =
+        AvaloniaProperty.Register<RichEditor, bool>(nameof(ShowPageNumbers));
+
+    /// <summary>Gets or sets whether page numbers are drawn (bottom margin, page view and print).</summary>
+    public bool ShowPageNumbers
+    {
+        get => GetValue(ShowPageNumbersProperty);
+        set => SetValue(ShowPageNumbersProperty, value);
+    }
+
+    // Header/footer/page number, drawn inside the paper's margin bands (never the content box, so
+    // pagination is unaffected). `paper` is the page rect in the caller's coordinate space — the
+    // page-view loop passes view coordinates, RenderPrintPage passes the page at the origin.
+    private void DrawPageMarginChrome(DrawingContext ctx, Rect paper, int pageIndex, int pageCount)
+    {
+        var typeface = new Avalonia.Media.Typeface(DefaultFontFamily);
+        void DrawSmall(string text, bool top, bool right)
+        {
+            var ft = new Avalonia.Media.FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
+                Avalonia.Media.FlowDirection.LeftToRight, typeface, 11, Avalonia.Media.Brushes.Gray);
+            double x = right ? paper.X + PagePadX + PageContentWidth - ft.Width : paper.X + PagePadX;
+            double bandCenter = top ? paper.Y + PagePadY / 2 : paper.Bottom - PagePadY / 2;
+            ctx.DrawText(ft, new Point(x, bandCenter - ft.Height / 2));
+        }
+        if (!string.IsNullOrEmpty(PageHeader)) DrawSmall(PageHeader!, top: true, right: false);
+        if (!string.IsNullOrEmpty(PageFooter)) DrawSmall(PageFooter!, top: false, right: false);
+        if (ShowPageNumbers) DrawSmall($"{pageIndex + 1} / {pageCount}", top: false, right: true);
     }
 
     // Page-start positions in continuous document space; recomputed by MeasureOverride (every edit
@@ -96,6 +152,7 @@ public partial class RichEditor
                 using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
                     DrawDocumentBlocks(ctx, PageContentWidth, sliceTop, sliceBottom, chrome: false);
             }
+            DrawPageMarginChrome(ctx, new Rect(0, 0, A4PageWidth, A4PageHeight), pageIndex, breaks.Count);
         }
         return rtb;
     }
@@ -197,7 +254,13 @@ public partial class RichEditor
             y += block.MarginTop;
             if (block is TableBlock tb)
             {
-                PlaceAtom(LayoutTable(tb, 10 + tb.Indent, y).TotalHeight);
+                // Rows are the atoms (Word's default): a table taller than the remaining page
+                // continues on the next page at a row boundary — the page-view clip+replay then
+                // shows the leading rows on one page and the rest on the next automatically.
+                // (Cells spanning rows across a break are split visually, like Word.)
+                var tl = LayoutTable(tb, 10 + tb.Indent, y);
+                for (int r = 0; r < tb.Rows; r++)
+                    PlaceAtom(tl.RowY[r + 1] - tl.RowY[r]);
                 y += tb.MarginBottom;
             }
             else if (block is ImageBlock img)

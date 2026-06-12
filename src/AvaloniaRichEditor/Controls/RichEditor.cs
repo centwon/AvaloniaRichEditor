@@ -271,6 +271,11 @@ public partial class RichEditor : Control
             InvalidateMeasure();
             InvalidateVisual();
         }
+        if (change.Property == PageHeaderProperty || change.Property == PageFooterProperty
+            || change.Property == ShowPageNumbersProperty)
+        {
+            InvalidateVisual(); // margin-band chrome only — pagination is unaffected
+        }
         if (change.Property == IsFocusedProperty)
         {
             if (IsFocused)
