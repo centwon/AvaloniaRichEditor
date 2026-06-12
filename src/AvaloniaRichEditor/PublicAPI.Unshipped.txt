@@ -355,3 +355,5 @@ static readonly AvaloniaRichEditor.Controls.RichEditorToolbar.TargetProperty -> 
 AvaloniaRichEditor.Controls.RichEditor.PageView.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.PageView.set -> void
 static readonly AvaloniaRichEditor.Controls.RichEditor.PageViewProperty -> Avalonia.StyledProperty<bool>!
+AvaloniaRichEditor.Controls.RichEditor.GetPrintPageCount() -> int
+AvaloniaRichEditor.Controls.RichEditor.RenderPrintPage(int pageIndex, double dpi = 96) -> Avalonia.Media.Imaging.Bitmap!

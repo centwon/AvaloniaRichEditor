@@ -191,12 +191,14 @@ public partial class RichEditor
     // resize-handle registration and caret geometry, all in continuous document coordinates.
     // Page view replays this once per visible page under a clip+translation, with the page's
     // document slice as the cull window; the continuous mode calls it once with the viewport.
+    // chrome=false (print/export rendering) draws content only: no selection highlights, caret
+    // geometry, IME preedit, image borders/resize handles, or handle-registry writes.
     private (Point? caretPoint, double caretHeight, Rect? blockCaretRect) DrawDocumentBlocks(
-        DrawingContext context, double maxWidth, double visTop, double visBottom)
+        DrawingContext context, double maxWidth, double visTop, double visBottom, bool chrome = true)
     {
         TextPointer? selStart = null, selEnd = null;
         HashSet<Paragraph>? selectedParagraphs = null;
-        if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
+        if (chrome && _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
             if (_selectionStart.CompareTo(_selectionEnd) < 0) { selStart = _selectionStart; selEnd = _selectionEnd; }
             else { selStart = _selectionEnd; selEnd = _selectionStart; }
@@ -247,7 +249,7 @@ public partial class RichEditor
 
                 // When the drag spans multiple cells of this table, highlight the rectangular block fully
                 // (Excel/Word style) instead of the linear text run; otherwise fall back to text highlight.
-                var cellBlock = SelectedCellRange(tb);
+                var cellBlock = chrome ? SelectedCellRange(tb) : null;
 
                 foreach (var (r, c, rect) in tl.AnchorRects)
                 {
@@ -258,7 +260,7 @@ public partial class RichEditor
                         context.FillRectangle(cell.Background, rect);
                     context.DrawRectangle(null, GrayBorderPen, rect);
 
-                    bool cellHasPreedit = _caretPosition != null && _caretPosition.Paragraph == cell && !string.IsNullOrEmpty(_preeditText);
+                    bool cellHasPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == cell && !string.IsNullOrEmpty(_preeditText);
                     var layout = cellHasPreedit
                         ? BuildTextLayout(cell, Math.Max(10, cellWidth - 10), _caretPosition!.Offset, _preeditText)
                         : BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
@@ -284,7 +286,7 @@ public partial class RichEditor
                     }
 
                     bool cellSelected = inBlock;
-                    if (_caretPosition != null && _caretPosition.Paragraph == cell && (!cellSelected || cellHasPreedit))
+                    if (chrome && _caretPosition != null && _caretPosition.Paragraph == cell && (!cellSelected || cellHasPreedit))
                     {
                         int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
                         var cr = layout.HitTestTextPosition(caretDisp);
@@ -297,18 +299,21 @@ public partial class RichEditor
                     }
 
                     layout.Draw(context, new Point(rect.X + 5, rect.Y + 5));
-                    RegisterInlineImages(context, cell, layout, rect.X + 5, rect.Y + 5);
+                    if (chrome) RegisterInlineImages(context, cell, layout, rect.X + 5, rect.Y + 5);
                 }
 
                 // Resize handles live on the physical grid lines (independent of merges). Internal column
                 // edges redistribute width with the next column; the outer-right edge grows the last column.
-                for (int r = 0; r < tb.Rows; r++)
-                    _rowBoundaries.Add((new Rect(startX, tl.RowY[r + 1] - 3, tl.TableWidth, 6), tb, r, tl.RowY[r + 1] - tl.RowY[r]));
-                for (int c = 0; c < tb.Columns; c++)
-                    _columnBoundaries.Add((new Rect(tl.ColX[c + 1] - 3, tableTop, 6, tl.TotalHeight), tb, c));
+                if (chrome)
+                {
+                    for (int r = 0; r < tb.Rows; r++)
+                        _rowBoundaries.Add((new Rect(startX, tl.RowY[r + 1] - 3, tl.TableWidth, 6), tb, r, tl.RowY[r + 1] - tl.RowY[r]));
+                    for (int c = 0; c < tb.Columns; c++)
+                        _columnBoundaries.Add((new Rect(tl.ColX[c + 1] - 3, tableTop, 6, tl.TotalHeight), tb, c));
+                }
 
                 yOffset = tableTop + tl.TotalHeight;
-                if (ReferenceEquals(tb, _selectedBlock))
+                if (chrome && ReferenceEquals(tb, _selectedBlock))
                 {
                     var tableRect = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
                     context.FillRectangle(AccentFill50, tableRect);
@@ -322,7 +327,7 @@ public partial class RichEditor
             {
                 string fullText = BuildPlain(paragraph);
 
-                bool hasPreedit = _caretPosition != null && _caretPosition.Paragraph == paragraph && !string.IsNullOrEmpty(_preeditText);
+                bool hasPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph && !string.IsNullOrEmpty(_preeditText);
 
                 double px = ParaLeft(paragraph);
 
@@ -333,7 +338,7 @@ public partial class RichEditor
                 {
                     if (paragraph.ListType != ListKind.None)
                         DrawListMarker(context, paragraph, paragraph.ListType == ListKind.Ordered ? ++orderedIndex : 0, px, yOffset);
-                    if (_caretPosition != null && _caretPosition.Paragraph == paragraph)
+                    if (chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph)
                     {
                         caretPoint = new Point(px, yOffset);
                         _lastCaretPoint = caretPoint.Value;
@@ -394,7 +399,7 @@ public partial class RichEditor
                         DrawSelectionHighlight(context, layout, hlStart, hlEnd, px, yOffset);
                 }
 
-                if (_caretPosition != null && _caretPosition.Paragraph == paragraph)
+                if (chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph)
                 {
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
                     var cr = layout.HitTestTextPosition(caretDisp);
@@ -407,7 +412,7 @@ public partial class RichEditor
                 }
 
                 layout.Draw(context, new Point(px, yOffset));
-                RegisterInlineImages(context, paragraph, layout, px, yOffset);
+                if (chrome) RegisterInlineImages(context, paragraph, layout, px, yOffset);
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
             else if (block is ImageBlock img)
@@ -432,19 +437,22 @@ public partial class RichEditor
                     context.DrawImage(img.Image, imgRect);
                     if (ReferenceEquals(img, _caretBlock)) blockCaretRect = imgRect;
 
-                    bool imgSelected = ReferenceEquals(img, _selectedBlock);
-                    if (imgSelected)
+                    if (chrome)
                     {
-                        // Selection: translucent overlay + bold border.
-                        context.FillRectangle(AccentFill60, imgRect);
-                        context.DrawRectangle(null, AccentPen2, imgRect);
+                        bool imgSelected = ReferenceEquals(img, _selectedBlock);
+                        if (imgSelected)
+                        {
+                            // Selection: translucent overlay + bold border.
+                            context.FillRectangle(AccentFill60, imgRect);
+                            context.DrawRectangle(null, AccentPen2, imgRect);
+                        }
+                        // Thin border + bottom-right resize handle.
+                        context.DrawRectangle(null, AccentBorderPen, imgRect);
+                        var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
+                        context.FillRectangle(AccentHandleFill, handle);
+                        // Slightly larger hit area than the visual handle for easier grabbing.
+                        _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img));
                     }
-                    // Thin border + bottom-right resize handle.
-                    context.DrawRectangle(null, AccentBorderPen, imgRect);
-                    var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
-                    context.FillRectangle(AccentHandleFill, handle);
-                    // Slightly larger hit area than the visual handle for easier grabbing.
-                    _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img));
 
                     yOffset += height + img.MarginBottom;
                 }

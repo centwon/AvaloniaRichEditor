@@ -62,6 +62,44 @@ public partial class RichEditor
         return i;
     }
 
+    // --- Print rendering (P-milestone Phase 3). ---
+
+    /// <summary>Number of A4 pages the document occupies when paginated for print. Independent of
+    /// <see cref="PageView"/> — printing always paginates, even from the continuous layout.</summary>
+    public int GetPrintPageCount()
+        => ComputePageBreaks(PageContentWidth, PageContentHeight).Count;
+
+    /// <summary>Renders one A4 page to a bitmap at the given DPI (96 = screen preview, 300 = print
+    /// quality; a 300-DPI page is ≈2480×3508 px / ~35 MB, so render and dispose page by page).
+    /// Content only — no caret, selection highlights, or resize handles. Must run on the UI thread.</summary>
+    public Avalonia.Media.Imaging.Bitmap RenderPrintPage(int pageIndex, double dpi = 96)
+    {
+        var breaks = ComputePageBreaks(PageContentWidth, PageContentHeight);
+        if (pageIndex < 0 || pageIndex >= breaks.Count)
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), pageIndex, $"document has {breaks.Count} page(s)");
+
+        double scale = dpi / 96.0;
+        var pixels = new Avalonia.PixelSize(
+            (int)Math.Round(A4PageWidth * scale), (int)Math.Round(A4PageHeight * scale));
+        var rtb = new Avalonia.Media.Imaging.RenderTargetBitmap(pixels, new Vector(dpi, dpi));
+        using (var ctx = rtb.CreateDrawingContext())
+        {
+            ctx.FillRectangle(Avalonia.Media.Brushes.White, new Rect(0, 0, A4PageWidth, A4PageHeight));
+            if (Document != null)
+            {
+                double sliceTop = breaks[pageIndex];
+                double sliceBottom = pageIndex + 1 < breaks.Count ? breaks[pageIndex + 1] : double.PositiveInfinity;
+                // Same slice clip rule as the page-view render: end the clip where the slice ends.
+                var clip = new Rect(PagePadX, PagePadY, PageContentWidth,
+                    Math.Min(PageContentHeight, sliceBottom - sliceTop));
+                using (ctx.PushClip(clip))
+                using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
+                    DrawDocumentBlocks(ctx, PageContentWidth, sliceTop, sliceBottom, chrome: false);
+            }
+        }
+        return rtb;
+    }
+
     // --- The single doc<->view coordinate choke point (P-milestone Phase 2). ---
     // Document space = the continuous layout every walker computes in. View space = control
     // coordinates with page chrome (desk centering, paper margins, inter-page gaps) injected.

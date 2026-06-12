@@ -76,6 +76,7 @@ public partial class MainWindow : Window
             ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = fit)",
             ["Demo.Fit"] = "Fit",
             ["Demo.PageView"] = "Pages",
+            ["Demo.PrintPreview"] = "Print preview",
             ["Demo.ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
@@ -88,6 +89,7 @@ public partial class MainWindow : Window
             ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=맞춤)",
             ["Demo.Fit"] = "맞춤",
             ["Demo.PageView"] = "페이지",
+            ["Demo.PrintPreview"] = "인쇄 미리보기",
             ["Demo.ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
         });
     }
@@ -102,6 +104,7 @@ public partial class MainWindow : Window
         Tip("SaveButton", "Demo.SaveJson");
         Tip("LoadButton", "Demo.LoadJson");
         Tip("ExportHtmlButton", "Demo.ExportHtml");
+        Tip("PrintPreviewButton", "Demo.PrintPreview");
         Tip("ZoomInButton", "Demo.ZoomIn");
         Tip("ZoomOutButton", "Demo.ZoomOut");
         Tip("ZoomCombo", "Demo.ZoomTip");
@@ -190,6 +193,13 @@ public partial class MainWindow : Window
         if (!e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)) return;
         SetZoomPercent((_fitWidth ? 1.0 : _zoom) + (e.Delta.Y > 0 ? 0.1 : -0.1));
         e.Handled = true;
+    }
+
+    private void PrintPreviewButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var editor = this.FindControl<AvaloniaRichEditor.Controls.RichEditor>("RichTextBox");
+        if (editor == null) return;
+        new PrintPreviewWindow(editor).Show(this);
     }
 
     // Page view (library P-milestone Phase 2): the editor draws its own desk + A4 papers, so the

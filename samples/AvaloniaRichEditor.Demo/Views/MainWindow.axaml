@@ -74,6 +74,7 @@
                     <Button Name="LoadButton" Click="LoadButton_Click"><ic:SymbolIcon Symbol="FolderOpen" FontSize="16"/></Button>
                     <Border Classes="div"/>
                     <Button Name="ExportHtmlButton" Click="ExportHtmlButton_Click"><ic:SymbolIcon Symbol="ArrowExport" FontSize="16"/></Button>
+                    <Button Name="PrintPreviewButton" Click="PrintPreviewButton_Click"><ic:SymbolIcon Symbol="Print" FontSize="16"/></Button>
                 </StackPanel>
             </DockPanel>
 

@@ -146,6 +146,28 @@ public class PaginationTests
         Assert.Equal(1000, doc2.Y, 3);
     }
 
+    // ---- Print rendering (Phase 3) ----
+
+    [AvaloniaFact]
+    public void PrintPageCount_MatchesPagination_RegardlessOfPageView()
+    {
+        var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
+        Assert.False(ed.PageView); // print paginates even in continuous mode
+        Assert.Equal(2, ed.GetPrintPageCount());
+    }
+
+    [AvaloniaFact]
+    public void RenderPrintPage_ProducesA4Bitmap_AndRejectsBadIndex()
+    {
+        var ed = EditorWith(EmptyPara(50));
+        var bmp = ed.RenderPrintPage(0, dpi: 96);
+        Assert.Equal(794, bmp.PixelSize.Width);
+        Assert.Equal(1123, bmp.PixelSize.Height);
+        var bmp300 = ed.RenderPrintPage(0, dpi: 300);
+        Assert.Equal(2481, bmp300.PixelSize.Width, 1.0); // 794 * 300/96 ≈ 2481
+        Assert.Throws<System.ArgumentOutOfRangeException>(() => ed.RenderPrintPage(1));
+    }
+
     [AvaloniaFact]
     public void LongParagraph_SplitsAtLineBoundaries()
     {
