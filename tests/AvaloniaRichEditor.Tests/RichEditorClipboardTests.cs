@@ -38,6 +38,25 @@ public class RichEditorClipboardTests
         Assert.Equal(raw, RichEditor.ExtractHtmlFragment(raw));
     }
 
+    // ---- TSV table-paste heuristic ----
+
+    [Fact]
+    public void LooksTabular_SpreadsheetGrid_True()
+    {
+        Assert.True(RichEditor.LooksTabular("a\tb\r\nc\td\r\n"));
+        Assert.True(RichEditor.LooksTabular("a\t\tb")); // empty middle cell is still a grid
+    }
+
+    [Fact]
+    public void LooksTabular_TabIndentedCode_False()
+    {
+        // Regression: "\tfoo" splits into ["", "foo"] and used to count as a 2-column row,
+        // so pasting tab-indented code produced a bogus table.
+        Assert.False(RichEditor.LooksTabular("\tvar x = 1;\n\treturn x;"));
+        // A grid line plus a prose line (no tab) is not a grid either.
+        Assert.False(RichEditor.LooksTabular("a\tb\nplain text line"));
+    }
+
     // ---- HTML insertion at caret (the core of the external-HTML paste branch) ----
 
     [AvaloniaFact]

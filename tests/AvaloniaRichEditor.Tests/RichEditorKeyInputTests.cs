@@ -167,6 +167,23 @@ public class RichEditorKeyInputTests
     }
 
     [AvaloniaFact]
+    public void AutoList_PrefixSplitAcrossRuns_LeavesNoResidue()
+    {
+        // "1" and "." in separate runs (e.g. different formatting): the prefix delete must
+        // span run boundaries — a single-run delete used to leave the "." behind.
+        var ed = Editor("<p></p>");
+        var p = Para(ed, 0);
+        p.Inlines.Clear();
+        p.Inlines.Add(new Run { Text = "1", Parent = p });
+        p.Inlines.Add(new Run { Text = ".", Parent = p });
+        ed.FocusDocumentEnd();
+        Type(ed, " "); // triggers the auto-list conversion
+
+        Assert.Equal(ListKind.Ordered, p.ListType);
+        Assert.Equal("", p.Text());
+    }
+
+    [AvaloniaFact]
     public void ReadOnly_IgnoresTypingAndDeletion()
     {
         var ed = Editor("<p>abc</p>");

@@ -69,7 +69,25 @@ public class TextRange
 
             DeleteInParagraph(ep, 0, _end.Offset);
 
-            MergeParagraphs(sp, ep, doc);
+            // Merging is only meaningful between two top-level paragraphs. When either endpoint
+            // is a table cell, merging would move text across the grid (the end cell's remainder
+            // used to land in the start cell) — instead keep the structure and just clear the
+            // fully-covered paragraphs (cells) between the endpoints.
+            bool spIsCell = !doc.Blocks.Contains(sp);
+            bool epIsCell = !doc.Blocks.Contains(ep);
+            if (!spIsCell && !epIsCell)
+            {
+                MergeParagraphs(sp, ep, doc);
+            }
+            else
+            {
+                var all = GetAllParagraphsInOrder(doc);
+                int sIdx = all.IndexOf(sp);
+                int eIdx = all.IndexOf(ep);
+                if (sIdx >= 0 && eIdx > sIdx)
+                    for (int i = sIdx + 1; i < eIdx; i++)
+                        DeleteInParagraph(all[i], 0, GetParagraphLength(all[i]));
+            }
         }
 
         _end = new TextPointer(sp, _start.Offset);

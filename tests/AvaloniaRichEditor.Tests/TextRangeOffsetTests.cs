@@ -136,6 +136,27 @@ public class TextRangeOffsetTests
     }
 
     [Fact]
+    public void Delete_AcrossTableCells_KeepsCellStructure()
+    {
+        // Regression: the end cell's remainder used to be merged into the start cell
+        // (and the end cell emptied), corrupting the grid.
+        var table = new TableBlock(1, 2);
+        var c0 = table.Cells[0][0];
+        var c1 = table.Cells[0][1];
+        c0.Inlines.Add(new Run { Text = "abc", Parent = c0 });
+        c1.Inlines.Add(new Run { Text = "def", Parent = c1 });
+        var doc = TestHelpers.Doc(table);
+        c0.Parent = table; c1.Parent = table; // cell parents (Doc() wires top-level blocks only)
+
+        // "bc" in cell0 through "de" in cell1.
+        new TextRange(new TextPointer(c0, 1), new TextPointer(c1, 2)).Delete();
+
+        Assert.Equal("a", c0.Text());  // no text moved across the grid
+        Assert.Equal("f", c1.Text());
+        Assert.Equal(2, table.Columns);
+    }
+
+    [Fact]
     public void ApplyPropertyValue_MultiParagraph_StylesMiddleParagraph()
     {
         var p1 = TestHelpers.Para(new Run { Text = "aaa" });

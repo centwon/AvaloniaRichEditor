@@ -18,7 +18,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     /// <summary>Pastes from the system clipboard. Priority: internal rich → external HTML → plain text.</summary>
     public async Task PasteFromClipboardAsync()
     {
-        if (Document == null) return;
+        if (Document == null || IsReadOnly) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) return;
         string? text = await clipboard.TryGetTextAsync();
@@ -96,13 +96,22 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         }
     }
 
-    // Heuristic: a tab plus at least one row that splits into 2+ columns => tabular paste.
-    private static bool LooksTabular(string text)
+    // Heuristic for "this plain text is a copied spreadsheet grid". Every non-empty line must
+    // contain a tab (a grid has uniform columns) and at least one line must have 2+ non-empty
+    // cells — otherwise tab-indented prose/code ("\tfoo" splits into ["", "foo"]) would paste
+    // as a bogus table. (internal for test coverage.)
+    internal static bool LooksTabular(string text)
     {
-        if (!text.Contains('\t')) return false;
+        bool anyMultiCell = false;
         foreach (var line in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
-            if (line.Split('\t').Length >= 2) return true;
-        return false;
+        {
+            if (line.Length == 0) continue;
+            if (!line.Contains('\t')) return false;
+            int nonEmpty = 0;
+            foreach (var f in line.Split('\t')) if (!string.IsNullOrWhiteSpace(f)) nonEmpty++;
+            if (nonEmpty >= 2) anyMultiCell = true;
+        }
+        return anyMultiCell;
     }
 
     private void InsertTableFromTsv(string text)

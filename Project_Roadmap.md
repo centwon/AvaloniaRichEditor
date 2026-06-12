@@ -81,10 +81,10 @@
 **P2 — 버그, 중간 작업량**
 - [x] **B5. HTML 붙여넣기 원격 이미지를 UI 스레드 동기 다운로드 (2026-06-12)** — 정적 `HttpClient` 공유(소켓 누수 제거) + **붙여넣기(ParseHtml 1회)당 총 5초 예산**(`[ThreadStatic]` 데드라인, 초과분 이미지는 생략하고 나머지 콘텐츠는 유지). 종전엔 이미지당 5초 × N이라 UI가 수십 초 멈출 수 있었음. 완전 async화는 모델 객체 UI 스레드 제약(핵심 규칙 8) 때문에 보류.
 - [x] **B6. 서로게이트 쌍(이모지) 미처리 (2026-06-12)** — `PrevCharBoundary`/`NextCharBoundary` 헬퍼로 Backspace/Delete/←/→가 쌍을 1글자로 취급(반쪽 서로게이트 잔류 → 깨진 글리프 방지). 회귀 테스트 2건(총 136). ZWJ 시퀀스 등 완전한 그래핌 클러스터 단위는 추후(현재는 쌍 단위로 손상만 방지).
-- [ ] **B7. 표 셀 횡단 선택 삭제 시 셀 내용 병합** — `TextRange.cs:72` `Delete`→`MergeParagraphs`가 끝 셀 잔여 텍스트를 시작 셀로 이동. 기대 동작: 각 셀에서 선택 부분만 삭제, 셀 구조 유지.
-- [ ] **B8. 공개 API의 ReadOnly 가드 불일치** — `InsertText`(`RichEditor.cs:531`)/`PasteFromClipboardAsync`/`ApplyStyleToSelection` 계열이 `IsReadOnly` 미검사(키보드 경로만 차단됨). `InsertImage`/`InsertTable`과 일관화.
-- [ ] **B9. TSV 휴리스틱 과민** — `RichEditor.Clipboard.cs:100` `LooksTabular`: 탭 들여쓰기 코드(`"\tfoo"`=2열 판정)가 표로 변환됨. "2줄 이상+첫 칸 비지 않음" 등으로 조이기.
-- [ ] **B10. 자동 리스트 접두사 잔여물** — `TryAutoList`의 `DeleteLocalText`가 한 런 안에서만 삭제 후 반환 → "1"과 "."이 다른 런이면 일부 잔존.
+- [x] **B7. 표 셀 횡단 선택 삭제 시 셀 내용 병합 (2026-06-12)** — `TextRange.Delete`: 양 끝점 중 하나라도 셀이면 `MergeParagraphs` 생략(그리드 횡단 텍스트 이동 방지), 대신 끝점 사이의 완전 포함 문단(셀)을 비움. 셀 구조 보존. 회귀 테스트 1건.
+- [x] **B8. 공개 API의 ReadOnly 가드 불일치 (2026-06-12)** — `InsertText`/`PasteFromClipboardAsync`/`ApplyStyleToSelection`(ToggleBold 계열 전부)/`Indent`/`SetTextAlignment`/`SetLineHeight`/`SetListType`/`SetHeading`/`SetHyperlink`에 `IsReadOnly` 가드 — `InsertImage`/`InsertTable`과 일관화.
+- [x] **B9. TSV 휴리스틱 과민 (2026-06-12)** — `LooksTabular`(internal 승격): 모든 비어있지 않은 줄에 탭 필수 + 한 줄 이상이 비공백 셀 2개 이상이어야 표 판정. 탭 들여쓰기 코드(`"\tfoo"`) 오판 제거. 테스트 2건.
+- [x] **B10. 자동 리스트 접두사 잔여물 (2026-06-12)** — `DeleteLocalText`를 다중 런 횡단 삭제로 재작성(원본 좌표 기준 구간 삭제, 단일 런 조기 반환 제거). 부수 효과: Backspace/Delete 경로도 런 경계 안전. 테스트 1건. **P2 전체 해소 — 테스트 136→140 그린.**
 
 **P3 — 성능**
 - [ ] **F1. Backspace/Delete/Enter 언두 코얼레싱** — `RichEditor.Input.cs:715` 키마다 전체 문서 클론(타이핑만 코얼레싱됨). 실측 100장 문서 클론 162ms → Backspace 연타 시 키마다 히치. `PushUndoTyping` 패턴을 삭제 런에도 적용.

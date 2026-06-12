@@ -529,7 +529,7 @@ public partial class RichEditor : Control
     /// following a list-prefix pattern at the start of a line.</summary>
     public void InsertText(string text)
     {
-        if (Document == null || _caretPosition.Paragraph == null) return;
+        if (Document == null || IsReadOnly || _caretPosition.Paragraph == null) return;
         if (_selectionStart != _selectionEnd) DeleteSelection();
 
         // Smart list: typing the space after "-"/"*" or "N." at a paragraph start turns it into a list.
@@ -586,28 +586,34 @@ public partial class RichEditor : Control
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
     }
 
+    // Deletes the logical range [index, index+length) from the paragraph, spanning run boundaries
+    // (a single-run early-return here once left residue when e.g. an auto-list prefix was split
+    // across two runs). Offsets are in pre-deletion coordinates throughout the walk.
     private void DeleteLocalText(Paragraph? p, int index, int length)
     {
-        if (p == null) return;
-        int currentIndex = 0;
-        for (int i = 0; i < p.Inlines.Count; i++)
+        if (p == null || length <= 0) return;
+        int end = index + length;
+        int pos = 0;
+        for (int i = 0; i < p.Inlines.Count && pos < end; )
         {
-            int len = InlineLen(p.Inlines[i]);
-            if (p.Inlines[i] is Run run && index >= currentIndex && index < currentIndex + len)
+            var inl = p.Inlines[i];
+            int len = InlineLen(inl);
+            int segStart = pos, segEnd = pos + len;
+            if (segEnd <= index || len == 0) { pos = segEnd; i++; continue; }
+            if (inl is Run run)
             {
-                int localOffset = index - currentIndex;
-                int deleteLen = Math.Min(length, len - localOffset);
-                run.Text = run.Text!.Remove(localOffset, deleteLen);
-                if (string.IsNullOrEmpty(run.Text)) p.Inlines.RemoveAt(i);
-                return;
+                int from = Math.Max(index, segStart) - segStart;
+                int to = Math.Min(end, segEnd) - segStart;
+                run.Text = run.Text!.Remove(from, to - from);
+                if (run.Text.Length == 0) p.Inlines.RemoveAt(i); else i++;
             }
-            if (p.Inlines[i] is InlineImage && index == currentIndex)
+            else if (inl is InlineImage)
             {
-                // The single position occupied by an inline image -> remove the image.
+                // The image's single position overlaps the range -> remove it.
                 p.Inlines.RemoveAt(i);
-                return;
             }
-            currentIndex += len;
+            else i++;
+            pos = segEnd;
         }
     }
 

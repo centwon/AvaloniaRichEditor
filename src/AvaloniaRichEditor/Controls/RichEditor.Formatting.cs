@@ -74,16 +74,16 @@ public partial class RichEditor
     /// <summary>Adjusts the indent of the caret paragraph by <paramref name="delta"/> pixels (clamped 0–400).</summary>
     public void Indent(double delta)
     {
-        if (_caretPosition.Paragraph == null) return;
+        if (_caretPosition.Paragraph == null || IsReadOnly) return;
         if (Document != null) PushUndo();
         var p = _caretPosition.Paragraph;
         p.Indent = Math.Clamp(p.Indent + delta, 0, 400);
         InvalidateVisual();
     }
     /// <summary>Sets the text alignment of the caret paragraph.</summary>
-    public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null) { if (Document != null) PushUndo(); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
+    public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
     /// <summary>Sets the line height multiplier of the caret paragraph.</summary>
-    public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
+    public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
     /// <summary>Toggles a bullet list on the selected paragraphs.</summary>
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
     /// <summary>Toggles a numbered list on the selected paragraphs.</summary>
@@ -91,7 +91,7 @@ public partial class RichEditor
 
     private void SetListType(ListKind kind)
     {
-        if (_caretPosition.Paragraph == null || Document == null) return;
+        if (_caretPosition.Paragraph == null || Document == null || IsReadOnly) return;
         PushUndo();
         bool turningOff = _caretPosition.Paragraph.ListType == kind;
 
@@ -216,7 +216,7 @@ public partial class RichEditor
     /// Also adjusts run font sizes to match the heading style for in-editor preview.</summary>
     public void SetHeading(int level)
     {
-        if (_caretPosition.Paragraph == null) return;
+        if (_caretPosition.Paragraph == null || IsReadOnly) return;
         if (Document != null) PushUndo();
         var p = _caretPosition.Paragraph;
         p.HeadingLevel = level;
@@ -249,6 +249,9 @@ public partial class RichEditor
 
     private void ApplyStyleToSelection(Action<Run> styleAction)
     {
+        // Keyboard shortcuts are blocked in OnKeyDown, but the public commands (ToggleBold etc.)
+        // must not mutate a ReadOnly document either.
+        if (IsReadOnly) return;
         if (Document != null) PushUndo();
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
@@ -282,7 +285,7 @@ public partial class RichEditor
     // otherwise falls back to the single run that was right-clicked.
     private void SetHyperlink(string? url, Run? targetRun)
     {
-        if (Document == null) return;
+        if (Document == null || IsReadOnly) return;
         PushUndo();
         if (_selectionStart.CompareTo(_selectionEnd) != 0)
         {
