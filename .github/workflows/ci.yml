@@ -33,7 +33,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # Trusted Publishing (OIDC): nuget.org must have a publishing policy registered for this
-    # repository + this workflow file (owner: centwon). No long-lived API key is stored.
+    # repository + this workflow file (nuget.org account: kanu). No long-lived API key is stored.
     permissions:
       id-token: write
       contents: read
@@ -53,6 +53,7 @@ jobs:
         id: nuget-login
         uses: NuGet/login@v1
         with:
-          user: centwon
+          # nuget.org login username of the policy creator (NOT the GitHub owner).
+          user: kanu
       - name: Push to nuget.org
         run: dotnet nuget push "artifacts/*.nupkg" -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate
