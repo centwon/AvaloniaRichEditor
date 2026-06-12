@@ -36,14 +36,14 @@ public partial class RichEditor
         if (src == null) return;
         _painterFmt = (src.FontWeight, src.FontStyle, src.TextDecorations,
             src.FontSize, src.FontFamily, src.Foreground, src.Background);
-        Cursor = new Cursor(StandardCursorType.Cross);
+        Cursor = CrossCursor;
     }
 
     /// <summary>Disarms the format painter without applying.</summary>
     public void CancelFormatPainter()
     {
         _painterFmt = null;
-        Cursor = new Cursor(StandardCursorType.Ibeam);
+        Cursor = IbeamCursor;
     }
 
     private void ApplyFormatPainterToSelection()

@@ -145,6 +145,35 @@ public class RichEditorKeyInputTests
     }
 
     [AvaloniaFact]
+    public void Backspace_CoalescesConsecutiveDeletesIntoSingleUndo()
+    {
+        var ed = Editor("<p>abcd</p>");
+        Press(ed, Key.Back);
+        Press(ed, Key.Back);
+        Press(ed, Key.Back);
+        Assert.Equal("a", Para(ed, 0).Text());
+
+        ed.Undo(); // one checkpoint for the whole backspace run, not one per keypress
+        Assert.Equal("abcd", Para(ed, 0).Text());
+    }
+
+    [AvaloniaFact]
+    public void Backspace_AfterCaretMove_StartsNewUndoRun()
+    {
+        var ed = Editor("<p>abcd</p>");
+        Press(ed, Key.Back);        // "abc"
+        Press(ed, Key.Left);        // caret move ends the run
+        Press(ed, Key.Right);
+        Press(ed, Key.Back);        // "ab" — new run
+        Assert.Equal("ab", Para(ed, 0).Text());
+
+        ed.Undo();
+        Assert.Equal("abc", Para(ed, 0).Text()); // only the second run is undone
+        ed.Undo();
+        Assert.Equal("abcd", Para(ed, 0).Text());
+    }
+
+    [AvaloniaFact]
     public void Backspace_RemovesWholeSurrogatePair()
     {
         // A 1-unit delete used to leave a lone surrogate half behind (broken glyph).

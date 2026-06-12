@@ -223,7 +223,7 @@ public partial class RichEditor : Control
     public RichEditor()
     {
         Focusable = true;
-        Cursor = new Cursor(StandardCursorType.Ibeam);
+        Cursor = IbeamCursor;
 
         // Enable IME (Korean/Japanese/Chinese) composition by advertising a text-input client.
         _imClient = new RtbInputMethodClient(this);
@@ -319,7 +319,10 @@ public partial class RichEditor : Control
         _caretTimer.Start();
         _imClient.NotifyCaretChanged();
         _bringCaretIntoView = true;
-        _typingRun = false; // any caret move / selection change breaks the typing-undo coalescing run
+        // Any caret move / selection change breaks the undo-coalescing run — except when the
+        // current key handler re-armed it (Backspace/Delete move the caret by design).
+        _editRun = _editRunRearm;
+        _editRunRearm = EditRunKind.None;
         InvalidateVisual();
         NotifyStatus();
     }
@@ -344,28 +347,47 @@ public partial class RichEditor : Control
     private bool _textChangedPending;
     private void MarkTextChanged() => _textChangedPending = true;
 
-    // True while a run of consecutive typed characters shares one undo checkpoint (see PushUndoTyping).
-    private bool _typingRun;
+    // Kind of edit currently coalescing into one undo checkpoint. A run of same-kind edits shares
+    // a single full-document clone (the first-keystroke clone was measured at 162 ms on a
+    // 100-image document, so per-keypress clones produce a visible hitch when holding a key).
+    private enum EditRunKind { None, Typing, Backspace, Delete }
+    private EditRunKind _editRun;
+    // Backspace/Delete handlers re-arm the run through this before their trailing ResetCaretBlink
+    // (which otherwise ends the run, since those keys move the caret by design).
+    private EditRunKind _editRunRearm;
 
-    // Records an undo checkpoint and flags a text change. Single choke point for discrete (non-typing)
-    // document mutations; also ends any in-progress typing run so the next keystroke checkpoints afresh.
+    // Records an undo checkpoint and flags a text change. Single choke point for discrete
+    // document mutations; also ends any in-progress coalescing run so the next keystroke
+    // checkpoints afresh.
     private void PushUndo()
     {
         if (Document != null) _undoManager.PushState(Document, _caretPosition);
         _textChangedPending = true;
-        _typingRun = false;
+        _editRun = EditRunKind.None;
+        _editRunRearm = EditRunKind.None;
     }
 
     // Undo checkpoint for typed text: coalesces a run of consecutive keystrokes into a single
-    // checkpoint (one full-document clone per typing run, not per character). The run ends on any
-    // caret move, selection change, or discrete edit (see ResetCaretBlink / PushUndo).
+    // checkpoint. The run ends on any caret move, selection change, or discrete edit
+    // (see ResetCaretBlink / PushUndo).
     private void PushUndoTyping()
     {
-        if (!_typingRun)
+        if (_editRun != EditRunKind.Typing)
         {
             if (Document != null) _undoManager.PushState(Document, _caretPosition);
-            _typingRun = true;
+            _editRun = EditRunKind.Typing;
         }
+        _textChangedPending = true;
+    }
+
+    // Undo checkpoint for a plain single-character Backspace/Delete: consecutive same-direction
+    // deletes share one checkpoint, mirroring PushUndoTyping. Structural deletes (selection,
+    // paragraph merge, block/image removal) go through PushUndo instead.
+    private void PushUndoDeleting(bool backspace)
+    {
+        var kind = backspace ? EditRunKind.Backspace : EditRunKind.Delete;
+        if (_editRun != kind && Document != null) _undoManager.PushState(Document, _caretPosition);
+        _editRunRearm = kind;
         _textChangedPending = true;
     }
 
@@ -780,7 +802,9 @@ public partial class RichEditor : Control
                     Mix(7);
                     Mix(BitConverter.DoubleToInt64Bits(img.Width));
                     Mix(BitConverter.DoubleToInt64Bits(img.Height));
-                    Mix(img.Image?.GetHashCode() ?? 0);
+                    // Identity only — never the Image getter here: it lazily decodes RawBytes, and
+                    // the signature must stay cheap (and decode-free) on every cache lookup (N6-2).
+                    Mix(img.RawBytes?.GetHashCode() ?? img.Image?.GetHashCode() ?? 0);
                 }
             }
             return h;

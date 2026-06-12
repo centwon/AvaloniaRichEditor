@@ -16,6 +16,18 @@ namespace AvaloniaRichEditor.Controls;
 // Part of RichEditor (split out of the main file for readability).
 public partial class RichEditor
 {
+    // Render runs per frame (caret blink = 2 Hz minimum): the fixed accent colors and pens are
+    // allocated once instead of per draw call. Immutable variants carry no thread affinity.
+    private static readonly Avalonia.Media.Immutable.ImmutableSolidColorBrush AccentBrush = new(Color.FromArgb(255, 0, 120, 215));
+    private static readonly Avalonia.Media.Immutable.ImmutableSolidColorBrush AccentFill50 = new(Color.FromArgb(50, 0, 120, 215));
+    private static readonly Avalonia.Media.Immutable.ImmutableSolidColorBrush AccentFill60 = new(Color.FromArgb(60, 0, 120, 215));
+    private static readonly Avalonia.Media.Immutable.ImmutableSolidColorBrush AccentHandleFill = new(Color.FromArgb(230, 0, 120, 215));
+    private static readonly Avalonia.Media.Immutable.ImmutablePen GrayBorderPen = new(Brushes.Gray, 1);
+    private static readonly Avalonia.Media.Immutable.ImmutablePen AccentPen2 = new(AccentBrush, 2);
+    private static readonly Avalonia.Media.Immutable.ImmutablePen AccentPen15 = new(AccentBrush, 1.5);
+    private static readonly Avalonia.Media.Immutable.ImmutablePen AccentBorderPen = new(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(120, 0, 120, 215)), 1);
+    private static readonly Avalonia.Media.Immutable.ImmutablePen BlockCaretPen = new(Brushes.Black, 2);
+
     // Total rendered height of the document at the given content width (mirrors the render advancement).
     // Reported via MeasureOverride so the hosting ScrollViewer grows its scrollable extent with content.
     private double MeasureContentHeight(double width)
@@ -177,7 +189,7 @@ public partial class RichEditor
 
                     if (cell.Background != null)
                         context.FillRectangle(cell.Background, rect);
-                    context.DrawRectangle(null, new Pen(Brushes.Gray, 1), rect);
+                    context.DrawRectangle(null, GrayBorderPen, rect);
 
                     bool cellHasPreedit = _caretPosition != null && _caretPosition.Paragraph == cell && !string.IsNullOrEmpty(_preeditText);
                     var layout = cellHasPreedit
@@ -232,8 +244,8 @@ public partial class RichEditor
                 if (ReferenceEquals(tb, _selectedBlock))
                 {
                     var tableRect = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
-                    context.FillRectangle(new SolidColorBrush(Color.FromArgb(50, 0, 120, 215)), tableRect);
-                    context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)), 2), tableRect);
+                    context.FillRectangle(AccentFill50, tableRect);
+                    context.DrawRectangle(null, AccentPen2, tableRect);
                 }
                 yOffset += 10;
             }
@@ -355,13 +367,13 @@ public partial class RichEditor
                     if (imgSelected)
                     {
                         // Selection: translucent overlay + bold border.
-                        context.FillRectangle(new SolidColorBrush(Color.FromArgb(60, 0, 120, 215)), imgRect);
-                        context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)), 2), imgRect);
+                        context.FillRectangle(AccentFill60, imgRect);
+                        context.DrawRectangle(null, AccentPen2, imgRect);
                     }
                     // Thin border + bottom-right resize handle.
-                    context.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(120, 0, 120, 215)), 1), imgRect);
+                    context.DrawRectangle(null, AccentBorderPen, imgRect);
                     var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
-                    context.FillRectangle(new SolidColorBrush(Color.FromArgb(230, 0, 120, 215)), handle);
+                    context.FillRectangle(AccentHandleFill, handle);
                     // Slightly larger hit area than the visual handle for easier grabbing.
                     _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img));
 
@@ -374,7 +386,7 @@ public partial class RichEditor
                 if (yOffset + DividerHeight >= visTop && yOffset <= visBottom)
                 {
                     double y = yOffset + DividerHeight / 2;
-                    context.DrawLine(new Pen(Brushes.Gray, 1), new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
+                    context.DrawLine(GrayBorderPen, new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
                 }
                 yOffset += DividerHeight + dv.MarginBottom;
             }
@@ -391,7 +403,7 @@ public partial class RichEditor
                 double cx = _caretBlockAfter ? r.Right + 3 : r.X - 3;
                 double cy1 = _caretBlockAfter ? Math.Max(r.Y, r.Bottom - 20) : r.Y;
                 double cy2 = _caretBlockAfter ? r.Bottom : Math.Min(r.Bottom, r.Y + 20);
-                context.DrawLine(new Pen(Brushes.Black, 2), new Point(cx, cy1), new Point(cx, cy2));
+                context.DrawLine(BlockCaretPen, new Point(cx, cy1), new Point(cx, cy2));
             }
         }
         else if (caretPoint.HasValue)
@@ -437,11 +449,10 @@ public partial class RichEditor
                     _inlineImageRects.Add((ir, p, ii));
                     if (_selectedInline is { } sel && ReferenceEquals(sel.img, ii))
                     {
-                        var accent = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215));
-                        context.DrawRectangle(null, new Pen(accent, 2), ir);
+                        context.DrawRectangle(null, AccentPen2, ir);
                         var knob = new Rect(ir.Right - 5, ir.Bottom - 5, 10, 10);
                         context.FillRectangle(Brushes.White, knob);
-                        context.DrawRectangle(null, new Pen(accent, 1.5), knob);
+                        context.DrawRectangle(null, AccentPen15, knob);
                         _inlineHandles.Add((new Rect(ir.Right - 9, ir.Bottom - 9, 18, 18), p, ii));
                     }
                     break;

@@ -22,6 +22,15 @@ using System.Collections.Generic;
 // across blocks. Part of RichEditor (split out of the main file for readability).
 public partial class RichEditor
 {
+    // Cursors are native resources; OnPointerMoved fires per mouse move, so allocate each shape once.
+    private static readonly Cursor IbeamCursor = new(StandardCursorType.Ibeam);
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
+    private static readonly Cursor ArrowCursor = new(StandardCursorType.Arrow);
+    private static readonly Cursor CrossCursor = new(StandardCursorType.Cross);
+    private static readonly Cursor ColResizeCursor = new(StandardCursorType.SizeWestEast);
+    private static readonly Cursor RowResizeCursor = new(StandardCursorType.SizeNorthSouth);
+    private static readonly Cursor CornerResizeCursor = new(StandardCursorType.BottomRightCorner);
+
     /// <inheritdoc/>
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -435,7 +444,7 @@ public partial class RichEditor
         {
             if (h.rect.Contains(point))
             {
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.BottomRightCorner);
+                Cursor = CornerResizeCursor;
                 return;
             }
         }
@@ -444,7 +453,7 @@ public partial class RichEditor
         {
             if (h.rect.Contains(point))
             {
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.BottomRightCorner);
+                Cursor = CornerResizeCursor;
                 return;
             }
         }
@@ -453,7 +462,7 @@ public partial class RichEditor
         {
             if (b.rect.Contains(point))
             {
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeWestEast);
+                Cursor = ColResizeCursor;
                 return;
             }
         }
@@ -462,7 +471,7 @@ public partial class RichEditor
         {
             if (b.rect.Contains(point))
             {
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
+                Cursor = RowResizeCursor;
                 return;
             }
         }
@@ -470,14 +479,14 @@ public partial class RichEditor
         // Outer left/top table border selects the whole table on click -> show an arrow there.
         if (GetBlockAtPoint(point) is TableBlock ht && IsOnTableLeftOrTopBorder(ht, point))
         {
-            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
+            Cursor = ArrowCursor;
             return;
         }
 
         var hoverLink = GetLinkRunAtPoint(point);
         Cursor = (hoverLink != null && !string.IsNullOrEmpty(hoverLink.NavigateUri))
-            ? new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
-            : new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Ibeam);
+            ? HandCursor
+            : IbeamCursor;
     }
 
     /// <inheritdoc/>
@@ -711,10 +720,23 @@ public partial class RichEditor
             return;
         }
 
-        // Push state before destructive keys
+        // Push state before destructive keys. A plain single-character Backspace/Delete coalesces
+        // into one checkpoint per run of the same key (like typing); structural cases — selection
+        // delete, paragraph merge, selected block/inline image, Enter — stay one checkpoint each.
         if (e.Key == Key.Back || e.Key == Key.Delete || e.Key == Key.Enter)
         {
-            if (Document != null) PushUndo();
+            if (Document != null)
+            {
+                bool plainCharDelete = e.Key != Key.Enter
+                    && _selectionStart == _selectionEnd
+                    && _selectedBlock == null && _selectedInline == null
+                    && _caretPosition.Paragraph != null
+                    && (e.Key == Key.Back
+                        ? _caretPosition.Offset > 0
+                        : _caretPosition.Offset < GetParagraphLength(_caretPosition.Paragraph));
+                if (plainCharDelete) PushUndoDeleting(e.Key == Key.Back);
+                else PushUndo();
+            }
         }
 
         if (e.Key == Key.Left)

@@ -86,10 +86,10 @@
 - [x] **B9. TSV 휴리스틱 과민 (2026-06-12)** — `LooksTabular`(internal 승격): 모든 비어있지 않은 줄에 탭 필수 + 한 줄 이상이 비공백 셀 2개 이상이어야 표 판정. 탭 들여쓰기 코드(`"\tfoo"`) 오판 제거. 테스트 2건.
 - [x] **B10. 자동 리스트 접두사 잔여물 (2026-06-12)** — `DeleteLocalText`를 다중 런 횡단 삭제로 재작성(원본 좌표 기준 구간 삭제, 단일 런 조기 반환 제거). 부수 효과: Backspace/Delete 경로도 런 경계 안전. 테스트 1건. **P2 전체 해소 — 테스트 136→140 그린.**
 
-**P3 — 성능**
-- [ ] **F1. Backspace/Delete/Enter 언두 코얼레싱** — `RichEditor.Input.cs:715` 키마다 전체 문서 클론(타이핑만 코얼레싱됨). 실측 100장 문서 클론 162ms → Backspace 연타 시 키마다 히치. `PushUndoTyping` 패턴을 삭제 런에도 적용.
-- [ ] **F2. 입력/렌더 경로 할당 줄이기** — `OnPointerMoved`마다 `new Cursor(...)`(정적 캐시로), Render마다 `new SolidColorBrush`/`new Pen` 다수(정적 `ImmutableSolidColorBrush`로).
-- [ ] **F3. `ParagraphSig`의 지연 디코드 강제** — `RichEditor.cs:777` `img.Image?.GetHashCode()`가 인라인 이미지 디코드를 유발(N6-2 이점 상쇄). `RawBytes` 참조/길이로 대체.
+**P3 — 성능 — ✅ 전부 해소(2026-06-12, 테스트 140→142 그린)**
+- [x] **F1. Backspace/Delete 언두 코얼레싱** — `_typingRun` 불리언을 `EditRunKind`(None/Typing/Backspace/Delete) 런 추적으로 일반화. 단순 1글자 Backspace/Delete 연타는 런당 클론 1개(`PushUndoDeleting` + `_editRunRearm` — 삭제 키는 캐럿이 움직이므로 핸들러가 ResetCaretBlink 전에 런을 재무장). 구조적 삭제(선택/병합/블록/Enter)는 종전대로 키당 체크포인트. 회귀 테스트 2건.
+- [x] **F2. 입력/렌더 경로 할당 제거** — Cursor 7종 정적 캐시(`OnPointerMoved`가 마우스 이동마다 native 자원을 생성하던 것), Render 고정색 브러시/펜 9종을 정적 `ImmutableSolidColorBrush`/`ImmutablePen`으로(2Hz 캐럿 블링크마다 재할당 제거). `CaretBrush` 펜은 동적 속성이라 유지.
+- [x] **F3. `ParagraphSig`의 지연 디코드 강제 제거** — 인라인 이미지 식별을 `RawBytes` 참조 해시 우선으로(Image 게터는 RawBytes가 없을 때만 — 그 경우 디코드 없음).
 
 **P4 — 기능 후보 (소형)**
 - [ ] Shift+Enter 소프트 줄바꿈(최상위 문단에서 `\n` 삽입 — 모델이 이미 지원)
