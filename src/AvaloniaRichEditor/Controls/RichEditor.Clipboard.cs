@@ -96,6 +96,21 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         }
     }
 
+    // Ctrl+Shift+V: pastes the clipboard's plain text only, ignoring rich/HTML/image formats
+    // (and the TSV-to-table heuristic — "paste as plain text" must never build structure).
+    private async Task PastePlainTextAsync()
+    {
+        if (Document == null || IsReadOnly) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) return;
+        string? text = null;
+        try { text = await clipboard.TryGetTextAsync(); } catch { }
+        if (string.IsNullOrEmpty(text)) return;
+        PushUndo();
+        InsertText(text);
+        ResetCaretBlink();
+    }
+
     // Heuristic for "this plain text is a copied spreadsheet grid". Every non-empty line must
     // contain a tab (a grid has uniform columns) and at least one line must have 2+ non-empty
     // cells — otherwise tab-indented prose/code ("\tfoo" splits into ["", "foo"]) would paste

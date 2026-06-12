@@ -684,7 +684,8 @@ public partial class RichEditor
 
         if (e.Key == Key.V && ctrl)
         {
-            _ = PasteFromClipboardAsync();
+            // Ctrl+Shift+V: paste as plain text, skipping the rich/HTML/image formats.
+            _ = shift ? PastePlainTextAsync() : PasteFromClipboardAsync();
             e.Handled = true;
             return;
         }
@@ -929,6 +930,18 @@ public partial class RichEditor
         {
             if (_caretPosition.Paragraph != null)
             {
+                // Shift+Enter: soft line break — a \n inside the paragraph (the model already
+                // renders multi-line paragraphs) instead of a paragraph split.
+                if (shift)
+                {
+                    if (_selectionStart != _selectionEnd) DeleteSelection();
+                    TryInsertTextCore(_caretPosition.Paragraph!, "\n", _caretPosition.Offset);
+                    _caretPosition.Offset++;
+                    _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                    MarkTextChanged();
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
                 var p = _caretPosition.Paragraph;
                 // Enter splits the paragraph at the caret into a new paragraph. On an empty list item it
                 // exits the list instead. Inside a table cell (not a top-level block) it keeps "\n in the

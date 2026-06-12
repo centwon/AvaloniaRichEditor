@@ -91,12 +91,12 @@
 - [x] **F2. 입력/렌더 경로 할당 제거** — Cursor 7종 정적 캐시(`OnPointerMoved`가 마우스 이동마다 native 자원을 생성하던 것), Render 고정색 브러시/펜 9종을 정적 `ImmutableSolidColorBrush`/`ImmutablePen`으로(2Hz 캐럿 블링크마다 재할당 제거). `CaretBrush` 펜은 동적 속성이라 유지.
 - [x] **F3. `ParagraphSig`의 지연 디코드 강제 제거** — 인라인 이미지 식별을 `RawBytes` 참조 해시 우선으로(Image 게터는 RawBytes가 없을 때만 — 그 경우 디코드 없음).
 
-**P4 — 기능 후보 (소형)**
-- [ ] Shift+Enter 소프트 줄바꿈(최상위 문단에서 `\n` 삽입 — 모델이 이미 지원)
-- [ ] Ctrl+Shift+V 서식 없이 붙여넣기(평문 분기 직행)
-- [ ] URL 자동 링크화(공백/Enter 시 직전 토큰 검사 — `TryAutoList` 패턴)
-- [ ] pending caret format(선택 없는 서식 토글을 문단 전체 적용 대신 "다음 입력에 적용"으로 — 현재 동작은 `ApplyStyleToSelection` 폴백)
-- [ ] HTML `file:` 이미지 로드 옵션화(외부 HTML이 로컬 파일을 문서에 끌어들이는 통로 차단)
+**P4 — 기능 후보 (소형) — 3건 구현(2026-06-12, 테스트 142→144), 2건 보류**
+- [x] **Shift+Enter 소프트 줄바꿈** — 최상위 문단에서 `\n` 삽입(셀 안 Enter와 동일 경로). 문단 분할 없이 한 문단 여러 줄.
+- [x] **Ctrl+Shift+V 서식 없이 붙여넣기** — `PastePlainTextAsync`(private): 평문만, TSV→표 휴리스틱도 미적용("평문 붙여넣기"는 구조를 만들지 않음).
+- [x] **URL 자동 링크화** — `TryAutoLink`: URL 뒤 공백 입력 시 직전 토큰(http/https + 호스트 `.` 필요)에 `NavigateUri`. 공백 삽입 *후* 토큰 범위에만 적용해 공백이 링크를 상속하지 않음. 이미 링크면 무시.
+- [ ] **pending caret format(보류 — UX 결정 필요)**: 선택 없는 서식 토글이 현재 문단 전체에 적용되는데, WPF/Word식 "다음 입력에 적용"으로 바꿀지부터 결정. 타이핑 코얼레싱·IME·툴바 상태 반영(`GetCaretFormat`)과 얽혀 구현 비용 중간.
+- [ ] **HTML `file:` 이미지 로드 옵션화(보류 — 정책 결정 필요)**: 외부 HTML이 로컬 파일을 문서에 끌어들이는 통로. 차단하면 정상적인 로컬 HTML 워크플로(자기 파일 붙여넣기)도 깨지므로 기본값 결정 필요. 신규 공개 속성 → PublicAPI 등재 동반.
 
 **문서 후속**
 - [ ] 왕복 하네스(`--roundtrip`)에 `docs/DOCUMENT_FORMAT.md` 예제 JSON 로드 검증 추가(명세-코드 표류를 CI에서 감지)

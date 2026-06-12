@@ -196,6 +196,33 @@ public class RichEditorKeyInputTests
     }
 
     [AvaloniaFact]
+    public void ShiftEnter_InsertsSoftLineBreakInsteadOfSplitting()
+    {
+        var ed = Editor("<p>ab</p>");
+        Press(ed, Key.Enter, KeyModifiers.Shift);
+        Type(ed, "c");
+
+        Assert.Single(ed.Document!.Blocks);          // no paragraph split
+        Assert.Equal("ab\nc", Para(ed, 0).Text());   // hard line break inside the run
+    }
+
+    [AvaloniaFact]
+    public void AutoLink_SpaceAfterUrl_LinksUrlButNotTheSpace()
+    {
+        var ed = Editor("<p></p>");
+        Type(ed, "see https://a.com");
+        Type(ed, " ");
+        Type(ed, "x");
+
+        var runs = Para(ed, 0).Inlines.OfType<Run>().ToList();
+        var linked = runs.Where(r => !string.IsNullOrEmpty(r.NavigateUri)).ToList();
+        Assert.Equal("https://a.com", string.Concat(linked.Select(r => r.Text)));
+        Assert.All(linked, r => Assert.Equal("https://a.com", r.NavigateUri));
+        // The typed space and following text stay outside the link.
+        Assert.Contains(runs, r => string.IsNullOrEmpty(r.NavigateUri) && r.Text!.Contains(" x"));
+    }
+
+    [AvaloniaFact]
     public void AutoList_PrefixSplitAcrossRuns_LeavesNoResidue()
     {
         // "1" and "." in separate runs (e.g. different formatting): the prefix delete must

@@ -557,10 +557,14 @@ public partial class RichEditor : Control
         // Smart list: typing the space after "-"/"*" or "N." at a paragraph start turns it into a list.
         if (text == " " && TryAutoList()) return;
 
+        int preCaret = _caretPosition.Offset;
         TryInsertTextCore(_caretPosition.Paragraph, text, _caretPosition.Offset);
         _caretPosition.Offset += text.Length;
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+        // Auto-link: typing a space right after a web URL turns the URL into a hyperlink.
+        // Runs after the insertion so the space itself stays outside the linked range.
+        if (text == " ") TryAutoLink(preCaret);
         MarkTextChanged();
         InvalidateVisual();
         NotifyStatus();
@@ -590,6 +594,27 @@ public partial class RichEditor : Control
         _selectionEnd = new TextPointer(p, 0);
         InvalidateVisual();
         return true;
+    }
+
+    // If the word ending at `endOffset` is a web URL, set NavigateUri on exactly that range.
+    // Called when the user types a space after the URL (the space is already inserted and
+    // excluded from the range, so it doesn't inherit the link).
+    private void TryAutoLink(int endOffset)
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null) return;
+        string plain = BuildPlain(p);
+        if (endOffset <= 0 || endOffset > plain.Length) return;
+        int start = endOffset;
+        while (start > 0 && !char.IsWhiteSpace(plain[start - 1]) && plain[start - 1] != ObjChar) start--;
+        string token = plain.Substring(start, endOffset - start);
+        bool https = token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        bool http = !https && token.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+        if (!https && !http) return;
+        if (token.Length <= (https ? 8 : 7) || !token.Contains('.')) return; // needs a host part
+        if (RunAtOffset(p, start) is { } r0 && !string.IsNullOrEmpty(r0.NavigateUri)) return; // already linked
+        new TextRange(new TextPointer(p, start), new TextPointer(p, endOffset))
+            .ApplyPropertyValue(r => r.NavigateUri = token);
     }
 
     private void DeleteSelection()
