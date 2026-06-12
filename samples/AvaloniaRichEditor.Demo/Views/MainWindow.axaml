@@ -55,6 +55,8 @@
             <!-- App shell: file actions (+ view zoom on the right). Tooltips/labels are localized in code-behind. -->
             <DockPanel Margin="8,7,8,0">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <CheckBox Name="PageViewToggle" Content="페이지" FontSize="12" Margin="0,0,8,0"
+                              IsCheckedChanged="PageViewToggle_Changed"/>
                     <Button Name="ZoomOutButton" Content="−" Click="ZoomOut_Click"/>
                     <ComboBox Name="ZoomCombo" Width="84" SelectedIndex="0" FontSize="12" BorderBrush="#DCDCDC" SelectionChanged="ZoomCombo_SelectionChanged">
                         <ComboBoxItem Name="ZoomFitItem">맞춤</ComboBoxItem>

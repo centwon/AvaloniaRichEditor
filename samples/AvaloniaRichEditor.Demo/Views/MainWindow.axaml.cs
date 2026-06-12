@@ -75,6 +75,7 @@ public partial class MainWindow : Window
             ["Demo.ZoomOut"] = "Zoom out (Ctrl+-)",
             ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = fit)",
             ["Demo.Fit"] = "Fit",
+            ["Demo.PageView"] = "Pages",
             ["Demo.ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
@@ -86,6 +87,7 @@ public partial class MainWindow : Window
             ["Demo.ZoomOut"] = "축소 (Ctrl+-)",
             ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=맞춤)",
             ["Demo.Fit"] = "맞춤",
+            ["Demo.PageView"] = "페이지",
             ["Demo.ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
         });
     }
@@ -104,6 +106,7 @@ public partial class MainWindow : Window
         Tip("ZoomOutButton", "Demo.ZoomOut");
         Tip("ZoomCombo", "Demo.ZoomTip");
         if (this.FindControl<ComboBoxItem>("ZoomFitItem") is { } fit) fit.Content = Loc("Demo.Fit");
+        if (this.FindControl<CheckBox>("PageViewToggle") is { } pv) pv.Content = Loc("Demo.PageView");
 
         if (this.FindControl<TextBlock>("FindLabel") is { } fl) fl.Text = Loc("Find") + ":";
         if (this.FindControl<Button>("FindPrevButton") is { } fp) fp.Content = Loc("FindPrevious");
@@ -137,8 +140,10 @@ public partial class MainWindow : Window
             ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
             : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
         // Fit fills the viewport (plain white); fixed zoom shows the paper on a grey desk with a border.
-        scroll.Background = _fitWidth ? Brushes.White : new SolidColorBrush(Color.Parse("#9E9E9E"));
-        if (this.FindControl<Border>("PageBorder") is { } page)
+        // In page view the library draws its own desk/papers, so the demo's paper chrome stays off.
+        bool pageView = this.FindControl<CheckBox>("PageViewToggle")?.IsChecked == true;
+        scroll.Background = _fitWidth && !pageView ? Brushes.White : new SolidColorBrush(Color.Parse("#9E9E9E"));
+        if (!pageView && this.FindControl<Border>("PageBorder") is { } page)
         {
             page.BorderThickness = new Avalonia.Thickness(_fitWidth ? 0 : 1);
             page.BoxShadow = _fitWidth ? default : BoxShadows.Parse("0 1 10 0 #40000000");
@@ -185,6 +190,41 @@ public partial class MainWindow : Window
         if (!e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)) return;
         SetZoomPercent((_fitWidth ? 1.0 : _zoom) + (e.Delta.Y > 0 ? 0.1 : -0.1));
         e.Handled = true;
+    }
+
+    // Page view (library P-milestone Phase 2): the editor draws its own desk + A4 papers, so the
+    // demo's single-paper Border is neutralized while it's on and restored when it's off.
+    private void PageViewToggle_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        bool on = this.FindControl<CheckBox>("PageViewToggle")?.IsChecked == true;
+        var editor = this.FindControl<AvaloniaRichEditor.Controls.RichEditor>("RichTextBox");
+        var border = this.FindControl<Border>("PageBorder");
+        var lt = this.FindControl<LayoutTransformControl>("PageScale");
+        if (editor == null || border == null || lt == null) return;
+
+        editor.PageView = on;
+        if (on)
+        {
+            border.Width = double.NaN;
+            border.MinHeight = 0;
+            border.Padding = default;
+            border.Margin = default;
+            border.Background = Brushes.Transparent;
+            border.BorderThickness = default;
+            border.BoxShadow = default;
+            lt.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        }
+        else
+        {
+            border.Width = 794;
+            border.MinHeight = 1000;
+            border.Padding = new Avalonia.Thickness(48, 40);
+            border.Margin = new Avalonia.Thickness(0, 16);
+            border.Background = Brushes.White;
+            lt.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
+        }
+        ApplyZoom(); // restores/clears the paper chrome consistently with the current zoom mode
     }
 
     public void ResetZoomToFit()

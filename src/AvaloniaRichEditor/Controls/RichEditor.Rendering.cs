@@ -57,6 +57,17 @@ public partial class RichEditor
     protected override Size MeasureOverride(Size availableSize)
     {
         base.MeasureOverride(availableSize);
+        if (PageView)
+        {
+            // Every edit funnels through InvalidateMeasure (NotifyStatus), so recomputing the page
+            // breaks here keeps them fresh for render and hit-testing without extra invalidation.
+            _pageBreaks = ComputePageBreaks(PageContentWidth, PageContentHeight);
+            double pw = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0
+                ? A4PageWidth + 2 * PageGap
+                : Math.Max(availableSize.Width, A4PageWidth);
+            _measuredHeight = Math.Max(MinHeight, PageGap + _pageBreaks.Count * (A4PageHeight + PageGap));
+            return new Size(pw, _measuredHeight);
+        }
         double w = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0 ? 698 : availableSize.Width;
         _measuredHeight = Math.Max(MinHeight, MeasureContentHeight(w));
         return new Size(w, _measuredHeight);
@@ -109,6 +120,80 @@ public partial class RichEditor
         _inlineImageRects.Clear();
         _inlineHandles.Clear();
 
+        // Draw culling (N6-5): blocks fully outside the hosting ScrollViewer's viewport advance
+        // yOffset without issuing draw commands, so the scene the render thread rasterizes stays
+        // viewport-sized regardless of document length. Layout math, caret geometry, and hit-testing
+        // are unaffected (hit-test paths walk the document independently of what was drawn). The
+        // block holding the caret or selection anchor always draws so _lastCaretPoint/BringIntoView
+        // stay correct even when the caret is scrolled off-screen. No ScrollViewer => no culling.
+        double visTop = double.NegativeInfinity, visBottom = double.PositiveInfinity;
+        if (this.FindAncestorOfType<ScrollViewer>() is { } scroller
+            && scroller.TranslatePoint(default, this) is { } vt
+            && scroller.TranslatePoint(new Point(0, scroller.Viewport.Height), this) is { } vb)
+        {
+            // TranslatePoint runs the full transform chain, so zoom (LayoutTransform) is handled.
+            double slack = Math.Max(400, vb.Y - vt.Y); // one viewport of slack on each side
+            visTop = vt.Y - slack;
+            visBottom = vb.Y + slack;
+        }
+
+        Point? caretPoint;
+        double caretHeight;
+        Rect? blockCaretRect;
+
+        if (!PageView)
+        {
+            (caretPoint, caretHeight, blockCaretRect) = DrawDocumentBlocks(context, Bounds.Width, visTop, visBottom);
+        }
+        else
+        {
+            // Page view (P-milestone Phase 2): paint the grey desk and each visible paper, then
+            // replay the (unchanged) block walk once per visible page under a clip + translation —
+            // gap injection without per-page reflow. The walk's cull window is the page's document
+            // slice, so each replay only issues draw commands for its own page's blocks; a paragraph
+            // straddling two pages draws in both replays and the clips split it at the line boundary.
+            var breaks = EnsurePageBreaks();
+            context.FillRectangle(DeskBrush, new Rect(Bounds.Size));
+            caretPoint = null; caretHeight = 20; blockCaretRect = null;
+            double dx = PageContentOffsetX;
+            for (int i = 0; i < breaks.Count; i++)
+            {
+                var paper = PageRectView(i);
+                if (paper.Bottom < visTop || paper.Y > visBottom) continue;
+                context.FillRectangle(Brushes.White, paper);
+                context.DrawRectangle(null, GrayBorderPen, paper);
+                var contentBox = new Rect(paper.X + PagePadX, paper.Y + PagePadY,
+                    paper.Width - 2 * PagePadX, paper.Height - 2 * PagePadY);
+                double sliceTop = breaks[i];
+                double sliceBottom = i + 1 < breaks.Count ? breaks[i + 1] : double.PositiveInfinity;
+                // The clip must end where the page's document slice ends, not at the full content
+                // box: a page whose slice stops short (next line didn't fit) has leftover room at
+                // the bottom, and the next page's first lines would otherwise render into it,
+                // sliced mid-glyph at the box edge. (An oversized atom keeps the full box: Min.)
+                var clip = new Rect(contentBox.X, contentBox.Y, contentBox.Width,
+                    Math.Min(contentBox.Height, sliceBottom - sliceTop));
+                using (context.PushClip(clip))
+                using (context.PushTransform(Matrix.CreateTranslation(dx, contentBox.Y - sliceTop)))
+                {
+                    var (cp, ch, bcr) = DrawDocumentBlocks(context, PageContentWidth, sliceTop, sliceBottom);
+                    if (cp != null) { caretPoint = cp; caretHeight = ch; }
+                    if (bcr != null) blockCaretRect = bcr;
+                }
+            }
+        }
+
+        DrawCaretAndBringIntoView(context, caretPoint, caretHeight, blockCaretRect);
+    }
+
+    private static readonly Avalonia.Media.Immutable.ImmutableSolidColorBrush DeskBrush = new(Color.FromRgb(158, 158, 158));
+
+    // The document block walk: selection highlights, table grids, paragraphs, images, dividers,
+    // resize-handle registration and caret geometry, all in continuous document coordinates.
+    // Page view replays this once per visible page under a clip+translation, with the page's
+    // document slice as the cull window; the continuous mode calls it once with the viewport.
+    private (Point? caretPoint, double caretHeight, Rect? blockCaretRect) DrawDocumentBlocks(
+        DrawingContext context, double maxWidth, double visTop, double visBottom)
+    {
         TextPointer? selStart = null, selEnd = null;
         HashSet<Paragraph>? selectedParagraphs = null;
         if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
@@ -127,7 +212,6 @@ public partial class RichEditor
         }
 
         double yOffset = 0;
-        double maxWidth = Bounds.Width;
         double listIndent = 10;
         Point? caretPoint = null;
         // Caret bar = glyph-sized and bottom-aligned in its line. On tall lines (an inline image
@@ -137,24 +221,7 @@ public partial class RichEditor
         Rect? blockCaretRect = null; // when a block caret is active, the image/table it sits in front of
         int orderedIndex = 0; // running counter for consecutive ordered-list paragraphs
 
-        // Draw culling (N6-5): blocks fully outside the hosting ScrollViewer's viewport advance
-        // yOffset without issuing draw commands, so the scene the render thread rasterizes stays
-        // viewport-sized regardless of document length. Layout math, caret geometry, and hit-testing
-        // are unaffected (hit-test paths walk the document independently of what was drawn). The
-        // block holding the caret or selection anchor always draws so _lastCaretPoint/BringIntoView
-        // stay correct even when the caret is scrolled off-screen. No ScrollViewer => no culling.
-        double visTop = double.NegativeInfinity, visBottom = double.PositiveInfinity;
-        if (this.FindAncestorOfType<ScrollViewer>() is { } scroller
-            && scroller.TranslatePoint(default, this) is { } vt
-            && scroller.TranslatePoint(new Point(0, scroller.Viewport.Height), this) is { } vb)
-        {
-            // TranslatePoint runs the full transform chain, so zoom (LayoutTransform) is handled.
-            double slack = Math.Max(400, vb.Y - vt.Y); // one viewport of slack on each side
-            visTop = vt.Y - slack;
-            visBottom = vb.Y + slack;
-        }
-
-        foreach (var block in Document.Blocks)
+        foreach (var block in Document!.Blocks)
         {
             yOffset += block.MarginTop;
             if (block is TableBlock tb)
@@ -247,7 +314,9 @@ public partial class RichEditor
                     context.FillRectangle(AccentFill50, tableRect);
                     context.DrawRectangle(null, AccentPen2, tableRect);
                 }
-                yOffset += 10;
+                // MarginBottom (default 10) — must match MeasureContentHeight/hit-tests/pagination;
+                // this was a hardcoded 10 left over from before the block-margin milestone.
+                yOffset += tb.MarginBottom;
             }
             else if (block is Paragraph paragraph)
             {
@@ -392,6 +461,13 @@ public partial class RichEditor
             }
         }
 
+        return (caretPoint, caretHeight, blockCaretRect);
+    }
+
+    // Caret bar + deferred BringIntoView. Caret geometry arrives in document space; in page view it
+    // is mapped to view space here (the walk and _lastCaretPoint stay document-space throughout).
+    private void DrawCaretAndBringIntoView(DrawingContext context, Point? caretPoint, double caretHeight, Rect? blockCaretRect)
+    {
         if (blockCaretRect.HasValue)
         {
             // Blinking bar: "before" = top of the left edge, "after" = bottom of the RIGHT edge —
@@ -399,7 +475,7 @@ public partial class RichEditor
             // "in front of the table" even when the caret was logically after it.)
             if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
-                var r = blockCaretRect.Value;
+                var r = MapDocToView(blockCaretRect.Value);
                 double cx = _caretBlockAfter ? r.Right + 3 : r.X - 3;
                 double cy1 = _caretBlockAfter ? Math.Max(r.Y, r.Bottom - 20) : r.Y;
                 double cy2 = _caretBlockAfter ? r.Bottom : Math.Min(r.Bottom, r.Y + 20);
@@ -412,7 +488,8 @@ public partial class RichEditor
             _lastCaretHeight = caretHeight;
             if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
-                context.DrawLine(new Pen(CaretBrush, 1.5), caretPoint.Value, new Point(caretPoint.Value.X, caretPoint.Value.Y + caretHeight));
+                var cv = MapDocToView(caretPoint.Value);
+                context.DrawLine(new Pen(CaretBrush, 1.5), cv, new Point(cv.X, cv.Y + caretHeight));
             }
         }
 
@@ -425,8 +502,8 @@ public partial class RichEditor
             // viewport rather than flush against (or just past) an edge.
             const double m = 40;
             Rect target = blockCaretRect is { } br
-                ? new Rect(br.X, Math.Max(0, br.Y - m), 2, br.Height + 2 * m)
-                : new Rect(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - m), 2, _lastCaretHeight + 2 * m);
+                ? MapDocToView(new Rect(br.X, Math.Max(0, br.Y - m), 2, br.Height + 2 * m))
+                : MapDocToView(new Rect(_lastCaretPoint.X, Math.Max(0, _lastCaretPoint.Y - m), 2, _lastCaretHeight + 2 * m));
             Avalonia.Threading.Dispatcher.UIThread.Post(() => { try { this.BringIntoView(target); } catch { } });
         }
     }

@@ -36,7 +36,9 @@ public partial class RichEditor
     {
         base.OnPointerPressed(e);
         Focus();
-        var point = e.GetPosition(this);
+        // Page view: all downstream geometry (hit-tests, resize handles, caret placement) lives in
+        // document space, so the pointer position is mapped once here. Identity when page view is off.
+        var point = MapViewToDoc(e.GetPosition(this));
 
         if (e.GetCurrentPoint(this).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
@@ -362,7 +364,7 @@ public partial class RichEditor
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        var point = e.GetPosition(this);
+        var point = MapViewToDoc(e.GetPosition(this)); // document space, same as OnPointerPressed
 
         if (_isResizingInline && _resizingInline != null)
         {
@@ -921,7 +923,7 @@ public partial class RichEditor
         }
         else if (e.Key == Key.End)
         {
-            _caretPosition = GetPositionFromPoint(new Point(Bounds.Width, _lastCaretPoint.Y));
+            _caretPosition = GetPositionFromPoint(new Point(ContentLayoutWidth, _lastCaretPoint.Y));
             if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
             else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink(); e.Handled = true; return;
@@ -974,7 +976,12 @@ public partial class RichEditor
     }
 
     // Caret position in this control's coordinate space, used to place the IME candidate window.
-    private Rect GetCaretRectangle() => new Rect(_lastCaretPoint.X, _lastCaretPoint.Y, 1, _lastCaretHeight);
+    // _lastCaretPoint is document-space; the IME needs view (control) coordinates, so map here.
+    private Rect GetCaretRectangle()
+    {
+        var p = MapDocToView(_lastCaretPoint);
+        return new Rect(p.X, p.Y, 1, _lastCaretHeight);
+    }
 
     // Caret bar height from the font size at the caret (not the line height), so the caret stays
     // glyph-sized and baseline-anchored next to tall inline content. 1.4 ≈ line height per em.
@@ -1084,7 +1091,7 @@ public partial class RichEditor
     private Block? BlockAtY(double y)
     {
         if (Document == null) return null;
-        double yOffset = 0, maxWidth = Bounds.Width;
+        double yOffset = 0, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;

@@ -94,6 +94,58 @@ public class PaginationTests
         }
     }
 
+    // ---- Page view (Phase 2): the doc<->view mapping choke point ----
+
+    [AvaloniaFact]
+    public void PageViewOff_MappingIsIdentity()
+    {
+        var ed = EditorWith(EmptyPara(50));
+        var p = new Avalonia.Point(123, 456);
+        Assert.Equal(p, ed.MapDocToView(p));
+        Assert.Equal(p, ed.MapViewToDoc(p));
+    }
+
+    [AvaloniaFact]
+    public void PageView_MeasuresStackOfPages()
+    {
+        // 30 atoms of 50px = 1500px content; page capacity 1043 -> 20 atoms (1000px) per page -> 2 pages.
+        var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
+        ed.PageView = true;
+        ed.Measure(new Avalonia.Size(900, double.PositiveInfinity));
+        double expected = RichEditor.PageGap + 2 * (RichEditor.A4PageHeight + RichEditor.PageGap);
+        Assert.Equal(expected, ed.DesiredSize.Height, 3);
+    }
+
+    [AvaloniaFact]
+    public void PageView_MapRoundTrips_AcrossPages()
+    {
+        var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
+        ed.PageView = true; // breaks: [0, 1000]
+        foreach (double docY in new[] { 0.0, 500, 999, 1000, 1250, 1499 })
+        {
+            var view = ed.MapDocToView(new Avalonia.Point(30, docY));
+            var back = ed.MapViewToDoc(view);
+            Assert.Equal(docY, back.Y, 3);
+            Assert.Equal(30, back.X, 3);
+        }
+        // X gains the paper margin (desk centering is 0 while unmeasured: Bounds is empty).
+        Assert.Equal(30 + RichEditor.PagePadX, ed.MapDocToView(new Avalonia.Point(30, 0)).X, 3);
+    }
+
+    [AvaloniaFact]
+    public void PageView_ClickInGap_ClampsToNearestPageContent()
+    {
+        var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
+        ed.PageView = true; // page 1 holds doc 0..1000, paper 1 spans view 24..1147, gap 1147..1171
+        double gapY = RichEditor.PageGap + RichEditor.A4PageHeight + RichEditor.PageGap / 2.0;
+        var doc = ed.MapViewToDoc(new Avalonia.Point(100, gapY));
+        Assert.True(doc.Y < 1000 && doc.Y > 990, $"gap click should clamp to page 1's end, got {doc.Y:F1}");
+        // Click on the top paper margin of page 2 clamps to page 2's content start.
+        double page2MarginY = RichEditor.PageGap * 2 + RichEditor.A4PageHeight + RichEditor.PagePadY / 2.0;
+        var doc2 = ed.MapViewToDoc(new Avalonia.Point(100, page2MarginY));
+        Assert.Equal(1000, doc2.Y, 3);
+    }
+
     [AvaloniaFact]
     public void LongParagraph_SplitsAtLineBoundaries()
     {

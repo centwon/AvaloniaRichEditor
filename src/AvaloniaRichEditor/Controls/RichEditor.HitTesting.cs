@@ -17,7 +17,7 @@ public partial class RichEditor
     {
         if (Document == null) return null;
         double yOffset = 0;
-        double maxWidth = Bounds.Width;
+        double maxWidth = ContentLayoutWidth;
 
         foreach (var block in Document.Blocks)
         {
@@ -144,7 +144,7 @@ public partial class RichEditor
     private Block? GetBlockAtPoint(Point p)
     {
         if (Document == null) return null;
-        double yOffset = 0, listIndent = 10, maxWidth = Bounds.Width;
+        double yOffset = 0, listIndent = 10, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
@@ -185,7 +185,7 @@ public partial class RichEditor
     private (double top, TableLayout tl)? GetTableRect(TableBlock target)
     {
         if (Document == null) return null;
-        double yOffset = 0, maxWidth = Bounds.Width;
+        double yOffset = 0, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
@@ -289,7 +289,7 @@ public partial class RichEditor
             return new TextPointer(null, 0);
 
         double yOffset = 0;
-        double maxWidth = Bounds.Width;
+        double maxWidth = ContentLayoutWidth;
         double bestDistY = double.MaxValue;
         Paragraph? bestPara = null;
         int bestLocalIndex = 0;

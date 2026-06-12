@@ -264,6 +264,13 @@ public partial class RichEditor : Control
             InvalidateMeasure();
             InvalidateVisual();
         }
+        if (change.Property == PageViewProperty)
+        {
+            _pageBreaks = null;   // wrap width changes between modes -> stale break positions
+            _layoutCache.Clear(); // cached layouts were shaped at the other mode's width
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
         if (change.Property == IsFocusedProperty)
         {
             if (IsFocused)
