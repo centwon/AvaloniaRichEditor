@@ -125,6 +125,13 @@ internal class BenchWindow : Window
         sw.Stop();
         _report.AppendLine($"full layout:   {sw.Elapsed.TotalMilliseconds:F1} ms");
 
+        // Isolated Document.Clone() — the ONLY cost delta-undo would remove. Warmed up (10 throwaway
+        // iterations) so JIT doesn't pollute it, then median of 20. Compare against "full layout" above
+        // and the first-keystroke number below: if clone << layout, delta undo can't fix the hitch.
+        for (int w = 0; w < 10; w++) _ = doc.Clone();
+        var cloneMs = Time(20, () => _ = doc.Clone());
+        _report.AppendLine($"Document.Clone(): median {Median(cloneMs):F2} ms, max {cloneMs.Max():F2} ms  (delta-undo would remove this)");
+
         // Scroll pass A: compositor only (no managed re-render unless Avalonia decides to).
         // Editor unfocused → no caret-blink invalidations polluting the numbers.
         double extent = Math.Max(0, _scroller.Extent.Height - _scroller.Viewport.Height);
