@@ -60,7 +60,9 @@ public class HtmlFormatterTests
         File.WriteAllBytes(path, png);
         try
         {
-            string html = $"<p>x</p><img src=\"file:///{path.Replace('\\', '/')}\" width=\"100\" height=\"100\">";
+            // Uri builds the platform-correct file URL ("file:///C:/…" on Windows, "file:///tmp/…"
+            // on Unix — hand-concatenating "file:///" + path doubles the leading slash there).
+            string html = $"<p>x</p><img src=\"{new Uri(path).AbsoluteUri}\" width=\"100\" height=\"100\">";
 
             var allowed = HtmlDocumentFormatter.ParseHtml(html, allowLocalFileImages: true);
             Assert.Contains(allowed.Blocks, b => b is ImageBlock);
