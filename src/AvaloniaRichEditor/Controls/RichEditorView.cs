@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Layout;
 using Avalonia.Media;
 
 namespace AvaloniaRichEditor.Controls;
@@ -40,7 +41,10 @@ public class RichEditorView : UserControl
 
     // The editor lives inside this; its LayoutTransform carries the zoom. LayoutTransform (not
     // RenderTransform) so the scroller's extent and the editor's reflow width both follow the zoom.
+    // Top-aligned so a short document anchors at the top of the scroller instead of centering
+    // vertically (LayoutTransformControl centers its child in any slack it's given).
     private readonly LayoutTransformControl _zoomHost;
+    private readonly ScrollViewer _scroller;
 
     /// <summary>Creates the bundled toolbar + scrolling editor view.</summary>
     public RichEditorView()
@@ -51,25 +55,37 @@ public class RichEditorView : UserControl
         {
             Child = Editor,
             LayoutTransform = new ScaleTransform(1, 1),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Top,
         };
 
         // The bundle owns the scroller (layers ① and ② deliberately don't scroll themselves).
-        // Horizontal scrolling stays disabled so the editor receives the viewport width and reflows;
-        // under zoom the LayoutTransformControl hands the editor viewport/zoom and scales the result up.
-        var scroller = new ScrollViewer
+        _scroller = new ScrollViewer
         {
             Content = _zoomHost,
             Padding = new Thickness(12),
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        UpdateHorizontalScroll();
+        // Page view paginates to a fixed page width, so a zoomed-in page can exceed the viewport →
+        // allow horizontal scrolling there. The continuous layout reflows to the viewport, so it must
+        // stay disabled (a finite width is what makes the editor reflow instead of growing unbounded).
+        Editor.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == RichEditor.PageViewProperty) UpdateHorizontalScroll();
         };
 
         var dock = new DockPanel();
         DockPanel.SetDock(Toolbar, Dock.Top);
         dock.Children.Add(Toolbar);
-        dock.Children.Add(scroller);
+        dock.Children.Add(_scroller);
         Content = dock;
     }
+
+    private void UpdateHorizontalScroll()
+        => _scroller.HorizontalScrollBarVisibility = Editor.PageView
+            ? ScrollBarVisibility.Auto
+            : ScrollBarVisibility.Disabled;
 
     /// <inheritdoc/>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
