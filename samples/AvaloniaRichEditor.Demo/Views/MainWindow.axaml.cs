@@ -46,6 +46,8 @@ public partial class MainWindow : Window
             var (chars, words, line, col) = Editor.GetStatus();
             status.Text = string.Format(Loc("StatusFormat"), chars, words, line, col);
         }
+        if (this.FindControl<TextBlock>("PageInfo") is { } pageInfo)
+            pageInfo.Text = string.Format(Loc("Demo.Pages"), Editor.GetPrintPageCount());
         // Clear the warning once the image count is back within bounds.
         if (this.FindControl<TextBlock>("LimitWarning") is { } warning
             && !string.IsNullOrEmpty(warning.Text)
@@ -107,7 +109,7 @@ public partial class MainWindow : Window
         tb.TrailingItems.Add(_zoomCombo);
 
         var page = new CheckBox { Content = Loc("Demo.PageView"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
-        page.IsCheckedChanged += (_, _) => Editor.PageView = page.IsChecked == true;
+        page.IsCheckedChanged += (_, _) => { Editor.PageView = page.IsChecked == true; if (_fitWidth) ApplyFitWidth(); };
         tb.TrailingItems.Add(page);
     }
 
@@ -132,10 +134,30 @@ public partial class MainWindow : Window
         return b;
     }
 
-    // ---- View zoom (RichEditorView.ZoomFactor; combo + Ctrl+wheel/keys) ----
+    // ---- View zoom (RichEditorView.ZoomFactor; fit-to-width default + combo + Ctrl+wheel/keys) ----
 
-    private void SetZoom(double factor)
+    private bool _fitWidth = true; // default: fit to width
+
+    // Fit-to-width: in page view, scale the A4 page to the viewport; in the reflowing layout the
+    // editor already fills the width at 100%, so fit is just 1.0. Recomputed on resize.
+    private void ApplyFitWidth()
     {
+        const double a4 = 794, pad = 40;
+        EditorView.ZoomFactor = Editor.PageView
+            ? Math.Clamp((EditorView.Bounds.Width - pad) / a4, 0.2, 5.0)
+            : 1.0;
+    }
+
+    private void SetFitWidth()
+    {
+        _fitWidth = true;
+        ApplyFitWidth();
+        if (_zoomCombo != null) { _suppressZoomCombo = true; _zoomCombo.SelectedIndex = 0; _suppressZoomCombo = false; }
+    }
+
+    private void SetZoomPercent(double factor)
+    {
+        _fitWidth = false;
         EditorView.ZoomFactor = factor; // clamped by the library (0.2–5.0)
         SyncZoomCombo();
     }
@@ -155,23 +177,28 @@ public partial class MainWindow : Window
     private void ZoomCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_suppressZoomCombo || _zoomCombo?.SelectedItem is not ComboBoxItem item) return;
-        if (_zoomCombo.SelectedIndex == 0) SetZoom(1.0); // "fit" = 100% in the reflowing layout
-        else if (int.TryParse(item.Content?.ToString()?.TrimEnd('%'), out int pct)) SetZoom(pct / 100.0);
+        if (_zoomCombo.SelectedIndex == 0) SetFitWidth();
+        else if (int.TryParse(item.Content?.ToString()?.TrimEnd('%'), out int pct)) SetZoomPercent(pct / 100.0);
+    }
+
+    private void EditorView_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (_fitWidth) ApplyFitWidth();
     }
 
     private void EditorView_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
         if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
-        SetZoom(EditorView.ZoomFactor + (e.Delta.Y > 0 ? 0.1 : -0.1));
+        SetZoomPercent(EditorView.ZoomFactor + (e.Delta.Y > 0 ? 0.1 : -0.1));
         e.Handled = true;
     }
 
     private void Window_KeyDown(object? sender, KeyEventArgs e)
     {
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        if (ctrl && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { SetZoom(1.0); e.Handled = true; }
-        else if (ctrl && (e.Key == Key.OemPlus || e.Key == Key.Add)) { SetZoom(EditorView.ZoomFactor + 0.1); e.Handled = true; }
-        else if (ctrl && (e.Key == Key.OemMinus || e.Key == Key.Subtract)) { SetZoom(EditorView.ZoomFactor - 0.1); e.Handled = true; }
+        if (ctrl && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { SetFitWidth(); e.Handled = true; }
+        else if (ctrl && (e.Key == Key.OemPlus || e.Key == Key.Add)) { SetZoomPercent(EditorView.ZoomFactor + 0.1); e.Handled = true; }
+        else if (ctrl && (e.Key == Key.OemMinus || e.Key == Key.Subtract)) { SetZoomPercent(EditorView.ZoomFactor - 0.1); e.Handled = true; }
     }
 
     // ---- File actions ----
@@ -262,6 +289,7 @@ public partial class MainWindow : Window
             ["Demo.Fit"] = "Fit",
             ["Demo.PageView"] = "Pages",
             ["Demo.PrintPreview"] = "Print preview",
+            ["Demo.Pages"] = "{0} page(s)",
             ["Demo.ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
@@ -272,6 +300,7 @@ public partial class MainWindow : Window
             ["Demo.Fit"] = "맞춤",
             ["Demo.PageView"] = "페이지",
             ["Demo.PrintPreview"] = "인쇄 미리보기",
+            ["Demo.Pages"] = "{0}페이지",
             ["Demo.ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
         });
     }
