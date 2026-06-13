@@ -165,7 +165,7 @@ FlowDocument
     },
     {
       "Type": "Image",
-      "ImageRef": "A1B2…(SHA-256 hex)…",
+      "ImageRef": "A4DD28DB6E6D3FC0D43CDBEF1E8EF161B353CE67D27E81D400F796BC77045AE6",
       "Width": 640, "Height": 480,
       "Indent": 0, "MarginTop": 0, "MarginBottom": 10
     },
@@ -181,7 +181,10 @@ FlowDocument
     }
   ],
   "Images": {
-    "A1B2…": { "Data": "/9j/4AAQSkZJRg…", "MimeType": "image/jpeg" }
+    "A4DD28DB6E6D3FC0D43CDBEF1E8EF161B353CE67D27E81D400F796BC77045AE6": {
+      "Data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "MimeType": "image/png"
+    }
   }
 }
 ```
