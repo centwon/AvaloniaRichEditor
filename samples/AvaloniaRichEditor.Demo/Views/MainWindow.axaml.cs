@@ -32,6 +32,31 @@ public partial class MainWindow : Window
         Editor.ShowPageNumbers = true;
         Editor.Document = BuildSampleDocument();
         BuildToolbarHostItems();
+
+        // Status bar below the view: caret/text counts + the soft image-limit warning (N6-6).
+        Editor.StatusChanged += (_, _) => UpdateStatusBar();
+        Editor.RecommendedImageLimitExceeded += (_, _) => UpdateLimitWarning();
+        UpdateStatusBar();
+    }
+
+    private void UpdateStatusBar()
+    {
+        if (this.FindControl<TextBlock>("StatusBar") is { } status)
+        {
+            var (chars, words, line, col) = Editor.GetStatus();
+            status.Text = string.Format(Loc("StatusFormat"), chars, words, line, col);
+        }
+        // Clear the warning once the image count is back within bounds.
+        if (this.FindControl<TextBlock>("LimitWarning") is { } warning
+            && !string.IsNullOrEmpty(warning.Text)
+            && Editor.GetImageCount() <= Editor.MaxRecommendedImages)
+            warning.Text = "";
+    }
+
+    private void UpdateLimitWarning()
+    {
+        if (this.FindControl<TextBlock>("LimitWarning") is { } warning)
+            warning.Text = string.Format(Loc("Demo.ImageLimitWarning"), Editor.GetImageCount(), Editor.MaxRecommendedImages);
     }
 
     protected override void OnOpened(EventArgs e)
@@ -67,9 +92,9 @@ public partial class MainWindow : Window
 
         // Leading: file actions. FluentIcons here are the *app's* button icons (not the editor's
         // formatting glyphs, which stay the library's built-in vectors).
-        tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.Save), "Demo.SaveJson", () => _ = SaveAsync()));
+        // Save covers all formats (JSON / .ardx / HTML) — HTML export is just another save format.
+        tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.Save), "Demo.Save", () => _ = SaveAsync()));
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.FolderOpen), "Demo.LoadJson", () => _ = LoadAsync()));
-        tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.ArrowExport), "Demo.ExportHtml", () => _ = ExportHtmlAsync()));
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.Print), "Demo.PrintPreview", () => new PrintPreviewWindow(Editor).Show(this)));
 
         // Trailing: zoom (combo only — no +/- buttons) and page-view toggle.
@@ -164,15 +189,24 @@ public partial class MainWindow : Window
             {
                 new Avalonia.Platform.Storage.FilePickerFileType("JSON document") { Patterns = new[] { "*.json" } },
                 new Avalonia.Platform.Storage.FilePickerFileType("ARDX package") { Patterns = new[] { "*.ardx" } },
+                new Avalonia.Platform.Storage.FilePickerFileType("HTML document") { Patterns = new[] { "*.html", "*.htm" } },
             }
         });
         if (file == null) return;
 
-        // .ardx = ZIP package (raw image bytes, no base64); anything else = plain JSON.
+        // Format follows the chosen extension: .ardx = ZIP package (raw image bytes), .html/.htm =
+        // HTML export, anything else = plain JSON. HTML export is just another save format.
         if (file.Name.EndsWith(".ardx", StringComparison.OrdinalIgnoreCase))
         {
             using var stream = await file.OpenWriteAsync();
             await Editor.SavePackageAsync(stream);
+        }
+        else if (file.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || file.Name.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+        {
+            string html = Editor.ToHtml();
+            using var stream = await file.OpenWriteAsync();
+            using var writer = new System.IO.StreamWriter(stream);
+            await writer.WriteAsync(html);
         }
         else
         {
@@ -214,24 +248,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ExportHtmlAsync()
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null || Editor.Document == null) return;
-
-        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
-        {
-            Title = "Export HTML",
-            DefaultExtension = "html"
-        });
-        if (file == null) return;
-
-        string html = AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ToHtml(Editor.Document);
-        using var stream = await file.OpenWriteAsync();
-        using var writer = new System.IO.StreamWriter(stream);
-        await writer.WriteAsync(html);
-    }
-
     // ---- Localization (app-shell strings) ----
 
     private static string Loc(string key) => RichEditorLocalization.GetString(key);
@@ -240,23 +256,23 @@ public partial class MainWindow : Window
     {
         RichEditorLocalization.Register("en", new Dictionary<string, string>
         {
-            ["Demo.SaveJson"] = "Save as JSON",
+            ["Demo.Save"] = "Save (JSON / .ardx / HTML)",
             ["Demo.LoadJson"] = "Load JSON",
-            ["Demo.ExportHtml"] = "Export as HTML",
             ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = 100%)",
             ["Demo.Fit"] = "Fit",
             ["Demo.PageView"] = "Pages",
             ["Demo.PrintPreview"] = "Print preview",
+            ["Demo.ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
         {
-            ["Demo.SaveJson"] = "JSON으로 저장",
+            ["Demo.Save"] = "저장 (JSON / .ardx / HTML)",
             ["Demo.LoadJson"] = "JSON 불러오기",
-            ["Demo.ExportHtml"] = "HTML로 내보내기",
             ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=100%)",
             ["Demo.Fit"] = "맞춤",
             ["Demo.PageView"] = "페이지",
             ["Demo.PrintPreview"] = "인쇄 미리보기",
+            ["Demo.ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
         });
     }
 }

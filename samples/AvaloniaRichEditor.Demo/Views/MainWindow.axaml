@@ -10,10 +10,19 @@
         Width="1180" Height="720"
         Title="AvaloniaRichEditor.Demo">
 
-    <!-- The whole window is just the library's RichEditorView. File/zoom/page actions are injected
-         into the view's single toolbar (RichEditorToolbar.LeadingItems/TrailingItems) from code-behind,
-         so everything toolbar-related lives in one strip inside the view. -->
-    <controls:RichEditorView x:Name="EditorView"
-                             PointerWheelChanged="EditorView_PointerWheelChanged"/>
+    <!-- The window is the library's RichEditorView plus a thin status bar. File/zoom/page actions are
+         injected into the view's single toolbar (RichEditorToolbar.LeadingItems/TrailingItems) from
+         code-behind, so everything toolbar-related lives in one strip inside the view. -->
+    <Grid RowDefinitions="*, Auto">
+        <controls:RichEditorView Grid.Row="0" x:Name="EditorView"
+                                 PointerWheelChanged="EditorView_PointerWheelChanged"/>
+
+        <Border Grid.Row="1" Background="#EEEEEE" Padding="12,3" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <TextBlock Name="LimitWarning" DockPanel.Dock="Right" Foreground="#CC6600" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <TextBlock Name="StatusBar" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+    </Grid>
 
 </Window>
