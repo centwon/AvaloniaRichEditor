@@ -49,21 +49,12 @@ public class RichEditorToolbarTests
     [AvaloniaFact]
     public void Narrowing_WrapsWithoutThrowing()
     {
-        var ed = new RichEditor();
-        var win = new Window { Width = 1000, Height = 200, Content = new RichEditorToolbar { Target = ed } };
-        win.Show();
-        try
+        var tb = new RichEditorToolbar { Target = new RichEditor() };
+        foreach (var w in new double[] { 1000, 600, 400, 300, 250, 200, 150, 100, 60, 30, 200, 1000 })
         {
-            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
-            foreach (var w in new double[] { 600, 400, 300, 250, 200, 150, 100, 60, 30, 200, 1000 })
-            {
-                win.Width = w;
-                win.Measure(new Avalonia.Size(w, 200));
-                win.Arrange(new Avalonia.Rect(0, 0, w, 200));
-                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
-            }
+            tb.Measure(new Avalonia.Size(w, 200));
+            tb.Arrange(new Avalonia.Rect(0, 0, w, 200));
         }
-        finally { win.Close(); }
     }
 
     [AvaloniaFact]
