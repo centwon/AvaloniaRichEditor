@@ -1049,7 +1049,20 @@ public partial class RichEditor : Control
             if (i >= 0) insertIndex = i + 1;
         }
         Document.Blocks.Insert(insertIndex, b);
-        UpdateParents(Document);
+        UpdateParents(Document); // NormalizeBlocks guarantees a paragraph exists after b
+
+        // Place the caret so the user can keep going without a click: into a new table's first cell
+        // (ready to fill it), otherwise the paragraph right after the block (you can't type into an
+        // image). ResetCaretBlink re-measures (the new block grows the scroll extent) and scrolls it
+        // into view, instead of leaving only its top edge showing until the next click.
+        if (b is TableBlock tbl && tbl.Cells.Count > 0 && tbl.Cells[0].Count > 0)
+            _caretPosition = new TextPointer(tbl.Cells[0][0], 0);
+        else
+            for (int k = insertIndex + 1; k < Document.Blocks.Count; k++)
+                if (Document.Blocks[k] is Paragraph after) { _caretPosition = new TextPointer(after, 0); break; }
+        CollapseSelectionToCaret();
+        Focus(); // a toolbar/menu click triggered the insert and took focus — restore it so the caret shows
+        ResetCaretBlink();
     }
 
     /// <summary>Inserts a block image from a <see cref="Avalonia.Media.Imaging.Bitmap"/> at the caret.
@@ -1058,7 +1071,8 @@ public partial class RichEditor : Control
     {
         if (Document == null || IsReadOnly || !AllowImages) return;
         PushUndo();
-        var ib = new ImageBlock { Image = image, Width = image.Size.Width, Height = image.Size.Height };
+        var (w, h) = CapToContentWidth(image.Size.Width, image.Size.Height);
+        var ib = new ImageBlock { Image = image, Width = w, Height = h };
         InsertBlockAtCaret(ib);
         InvalidateVisual();
     }
@@ -1071,6 +1085,10 @@ public partial class RichEditor : Control
         // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
         // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
         var tb = new TableBlock(rows, cols);
+        // Fill the document width with equal columns (instead of the model's fixed 100px default).
+        double avail = Bounds.Width > 60 ? ContentLayoutWidth - 20 : 600;
+        double w = System.Math.Max(40, avail / cols);
+        for (int c = 0; c < tb.ColumnWidths.Count; c++) tb.ColumnWidths[c] = w;
         InsertBlockAtCaret(tb);
         InvalidateVisual();
     }

@@ -30,6 +30,7 @@ public partial class RichEditor
     private static readonly Cursor ColResizeCursor = new(StandardCursorType.SizeWestEast);
     private static readonly Cursor RowResizeCursor = new(StandardCursorType.SizeNorthSouth);
     private static readonly Cursor CornerResizeCursor = new(StandardCursorType.BottomRightCorner);
+    private static readonly Cursor MoveCursor = new(StandardCursorType.SizeAll);
 
     /// <inheritdoc/>
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -410,6 +411,7 @@ public partial class RichEditor
                 _resizingTable.ColumnWidths[_resizingColumnIndex + 1] = _initialNextColumnWidth - diff;
             }
 
+            InvalidateMeasure(); // narrower columns reflow cell text taller -> total height changes
             InvalidateVisual();
             return;
         }
@@ -421,7 +423,8 @@ public partial class RichEditor
                 _resizingRowTable.RowHeights.Add(0);
             // Renderer clamps up to content height, so 20 is just a hard floor for the stored value.
             _resizingRowTable.RowHeights[_resizingRowIndex] = Math.Max(20, _initialRowHeight + diff);
-            InvalidateVisual();
+            InvalidateMeasure(); // the table's total height changed -> grow the scroll extent now,
+            InvalidateVisual();  // not only on the next click (otherwise the resize hitches mid-drag)
             return;
         }
 
@@ -478,10 +481,11 @@ public partial class RichEditor
             }
         }
 
-        // Outer left/top table border selects the whole table on click -> show an arrow there.
+        // Outer left/top table border selects the whole table on click -> a move cursor signals that
+        // the border is grabbable (vs the I-beam over cell text).
         if (GetBlockAtPoint(point) is TableBlock ht && IsOnTableLeftOrTopBorder(ht, point))
         {
-            Cursor = ArrowCursor;
+            Cursor = MoveCursor;
             return;
         }
 

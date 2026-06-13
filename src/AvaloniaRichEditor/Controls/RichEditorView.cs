@@ -51,6 +51,12 @@ public class RichEditorView : UserControl
     {
         Toolbar = new RichEditorToolbar { Target = Editor };
 
+        // Margin (not ScrollViewer padding) gives the editor its breathing room: the content sits
+        // inside the LayoutTransformControl's bounds, so it's neither clipped at the edge nor bled
+        // over the padding. The right gutter = 12 + the idle scrollbar's ~6px, so content/resize
+        // handles clear the resting scrollbar (its hover-expanded state just overlays the gutter).
+        Editor.Margin = new Thickness(12, 12, 18, 12);
+
         _zoomHost = new LayoutTransformControl
         {
             Child = Editor,
@@ -63,7 +69,6 @@ public class RichEditorView : UserControl
         _scroller = new ScrollViewer
         {
             Content = _zoomHost,
-            Padding = new Thickness(12),
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
         UpdateHorizontalScroll();

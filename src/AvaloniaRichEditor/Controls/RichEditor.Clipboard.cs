@@ -225,11 +225,10 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         catch { return; }
 
         var scaled = Downscale(bmp);
-        var ib = new ImageBlock
-        {
-            Width = displayW > 0 ? displayW : scaled.Size.Width,
-            Height = displayH > 0 ? displayH : scaled.Size.Height
-        };
+        var (w, h) = CapToContentWidth(
+            displayW > 0 ? displayW : scaled.Size.Width,
+            displayH > 0 ? displayH : scaled.Size.Height);
+        var ib = new ImageBlock { Width = w, Height = h };
         if (!ReferenceEquals(scaled, bmp))
         {
             using var ms = new System.IO.MemoryStream();

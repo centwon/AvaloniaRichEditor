@@ -9,6 +9,16 @@ namespace AvaloniaRichEditor.Controls;
 // block<->inline conversion. Part of RichEditor (split out of the main file for readability).
 public partial class RichEditor
 {
+    // Caps an inserted image's display width to the editor's content width (keeping aspect ratio),
+    // so an image larger than the document doesn't overflow. Display size only — the bytes are intact,
+    // and the user can still resize it larger by hand.
+    private (double w, double h) CapToContentWidth(double w, double h)
+    {
+        double max = Bounds.Width > 60 ? ContentLayoutWidth - 20 : 0;
+        if (max > 0 && w > max) { h = w > 0 ? h * (max / w) : h; w = max; }
+        return (w, h);
+    }
+
     private void ResetImageSize(ImageBlock img)
     {
         if (Document == null || img.Image == null) return;

@@ -314,7 +314,11 @@ public partial class RichEditor
                 }
 
                 yOffset = tableTop + tl.TotalHeight;
-                if (chrome && ReferenceEquals(tb, _selectedBlock))
+                // Selected-table affordance: the accent frame + translucent fill shows when the table
+                // is the active block — set by clicking its outer left/top border (_caretBlock) or by
+                // the explicit block selection (_selectedBlock). This is what makes "the table is
+                // selected" visible (the border MoveCursor signals it's grabbable beforehand).
+                if (chrome && (ReferenceEquals(tb, _selectedBlock) || ReferenceEquals(tb, _caretBlock)))
                 {
                     var tableRect = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
                     context.FillRectangle(AccentFill50, tableRect);
