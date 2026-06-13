@@ -17,7 +17,7 @@
     </Design.DataContext>
 
     <Window.Styles>
-        <!-- Flat, evenly-sized toolbar buttons with a soft hover. -->
+        <!-- Flat, evenly-sized app-shell buttons (file row + zoom) with a soft hover. -->
         <Style Selector="StackPanel#ToolbarRoot Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -30,11 +30,6 @@
         </Style>
         <Style Selector="StackPanel#ToolbarRoot Button:pointerover">
             <Setter Property="Background" Value="#E3ECFB"/>
-        </Style>
-        <Style Selector="StackPanel#ToolbarRoot ComboBox">
-            <Setter Property="MinHeight" Value="30"/>
-            <Setter Property="Margin" Value="2,0"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
         <!-- Vertical group divider. -->
         <Style Selector="Border.div">
@@ -51,9 +46,10 @@
             <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
         </Border>
 
-        <StackPanel Grid.Row="1" Name="ToolbarRoot" Orientation="Vertical" Background="#F5F6F8">
-            <!-- App shell: file actions (+ view zoom on the right). Tooltips/labels are localized in code-behind. -->
-            <DockPanel Margin="8,7,8,0">
+        <!-- App shell: file actions + view zoom. The formatting toolbar is no longer here — it lives
+             inside the RichEditorView bundle below (layer ③), driven by the editor directly. -->
+        <StackPanel Grid.Row="1" Name="ToolbarRoot" Background="#F5F6F8">
+            <DockPanel Margin="8,7,8,7">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <CheckBox Name="PageViewToggle" Content="페이지" FontSize="12" Margin="0,0,8,0"
                               IsCheckedChanged="PageViewToggle_Changed"/>
@@ -77,10 +73,6 @@
                     <Button Name="PrintPreviewButton" Click="PrintPreviewButton_Click"><ic:SymbolIcon Symbol="Print" FontSize="16"/></Button>
                 </StackPanel>
             </DockPanel>
-
-            <!-- Formatting strip: the library's toolbar (promoted from this demo, roadmap N3.6).
-                 Target is wired in code-behind; buttons, flyouts and state reflection live in the library. -->
-            <controls:RichEditorToolbar Name="EditorToolbar"/>
         </StackPanel>
 
         <Border Grid.Row="2" Name="FindBar" IsVisible="False" Background="#F5F5F5" Padding="10,6" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1">
@@ -99,18 +91,10 @@
             </StackPanel>
         </Border>
 
-        <ScrollViewer Grid.Row="3" Name="EditorScroll" Background="White" Padding="0"
-                      HorizontalScrollBarVisibility="Disabled" SizeChanged="EditorScroll_SizeChanged"
-                      PointerWheelChanged="EditorScroll_PointerWheelChanged">
-            <!-- A4-width page (210mm @96DPI ≈ 794px incl. 48px margins). Fixed width, scaled
-                 (LayoutTransform) to fill the viewport. No surrounding desk. -->
-            <LayoutTransformControl Name="PageScale" HorizontalAlignment="Center">
-                <Border Name="PageBorder" Background="White" Width="794" MinHeight="1000" Padding="48,40"
-                        Margin="0,16" BorderBrush="#CFCFCF" BorderThickness="0">
-                    <controls:RichEditor x:Name="RichTextBox" HorizontalAlignment="Stretch" MinHeight="900"/>
-                </Border>
-            </LayoutTransformControl>
-        </ScrollViewer>
+        <!-- The library's all-in-one bundle (layer ③): built-in formatting toolbar + scroller + editor.
+             Zoom is the view's own ZoomFactor; page mode is the editor's PageView. -->
+        <controls:RichEditorView Grid.Row="3" x:Name="EditorView"
+                                 PointerWheelChanged="EditorView_PointerWheelChanged"/>
 
         <Border Grid.Row="4" Background="#EEEEEE" Padding="12,3" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
             <DockPanel>

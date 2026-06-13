@@ -24,7 +24,41 @@ public class RichEditorViewTests
         var view = new RichEditorView();
         var dock = Assert.IsType<DockPanel>(view.Content);
         var scroller = Assert.Single(dock.Children.OfType<ScrollViewer>());
-        Assert.Same(view.Editor, scroller.Content);
+        // The editor sits inside a zoom host (LayoutTransformControl) inside the scroller.
+        var zoomHost = Assert.IsType<LayoutTransformControl>(scroller.Content);
+        Assert.Same(view.Editor, zoomHost.Child);
+    }
+
+    [AvaloniaFact]
+    public void ZoomFactor_DefaultsToOne_AndClamps()
+    {
+        var view = new RichEditorView();
+        Assert.Equal(1.0, view.ZoomFactor);
+
+        view.ZoomFactor = 2.0;
+        Assert.Equal(2.0, view.ZoomFactor);
+
+        view.ZoomFactor = 100;          // above the 5.0 ceiling
+        Assert.Equal(5.0, view.ZoomFactor);
+
+        view.ZoomFactor = -1;           // below the 0.2 floor
+        Assert.Equal(0.2, view.ZoomFactor);
+
+        view.ZoomFactor = double.NaN;   // non-finite falls back to 1.0
+        Assert.Equal(1.0, view.ZoomFactor);
+    }
+
+    [AvaloniaFact]
+    public void Zoomed_LaysOutWithoutThrowing()
+    {
+        var view = new RichEditorView();
+        view.Editor.LoadHtml("<p>hello world</p>");
+        foreach (var z in new[] { 1.0, 1.5, 2.0, 0.5 })
+        {
+            view.ZoomFactor = z;
+            view.Measure(new Avalonia.Size(800, 600));
+            view.Arrange(new Avalonia.Rect(0, 0, 800, 600));
+        }
     }
 
     [AvaloniaFact]

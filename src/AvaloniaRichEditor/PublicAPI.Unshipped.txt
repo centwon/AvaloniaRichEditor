@@ -1,1 +1,4 @@
-﻿#nullable enable
+#nullable enable
+AvaloniaRichEditor.Controls.RichEditorView.ZoomFactor.get -> double
+AvaloniaRichEditor.Controls.RichEditorView.ZoomFactor.set -> void
+static readonly AvaloniaRichEditor.Controls.RichEditorView.ZoomFactorProperty -> Avalonia.StyledProperty<double>!

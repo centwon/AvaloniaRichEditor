@@ -12,7 +12,7 @@ namespace AvaloniaRichEditor.Tests;
 public class IconProviderTests
 {
     private static IEnumerable<object?> ButtonFaces(RichEditorToolbar tb) =>
-        ((Panel)((ScrollViewer)((Border)tb.Content!).Child!).Content!).Children.OfType<Button>().Select(b => b.Content);
+        ((Panel)((Border)tb.Content!).Child!).Children.OfType<Button>().Select(b => b.Content);
 
     [AvaloniaFact]
     public void Provider_ReplacesToolbarGlyphs()

@@ -7,50 +7,31 @@ using AvaloniaRichEditor.Controls;
 
 namespace AvaloniaRichEditor.Demo.Views;
 
+// App shell around the library's RichEditorView bundle (layer ③). The shell owns only what the
+// library deliberately leaves out — file save/open, HTML export, print/PDF, find/replace, and the
+// status bar. Zoom is the view's ZoomFactor; page mode is the editor's PageView. No icon provider,
+// so the bundled toolbar shows the library's built-in vector glyphs.
 public partial class MainWindow : Window
 {
+    private RichEditor Editor => EditorView.Editor;
+
     public MainWindow()
     {
         InitializeComponent();
 
-        var richTextBox = this.FindControl<RichEditor>("RichTextBox");
-        if (richTextBox != null)
-        {
-            // Font pickers (toolbar combo + right-click submenu) default to the installed system
-            // fonts with OS-localized names ("맑은 고딕" on Korean Windows) — no override needed.
+        // Page-margin chrome demo: numbers show in page view and print/PDF output.
+        Editor.ShowPageNumbers = true;
+        Editor.Document = BuildSampleDocument();
 
-            // Connect the library toolbar: commands, caret-state reflection and feature-flag
-            // visibility are all driven through this single Target link.
-            if (this.FindControl<RichEditorToolbar>("EditorToolbar") is { } toolbar)
-                toolbar.Target = richTextBox;
+        // Status bar follows the caret/text (the toolbar subscribes on its own).
+        Editor.StatusChanged += (_, _) => UpdateStatusBar();
+        // Soft image-count limit (N6-6): warn once when exceeded; cleared in UpdateStatusBar.
+        Editor.RecommendedImageLimitExceeded += (_, _) => UpdateLimitWarning();
 
-            // Page-margin chrome demo: numbers show in page view and print/PDF output.
-            richTextBox.ShowPageNumbers = true;
-
-            var doc = new FlowDocument();
-
-            var p1 = new Paragraph();
-            p1.Inlines.Add(new Run { Text = "Hello, Avalonia! ", Foreground = Brushes.Blue, FontWeight = FontWeight.Bold });
-            p1.Inlines.Add(new Run { Text = "This is a custom RichTextBox built from scratch. " });
-            p1.Inlines.Add(new Run { Text = "It supports multiple styles in a single paragraph.", Foreground = Brushes.Red });
-            doc.Blocks.Add(p1);
-
-            var p2 = new Paragraph();
-            p2.Inlines.Add(new Run { Text = "This is the second paragraph. " });
-            p2.Inlines.Add(new Run { Text = "As you can see, our custom TextLayout engine wraps lines and spaces paragraphs correctly. ", FontWeight = FontWeight.SemiBold });
-            p2.Inlines.Add(new Run { Text = "It's just the beginning!", Foreground = Brushes.Green });
-            doc.Blocks.Add(p2);
-
-            richTextBox.Document = doc;
-
-            // Status bar follows the caret/text (the toolbar subscribes on its own).
-            richTextBox.StatusChanged += (_, _) => UpdateStatusBar();
-            // Soft image-count limit (N6-6): warn once when exceeded; cleared in UpdateStatusBar.
-            richTextBox.RecommendedImageLimitExceeded += (_, _) => UpdateLimitWarning();
-            UpdateStatusBar();
-        }
         RegisterDemoStrings();
         LocalizeChrome();
+        UpdateStatusBar();
+        ApplyZoomLabel();
     }
 
     protected override void OnOpened(System.EventArgs e)
@@ -58,7 +39,26 @@ public partial class MainWindow : Window
         base.OnOpened(e);
         // Once the window is shown, focus the editor with a blinking caret at the document end so the
         // user can type immediately without clicking.
-        this.FindControl<RichEditor>("RichTextBox")?.FocusDocumentEnd();
+        Editor.FocusDocumentEnd();
+    }
+
+    private static FlowDocument BuildSampleDocument()
+    {
+        var doc = new FlowDocument();
+
+        var p1 = new Paragraph();
+        p1.Inlines.Add(new Run { Text = "Hello, Avalonia! ", Foreground = Brushes.Blue, FontWeight = FontWeight.Bold });
+        p1.Inlines.Add(new Run { Text = "This is a custom RichTextBox built from scratch. " });
+        p1.Inlines.Add(new Run { Text = "It supports multiple styles in a single paragraph.", Foreground = Brushes.Red });
+        doc.Blocks.Add(p1);
+
+        var p2 = new Paragraph();
+        p2.Inlines.Add(new Run { Text = "This is the second paragraph. " });
+        p2.Inlines.Add(new Run { Text = "As you can see, our custom TextLayout engine wraps lines and spaces paragraphs correctly. ", FontWeight = FontWeight.SemiBold });
+        p2.Inlines.Add(new Run { Text = "It's just the beginning!", Foreground = Brushes.Green });
+        doc.Blocks.Add(p2);
+
+        return doc;
     }
 
     // ---- Localization (app shell) ----
@@ -76,7 +76,7 @@ public partial class MainWindow : Window
             ["Demo.ExportHtml"] = "Export as HTML",
             ["Demo.ZoomIn"] = "Zoom in (Ctrl++)",
             ["Demo.ZoomOut"] = "Zoom out (Ctrl+-)",
-            ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = fit)",
+            ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = 100%)",
             ["Demo.Fit"] = "Fit",
             ["Demo.PageView"] = "Pages",
             ["Demo.PrintPreview"] = "Print preview",
@@ -93,7 +93,7 @@ public partial class MainWindow : Window
             ["Demo.ExportHtml"] = "HTML로 내보내기",
             ["Demo.ZoomIn"] = "확대 (Ctrl++)",
             ["Demo.ZoomOut"] = "축소 (Ctrl+-)",
-            ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=맞춤)",
+            ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=100%)",
             ["Demo.Fit"] = "맞춤",
             ["Demo.PageView"] = "페이지",
             ["Demo.PrintPreview"] = "인쇄 미리보기",
@@ -131,39 +131,36 @@ public partial class MainWindow : Window
         if (this.FindControl<CheckBox>("MatchCaseBox") is { } mc) mc.Content = Loc("MatchCase");
     }
 
-    // ---- View zoom ----
+    // ---- View zoom (drives RichEditorView.ZoomFactor; the bundle owns the scroller/scaling) ----
 
-    private bool _fitWidth = true;       // fit: scale to viewport width
-    private double _zoom = 1.0;          // fixed zoom factor when not fit-to-width
     private bool _suppressZoomCombo;
-    private const double PageW = 794;
 
-    private void EditorScroll_SizeChanged(object? sender, SizeChangedEventArgs e) => ApplyZoom();
-
-    // Applies the current view mode to the page's LayoutTransform.
-    private void ApplyZoom()
+    private void SetZoom(double factor)
     {
-        var lt = this.FindControl<LayoutTransformControl>("PageScale");
-        var scroll = this.FindControl<ScrollViewer>("EditorScroll");
-        if (lt == null || scroll == null) return;
-        double scale = _fitWidth
-            ? System.Math.Clamp((scroll.Bounds.Width - 8) / PageW, 0.2, 3.0)
-            : _zoom;
-        lt.LayoutTransform = new ScaleTransform(scale, scale);
-        scroll.HorizontalScrollBarVisibility = _fitWidth
-            ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
-            : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
-        // Fit fills the viewport (plain white); fixed zoom shows the paper on a grey desk with a border.
-        // In page view the library draws its own desk/papers, so the demo's paper chrome stays off.
-        bool pageView = this.FindControl<CheckBox>("PageViewToggle")?.IsChecked == true;
-        scroll.Background = _fitWidth && !pageView ? Brushes.White : new SolidColorBrush(Color.Parse("#9E9E9E"));
-        if (!pageView && this.FindControl<Border>("PageBorder") is { } page)
-        {
-            page.BorderThickness = new Avalonia.Thickness(_fitWidth ? 0 : 1);
-            page.BoxShadow = _fitWidth ? default : BoxShadows.Parse("0 1 10 0 #40000000");
-        }
+        EditorView.ZoomFactor = factor; // clamped by the library (0.2–5.0)
+        ApplyZoomLabel();
+        SyncZoomCombo();
+    }
+
+    private void ApplyZoomLabel()
+    {
         if (this.FindControl<TextBlock>("ZoomLabel") is { } zl)
-            zl.Text = $"{System.Math.Round(scale * 100)}%";
+            zl.Text = $"{System.Math.Round(EditorView.ZoomFactor * 100)}%";
+    }
+
+    // Reflect the current factor on the combo (snap to a listed %, else clear the selection).
+    private void SyncZoomCombo()
+    {
+        _suppressZoomCombo = true;
+        if (this.FindControl<ComboBox>("ZoomCombo") is { } combo)
+        {
+            int pct = (int)System.Math.Round(EditorView.ZoomFactor * 100);
+            ComboBoxItem? match = null;
+            foreach (var it in combo.Items)
+                if (it is ComboBoxItem ci && ci.Name != "ZoomFitItem" && ci.Content?.ToString() == pct + "%") { match = ci; break; }
+            combo.SelectedItem = match;
+        }
+        _suppressZoomCombo = false;
     }
 
     private void ZoomCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -171,117 +168,51 @@ public partial class MainWindow : Window
         if (!IsLoaded || _suppressZoomCombo) return;
         var combo = sender as ComboBox;
         if (combo?.SelectedItem is not ComboBoxItem item) return;
-        // Index 0 is the (localized) fit-to-width entry; the rest are fixed percentages.
-        if (combo.SelectedIndex == 0) _fitWidth = true;
-        else if (int.TryParse(item.Content?.ToString()?.TrimEnd('%'), out int pct)) { _fitWidth = false; _zoom = pct / 100.0; }
-        ApplyZoom();
+        // Index 0 = "fit": in the bundle's reflowing layout the editor already fills the width, so
+        // fit is simply 100%. The rest are fixed percentages.
+        if (combo.SelectedIndex == 0) SetZoom(1.0);
+        else if (int.TryParse(item.Content?.ToString()?.TrimEnd('%'), out int pct)) SetZoom(pct / 100.0);
     }
 
-    private void SetZoomPercent(double factor)
-    {
-        _fitWidth = false;
-        _zoom = System.Math.Clamp(factor, 0.2, 3.0);
-        ApplyZoom();
-        // Reflect on the combo (snap to nearest listed %, else leave as-is).
-        _suppressZoomCombo = true;
-        var combo = this.FindControl<ComboBox>("ZoomCombo");
-        if (combo != null)
-        {
-            int pct = (int)System.Math.Round(_zoom * 100);
-            ComboBoxItem? match = null;
-            foreach (var it in combo.Items)
-                if (it is ComboBoxItem ci && ci.Content?.ToString() == pct + "%") { match = ci; break; }
-            combo.SelectedItem = match; // null clears selection when not a listed value
-        }
-        _suppressZoomCombo = false;
-    }
+    private void ZoomIn_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => SetZoom(EditorView.ZoomFactor + 0.1);
+    private void ZoomOut_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => SetZoom(EditorView.ZoomFactor - 0.1);
 
-    private void ZoomIn_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => SetZoomPercent((_fitWidth ? 1.0 : _zoom) + 0.1);
-    private void ZoomOut_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => SetZoomPercent((_fitWidth ? 1.0 : _zoom) - 0.1);
-
-    private void EditorScroll_PointerWheelChanged(object? sender, Avalonia.Input.PointerWheelEventArgs e)
+    private void EditorView_PointerWheelChanged(object? sender, Avalonia.Input.PointerWheelEventArgs e)
     {
         if (!e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control)) return;
-        SetZoomPercent((_fitWidth ? 1.0 : _zoom) + (e.Delta.Y > 0 ? 0.1 : -0.1));
+        SetZoom(EditorView.ZoomFactor + (e.Delta.Y > 0 ? 0.1 : -0.1));
         e.Handled = true;
     }
 
     private void PrintPreviewButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var editor = this.FindControl<AvaloniaRichEditor.Controls.RichEditor>("RichTextBox");
-        if (editor == null) return;
-        new PrintPreviewWindow(editor).Show(this);
-    }
+        => new PrintPreviewWindow(Editor).Show(this);
 
-    // Page view (library P-milestone Phase 2): the editor draws its own desk + A4 papers, so the
-    // demo's single-paper Border is neutralized while it's on and restored when it's off.
     private void PageViewToggle_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (!IsLoaded) return;
-        bool on = this.FindControl<CheckBox>("PageViewToggle")?.IsChecked == true;
-        var editor = this.FindControl<AvaloniaRichEditor.Controls.RichEditor>("RichTextBox");
-        var border = this.FindControl<Border>("PageBorder");
-        var lt = this.FindControl<LayoutTransformControl>("PageScale");
-        if (editor == null || border == null || lt == null) return;
-
-        editor.PageView = on;
-        if (on)
-        {
-            border.Width = double.NaN;
-            border.MinHeight = 0;
-            border.Padding = default;
-            border.Margin = default;
-            border.Background = Brushes.Transparent;
-            border.BorderThickness = default;
-            border.BoxShadow = default;
-            lt.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
-        }
-        else
-        {
-            border.Width = 794;
-            border.MinHeight = 1000;
-            border.Padding = new Avalonia.Thickness(48, 40);
-            border.Margin = new Avalonia.Thickness(0, 16);
-            border.Background = Brushes.White;
-            lt.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
-        }
-        ApplyZoom(); // restores/clears the paper chrome consistently with the current zoom mode
-    }
-
-    public void ResetZoomToFit()
-    {
-        _fitWidth = true;
-        ApplyZoom();
-        _suppressZoomCombo = true;
-        var combo = this.FindControl<ComboBox>("ZoomCombo");
-        if (combo != null) combo.SelectedIndex = 0; // fit
-        _suppressZoomCombo = false;
+        Editor.PageView = this.FindControl<CheckBox>("PageViewToggle")?.IsChecked == true;
     }
 
     // ---- Status bar ----
 
     private void UpdateStatusBar()
     {
-        var richTextBox = this.FindControl<RichEditor>("RichTextBox");
         var status = this.FindControl<TextBlock>("StatusBar");
-        if (richTextBox == null || status == null) return;
-        var (chars, words, line, col) = richTextBox.GetStatus();
+        if (status == null) return;
+        var (chars, words, line, col) = Editor.GetStatus();
         status.Text = string.Format(Loc("StatusFormat"), chars, words, line, col);
 
         // Clear the soft-limit warning once the image count is back within bounds.
         var warning = this.FindControl<TextBlock>("LimitWarning");
         if (warning != null && !string.IsNullOrEmpty(warning.Text)
-            && richTextBox.GetImageCount() <= richTextBox.MaxRecommendedImages)
+            && Editor.GetImageCount() <= Editor.MaxRecommendedImages)
             warning.Text = "";
     }
 
     private void UpdateLimitWarning()
     {
-        var richTextBox = this.FindControl<RichEditor>("RichTextBox");
-        var warning = this.FindControl<TextBlock>("LimitWarning");
-        if (richTextBox == null || warning == null) return;
-        warning.Text = string.Format(Loc("Demo.ImageLimitWarning"),
-            richTextBox.GetImageCount(), richTextBox.MaxRecommendedImages);
+        if (this.FindControl<TextBlock>("LimitWarning") is not { } warning) return;
+        warning.Text = string.Format(Loc("Demo.ImageLimitWarning"), Editor.GetImageCount(), Editor.MaxRecommendedImages);
     }
 
     // ---- File actions ----
@@ -289,10 +220,7 @@ public partial class MainWindow : Window
     private async void SaveButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null) return;
-
-        var richTextBox = this.FindControl<RichEditor>("RichTextBox");
-        if (richTextBox?.Document == null) return;
+        if (topLevel == null || Editor.Document == null) return;
 
         var file = await topLevel.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
@@ -311,11 +239,11 @@ public partial class MainWindow : Window
             if (file.Name.EndsWith(".ardx", System.StringComparison.OrdinalIgnoreCase))
             {
                 using var stream = await file.OpenWriteAsync();
-                await richTextBox.SavePackageAsync(stream);
+                await Editor.SavePackageAsync(stream);
             }
             else
             {
-                string json = await richTextBox.ToJsonAsync(); // serialize off the UI thread (N6-3)
+                string json = await Editor.ToJsonAsync(); // serialize off the UI thread (N6-3)
                 using var stream = await file.OpenWriteAsync();
                 using var writer = new System.IO.StreamWriter(stream);
                 await writer.WriteAsync(json);
@@ -343,18 +271,15 @@ public partial class MainWindow : Window
                 await stream.CopyToAsync(ms);
                 ms.Position = 0;
 
-                var richTextBox = this.FindControl<RichEditor>("RichTextBox");
-                if (richTextBox == null) return;
-
                 // Sniff the content: ZIP magic ("PK") = .ardx package, anything else = JSON text.
                 if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
                 {
-                    await richTextBox.LoadPackageAsync(ms);
+                    await Editor.LoadPackageAsync(ms);
                 }
                 else
                 {
                     string json = System.Text.Encoding.UTF8.GetString(ms.ToArray());
-                    await richTextBox.LoadJsonAsync(json); // parse off the UI thread (N6-3)
+                    await Editor.LoadJsonAsync(json); // parse off the UI thread (N6-3)
                 }
             }
             catch (System.Exception ex)
@@ -368,8 +293,7 @@ public partial class MainWindow : Window
     private async void ExportHtmlButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
-        var richTextBox = this.FindControl<RichEditor>("RichTextBox");
-        if (topLevel == null || richTextBox?.Document == null) return;
+        if (topLevel == null || Editor.Document == null) return;
 
         var file = await topLevel.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
         {
@@ -379,7 +303,7 @@ public partial class MainWindow : Window
 
         if (file != null)
         {
-            string html = AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ToHtml(richTextBox.Document);
+            string html = AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ToHtml(Editor.Document);
             using var stream = await file.OpenWriteAsync();
             using var writer = new System.IO.StreamWriter(stream);
             await writer.WriteAsync(html);
@@ -391,9 +315,9 @@ public partial class MainWindow : Window
     private void Window_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
     {
         bool ctrl = e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control);
-        if (ctrl && (e.Key == Avalonia.Input.Key.D0 || e.Key == Avalonia.Input.Key.NumPad0)) { ResetZoomToFit(); e.Handled = true; return; }
-        if (ctrl && (e.Key == Avalonia.Input.Key.OemPlus || e.Key == Avalonia.Input.Key.Add)) { SetZoomPercent((_fitWidth ? 1.0 : _zoom) + 0.1); e.Handled = true; return; }
-        if (ctrl && (e.Key == Avalonia.Input.Key.OemMinus || e.Key == Avalonia.Input.Key.Subtract)) { SetZoomPercent((_fitWidth ? 1.0 : _zoom) - 0.1); e.Handled = true; return; }
+        if (ctrl && (e.Key == Avalonia.Input.Key.D0 || e.Key == Avalonia.Input.Key.NumPad0)) { SetZoom(1.0); e.Handled = true; return; }
+        if (ctrl && (e.Key == Avalonia.Input.Key.OemPlus || e.Key == Avalonia.Input.Key.Add)) { SetZoom(EditorView.ZoomFactor + 0.1); e.Handled = true; return; }
+        if (ctrl && (e.Key == Avalonia.Input.Key.OemMinus || e.Key == Avalonia.Input.Key.Subtract)) { SetZoom(EditorView.ZoomFactor - 0.1); e.Handled = true; return; }
 
         if (e.Key == Avalonia.Input.Key.F && ctrl)
         {
@@ -406,7 +330,7 @@ public partial class MainWindow : Window
             if (bar is { IsVisible: true })
             {
                 bar.IsVisible = false;
-                this.FindControl<RichEditor>("RichTextBox")?.Focus();
+                Editor.Focus();
                 e.Handled = true;
             }
         }
@@ -414,8 +338,7 @@ public partial class MainWindow : Window
 
     private void ShowFindBar()
     {
-        var bar = this.FindControl<Border>("FindBar");
-        if (bar != null) bar.IsVisible = true;
+        if (this.FindControl<Border>("FindBar") is { } bar) bar.IsVisible = true;
         var box = this.FindControl<TextBox>("FindBox");
         box?.Focus();
         box?.SelectAll();
@@ -427,43 +350,37 @@ public partial class MainWindow : Window
 
     private void SetFindStatus(string text)
     {
-        var status = this.FindControl<TextBlock>("FindStatus");
-        if (status != null) status.Text = text;
+        if (this.FindControl<TextBlock>("FindStatus") is { } status) status.Text = text;
     }
 
     private void FindNext_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var rtb = this.FindControl<RichEditor>("RichTextBox");
-        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
-        SetFindStatus(rtb.FindNext(FindText, MatchCase) ? "" : Loc("NotFound"));
+        if (string.IsNullOrEmpty(FindText)) return;
+        SetFindStatus(Editor.FindNext(FindText, MatchCase) ? "" : Loc("NotFound"));
     }
 
     private void FindPrev_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var rtb = this.FindControl<RichEditor>("RichTextBox");
-        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
-        SetFindStatus(rtb.FindPrev(FindText, MatchCase) ? "" : Loc("NotFound"));
+        if (string.IsNullOrEmpty(FindText)) return;
+        SetFindStatus(Editor.FindPrev(FindText, MatchCase) ? "" : Loc("NotFound"));
     }
 
     private void ReplaceNext_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var rtb = this.FindControl<RichEditor>("RichTextBox");
-        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
-        SetFindStatus(rtb.ReplaceNext(FindText, ReplaceText, MatchCase) ? "" : Loc("NotFound"));
+        if (string.IsNullOrEmpty(FindText)) return;
+        SetFindStatus(Editor.ReplaceNext(FindText, ReplaceText, MatchCase) ? "" : Loc("NotFound"));
     }
 
     private void ReplaceAll_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var rtb = this.FindControl<RichEditor>("RichTextBox");
-        if (rtb == null || string.IsNullOrEmpty(FindText)) return;
-        int n = rtb.ReplaceAll(FindText, ReplaceText, MatchCase);
+        if (string.IsNullOrEmpty(FindText)) return;
+        int n = Editor.ReplaceAll(FindText, ReplaceText, MatchCase);
         SetFindStatus(string.Format(Loc("ReplacedFormat"), n));
     }
 
     private void CloseFind_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var bar = this.FindControl<Border>("FindBar");
-        if (bar != null) bar.IsVisible = false;
-        this.FindControl<RichEditor>("RichTextBox")?.Focus();
+        if (this.FindControl<Border>("FindBar") is { } bar) bar.IsVisible = false;
+        Editor.Focus();
     }
 }

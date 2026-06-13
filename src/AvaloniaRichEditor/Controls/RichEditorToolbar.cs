@@ -136,15 +136,18 @@ public class RichEditorToolbar : UserControl
 
     private void Build()
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        void Add(Control c) => panel.Children.Add(c);
+        var items = new System.Collections.Generic.List<Control>();
+        void Add(Control c) => items.Add(c);
 
         Button Btn(object content, string tip, Action click, RichEditorIcon? icon = null)
         {
-            // Host-provided icon (RichEditorIcons.Provider) wins over the built-in text glyph.
+            // Icon precedence: host override (RichEditorIcons.Provider) > built-in vector glyph
+            // (ToolbarIcons) > styled-text fallback (`content`, for letter-conventional buttons).
             var b = new Button
             {
-                Content = (icon is { } k ? RichEditorIcons.TryCreate(k) : null) ?? content,
+                Content = (icon is { } k ? RichEditorIcons.TryCreate(k) : null)
+                          ?? (icon is { } vk ? ToolbarIcons.Create(vk) : null)
+                          ?? content,
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(5),
@@ -279,14 +282,9 @@ public class RichEditorToolbar : UserControl
         {
             Background = new SolidColorBrush(Color.Parse("#F5F6F8")),
             Padding = new Thickness(8, 4),
-            // Single-line strip: when the host is narrower than the strip, scroll horizontally
-            // instead of clipping the trailing buttons (undo/redo).
-            Child = new ScrollViewer
-            {
-                Content = panel,
-                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            },
+            // Single-line strip: when the host is narrower than the strip, items that don't fit
+            // collapse into a "»" overflow dropdown instead of clipping or scrolling.
+            Child = new OverflowToolbarPanel(items),
         };
         ApplyFlags();
     }
@@ -330,8 +328,12 @@ public class RichEditorToolbar : UserControl
             };
             if (highlight) { _highlightSwatch = swatch; _highlightIconHost = null; }
             else { _colorSwatch = swatch; _colorIconHost = null; }
+            // Highlight uses the built-in marker vector; text color keeps the conventional "A".
+            Control glyph = highlight
+                ? (ToolbarIcons.Create(RichEditorIcon.Highlight) ?? (Control)new TextBlock { Text = "🖍", FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center })
+                : new TextBlock { Text = "A", FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center };
             var stack = new StackPanel();
-            stack.Children.Add(new TextBlock { Text = highlight ? "🖍" : "A", FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center });
+            stack.Children.Add(glyph);
             stack.Children.Add(swatch);
             face = stack;
         }
@@ -401,13 +403,14 @@ public class RichEditorToolbar : UserControl
     // A drag-to-size table picker (hover the grid to choose rows×columns, click to insert).
     private Button BuildTableButton()
     {
-        // Host icon (if any) replaces the grid glyph; the dropdown chevron stays.
+        // Grid glyph + dropdown chevron. Host icon wins, else the built-in vector grid, else text.
         object tableFace = "▦ ▾";
-        if (RichEditorIcons.TryCreate(RichEditorIcon.InsertTable) is { } tableIcon)
+        var tableGlyph = RichEditorIcons.TryCreate(RichEditorIcon.InsertTable) ?? ToolbarIcons.Create(RichEditorIcon.InsertTable);
+        if (tableGlyph != null)
         {
-            var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3 };
-            face.Children.Add(tableIcon);
-            face.Children.Add(new TextBlock { Text = "▾", VerticalAlignment = VerticalAlignment.Center });
+            var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+            face.Children.Add(tableGlyph);
+            face.Children.Add(ToolbarIcons.ChevronDown());
             tableFace = face;
         }
         var btn = new Button

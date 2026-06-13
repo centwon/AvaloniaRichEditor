@@ -1,6 +1,7 @@
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using AvaloniaRichEditor;
 using AvaloniaRichEditor.Controls;
 using Xunit;
 
@@ -11,16 +12,41 @@ namespace AvaloniaRichEditor.Tests;
 public class RichEditorToolbarTests
 {
     private static Panel Strip(RichEditorToolbar tb) =>
-        (Panel)((ScrollViewer)((Border)tb.Content!).Child!).Content!;
+        (Panel)((Border)tb.Content!).Child!;
 
     private static Button ButtonByContent(RichEditorToolbar tb, string content) =>
         Strip(tb).Children.OfType<Button>().First(b => Equals(b.Content, content));
+
+    // Insert buttons now use vector/dropdown faces (not string content), so locate them by tooltip.
+    private static Button ButtonByTip(RichEditorToolbar tb, string tipKey) =>
+        Strip(tb).Children.OfType<Button>().First(b =>
+            ToolTip.GetTip(b) is string s && s == RichEditorLocalization.GetString(tipKey));
 
     [AvaloniaFact]
     public void WithoutTarget_IsHidden()
     {
         var tb = new RichEditorToolbar();
         Assert.False(tb.IsVisible);
+    }
+
+    // Regression: narrowing the host past the strip width must collapse items into the overflow
+    // dropdown without throwing. Driven through a real window + layout pass (plus dispatcher pumping)
+    // so the overflow panel's deferred reparent actually runs — a direct Measure/Arrange wouldn't
+    // exercise the layout-manager path that the in-pass tree mutation used to crash.
+    [AvaloniaFact]
+    public void Narrowing_CollapsesWithoutThrowing()
+    {
+        var ed = new RichEditor();
+        var win = new Window { Width = 1000, Height = 120, Content = new RichEditorToolbar { Target = ed } };
+        win.Show();
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        foreach (var w in new double[] { 600, 400, 300, 250, 200, 150, 100, 60, 30, 200, 1000 })
+        {
+            win.Width = w;
+            win.Measure(new Avalonia.Size(w, 120));
+            win.Arrange(new Avalonia.Rect(0, 0, w, 120));
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs(); // run the queued reparent
+        }
     }
 
     [AvaloniaFact]
@@ -41,8 +67,8 @@ public class RichEditorToolbarTests
     {
         var ed = new RichEditor();
         var tb = new RichEditorToolbar { Target = ed };
-        var tableBtn = ButtonByContent(tb, "▦ ▾");
-        var imageBtn = ButtonByContent(tb, "🖼");
+        var tableBtn = ButtonByTip(tb, "InsertTable");
+        var imageBtn = ButtonByTip(tb, "InsertImage");
         Assert.True(tableBtn.IsVisible);
         Assert.True(imageBtn.IsVisible);
 
