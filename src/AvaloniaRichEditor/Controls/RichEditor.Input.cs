@@ -23,14 +23,20 @@ using System.Collections.Generic;
 public partial class RichEditor
 {
     // Cursors are native resources; OnPointerMoved fires per mouse move, so allocate each shape once.
-    private static readonly Cursor IbeamCursor = new(StandardCursorType.Ibeam);
-    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
-    private static readonly Cursor ArrowCursor = new(StandardCursorType.Arrow);
-    private static readonly Cursor CrossCursor = new(StandardCursorType.Cross);
-    private static readonly Cursor ColResizeCursor = new(StandardCursorType.SizeWestEast);
-    private static readonly Cursor RowResizeCursor = new(StandardCursorType.SizeNorthSouth);
-    private static readonly Cursor CornerResizeCursor = new(StandardCursorType.BottomRightCorner);
-    private static readonly Cursor MoveCursor = new(StandardCursorType.SizeAll);
+    // Cursors are created lazily on first use (the UI thread, platform up), not in the static
+    // constructor — `new Cursor(...)` needs ICursorFactory, which isn't available if the type is
+    // first touched before the (headless) platform initializes, and that would fault the whole type.
+    private static readonly System.Collections.Generic.Dictionary<StandardCursorType, Cursor> _cursorCache = new();
+    private static Cursor Cur(StandardCursorType t)
+        => _cursorCache.TryGetValue(t, out var c) ? c : _cursorCache[t] = new Cursor(t);
+    private static Cursor IbeamCursor => Cur(StandardCursorType.Ibeam);
+    private static Cursor HandCursor => Cur(StandardCursorType.Hand);
+    private static Cursor ArrowCursor => Cur(StandardCursorType.Arrow);
+    private static Cursor CrossCursor => Cur(StandardCursorType.Cross);
+    private static Cursor ColResizeCursor => Cur(StandardCursorType.SizeWestEast);
+    private static Cursor RowResizeCursor => Cur(StandardCursorType.SizeNorthSouth);
+    private static Cursor CornerResizeCursor => Cur(StandardCursorType.BottomRightCorner);
+    private static Cursor MoveCursor => Cur(StandardCursorType.SizeAll);
 
     /// <inheritdoc/>
     protected override void OnPointerPressed(PointerPressedEventArgs e)
