@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **RTF clipboard paste** (`RtfDocumentFormatter`): pasting from Word or the Korean HWP now uses
+  their "Rich Text Format" — tried before CF_HTML because RTF embeds image bytes inline (Word's
+  CF_HTML only references temp files that may be gone). Parses paragraphs, bold/italic/underline/
+  strike, font size, foreground colour, embedded PNG/JPEG images, and simple tables. Zero external
+  dependencies. Browsers don't put RTF on the clipboard, so HTML paste is unchanged.
 - **`HtmlDocumentFormatter.ParseHtmlAsync` / `RichEditor.LoadHtmlAsync`**: parse HTML while
   downloading remote (`http`) images concurrently off the UI thread, so a slow network no longer
   freezes the UI when pasting web content. The model is still built on the calling thread (Avalonia

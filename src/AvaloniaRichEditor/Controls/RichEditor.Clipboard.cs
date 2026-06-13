@@ -38,7 +38,29 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             return;
         }
 
-        // 2. External HTML (from browsers, Word, etc.): parse and insert with formatting.
+        // 2. External RTF (Word/HWP): tried before CF_HTML because RTF embeds image bytes, whereas
+        //    Word's CF_HTML only references temp files that may already be gone. Browsers don't put
+        //    RTF on the clipboard, so their HTML path (below) is unaffected.
+        string? rtf = AllowRichPaste ? await TryGetRtfAsync(clipboard) : null;
+        if (!string.IsNullOrEmpty(rtf) && Formatters.RtfDocumentFormatter.LooksLikeRtf(rtf))
+        {
+            try
+            {
+                var parsedRtf = Formatters.RtfDocumentFormatter.Parse(rtf!);
+                bool empty = parsedRtf.Blocks.Count == 0
+                    || (parsedRtf.Blocks.Count == 1 && parsedRtf.Blocks[0] is Paragraph ep && ep.Inlines.Count == 0);
+                if (!empty)
+                {
+                    PushUndo();
+                    InsertParsedDocument(parsedRtf);
+                    ResetCaretBlink();
+                    return;
+                }
+            }
+            catch { /* fall through to HTML/plain */ }
+        }
+
+        // 3. External HTML (from browsers, Word, etc.): parse and insert with formatting.
         string? html = AllowRichPaste ? await TryGetHtmlAsync(clipboard) : null;
         if (!string.IsNullOrEmpty(html))
         {
@@ -375,6 +397,18 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     }
 
     private static async Task<string?> TryGetHtmlAsync(IClipboard clipboard)
+        => await TryGetTextFormatAsync(clipboard, "html", System.Text.Encoding.UTF8);
+
+    // Word/HWP put "Rich Text Format" (RTF) on the clipboard alongside CF_HTML; unlike CF_HTML, RTF
+    // embeds image bytes, so it survives Word's temp-file image references. RTF is ASCII (escapes for
+    // the rest), so decode the raw bytes as Latin-1.
+    private static async Task<string?> TryGetRtfAsync(IClipboard clipboard)
+        => await TryGetTextFormatAsync(clipboard, "rtf", "rich text", System.Text.Encoding.Latin1);
+
+    private static Task<string?> TryGetTextFormatAsync(IClipboard clipboard, string idSubstring, System.Text.Encoding enc)
+        => TryGetTextFormatAsync(clipboard, idSubstring, idSubstring, enc);
+
+    private static async Task<string?> TryGetTextFormatAsync(IClipboard clipboard, string idA, string idB, System.Text.Encoding enc)
     {
         Avalonia.Input.IAsyncDataTransfer? dt;
         try { dt = await clipboard.TryGetDataAsync(); }
@@ -388,14 +422,13 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 foreach (var fmt in item.Formats)
                 {
                     var id = fmt.Identifier ?? fmt.ToString() ?? "";
-                    if (id.IndexOf("html", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        object? raw;
-                        try { raw = await item.TryGetRawAsync(fmt); }
-                        catch { continue; }
-                        if (raw is string s && !string.IsNullOrWhiteSpace(s)) return s;
-                        if (raw is byte[] b) return System.Text.Encoding.UTF8.GetString(b);
-                    }
+                    if (id.IndexOf(idA, StringComparison.OrdinalIgnoreCase) < 0
+                        && id.IndexOf(idB, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    object? raw;
+                    try { raw = await item.TryGetRawAsync(fmt); }
+                    catch { continue; }
+                    if (raw is string s && !string.IsNullOrWhiteSpace(s)) return s;
+                    if (raw is byte[] b) return enc.GetString(b);
                 }
             }
         }

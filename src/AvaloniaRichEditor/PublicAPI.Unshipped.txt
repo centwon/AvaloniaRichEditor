@@ -1,3 +1,6 @@
 #nullable enable
 AvaloniaRichEditor.Controls.RichEditor.LoadHtmlAsync(string? html) -> System.Threading.Tasks.Task!
+AvaloniaRichEditor.Formatters.RtfDocumentFormatter
 static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtmlAsync(string! html, bool allowLocalFileImages = true) -> System.Threading.Tasks.Task<AvaloniaRichEditor.Documents.FlowDocument!>!
+static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.LooksLikeRtf(string? text) -> bool
+static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.Parse(string! rtf) -> AvaloniaRichEditor.Documents.FlowDocument!
