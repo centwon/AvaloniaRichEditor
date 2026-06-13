@@ -1,107 +1,19 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:AvaloniaRichEditor.Demo.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="using:AvaloniaRichEditor.Controls"
-        xmlns:ic="using:FluentIcons.Avalonia"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="1180" d:DesignHeight="720"
         x:Class="AvaloniaRichEditor.Demo.Views.MainWindow"
-        x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         KeyDown="Window_KeyDown"
+        Width="1180" Height="720"
         Title="AvaloniaRichEditor.Demo">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
+    <!-- The whole window is just the library's RichEditorView. File/zoom/page actions are injected
+         into the view's single toolbar (RichEditorToolbar.LeadingItems/TrailingItems) from code-behind,
+         so everything toolbar-related lives in one strip inside the view. -->
+    <controls:RichEditorView x:Name="EditorView"
+                             PointerWheelChanged="EditorView_PointerWheelChanged"/>
 
-    <Window.Styles>
-        <!-- Flat, evenly-sized app-shell buttons (file row + zoom) with a soft hover. -->
-        <Style Selector="StackPanel#ToolbarRoot Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="CornerRadius" Value="5"/>
-            <Setter Property="Padding" Value="9,5"/>
-            <Setter Property="Margin" Value="1,0"/>
-            <Setter Property="MinWidth" Value="30"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-        <Style Selector="StackPanel#ToolbarRoot Button:pointerover">
-            <Setter Property="Background" Value="#E3ECFB"/>
-        </Style>
-        <!-- Vertical group divider. -->
-        <Style Selector="Border.div">
-            <Setter Property="Width" Value="1"/>
-            <Setter Property="Height" Value="22"/>
-            <Setter Property="Background" Value="#DCDCDC"/>
-            <Setter Property="Margin" Value="6,4"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-    </Window.Styles>
-
-    <Grid RowDefinitions="Auto, Auto, Auto, *, Auto">
-        <Border Grid.Row="0" Background="#EEEEEE" Padding="10">
-            <TextBlock Text="Avalonia RichTextBox Custom Port (Phase 4)" FontWeight="Bold" FontSize="18"/>
-        </Border>
-
-        <!-- App shell: file actions + view zoom. The formatting toolbar is no longer here — it lives
-             inside the RichEditorView bundle below (layer ③), driven by the editor directly. -->
-        <StackPanel Grid.Row="1" Name="ToolbarRoot" Background="#F5F6F8">
-            <DockPanel Margin="8,7,8,7">
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <CheckBox Name="PageViewToggle" Content="페이지" FontSize="12" Margin="0,0,8,0"
-                              IsCheckedChanged="PageViewToggle_Changed"/>
-                    <Button Name="ZoomOutButton" Content="−" Click="ZoomOut_Click"/>
-                    <ComboBox Name="ZoomCombo" Width="84" SelectedIndex="0" FontSize="12" BorderBrush="#DCDCDC" SelectionChanged="ZoomCombo_SelectionChanged">
-                        <ComboBoxItem Name="ZoomFitItem">맞춤</ComboBoxItem>
-                        <ComboBoxItem>50%</ComboBoxItem>
-                        <ComboBoxItem>75%</ComboBoxItem>
-                        <ComboBoxItem>100%</ComboBoxItem>
-                        <ComboBoxItem>125%</ComboBoxItem>
-                        <ComboBoxItem>150%</ComboBoxItem>
-                        <ComboBoxItem>200%</ComboBoxItem>
-                    </ComboBox>
-                    <Button Name="ZoomInButton" Content="+" Click="ZoomIn_Click"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <Button Name="SaveButton" Click="SaveButton_Click"><ic:SymbolIcon Symbol="Save" FontSize="16"/></Button>
-                    <Button Name="LoadButton" Click="LoadButton_Click"><ic:SymbolIcon Symbol="FolderOpen" FontSize="16"/></Button>
-                    <Border Classes="div"/>
-                    <Button Name="ExportHtmlButton" Click="ExportHtmlButton_Click"><ic:SymbolIcon Symbol="ArrowExport" FontSize="16"/></Button>
-                    <Button Name="PrintPreviewButton" Click="PrintPreviewButton_Click"><ic:SymbolIcon Symbol="Print" FontSize="16"/></Button>
-                </StackPanel>
-            </DockPanel>
-        </StackPanel>
-
-        <Border Grid.Row="2" Name="FindBar" IsVisible="False" Background="#F5F5F5" Padding="10,6" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Name="FindLabel" Text="찾기:" VerticalAlignment="Center"/>
-                <TextBox Name="FindBox" Width="160"/>
-                <Button Name="FindPrevButton" Content="이전" Click="FindPrev_Click"/>
-                <Button Name="FindNextButton" Content="다음" Click="FindNext_Click"/>
-                <TextBlock Name="ReplaceLabel" Text="바꾸기:" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                <TextBox Name="ReplaceBox" Width="160"/>
-                <Button Name="ReplaceNextButton" Content="바꾸기" Click="ReplaceNext_Click"/>
-                <Button Name="ReplaceAllButton" Content="모두 바꾸기" Click="ReplaceAll_Click"/>
-                <CheckBox Name="MatchCaseBox" Content="대소문자 구분" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                <TextBlock Name="FindStatus" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="Gray"/>
-                <Button Content="✕" Click="CloseFind_Click" Margin="8,0,0,0"/>
-            </StackPanel>
-        </Border>
-
-        <!-- The library's all-in-one bundle (layer ③): built-in formatting toolbar + scroller + editor.
-             Zoom is the view's own ZoomFactor; page mode is the editor's PageView. -->
-        <controls:RichEditorView Grid.Row="3" x:Name="EditorView"
-                                 PointerWheelChanged="EditorView_PointerWheelChanged"/>
-
-        <Border Grid.Row="4" Background="#EEEEEE" Padding="12,3" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
-            <DockPanel>
-                <TextBlock Name="ZoomLabel" DockPanel.Dock="Right" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
-                <TextBlock Name="LimitWarning" DockPanel.Dock="Right" Foreground="#CC6600" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                <TextBlock Name="StatusBar" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
-            </DockPanel>
-        </Border>
-    </Grid>
 </Window>

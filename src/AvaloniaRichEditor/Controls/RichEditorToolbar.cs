@@ -1,5 +1,6 @@
 using System;
 using Avalonia;
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
@@ -32,6 +33,14 @@ public class RichEditorToolbar : UserControl
         get => GetValue(TargetProperty);
         set => SetValue(TargetProperty, value);
     }
+
+    /// <summary>Host controls shown at the start of the strip, before the formatting buttons (e.g.
+    /// app-shell actions like save/open). Add/remove controls and the toolbar rebuilds. They share the
+    /// strip's wrapping, so the whole toolbar stays a single row that wraps together when narrow.</summary>
+    public AvaloniaList<Control> LeadingItems { get; } = new();
+
+    /// <summary>Host controls shown at the end of the strip, after the formatting buttons (e.g. zoom).</summary>
+    public AvaloniaList<Control> TrailingItems { get; } = new();
 
     private static readonly IBrush ActiveBrush = new SolidColorBrush(Color.Parse("#90CAF9"));
 
@@ -77,6 +86,9 @@ public class RichEditorToolbar : UserControl
         {
             Setters = { new Setter(ContentPresenter.BackgroundProperty, Brushes.Transparent) },
         });
+        // Host item slots: changing them rebuilds the strip so they sit inline with the formatting buttons.
+        LeadingItems.CollectionChanged += (_, _) => { Build(); Sync(); };
+        TrailingItems.CollectionChanged += (_, _) => { Build(); Sync(); };
         Build();
     }
 
@@ -283,7 +295,13 @@ public class RichEditorToolbar : UserControl
         // immune to the layout-reentrancy crash that a reparenting overflow dropdown hit during an
         // interactive window resize.
         var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
+        // Host items detach from the previous build's panel before re-adding (a control has one parent).
+        void AddHost(Control c) { (c.Parent as Panel)?.Children.Remove(c); wrap.Children.Add(c); }
+        foreach (var c in LeadingItems) AddHost(c);
+        if (LeadingItems.Count > 0) wrap.Children.Add(Div());
         foreach (var c in items) wrap.Children.Add(c);
+        if (TrailingItems.Count > 0) wrap.Children.Add(Div());
+        foreach (var c in TrailingItems) AddHost(c);
 
         Content = new Border
         {

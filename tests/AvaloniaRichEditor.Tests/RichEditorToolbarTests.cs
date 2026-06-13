@@ -29,6 +29,22 @@ public class RichEditorToolbarTests
         Assert.False(tb.IsVisible);
     }
 
+    [AvaloniaFact]
+    public void HostItems_AppearInTheStrip()
+    {
+        var tb = new RichEditorToolbar { Target = new RichEditor() };
+        var lead = new Button { Content = "lead" };
+        var trail = new Button { Content = "trail" };
+        tb.LeadingItems.Add(lead);
+        tb.TrailingItems.Add(trail);
+
+        var children = Strip(tb).Children;
+        Assert.Contains(lead, children);
+        Assert.Contains(trail, children);
+        // Leading sits before trailing, with the formatting buttons in between.
+        Assert.True(children.IndexOf(lead) < children.IndexOf(trail));
+    }
+
     // Narrowing the host wraps the toolbar onto more rows (WrapPanel) without throwing or clipping.
     [AvaloniaFact]
     public void Narrowing_WrapsWithoutThrowing()
@@ -36,14 +52,18 @@ public class RichEditorToolbarTests
         var ed = new RichEditor();
         var win = new Window { Width = 1000, Height = 200, Content = new RichEditorToolbar { Target = ed } };
         win.Show();
-        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
-        foreach (var w in new double[] { 600, 400, 300, 250, 200, 150, 100, 60, 30, 200, 1000 })
+        try
         {
-            win.Width = w;
-            win.Measure(new Avalonia.Size(w, 200));
-            win.Arrange(new Avalonia.Rect(0, 0, w, 200));
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            foreach (var w in new double[] { 600, 400, 300, 250, 200, 150, 100, 60, 30, 200, 1000 })
+            {
+                win.Width = w;
+                win.Measure(new Avalonia.Size(w, 200));
+                win.Arrange(new Avalonia.Rect(0, 0, w, 200));
+                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            }
         }
+        finally { win.Close(); }
     }
 
     [AvaloniaFact]

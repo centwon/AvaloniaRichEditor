@@ -1,4 +1,6 @@
 #nullable enable
+AvaloniaRichEditor.Controls.RichEditorToolbar.LeadingItems.get -> Avalonia.Collections.AvaloniaList<Avalonia.Controls.Control!>!
+AvaloniaRichEditor.Controls.RichEditorToolbar.TrailingItems.get -> Avalonia.Collections.AvaloniaList<Avalonia.Controls.Control!>!
 AvaloniaRichEditor.Controls.RichEditorView.ZoomFactor.get -> double
 AvaloniaRichEditor.Controls.RichEditorView.ZoomFactor.set -> void
 override AvaloniaRichEditor.Controls.RichEditorView.OnPropertyChanged(Avalonia.AvaloniaPropertyChangedEventArgs! change) -> void

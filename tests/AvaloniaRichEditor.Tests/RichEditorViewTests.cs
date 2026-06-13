@@ -72,14 +72,18 @@ public class RichEditorViewTests
         view.Editor.LoadHtml("<p>The quick brown fox jumps over the lazy dog, several times in a row.</p>");
         var win = new Window { Width = 1000, Height = 400, Content = view };
         win.Show();
-        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
-        foreach (var w in new double[] { 800, 600, 400, 300, 200, 150, 120, 90, 60, 40, 20, 10, 200, 1000 })
+        try
         {
-            win.Width = w;
-            win.Measure(new Avalonia.Size(w, 400));
-            win.Arrange(new Avalonia.Rect(0, 0, w, 400));
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            foreach (var w in new double[] { 800, 600, 400, 300, 200, 150, 120, 90, 60, 40, 20, 10, 200, 1000 })
+            {
+                win.Width = w;
+                win.Measure(new Avalonia.Size(w, 400));
+                win.Arrange(new Avalonia.Rect(0, 0, w, 400));
+                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            }
         }
+        finally { win.Close(); }
     }
 
     [AvaloniaFact]
