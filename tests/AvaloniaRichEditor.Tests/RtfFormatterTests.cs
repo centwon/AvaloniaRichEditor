@@ -110,6 +110,20 @@ public class RtfFormatterTests
     }
 
     [Fact]
+    public void HexEscapes_DecodeWithAnsiCodepage_Korean()
+    {
+        // HWP emits Korean as \'hh byte pairs in the document code page (CP949), not \uN. Encode
+        // "한글" to CP949 and feed it back as \'hh escapes — it must round-trip.
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        var bytes = System.Text.Encoding.GetEncoding(949).GetBytes("한글");
+        var sb = new System.Text.StringBuilder("{\\rtf1\\ansi\\ansicpg949 ");
+        foreach (var b in bytes) sb.Append("\\'").Append(b.ToString("x2"));
+        sb.Append("\\par}");
+        var doc = Parse(sb.ToString());
+        Assert.Equal("한글", ((Paragraph)doc.Blocks[0]).Text());
+    }
+
+    [Fact]
     public void UnicodeEscapes_Decode()
     {
         // \uN is a decimal code point with one fallback char to skip. Build the control words from

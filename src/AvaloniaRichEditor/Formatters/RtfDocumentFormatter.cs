@@ -13,10 +13,18 @@ namespace AvaloniaRichEditor.Formatters;
 /// the clipboard — into a <see cref="FlowDocument"/>: paragraphs, bold/italic/underline/strike,
 /// font size, foreground colour, embedded images (<c>\pict</c> PNG/JPEG, bytes carried inline), and
 /// simple tables (<c>\trowd…\cell…\row</c>). Unlike Word's CF_HTML (which references temp files for
-/// images), RTF embeds the image bytes, so nothing is lost. Zero external dependencies.
+/// images), RTF embeds the image bytes, so nothing is lost. Zero external dependencies beyond a
+/// code-page provider for CJK text (<c>\'hh</c> bytes are decoded with the document's <c>\ansicpg</c>).
 /// </summary>
 public static class RtfDocumentFormatter
 {
+    static RtfDocumentFormatter()
+    {
+        // CP949 (Korean), Shift-JIS, GB2312 etc. aren't in .NET's default set — register them so
+        // \'hh runs from HWP/Word decode correctly.
+        try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); } catch { }
+    }
+
     /// <summary>True if <paramref name="text"/> starts with the RTF signature.</summary>
     public static bool LooksLikeRtf(string? text)
         => text != null && text.TrimStart().StartsWith(@"{\rtf", StringComparison.Ordinal);
@@ -29,14 +37,16 @@ public static class RtfDocumentFormatter
     }
 }
 
-// One pass over the RTF byte/char stream. Group state (character formatting + the active
-// "destination") is pushed on '{' and popped on '}', so nested formatting restores correctly.
+// One pass over the RTF char stream. Group state (character formatting + the active "destination")
+// is pushed on '{' and popped on '}', so nested formatting restores correctly. Normal text is
+// buffered as bytes and decoded with the document code page so multi-byte CJK characters (which
+// span several \'hh) come out whole.
 internal sealed class RtfParser
 {
     private readonly string _s;
     private int _i;
 
-    private enum Dest { Normal, Skip, ColorTable, FontTable, Pict }
+    private enum Dest { Normal, Skip, ColorTable, Pict }
 
     private struct State
     {
@@ -54,13 +64,20 @@ internal sealed class RtfParser
     private Paragraph _para = new();
     private readonly StringBuilder _run = new();
 
+    // Code-page text accumulator: plain chars and \'hh escapes are bytes in the document code page
+    // (\ansicpg, e.g. 949 = CP949 for Korean). Multi-byte characters span several bytes, so they are
+    // buffered and decoded together; \uN unicode flushes the buffer first to keep order.
+    private readonly List<byte> _bytes = new();
+    private int _codepage = 1252;
+    private Encoding? _enc;
+    private Encoding Enc => _enc ??= GetEncoding(_codepage);
+
     // Color table (\colortbl): index 0 is the "auto" entry. Built while Dest == ColorTable.
     private readonly List<Color> _colors = new();
     private int _ctR, _ctG, _ctB;
     private bool _ctHasColor; // false for the leading auto entry (";" with no \red/\green/\blue)
 
-    // \pict accumulator (active while Dest == Pict). Only PNG/JPEG blips are decodable; WMF/EMF
-    // fallbacks are skipped (mime stays null).
+    // \pict accumulator (active while Dest == Pict). Only PNG/JPEG blips are decodable.
     private readonly StringBuilder _pictHex = new();
     private string? _pictMime;
     private int _pictWTwips, _pictHTwips;
@@ -87,7 +104,7 @@ internal sealed class RtfParser
             else if (c == '\r' || c == '\n') _i++;            // RTF line breaks are not content
             else if (_st.Dest == Dest.ColorTable && c == ';') { CloseColorEntry(); _i++; }
             else if (_st.Dest == Dest.Pict) { if (Uri.IsHexDigit(c)) _pictHex.Append(c); _i++; }
-            else { if (_st.Dest == Dest.Normal) _run.Append(c); _i++; }
+            else { if (_st.Dest == Dest.Normal) AppendByte(c); _i++; }
         }
         EndRow();        // a table that ran to the document end (no trailing normal paragraph)
         FlushRun();
@@ -110,13 +127,12 @@ internal sealed class RtfParser
         {
             // Control symbol: \\ \{ \} are literals; \~ nbsp, \_ hyphen, \* marks an optional dest.
             _i++;
-            switch (c)
+            if (_st.Dest == Dest.Normal)
             {
-                case '\\': case '{': case '}': if (_st.Dest == Dest.Normal) _run.Append(c); break;
-                case '~': if (_st.Dest == Dest.Normal) _run.Append(' '); break;
-                case '*': _st.Dest = Dest.Skip; break; // unknown optional destination -> ignore its body
-                case '-': case '_': break;             // optional / non-breaking hyphen: drop
+                if (c == '\\' || c == '{' || c == '}') AppendByte(c);
+                else if (c == '~') AppendByte(' ');
             }
+            if (c == '*') _st.Dest = Dest.Skip; // unknown optional destination -> ignore its body
             return;
         }
 
@@ -145,13 +161,16 @@ internal sealed class RtfParser
         _i += 2;
         if (_st.Dest != Dest.Normal) return;
         if (byte.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
-            _run.Append(Windows1252(b)); // best effort: CJK arrives as \uN, handled separately
+            _bytes.Add(b); // decoded with the code page when the byte run is flushed
     }
 
     private void Apply(string w, int? p)
     {
         switch (w)
         {
+            // document code page for \'hh runs
+            case "ansicpg": _codepage = p ?? 1252; _enc = null; break;
+
             // character formatting — flush the run under the OLD state before the change
             case "b": SetBold(p != 0); break;
             case "i": SetItalic(p != 0); break;
@@ -164,22 +183,22 @@ internal sealed class RtfParser
 
             // text/paragraph structure
             case "par": case "sect": EndParagraph(); break;
+            case "line": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
+            case "tab": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
+            case "pard": break; // paragraph-property reset: nothing we track resets here
 
             // tables
             case "trowd": StartRow(); break;
             case "cell": EndCell(); break;
             case "row": EndRow(); break;
             case "intbl": case "cellx": break; // structure is driven by \cell/\row; boundaries unused
-            case "line": if (_st.Dest == Dest.Normal) _run.Append('\n'); break;
-            case "tab": if (_st.Dest == Dest.Normal) _run.Append('\t'); break;
-            case "pard": break; // paragraph-property reset: nothing we track resets here
 
             // unicode
             case "u": EmitUnicode(p ?? 0); break;
             case "uc": _st.UnicodeSkip = p ?? 1; break;
 
             // destinations
-            case "colortbl": _st.Dest = Dest.ColorTable; _colors.Clear(); _ctR = _ctG = _ctB = 0; break;
+            case "colortbl": _st.Dest = Dest.ColorTable; _colors.Clear(); _ctR = _ctG = _ctB = 0; _ctHasColor = false; break;
             case "fonttbl": case "stylesheet": case "info": case "pntext": case "themedata":
             case "datastore": case "xmlnstbl": case "rsidtbl": case "generator": case "listtable":
             case "listoverridetable": case "revtbl":
@@ -222,15 +241,17 @@ internal sealed class RtfParser
 
     private void EmitUnicode(int code)
     {
+        FlushBytes(); // keep order: any buffered code-page text comes before the unicode char
         if (_st.Dest == Dest.Normal)
         {
             if (code < 0) code += 65536; // RTF \u is signed 16-bit
-            _run.Append(char.ConvertFromUtf32(code));
+            try { _run.Append(char.ConvertFromUtf32(code)); } catch { }
         }
-        // Skip the spell-out fallback chars that follow a \uN.
+        // Skip the spell-out fallback that follows a \uN (a plain char or a \'hh each count as one).
         for (int k = 0; k < _st.UnicodeSkip && _i < _s.Length; k++)
         {
-            if (_s[_i] == '\\') { ReadControl(); }       // a fallback can be \'hh
+            if (_s[_i] == '\\')
+                _i += (_i + 1 < _s.Length && _s[_i + 1] == '\'') ? 4 : 2; // skip \'hh or \symbol
             else if (_s[_i] == '{' || _s[_i] == '}') break;
             else _i++;
         }
@@ -238,8 +259,23 @@ internal sealed class RtfParser
 
     // ---- building ----
 
+    private void AppendByte(char c)
+    {
+        if (_st.Dest != Dest.Normal) return;
+        if (c < 256) _bytes.Add((byte)c);
+        else { FlushBytes(); _run.Append(c); }
+    }
+
+    private void FlushBytes()
+    {
+        if (_bytes.Count == 0) return;
+        _run.Append(Enc.GetString(_bytes.ToArray()));
+        _bytes.Clear();
+    }
+
     private void FlushRun()
     {
+        FlushBytes();
         if (_run.Length == 0) return;
         if (_st.Dest != Dest.Normal) { _run.Clear(); return; }
         _para.Inlines.Add(MakeRun(_run.ToString()));
@@ -273,7 +309,7 @@ internal sealed class RtfParser
     private void EndParagraph()
     {
         // Inside a table cell, \par is an intra-cell line break, not a document paragraph.
-        if (_curRow != null) { _run.Append('\n'); return; }
+        if (_curRow != null) { _bytes.Add(10); return; }
         FlushRun();
         FinalizeTable(); // a normal paragraph ends any table that was being built
         _doc.Blocks.Add(_para);
@@ -291,7 +327,7 @@ internal sealed class RtfParser
 
     private void EndCell()
     {
-        if (_curRow == null) { StartRow(); }
+        if (_curRow == null) StartRow();
         FlushRun();
         _curRow!.Add(_para);
         _para = new Paragraph();
@@ -339,9 +375,10 @@ internal sealed class RtfParser
         _doc.Blocks.Add(tb);
     }
 
+    // ---- images ----
+
     // Decodes the accumulated \pict bytes and places the image: small (<64px) inline, larger as its
-    // own block — the same icon/figure split the HTML parser uses. Twips → px is /15 (1440 twips =
-    // 96 px/in). Unsupported blips (no PNG/JPEG mime) or undecodable bytes are dropped.
+    // own block. Twips → px is /15 (1440 twips = 96 px/in). Unsupported blips or undecodable bytes drop.
     private void FinalizePict()
     {
         var hex = _pictHex.ToString();
@@ -386,5 +423,9 @@ internal sealed class RtfParser
         return bytes;
     }
 
-    private static char Windows1252(byte b) => (char)b; // good enough for ASCII/Latin-1 ranges
+    private static Encoding GetEncoding(int codepage)
+    {
+        try { return Encoding.GetEncoding(codepage); }
+        catch { return Encoding.Latin1; }
+    }
 }
