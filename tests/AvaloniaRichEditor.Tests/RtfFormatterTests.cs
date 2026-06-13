@@ -113,6 +113,30 @@ public class RtfFormatterTests
     }
 
     [Fact]
+    public void TextBox_ExtractsShpTxtAndSkipsShapeProps()
+    {
+        // \shptxt content is pulled out as text; the {\sp{\sn name}{\sv value}} property groups don't leak.
+        var doc = Parse(@"{\rtf1\ansi{\shp{\*\shpinst{\sp{\sn shapeType}{\sv 202}}{\shptxt boxed text\par}}}after\par}");
+        var text = string.Join("\n", doc.Blocks.OfType<Paragraph>().Select(p => p.Text()));
+        Assert.Contains("boxed text", text);
+        Assert.Contains("after", text);
+        Assert.DoesNotContain("shapeType", text);
+        Assert.DoesNotContain("202", text);
+    }
+
+    [Fact]
+    public void NestedTable_FlattensIntoParentCell()
+    {
+        // The nested cells/rows can't nest in the model, so they flatten into the parent cell text.
+        var doc = Parse("{\\rtf1\\ansi\\trowd\\cellx2000 outer \\nestcell inner1\\nestcell inner2\\nestrow\\cell\\row\\pard x\\par}");
+        var tb = doc.Blocks.OfType<TableBlock>().First();
+        var cell = tb.Cells[0][0].Text();
+        Assert.Contains("outer", cell);
+        Assert.Contains("inner1", cell);
+        Assert.Contains("inner2", cell);
+    }
+
+    [Fact]
     public void HexEscapes_DecodeWithAnsiCodepage_Korean()
     {
         // HWP emits Korean as \'hh byte pairs in the document code page (CP949), not \uN. Encode

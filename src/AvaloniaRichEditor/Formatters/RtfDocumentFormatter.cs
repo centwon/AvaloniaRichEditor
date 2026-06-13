@@ -198,6 +198,16 @@ internal sealed class RtfParser
             case "intbl": break;                  // structure is driven by \cell/\row
             case "cellx": _curCellx.Add(p ?? 0); break; // column boundary, for source-width preservation
 
+            // Nested tables (B deferred): the model can't nest a table in a cell, so flatten —
+            // nested cells become tab-separated, nested rows newline-separated, inside the parent cell.
+            case "nestcell": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
+            case "nestrow": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
+
+            // Text boxes / shapes (HWP 글상자): the editor has no floating frame, so pull out the
+            // \shptxt content as normal text and skip the shape's property name/value groups (\sp/\sn/\sv).
+            case "shptxt": _st.Dest = Dest.Normal; break;
+            case "sp": case "sn": case "sv": _st.Dest = Dest.Skip; break;
+
             // unicode
             case "u": EmitUnicode(p ?? 0); break;
             case "uc": _st.UnicodeSkip = p ?? 1; break;
