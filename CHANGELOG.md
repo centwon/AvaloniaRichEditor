@@ -6,17 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-alpha] - 2026-06-14
+
+Clipboard interop (Word/HWP RTF, async HTML) and a round of editor UX fixes.
+
 ### Added
 - **RTF clipboard paste** (`RtfDocumentFormatter`): pasting from Word or the Korean HWP now uses
   their "Rich Text Format" — tried before CF_HTML because RTF embeds image bytes inline (Word's
   CF_HTML only references temp files that may be gone). Parses paragraphs, bold/italic/underline/
-  strike, font size, foreground colour, embedded PNG/JPEG images, and simple tables. Zero external
-  dependencies. Browsers don't put RTF on the clipboard, so HTML paste is unchanged.
+  strike, font size, foreground colour (CJK text via the document `\ansicpg` code page), embedded
+  PNG/JPEG images, simple tables (with source column widths from `\cellx`), and flattens nested
+  tables / text boxes so their text isn't lost. Zero external dependencies. Browsers don't put RTF
+  on the clipboard, so HTML paste is unchanged.
 - **`HtmlDocumentFormatter.ParseHtmlAsync` / `RichEditor.LoadHtmlAsync`**: parse HTML while
   downloading remote (`http`) images concurrently off the UI thread, so a slow network no longer
   freezes the UI when pasting web content. The model is still built on the calling thread (Avalonia
-  objects are thread-affine). Rich paste now uses this path. The synchronous `ParseHtml` keeps its
+  objects are thread-affine). Rich paste now uses this path; the synchronous `ParseHtml` keeps its
   budgeted inline download for sync callers.
+
+### Changed
+- Inserting a table fills the document width with equal columns (was a fixed 100 px each); inserting
+  an image larger than the document width scales it down to fit (aspect ratio kept, bytes intact).
+- After inserting a table/image/divider the caret moves into it (a table's first cell) or just after
+  it, the editor refocuses, and the block scrolls into view — no click needed to see it.
+- Selecting a whole table now shows an accent frame + fill, and hovering its outer left/top border
+  shows a move cursor to signal it's selectable.
+
+### Fixed
+- Dragging a table's row/column border to resize no longer hitches when the caret is outside the
+  table (the resize now re-measures the content height mid-drag).
+- The bundled `RichEditorView` no longer clips the document's left/top edge, and reserves a right
+  gutter so a full-width table/image's resize handle isn't hidden under the scrollbar.
 
 ## [0.3.0-alpha] - 2026-06-13
 
