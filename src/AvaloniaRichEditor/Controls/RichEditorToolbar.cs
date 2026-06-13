@@ -195,6 +195,13 @@ public class RichEditorToolbar : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        // Undo/redo lead the strip (quick-access convention), so they keep a stable spot regardless
+        // of how the rest wraps.
+        _undoBtn = Btn("↶", Loc("Undo") + " (Ctrl+Z)", () => Target?.Undo(), RichEditorIcon.Undo);
+        _redoBtn = Btn("↷", Loc("Redo") + " (Ctrl+Y)", () => Target?.Redo(), RichEditorIcon.Redo);
+        Add(_undoBtn); Add(_redoBtn);
+        Add(Div());
+
         // Character toggles
         _boldBtn = Btn(new TextBlock { Text = "B", FontWeight = FontWeight.Bold }, Loc("Bold") + " (Ctrl+B)", () => Target?.ToggleBold(), RichEditorIcon.Bold);
         _italicBtn = Btn(new TextBlock { Text = "I", FontStyle = FontStyle.Italic }, Loc("Italic") + " (Ctrl+I)", () => Target?.ToggleItalic(), RichEditorIcon.Italic);
@@ -284,11 +291,6 @@ public class RichEditorToolbar : UserControl
         _imageBtn = Btn("🖼", Loc("InsertImage"), () => { _ = Target?.InsertImageFromFileAsync(); }, RichEditorIcon.InsertImage);
         _dividerBtn = Btn("―", Loc("InsertDivider"), () => Target?.InsertDivider(), RichEditorIcon.InsertDivider);
         Add(_tableBtn); Add(_imageBtn); Add(_dividerBtn);
-        Add(Div());
-
-        _undoBtn = Btn("↶", Loc("Undo") + " (Ctrl+Z)", () => Target?.Undo(), RichEditorIcon.Undo);
-        _redoBtn = Btn("↷", Loc("Redo") + " (Ctrl+Y)", () => Target?.Redo(), RichEditorIcon.Redo);
-        Add(_undoBtn); Add(_redoBtn);
 
         // When the host is narrower than the strip, items wrap to additional rows instead of
         // clipping or scrolling. WrapPanel never mutates the visual tree during layout, so it is
