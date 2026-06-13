@@ -79,7 +79,4 @@ internal static class ToolbarIcons
 
     /// <summary>Small downward chevron for dropdown buttons (e.g. the table picker).</summary>
     public static Control ChevronDown() => Build(10, ("M6 9 L12 15 L18 9", false));
-
-    /// <summary>Double right chevron (») for the overflow "more" button.</summary>
-    public static Control OverflowChevron() => Build(16, ("M5 6 L11 12 L5 18 M12 6 L18 12 L12 18", false));
 }

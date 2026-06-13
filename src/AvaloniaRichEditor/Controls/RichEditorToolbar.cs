@@ -278,13 +278,18 @@ public class RichEditorToolbar : UserControl
         _redoBtn = Btn("↷", Loc("Redo") + " (Ctrl+Y)", () => Target?.Redo(), RichEditorIcon.Redo);
         Add(_undoBtn); Add(_redoBtn);
 
+        // When the host is narrower than the strip, items wrap to additional rows instead of
+        // clipping or scrolling. WrapPanel never mutates the visual tree during layout, so it is
+        // immune to the layout-reentrancy crash that a reparenting overflow dropdown hit during an
+        // interactive window resize.
+        var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
+        foreach (var c in items) wrap.Children.Add(c);
+
         Content = new Border
         {
             Background = new SolidColorBrush(Color.Parse("#F5F6F8")),
             Padding = new Thickness(8, 4),
-            // Single-line strip: when the host is narrower than the strip, items that don't fit
-            // collapse into a "»" overflow dropdown instead of clipping or scrolling.
-            Child = new OverflowToolbarPanel(items),
+            Child = wrap,
         };
         ApplyFlags();
     }
