@@ -367,3 +367,9 @@ static readonly AvaloniaRichEditor.Controls.RichEditor.PageViewProperty -> Avalo
 static readonly AvaloniaRichEditor.Controls.RichEditor.SelectionBrushProperty -> Avalonia.StyledProperty<Avalonia.Media.IBrush!>!
 static readonly AvaloniaRichEditor.Controls.RichEditor.ShowPageNumbersProperty -> Avalonia.StyledProperty<bool>!
 static readonly AvaloniaRichEditor.Controls.RichEditorToolbar.TargetProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.RichEditor?>!
+AvaloniaRichEditor.Controls.RichEditorToolbar.LeadingItems.get -> Avalonia.Collections.AvaloniaList<Avalonia.Controls.Control!>!
+AvaloniaRichEditor.Controls.RichEditorToolbar.TrailingItems.get -> Avalonia.Collections.AvaloniaList<Avalonia.Controls.Control!>!
+AvaloniaRichEditor.Controls.RichEditorView.ZoomFactor.get -> double
+AvaloniaRichEditor.Controls.RichEditorView.ZoomFactor.set -> void
+override AvaloniaRichEditor.Controls.RichEditorView.OnPropertyChanged(Avalonia.AvaloniaPropertyChangedEventArgs! change) -> void
+static readonly AvaloniaRichEditor.Controls.RichEditorView.ZoomFactorProperty -> Avalonia.StyledProperty<double>!

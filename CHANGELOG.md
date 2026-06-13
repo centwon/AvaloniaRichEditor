@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-alpha] - 2026-06-13
+
+Toolbar polish, a bundled-view zoom, and host-injectable toolbar items.
+
+### Added
+- **`RichEditorView.ZoomFactor`** (1.0 = 100%, clamped 0.2–5.0): visual zoom for the document
+  area only — the toolbar never scales. In page view the page scales to the zoom; in the
+  continuous layout the editor reflows to the zoomed width.
+- **`RichEditorToolbar.LeadingItems` / `TrailingItems`**: host controls (e.g. app-shell
+  save/open/zoom buttons) injected before/after the formatting buttons in the same wrapping
+  strip, so the whole toolbar stays one row that wraps together when narrow.
+- **Built-in vector toolbar icons**: the toolbar's default glyphs are now hand-drawn vector
+  paths (still zero icon dependencies). A host `RichEditorIcons.Provider` still overrides them.
+
+### Changed
+- The toolbar **wraps to additional rows** when the host is narrower than the strip, instead of
+  showing a horizontal scrollbar.
+- Undo/redo moved to the **start** of the toolbar (quick-access convention).
+- `RichEditorView` anchors a short document to the **top** of the scroller (was vertically
+  centered) and enables **horizontal scrolling in page view** so a zoomed-in page isn't clipped.
+
+### Fixed
+- `SavePackageAsync` / `ToJsonAsync` threw "the calling thread cannot access this object" for
+  documents with colored text: the DTO (which reads thread-affine brush colors) is now built on
+  the calling thread, with only JSON/zip writing offloaded (issue #1).
+
 ## [0.2.0-alpha] - 2026-06-13
 
 Second pre-release: page layout, print/PDF output, the library toolbar/localization layer,
