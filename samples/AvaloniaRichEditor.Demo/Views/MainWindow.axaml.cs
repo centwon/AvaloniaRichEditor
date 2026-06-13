@@ -212,9 +212,48 @@ public partial class MainWindow : Window
     private void Window_KeyDown(object? sender, KeyEventArgs e)
     {
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        if (ctrl && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { SetFitWidth(); e.Handled = true; }
+        if (ctrl && e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.R) { _ = DumpClipboardAsync(); e.Handled = true; }
+        else if (ctrl && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { SetFitWidth(); e.Handled = true; }
         else if (ctrl && (e.Key == Key.OemPlus || e.Key == Key.Add)) { SetZoomPercent(EditorView.ZoomFactor + 0.1); e.Handled = true; }
         else if (ctrl && (e.Key == Key.OemMinus || e.Key == Key.Subtract)) { SetZoomPercent(EditorView.ZoomFactor - 0.1); e.Handled = true; }
+    }
+
+    // TEMP DIAGNOSTIC (Ctrl+Shift+R): dump every clipboard format's raw bytes to %TEMP%\clip-dump\
+    // so the actual Word/HWP RTF (its \ansicpg/\fcharset, encoding) can be inspected.
+    private async Task DumpClipboardAsync()
+    {
+        var cb = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (cb == null) return;
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "clip-dump");
+        System.IO.Directory.CreateDirectory(dir);
+        var report = new System.Text.StringBuilder();
+        try
+        {
+            var dt = await cb.TryGetDataAsync();
+            if (dt == null) { report.AppendLine("(no data)"); }
+            else
+            {
+                int n = 0;
+                foreach (var item in dt.Items)
+                    foreach (var fmt in item.Formats)
+                    {
+                        var id = fmt.Identifier ?? fmt.ToString() ?? ("fmt" + n);
+                        object? raw = null;
+                        try { raw = await item.TryGetRawAsync(fmt); } catch { }
+                        string safe = string.Join("_", id.Split(System.IO.Path.GetInvalidFileNameChars()));
+                        if (safe.Length > 40) safe = safe.Substring(0, 40);
+                        string path = System.IO.Path.Combine(dir, $"{n:00}_{safe}.bin");
+                        byte[]? bytes = raw as byte[] ?? (raw is string s ? System.Text.Encoding.UTF8.GetBytes(s) : null);
+                        if (bytes != null) System.IO.File.WriteAllBytes(path, bytes);
+                        report.AppendLine($"[{n}] id='{id}' type={raw?.GetType().Name ?? "null"} bytes={bytes?.Length ?? 0} -> {System.IO.Path.GetFileName(path)}");
+                        n++;
+                    }
+                (dt as IDisposable)?.Dispose();
+            }
+        }
+        catch (Exception ex) { report.AppendLine("ERROR: " + ex); }
+        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "_index.txt"), report.ToString());
+        if (this.FindControl<TextBlock>("StatusBar") is { } sb) sb.Text = "clipboard dumped -> " + dir;
     }
 
     // ---- File actions ----

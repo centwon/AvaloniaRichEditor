@@ -107,6 +107,9 @@ public class RtfFormatterTests
         Assert.Equal("B", tb.Cells[0][1].Text());
         Assert.Equal("D", tb.Cells[1][1].Text());
         Assert.Contains(doc.Blocks.OfType<Paragraph>(), p => p.Text().Contains("after"));
+        // \cellx2000 / \cellx4000 → 2000 twips (≈133px) then 2000 more (≈133px), not the uniform default.
+        Assert.Equal(2000 / 15.0, tb.ColumnWidths[0], 1);
+        Assert.Equal(2000 / 15.0, tb.ColumnWidths[1], 1);
     }
 
     [Fact]

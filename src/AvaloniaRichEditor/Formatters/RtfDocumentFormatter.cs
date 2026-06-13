@@ -86,6 +86,10 @@ internal sealed class RtfParser
     // into a TableBlock. Each cell is one Paragraph; intra-cell \par becomes a newline.
     private List<List<Paragraph>>? _tableRows;
     private List<Paragraph>? _curRow;
+    // \cellx<N> = cumulative right boundary (twips) per column. Captured from the first row so the
+    // pasted table keeps the source column widths instead of a uniform default.
+    private List<int> _curCellx = new();
+    private List<int>? _tableCellx;
 
     public RtfParser(string s) => _s = s;
 
@@ -191,7 +195,8 @@ internal sealed class RtfParser
             case "trowd": StartRow(); break;
             case "cell": EndCell(); break;
             case "row": EndRow(); break;
-            case "intbl": case "cellx": break; // structure is driven by \cell/\row; boundaries unused
+            case "intbl": break;                  // structure is driven by \cell/\row
+            case "cellx": _curCellx.Add(p ?? 0); break; // column boundary, for source-width preservation
 
             // unicode
             case "u": EmitUnicode(p ?? 0); break;
@@ -322,7 +327,8 @@ internal sealed class RtfParser
     {
         _tableRows ??= new List<List<Paragraph>>();
         _curRow ??= new List<Paragraph>();
-        _para = new Paragraph(); // first cell's content
+        _curCellx = new List<int>(); // \cellx for this row follows \trowd
+        _para = new Paragraph();     // first cell's content
     }
 
     private void EndCell()
@@ -339,13 +345,16 @@ internal sealed class RtfParser
         _tableRows ??= new List<List<Paragraph>>();
         _tableRows.Add(_curRow);
         _curRow = null;
+        if (_tableCellx == null && _curCellx.Count > 0) _tableCellx = _curCellx; // keep the first row's columns
     }
 
     private void FinalizeTable()
     {
         var rows = _tableRows;
+        var cellx = _tableCellx;
         _tableRows = null;
         _curRow = null;
+        _tableCellx = null;
         if (rows == null || rows.Count == 0) return;
 
         int cols = 0;
@@ -362,6 +371,19 @@ internal sealed class RtfParser
         }
         tb.Rows = rows.Count;
         tb.Columns = cols;
+        // Source column widths from \cellx (cumulative right boundaries in twips → px /15).
+        if (cellx != null && cellx.Count > 0)
+        {
+            tb.ColumnWidths.Clear();
+            int prev = 0;
+            for (int c = 0; c < cols; c++)
+            {
+                int boundary = c < cellx.Count ? cellx[c] : prev + 1500;
+                double wpx = (boundary - prev) / 15.0;
+                tb.ColumnWidths.Add(wpx >= 16 ? wpx : 100); // floor out 0/negative/garbage boundaries
+                prev = boundary;
+            }
+        }
         tb.ColSpans.Clear();
         tb.RowSpans.Clear();
         for (int r = 0; r < rows.Count; r++)
