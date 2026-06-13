@@ -65,6 +65,7 @@ public partial class MainWindow : Window
     {
         base.OnOpened(e);
         Editor.FocusDocumentEnd();
+        SetFitWidth(); // apply the default fit-to-width now that the view has a real size
     }
 
     private static FlowDocument BuildSampleDocument()
@@ -142,10 +143,12 @@ public partial class MainWindow : Window
     // editor already fills the width at 100%, so fit is just 1.0. Recomputed on resize.
     private void ApplyFitWidth()
     {
+        if (EditorView.Bounds.Width < 50) return; // not laid out yet
         const double a4 = 794, pad = 40;
         EditorView.ZoomFactor = Editor.PageView
             ? Math.Clamp((EditorView.Bounds.Width - pad) / a4, 0.2, 5.0)
             : 1.0;
+        UpdateZoomLabel();
     }
 
     private void SetFitWidth()
@@ -153,6 +156,7 @@ public partial class MainWindow : Window
         _fitWidth = true;
         ApplyFitWidth();
         if (_zoomCombo != null) { _suppressZoomCombo = true; _zoomCombo.SelectedIndex = 0; _suppressZoomCombo = false; }
+        UpdateZoomLabel();
     }
 
     private void SetZoomPercent(double factor)
@@ -160,6 +164,13 @@ public partial class MainWindow : Window
         _fitWidth = false;
         EditorView.ZoomFactor = factor; // clamped by the library (0.2–5.0)
         SyncZoomCombo();
+        UpdateZoomLabel();
+    }
+
+    private void UpdateZoomLabel()
+    {
+        if (this.FindControl<TextBlock>("ZoomInfo") is { } z)
+            z.Text = $"{(int)Math.Round(EditorView.ZoomFactor * 100)}%" + (_fitWidth ? " · " + Loc("Demo.Fit") : "");
     }
 
     private void SyncZoomCombo()
