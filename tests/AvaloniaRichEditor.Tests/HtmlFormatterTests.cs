@@ -11,6 +11,32 @@ namespace AvaloniaRichEditor.Tests;
 
 public class HtmlFormatterTests
 {
+    // ParseHtmlAsync (issue #1 pattern, B2): remote images download off the UI thread, but for
+    // network-free input it must build exactly what the synchronous ParseHtml does.
+    [Fact]
+    public async System.Threading.Tasks.Task ParseHtmlAsync_TextOnly_MatchesSync()
+    {
+        const string html = "<p>Hello <b>world</b></p><p>second</p>";
+        var sync = HtmlDocumentFormatter.ParseHtml(html);
+        var async = await HtmlDocumentFormatter.ParseHtmlAsync(html);
+        Assert.Equal(sync.Blocks.Count, async.Blocks.Count);
+        Assert.Equal(((Paragraph)sync.Blocks[0]).Text(), ((Paragraph)async.Blocks[0]).Text());
+        Assert.Equal(((Paragraph)sync.Blocks[1]).Text(), ((Paragraph)async.Blocks[1]).Text());
+    }
+
+    [AvaloniaFact]
+    public async System.Threading.Tasks.Task ParseHtmlAsync_DataImage_BuildsSameAsSync()
+    {
+        const string png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        string html = $"<p>icon <img src=\"{png}\"></p>";
+        var sync = HtmlDocumentFormatter.ParseHtml(html);
+        var async = await HtmlDocumentFormatter.ParseHtmlAsync(html);
+        int syncImages = sync.Blocks.OfType<Paragraph>().Sum(p => p.Inlines.OfType<InlineImage>().Count());
+        int asyncImages = async.Blocks.OfType<Paragraph>().Sum(p => p.Inlines.OfType<InlineImage>().Count());
+        Assert.Equal(1, syncImages);          // data: image (1×1 < icon size) lands inline
+        Assert.Equal(syncImages, asyncImages); // async path produces the same structure
+    }
+
     [Fact]
     public void ParseHtml_SplitsInlineFormatting()
     {

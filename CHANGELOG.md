@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`HtmlDocumentFormatter.ParseHtmlAsync` / `RichEditor.LoadHtmlAsync`**: parse HTML while
+  downloading remote (`http`) images concurrently off the UI thread, so a slow network no longer
+  freezes the UI when pasting web content. The model is still built on the calling thread (Avalonia
+  objects are thread-affine). Rich paste now uses this path. The synchronous `ParseHtml` keeps its
+  budgeted inline download for sync callers.
+
 ## [0.3.0-alpha] - 2026-06-13
 
 Toolbar polish, a bundled-view zoom, and host-injectable toolbar items.

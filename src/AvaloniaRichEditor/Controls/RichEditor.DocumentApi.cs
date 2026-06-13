@@ -16,6 +16,13 @@ public partial class RichEditor
     public void LoadHtml(string? html)
         => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages));
 
+    /// <summary>Replaces the document with one parsed from HTML, downloading remote (<c>http</c>)
+    /// images off the UI thread first so a slow network can't freeze the UI. Await from the UI thread.</summary>
+    public async Task LoadHtmlAsync(string? html)
+        => LoadDocument(string.IsNullOrEmpty(html)
+            ? new FlowDocument()
+            : await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(html, AllowLocalFileImages));
+
     /// <summary>Serializes the document to the library's JSON format.</summary>
     public string ToJson() => Document != null ? Formatters.DocumentSerializer.Serialize(Document) : "";
 

@@ -28,32 +28,62 @@ namespace AvaloniaRichEditor.Formatters
             "figure","figcaption","header","footer","main","aside","pre","caption"
         };
 
-        // Shared across all parses: a new HttpClient per <img> leaks sockets. Remote fetches run
-        // synchronously on the caller's (UI) thread, so the per-parse deadline below caps the total
-        // stall for one paste — without it, N remote images could block the UI for N × 5 s.
+        // Shared across all parses: a new HttpClient per <img> leaks sockets.
         private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
         private static readonly TimeSpan RemoteImageBudget = TimeSpan.FromSeconds(5);
         [ThreadStatic] private static DateTime _remoteImageDeadline;
         // Per-parse flag (set from the parameter below); LoadImage is deeply nested, so this rides
         // alongside the deadline instead of being threaded through every walker.
         [ThreadStatic] private static bool _blockLocalFileImages;
+        // When set (by ParseHtmlAsync), remote <img> bytes have already been fetched off the UI
+        // thread; LoadImage reads them from here instead of blocking on a synchronous download.
+        [ThreadStatic] private static System.Collections.Generic.Dictionary<string, byte[]?>? _prefetchedRemoteImages;
 
         /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.
         /// When <paramref name="allowLocalFileImages"/> is false, <c>file://</c> image sources are
-        /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).</summary>
+        /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).
+        /// Remote (<c>http</c>) images are downloaded synchronously on the calling thread (a per-parse
+        /// 5 s budget caps the stall); use <see cref="ParseHtmlAsync"/> to fetch them without blocking.</summary>
         public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true)
         {
             _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget;
             _blockLocalFileImages = !allowLocalFileImages;
-            // Excel's CF_HTML fragment markers can sit *inside* the <table>, so the extracted
-            // fragment has orphan <tr>/<td> with no wrapping <table>. Wrap it so it's recognized.
+            _prefetchedRemoteImages = null; // sync path downloads inline
+            var doc = LoadHtmlDoc(ref html);
+            return BuildDocument(doc, html);
+        }
+
+        /// <summary>Same as <see cref="ParseHtml"/> but downloads remote (<c>http</c>) images
+        /// concurrently off the UI thread first, so a slow network can't freeze the UI while pasting
+        /// web content. The document model is still built on the calling thread (Avalonia model
+        /// objects are thread-affine), so await this from the UI thread.</summary>
+        public static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true)
+        {
+            var doc = LoadHtmlDoc(ref html);
+            // Off-thread: network only — no model objects created here.
+            var prefetched = await PrefetchRemoteImagesAsync(doc).ConfigureAwait(true);
+            // Back on the calling (UI) thread: build the model, reading the prefetched image bytes.
+            _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget; // data:/file: images still honored
+            _blockLocalFileImages = !allowLocalFileImages;
+            _prefetchedRemoteImages = prefetched;
+            try { return BuildDocument(doc, html); }
+            finally { _prefetchedRemoteImages = null; }
+        }
+
+        // Excel's CF_HTML fragment markers can sit *inside* the <table>, so the extracted fragment
+        // has orphan <tr>/<td> with no wrapping <table>. Wrap it so it's recognized.
+        private static HtmlDocument LoadHtmlDoc(ref string html)
+        {
             if (System.Text.RegularExpressions.Regex.IsMatch(html, "<tr[\\s>]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
                 && !System.Text.RegularExpressions.Regex.IsMatch(html, "<table", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 html = "<table>" + html + "</table>";
-
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
+            return doc;
+        }
 
+        private static FlowDocument BuildDocument(HtmlDocument doc, string html)
+        {
             var flowDoc = new FlowDocument();
             var root = doc.DocumentNode.Descendants("body").FirstOrDefault() ?? doc.DocumentNode;
             WalkBlocks(root, flowDoc);
@@ -65,6 +95,29 @@ namespace AvaloniaRichEditor.Formatters
                 flowDoc.Blocks.Add(p);
             }
             return flowDoc;
+        }
+
+        // Downloads every distinct remote <img src="http…"> concurrently, sharing one 5 s budget for
+        // the whole batch. Failures/timeouts map to null (the image is skipped, the rest is kept).
+        private static async System.Threading.Tasks.Task<System.Collections.Generic.Dictionary<string, byte[]?>> PrefetchRemoteImagesAsync(HtmlDocument doc)
+        {
+            var result = new System.Collections.Generic.Dictionary<string, byte[]?>();
+            var urls = doc.DocumentNode.Descendants("img")
+                .Select(n => n.GetAttributeValue("src", ""))
+                .Where(s => s.StartsWith("http"))
+                .Distinct()
+                .ToList();
+            if (urls.Count == 0) return result;
+
+            using var cts = new System.Threading.CancellationTokenSource(RemoteImageBudget);
+            async System.Threading.Tasks.Task<(string, byte[]?)> Fetch(string url)
+            {
+                try { return (url, await Http.GetByteArrayAsync(url, cts.Token).ConfigureAwait(false)); }
+                catch { return (url, null); }
+            }
+            foreach (var (url, bytes) in await System.Threading.Tasks.Task.WhenAll(urls.Select(Fetch)).ConfigureAwait(false))
+                result[url] = bytes;
+            return result;
         }
 
         // Recursively walks the DOM, emitting Paragraph/TableBlock/ImageBlock as it goes.
@@ -324,10 +377,19 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (src.StartsWith("http"))
                 {
-                    var remaining = _remoteImageDeadline - DateTime.UtcNow;
-                    if (remaining <= TimeSpan.Zero) return (null, null, 0, 0); // budget spent: skip, keep the rest of the paste
-                    using var cts = new System.Threading.CancellationTokenSource(remaining);
-                    bytes = Http.GetByteArrayAsync(src, cts.Token).GetAwaiter().GetResult();
+                    if (_prefetchedRemoteImages != null)
+                    {
+                        // ParseHtmlAsync already fetched these off the UI thread; null = failed/timed out.
+                        _prefetchedRemoteImages.TryGetValue(src, out bytes);
+                        if (bytes == null) return (null, null, 0, 0);
+                    }
+                    else
+                    {
+                        var remaining = _remoteImageDeadline - DateTime.UtcNow;
+                        if (remaining <= TimeSpan.Zero) return (null, null, 0, 0); // budget spent: skip, keep the rest of the paste
+                        using var cts = new System.Threading.CancellationTokenSource(remaining);
+                        bytes = Http.GetByteArrayAsync(src, cts.Token).GetAwaiter().GetResult();
+                    }
                 }
                 else if (src.StartsWith("file:"))
                 {

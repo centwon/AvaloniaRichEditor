@@ -1,1 +1,3 @@
 #nullable enable
+AvaloniaRichEditor.Controls.RichEditor.LoadHtmlAsync(string? html) -> System.Threading.Tasks.Task!
+static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtmlAsync(string! html, bool allowLocalFileImages = true) -> System.Threading.Tasks.Task<AvaloniaRichEditor.Documents.FlowDocument!>!
