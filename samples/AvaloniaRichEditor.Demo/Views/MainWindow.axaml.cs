@@ -39,15 +39,20 @@ public partial class MainWindow : Window
         UpdateStatusBar();
     }
 
+    private int _lastChars = -1;
+
     private void UpdateStatusBar()
     {
+        var (chars, words, line, col) = Editor.GetStatus();
         if (this.FindControl<TextBlock>("StatusBar") is { } status)
-        {
-            var (chars, words, line, col) = Editor.GetStatus();
             status.Text = string.Format(Loc("StatusFormat"), chars, words, line, col);
-        }
-        if (this.FindControl<TextBlock>("PageInfo") is { } pageInfo)
+        // Page count needs a full pagination walk (O(blocks)); only redo it when the content actually
+        // changed, not on caret-only moves (arrow keys, clicks) which fire StatusChanged just as often.
+        if (chars != _lastChars && this.FindControl<TextBlock>("PageInfo") is { } pageInfo)
+        {
+            _lastChars = chars;
             pageInfo.Text = string.Format(Loc("Demo.Pages"), Editor.GetPrintPageCount());
+        }
         // Clear the warning once the image count is back within bounds.
         if (this.FindControl<TextBlock>("LimitWarning") is { } warning
             && !string.IsNullOrEmpty(warning.Text)

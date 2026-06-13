@@ -13,7 +13,9 @@ namespace AvaloniaRichEditor.Controls;
 // null for them so the caller falls back to the glyph.
 internal static class ToolbarIcons
 {
-    private static readonly IBrush Ink = new SolidColorBrush(Color.Parse("#3C4043"));
+    // Immutable: no dispatcher thread affinity (a shared mutable brush is one less thing that can
+    // bite if a host ever builds the toolbar off the UI thread). Shared across every icon path.
+    private static readonly IBrush Ink = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#3C4043"));
 
     // A layer is one path: stroke (outline) or fill (solid shapes like arrowheads/dots).
     private static Control Build(double box, params (string Data, bool Fill)[] layers)
