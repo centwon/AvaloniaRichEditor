@@ -125,6 +125,21 @@ public static class RichEditorLocalization
             ["NotFound"] = "Not found",
             ["ReplacedFormat"] = "Replaced {0}",
             ["StatusFormat"] = "Chars {0}   Words {1}   Ln {2}, Col {3}",
+            // Page / zoom (RichEditorView chrome)
+            ["Fit"] = "Fit",
+            ["ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = fit)",
+            ["PaperContinuous"] = "Continuous",
+            ["PaperTip"] = "Paper size (Continuous = reflows to width)",
+            ["PageOutline"] = "Outline",
+            ["OrientPortrait"] = "Portrait",
+            ["OrientLandscape"] = "Landscape",
+            ["OrientationTip"] = "Page orientation",
+            // File actions (RichEditorView)
+            ["Export"] = "Export (JSON / .flow / HTML)",
+            ["Import"] = "Import",
+            ["Print"] = "Print",
+            ["PageCountFormat"] = "{0} page(s)",
+            ["ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         },
         ["ko"] = new()
         {
@@ -232,6 +247,21 @@ public static class RichEditorLocalization
             ["NotFound"] = "찾을 수 없음",
             ["ReplacedFormat"] = "{0}개 바꿈",
             ["StatusFormat"] = "글자 {0}   단어 {1}   줄 {2}, 칸 {3}",
+            // Page / zoom (RichEditorView chrome)
+            ["Fit"] = "맞춤",
+            ["ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=맞춤)",
+            ["PaperContinuous"] = "연속",
+            ["PaperTip"] = "용지 크기 (연속 = 폭에 맞춰 흐름)",
+            ["PageOutline"] = "쪽 윤곽",
+            ["OrientPortrait"] = "세로",
+            ["OrientLandscape"] = "가로",
+            ["OrientationTip"] = "용지 방향",
+            // File actions (RichEditorView)
+            ["Export"] = "내보내기 (JSON / .flow / HTML)",
+            ["Import"] = "가져오기",
+            ["Print"] = "인쇄",
+            ["PageCountFormat"] = "{0}페이지",
+            ["ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
         },
     };
 

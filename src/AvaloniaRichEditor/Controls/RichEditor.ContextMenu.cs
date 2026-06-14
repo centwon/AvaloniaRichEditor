@@ -80,9 +80,12 @@ public partial class RichEditor
 
     // A context menu with a compact look: smaller font and tight row height/padding so long menus don't
     // dominate the screen. The MenuItem style applies to nested submenu items too.
-    private static ContextMenu NewContextMenu()
+    private ContextMenu NewContextMenu()
     {
-        var menu = new ContextMenu { Placement = PlacementMode.Pointer };
+        // Pin the menu's font to the editor's UI font. A ContextMenu opened on this control otherwise
+        // inherits FontFamily down from it, so it would drift with whatever the host/theme sets — the
+        // menu is chrome and must stay on a stable UI face, never the document's per-run font.
+        var menu = new ContextMenu { Placement = PlacementMode.Pointer, FontFamily = DefaultFontFamily };
         menu.Styles.Add(new Style(x => x.OfType<MenuItem>())
         {
             Setters =

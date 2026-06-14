@@ -38,7 +38,11 @@ public class Run : Inline
             FontFamily = this.FontFamily,
             FontSize = this.FontSize,
             NavigateUri = this.NavigateUri,
-            TextDecorations = this.TextDecorations
+            // Copy the collection (not share the reference): an in-place edit to one run's
+            // decorations would otherwise also mutate every clone/split tail.
+            TextDecorations = this.TextDecorations != null
+                ? new TextDecorationCollection(this.TextDecorations)
+                : null
         };
     }
 }

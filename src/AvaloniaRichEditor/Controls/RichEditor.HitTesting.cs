@@ -92,6 +92,12 @@ public partial class RichEditor
     // merged-cell rects and skipped (covered) cells stay identical across every consumer.
     private TableLayout LayoutTable(TableBlock tb, double startX, double top)
     {
+        // Trusted pass (no content change since the last build): reuse the cached geometry for the same
+        // position without re-measuring every cell. Mirrors BuildTextLayout's _trustLayoutCache gate.
+        if (_trustLayoutCache && _tableLayoutCache.TryGetValue(tb, out var ct)
+            && ct.startX == startX && ct.top == top)
+            return ct.layout;
+
         int cols = tb.Columns, rows = tb.Rows;
         var colX = new double[cols + 1];
         colX[0] = startX;
@@ -137,7 +143,11 @@ public partial class RichEditor
             int cEnd = Math.Min(c + cs, cols), rEnd = Math.Min(r + rs, rows);
             anchors.Add((r, c, new Rect(colX[c], rowY[r], colX[cEnd] - colX[c], rowY[rEnd] - rowY[r])));
         }
-        return new TableLayout(colX, rowY, colX[cols] - startX, rowY[rows] - top, anchors);
+        var result = new TableLayout(colX, rowY, colX[cols] - startX, rowY[rows] - top, anchors);
+        // Refresh the cache (even on an untrusted/edit pass) so the next trusted frame can reuse it.
+        if (_tableLayoutCache.Count > 2000) _tableLayoutCache.Clear();
+        _tableLayoutCache[tb] = (startX, top, result);
+        return result;
     }
 
     // The block (image or table) whose rendered rectangle contains the point, or null.
@@ -158,7 +168,7 @@ public partial class RichEditor
             }
             else if (block is Paragraph paragraph)
             {
-                if (BuildPlain(paragraph) == "")
+                if (GetParagraphLength(paragraph) == 0)
                 {
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;
@@ -197,7 +207,7 @@ public partial class RichEditor
             }
             else if (block is Paragraph paragraph)
             {
-                if (BuildPlain(paragraph) == "")
+                if (GetParagraphLength(paragraph) == 0)
                 {
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                     continue;

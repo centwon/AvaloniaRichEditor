@@ -126,7 +126,8 @@ public class RichEditorToolbarTests
         var ed = new RichEditor { FontFamilyChoices = new[] { "FontA", "FontB" } };
         var tb = new RichEditorToolbar { Target = ed };
         var fonts = Strip(tb).Children.OfType<ComboBox>().First();
+        // Font names are plain string items (rendered each in its own font via ItemTemplate).
         Assert.Equal(new[] { "FontA", "FontB" },
-            fonts.Items.OfType<ComboBoxItem>().Select(i => i.Content).ToArray());
+            fonts.Items.OfType<string>().ToArray());
     }
 }

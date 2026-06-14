@@ -487,18 +487,25 @@ public partial class RichEditor
             }
         }
 
-        // Outer left/top table border selects the whole table on click -> a move cursor signals that
-        // the border is grabbable (vs the I-beam over cell text).
-        if (GetBlockAtPoint(point) is TableBlock ht && IsOnTableLeftOrTopBorder(ht, point))
+        // Hover hit-testing walks the document but never mutates it (runs synchronously here), so the
+        // layout cache can be trusted — skips re-hashing every paragraph on every mouse move.
+        _trustLayoutCache = true;
+        try
         {
-            Cursor = MoveCursor;
-            return;
-        }
+            // Outer left/top table border selects the whole table on click -> a move cursor signals that
+            // the border is grabbable (vs the I-beam over cell text).
+            if (GetBlockAtPoint(point) is TableBlock ht && IsOnTableLeftOrTopBorder(ht, point))
+            {
+                Cursor = MoveCursor;
+                return;
+            }
 
-        var hoverLink = GetLinkRunAtPoint(point);
-        Cursor = (hoverLink != null && !string.IsNullOrEmpty(hoverLink.NavigateUri))
-            ? HandCursor
-            : IbeamCursor;
+            var hoverLink = GetLinkRunAtPoint(point);
+            Cursor = (hoverLink != null && !string.IsNullOrEmpty(hoverLink.NavigateUri))
+                ? HandCursor
+                : IbeamCursor;
+        }
+        finally { _trustLayoutCache = false; }
     }
 
     /// <inheritdoc/>
@@ -1120,7 +1127,7 @@ public partial class RichEditor
             }
             else if (block is Paragraph paragraph)
             {
-                if (BuildPlain(paragraph) == "")
+                if (GetParagraphLength(paragraph) == 0)
                     yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
                 else
                     yOffset += BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph) - paragraph.MarginRight)).Height + paragraph.MarginBottom;

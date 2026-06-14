@@ -6,26 +6,12 @@
         mc:Ignorable="d" d:DesignWidth="1180" d:DesignHeight="720"
         x:Class="AvaloniaRichEditor.Demo.Views.MainWindow"
         Icon="/Assets/avalonia-logo.ico"
-        KeyDown="Window_KeyDown"
         Width="1180" Height="720"
         Title="AvaloniaRichEditor.Demo">
 
-    <!-- The window is the library's RichEditorView plus a thin status bar. File/zoom/page actions are
-         injected into the view's single toolbar (RichEditorToolbar.LeadingItems/TrailingItems) from
-         code-behind, so everything toolbar-related lives in one strip inside the view. -->
-    <Grid RowDefinitions="*, Auto">
-        <controls:RichEditorView Grid.Row="0" x:Name="EditorView"
-                                 SizeChanged="EditorView_SizeChanged"
-                                 PointerWheelChanged="EditorView_PointerWheelChanged"/>
-
-        <Border Grid.Row="1" Background="#EEEEEE" Padding="12,3" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
-            <DockPanel>
-                <TextBlock Name="LimitWarning" DockPanel.Dock="Right" Foreground="#CC6600" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                <TextBlock Name="ZoomInfo" DockPanel.Dock="Right" Foreground="#444444" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                <TextBlock Name="PageInfo" DockPanel.Dock="Right" Foreground="#444444" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                <TextBlock Name="StatusBar" Foreground="#444444" FontSize="12" VerticalAlignment="Center"/>
-            </DockPanel>
-        </Border>
-    </Grid>
+    <!-- The demo is nothing but the library's RichEditorView: toolbar (formatting + page/zoom +
+         export/import/print), scrolling document, and status bar are all built into the view. The only
+         app-specific wiring is Print (platform-specific), handled via RichEditorView.PrintRequested. -->
+    <controls:RichEditorView x:Name="EditorView"/>
 
 </Window>

@@ -4,6 +4,7 @@ using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -216,13 +217,27 @@ public class RichEditorToolbar : UserControl
         Add(BuildColorButton(highlight: true));
         Add(Div());
 
-        // Font family (from the target's host-overridable list) + size
+        // Font family (from the target's host-overridable list) + size. Plain string items + an
+        // ItemTemplate that renders each name in its own font: Avalonia applies the same template to
+        // the closed selection box, so the chosen font shows in its own typeface there too. Crucially
+        // the FontFamily lives on each item's TextBlock — scoped to the combo, so it never leaks to the
+        // rest of the toolbar (which is what made the whole strip change font with ComboBoxItem faces).
         _fontCombo = Combo(Loc("FontFamily"), 120);
+        // The closed selection box drives this template with a null value when nothing is selected,
+        // so guard the empty case (new FontFamily(null) throws). Recycling must stay OFF: the template
+        // derives FontFamily from the data at build time (not via a binding), so a recycled TextBlock
+        // would keep the previously built font when the selected name changes.
+        _fontCombo.ItemTemplate = new FuncDataTemplate<string>(
+            (name, _) => new TextBlock
+            {
+                Text = name,
+                FontFamily = string.IsNullOrEmpty(name) ? FontFamily.Default : new FontFamily(name)
+            });
         foreach (var f in Target?.FontFamilyChoices ?? Array.Empty<string>())
-            _fontCombo.Items.Add(new ComboBoxItem { Content = f });
+            _fontCombo.Items.Add(f);
         _fontCombo.SelectionChanged += (_, _) =>
         {
-            if (_suppress || _fontCombo.SelectedItem is not ComboBoxItem it || it.Content is not string fam) return;
+            if (_suppress || _fontCombo.SelectedItem is not string fam) return;
             Target?.SetFontFamily(fam);
         };
         Add(_fontCombo);
@@ -538,14 +553,23 @@ public class RichEditorToolbar : UserControl
             // Runs without an explicit font fall back to the editor's DefaultFontFamily for
             // rendering, so the combo shows that effective default as placeholder text instead of
             // faking a selection (selecting would suggest the run carries the font explicitly).
-            if (f.FontFamily != null)
+            if (f.FontFamily != null && _fontCombo.Items.Contains(f.FontFamily))
             {
-                SelectByContent(_fontCombo, f.FontFamily);
+                _fontCombo.SelectedItem = f.FontFamily;
+                // Selected items render through the item template's own font; drop any placeholder font.
+                _fontCombo.ClearValue(TemplatedControl.FontFamilyProperty);
             }
             else
             {
+                // No explicit font (falls back to the editor default) or a font not in the curated
+                // list (e.g. from a loaded document): show the effective name as placeholder rather
+                // than faking a selection. The placeholder uses the combo's OWN font (not the item
+                // template), so set that to the named font — otherwise "맑은 고딕" renders in the theme
+                // font (Inter) and looks nothing like the actual face. Scoped to the combo.
                 _fontCombo.SelectedItem = null;
-                _fontCombo.PlaceholderText = EffectiveDefaultFamilyName(rt);
+                string eff = f.FontFamily ?? EffectiveDefaultFamilyName(rt);
+                _fontCombo.PlaceholderText = eff;
+                _fontCombo.FontFamily = string.IsNullOrEmpty(eff) ? FontFamily.Default : new FontFamily(eff);
             }
         }
         if (_headingCombo != null) _headingCombo.SelectedIndex = Math.Min(f.Heading, 3);

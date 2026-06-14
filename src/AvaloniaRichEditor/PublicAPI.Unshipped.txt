@@ -9,7 +9,19 @@ AvaloniaRichEditor.Controls.RichEditor.PageSize.get -> AvaloniaRichEditor.Contro
 AvaloniaRichEditor.Controls.RichEditor.PageSize.set -> void
 AvaloniaRichEditor.Controls.RichEditor.ShowPageBoundaries.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.ShowPageBoundaries.set -> void
+AvaloniaRichEditor.Controls.RichEditorIcon.Export = 41 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Import = 42 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Print = 43 -> AvaloniaRichEditor.Controls.RichEditorIcon
 AvaloniaRichEditor.Controls.RichEditorPageOrientation
+AvaloniaRichEditor.Controls.RichEditorView.FitToWidth.get -> bool
+AvaloniaRichEditor.Controls.RichEditorView.FitToWidth.set -> void
+AvaloniaRichEditor.Controls.RichEditorView.PrintRequested -> System.EventHandler?
+AvaloniaRichEditor.Controls.RichEditorView.ShowFileActions.get -> bool
+AvaloniaRichEditor.Controls.RichEditorView.ShowFileActions.set -> void
+AvaloniaRichEditor.Controls.RichEditorView.ShowStatusBar.get -> bool
+AvaloniaRichEditor.Controls.RichEditorView.ShowStatusBar.set -> void
+override AvaloniaRichEditor.Controls.RichEditorView.OnKeyDown(Avalonia.Input.KeyEventArgs! e) -> void
+override AvaloniaRichEditor.Controls.RichEditorView.OnPointerWheelChanged(Avalonia.Input.PointerWheelEventArgs! e) -> void
 AvaloniaRichEditor.Controls.RichEditorPageOrientation.Landscape = 1 -> AvaloniaRichEditor.Controls.RichEditorPageOrientation
 AvaloniaRichEditor.Controls.RichEditorPageOrientation.Portrait = 0 -> AvaloniaRichEditor.Controls.RichEditorPageOrientation
 AvaloniaRichEditor.Controls.RichEditorPageSize
@@ -22,6 +34,9 @@ AvaloniaRichEditor.Controls.RichEditorPageSize.Continuous = 0 -> AvaloniaRichEdi
 AvaloniaRichEditor.Controls.RichEditorPageSize.Legal = 7 -> AvaloniaRichEditor.Controls.RichEditorPageSize
 AvaloniaRichEditor.Controls.RichEditorPageSize.Letter = 6 -> AvaloniaRichEditor.Controls.RichEditorPageSize
 AvaloniaRichEditor.Controls.RichEditorPageSize.Tabloid = 8 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+static readonly AvaloniaRichEditor.Controls.RichEditorView.FitToWidthProperty -> Avalonia.StyledProperty<bool>!
+static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowFileActionsProperty -> Avalonia.StyledProperty<bool>!
+static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowStatusBarProperty -> Avalonia.StyledProperty<bool>!
 static readonly AvaloniaRichEditor.Controls.RichEditor.PageOrientationProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.RichEditorPageOrientation>!
 static readonly AvaloniaRichEditor.Controls.RichEditor.PageSizeProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.RichEditorPageSize>!
 static readonly AvaloniaRichEditor.Controls.RichEditor.ShowPageBoundariesProperty -> Avalonia.StyledProperty<bool>!

@@ -162,24 +162,15 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         int cols = 1;
         foreach (var l in lines) cols = Math.Max(cols, l.Split('\t').Length);
 
+        // The constructor builds Cells/ColumnWidths/span grids consistently; just fill the cells'
+        // text in place (rebuilding Cells alone would desync the span grids).
         var tb = new TableBlock(lines.Count, cols);
-        tb.Cells.Clear();
-        tb.ColumnWidths.Clear();
-        for (int c = 0; c < cols; c++) tb.ColumnWidths.Add(100);
-        foreach (var l in lines)
+        for (int r = 0; r < lines.Count; r++)
         {
-            var parts = l.Split('\t');
-            var row = new List<Paragraph>();
+            var parts = lines[r].Split('\t');
             for (int c = 0; c < cols; c++)
-            {
-                var pp = new Paragraph();
-                pp.Inlines.Add(new Run { Text = c < parts.Length ? parts[c] : "" });
-                row.Add(pp);
-            }
-            tb.Cells.Add(row);
+                ((Run)tb.Cells[r][c].Inlines[0]).Text = c < parts.Length ? parts[c] : "";
         }
-        tb.Rows = lines.Count;
-        tb.Columns = cols;
         InsertBlockAtCaret(tb);
     }
 

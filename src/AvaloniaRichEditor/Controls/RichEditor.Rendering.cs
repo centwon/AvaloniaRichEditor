@@ -46,7 +46,7 @@ public partial class RichEditor
             else if (block is DividerBlock dv) yOffset += DividerHeight + dv.MarginBottom;
             else if (block is Paragraph p)
             {
-                if (BuildPlain(p) == "")
+                if (GetParagraphLength(p) == 0)
                     yOffset += p.MarginBottom + (!double.IsNaN(p.LineHeight) ? p.LineHeight : 20);
                 else
                     yOffset += BuildTextLayout(p, Math.Max(10, width - 20 - ParaLeft(p) - p.MarginRight)).Height + p.MarginBottom;
@@ -120,12 +120,20 @@ public partial class RichEditor
     /// <inheritdoc/>
     public override void Render(DrawingContext context)
     {
+        // Was this paint scheduled by a content edit? Read the flag before RaisePendingChangeEvents
+        // consumes it. A repaint with no pending edit (caret blink, scroll) can't have changed any
+        // paragraph, so the layout cache may be trusted without re-hashing every paragraph's text.
+        bool contentChanged = _textChangedPending;
         // Flush change events after the edit/caret move that scheduled this paint (off the render stack).
         RaisePendingChangeEvents();
         // Transparent fill makes the whole control hit-testable (clicks on empty space below the
         // text must still reach OnPointerPressed). Must cover the full bounds, not a fixed height.
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         if (Document == null) return;
+
+        _trustLayoutCache = !contentChanged;
+        try
+        {
 
         // Recomputed every render so resize handles track the current layout.
         _columnBoundaries.Clear();
@@ -229,6 +237,8 @@ public partial class RichEditor
         }
 
         DrawCaretAndBringIntoView(context, caretPoint, caretHeight, blockCaretRect);
+        }
+        finally { _trustLayoutCache = false; } // never leak the trusted state past this render pass
     }
 
     private static readonly Avalonia.Media.Immutable.ImmutableSolidColorBrush DeskBrush = new(Color.FromRgb(158, 158, 158));
@@ -244,9 +254,11 @@ public partial class RichEditor
     {
         TextPointer? selStart = null, selEnd = null;
         HashSet<Paragraph>? selectedParagraphs = null;
-        if (chrome && _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
+        int selCmp = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
+            ? _selectionStart.CompareTo(_selectionEnd) : 0;
+        if (chrome && _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && selCmp != 0)
         {
-            if (_selectionStart.CompareTo(_selectionEnd) < 0) { selStart = _selectionStart; selEnd = _selectionEnd; }
+            if (selCmp < 0) { selStart = _selectionStart; selEnd = _selectionEnd; }
             else { selStart = _selectionEnd; selEnd = _selectionStart; }
             var allParas = GetAllParagraphsInOrder();
             int si = allParas.IndexOf(selStart.Paragraph);

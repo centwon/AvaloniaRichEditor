@@ -369,7 +369,7 @@ public partial class RichEditor
             }
             else if (block is Paragraph p)
             {
-                if (BuildPlain(p) == "")
+                if (GetParagraphLength(p) == 0)
                 {
                     PlaceAtom(!double.IsNaN(p.LineHeight) ? p.LineHeight : 20);
                 }

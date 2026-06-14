@@ -219,6 +219,20 @@ public partial class RichEditor : Control
     // paragraph's content signature and wrap width are unchanged.
     private readonly Dictionary<Paragraph, (long sig, double width, Avalonia.Media.TextFormatting.TextLayout layout)> _layoutCache = new();
 
+    // When set, BuildTextLayout trusts a same-width cache entry without recomputing ParagraphSig.
+    // Only enabled for passes that provably don't mutate content (caret blink / scroll repaint via
+    // Render, and pointer-hover hit-testing), so the per-frame full-document text hashing is skipped.
+    // Edits clear it (Render reads _textChangedPending; hover runs synchronously), so it can't serve
+    // a stale layout for changed content.
+    private bool _trustLayoutCache;
+
+    // Per-table geometry cache (mirrors _layoutCache for tables). LayoutTable allocates several arrays
+    // + a list and measures every cell on each call, and it runs once per table in Measure, Render and
+    // each hit-test. Keyed by table; reused while the table's position (startX/top) and content are
+    // unchanged, gated by _trustLayoutCache like the paragraph cache so a trusted pass (blink/scroll/
+    // hover) skips the recompute entirely. Edits run untrusted and refresh the entry.
+    private readonly Dictionary<TableBlock, (double startX, double top, TableLayout layout)> _tableLayoutCache = new();
+
     /// <summary>Initializes a new <see cref="RichEditor"/> with a single empty paragraph and default settings.</summary>
     public RichEditor()
     {
@@ -252,6 +266,7 @@ public partial class RichEditor : Control
         if (change.Property == DocumentProperty)
         {
             _layoutCache.Clear();
+            _tableLayoutCache.Clear();
             if (Document != null) UpdateParents(Document);
             _textChangedPending = true; // wholesale content swap
             DocumentChanged?.Invoke(this, EventArgs.Empty);
@@ -261,6 +276,7 @@ public partial class RichEditor : Control
         if (change.Property == DefaultFontFamilyProperty || change.Property == DefaultFontSizeProperty)
         {
             _layoutCache.Clear(); // default font feeds the cached layouts
+            _tableLayoutCache.Clear();
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -269,6 +285,7 @@ public partial class RichEditor : Control
         {
             _pageBreaks = null;   // wrap width / paper changes between modes -> stale break positions
             _layoutCache.Clear(); // cached layouts were shaped at the other mode's width
+            _tableLayoutCache.Clear();
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -830,6 +847,9 @@ public partial class RichEditor : Control
     // the cached TextLayout can be reused. Iterating inlines to hash is far cheaper than re-shaping, and
     // it can never go stale silently the way a manual dirty-flag would. Over-invalidation (e.g. a brush
     // re-instantiated to the same colour) is harmless — it just rebuilds.
+    // Caution: brushes are hashed by GetHashCode (identity for mutable brushes), so MUTATING a brush's
+    // colour in place (same instance) won't change the signature and the layout would render stale.
+    // Formatting commands must assign a NEW brush instead of mutating an existing run's brush.
     private static long ParagraphSig(Paragraph p)
     {
         unchecked
@@ -880,6 +900,10 @@ public partial class RichEditor : Control
         long sig = 0;
         if (!hasPreedit)
         {
+            // Trusted pass (no content change since the last build): skip the signature hash and reuse
+            // the same-width cached layout directly. Falls through to the verified path on a width/miss.
+            if (_trustLayoutCache && _layoutCache.TryGetValue(p, out var trusted) && trusted.width == maxWidth)
+                return trusted.layout;
             sig = ParagraphSig(p);
             if (_layoutCache.TryGetValue(p, out var cached) && cached.width == maxWidth && cached.sig == sig)
                 return cached.layout;
@@ -942,12 +966,27 @@ public partial class RichEditor : Control
 
         if (!hasPreedit)
         {
-            // Entries for deleted paragraphs are never re-accessed and would linger; a generous cap keeps
-            // the cache from growing without bound over a long editing session (it just rebuilds lazily).
-            if (_layoutCache.Count > 10000) _layoutCache.Clear();
+            // Entries for deleted paragraphs are never re-accessed and would linger; past a generous cap,
+            // drop the ones no longer in the document (live entries survive and aren't reshaped) instead
+            // of clearing wholesale.
+            if (_layoutCache.Count > 10000) PruneLayoutCaches();
             _layoutCache[p] = (sig, maxWidth, layout);
         }
         return layout;
+    }
+
+    // Drops cache entries for paragraphs/tables no longer in the document (e.g. deleted while editing),
+    // keeping the live ones so nothing reshapes on the next frame.
+    private void PruneLayoutCaches()
+    {
+        if (Document == null) { _layoutCache.Clear(); _tableLayoutCache.Clear(); return; }
+        var liveParas = new HashSet<Paragraph>(GetAllParagraphsInOrder());
+        foreach (var key in _layoutCache.Keys.ToList())
+            if (!liveParas.Contains(key)) _layoutCache.Remove(key);
+        var liveTables = new HashSet<TableBlock>();
+        foreach (var b in Document.Blocks) if (b is TableBlock tb) liveTables.Add(tb);
+        foreach (var key in _tableLayoutCache.Keys.ToList())
+            if (!liveTables.Contains(key)) _tableLayoutCache.Remove(key);
     }
 
     // Inserts the IME preedit text at a character offset, splitting a text segment if needed.

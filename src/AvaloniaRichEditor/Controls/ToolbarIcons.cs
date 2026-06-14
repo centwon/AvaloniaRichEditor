@@ -76,6 +76,23 @@ internal static class ToolbarIcons
         RichEditorIcon.Highlight => Build(16,
             ("M13 4 L20 11 L12 19 H6 L4 17 Z M6 19 L11 14", false)),
 
+        // Export: a tray with text leaving it (up-and-out arrow).
+        RichEditorIcon.Export => Build(16,
+            ("M5 14 V19 H19 V14", false),
+            ("M12 16 V5", false),
+            ("M12 3 L8 8 H16 Z", true)),
+        // Import: a tray taking text in (down-and-in arrow).
+        RichEditorIcon.Import => Build(16,
+            ("M5 14 V19 H19 V14", false),
+            ("M12 4 V13", false),
+            ("M12 16 L8 11 H16 Z", true)),
+        // Print: printer body with a top feed sheet and an output sheet.
+        RichEditorIcon.Print => Build(16,
+            ("M7 8 V4 H17 V8", false),
+            ("M5 8 H19 V16 H17", false),
+            ("M7 16 H5 V8", false),
+            ("M7 13 H17 V20 H7 Z", false)),
+
         _ => null,
     };
 

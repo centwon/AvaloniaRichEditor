@@ -98,6 +98,13 @@ public enum RichEditorIcon
     UnmergeCells,
     /// <summary>Delete table.</summary>
     DeleteTable,
+    // View chrome (RichEditorView file actions)
+    /// <summary>Export the document to a file.</summary>
+    Export,
+    /// <summary>Import a document from a file.</summary>
+    Import,
+    /// <summary>Print the document.</summary>
+    Print,
 }
 
 /// <summary>
