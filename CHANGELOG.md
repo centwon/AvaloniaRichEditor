@@ -281,6 +281,9 @@ editing on Windows; the public API may still change before `1.0`.
 - Word images exported as VML (not standard `<img>`) are not imported.
 - Precise pagination / PDF printing is not implemented (browser print fallback only).
 
-[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.2.0-alpha...HEAD
+[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.5.0-alpha...HEAD
+[0.5.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.4.0-alpha...v0.5.0-alpha
+[0.4.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.3.0-alpha...v0.4.0-alpha
+[0.3.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.2.0-alpha...v0.3.0-alpha
 [0.2.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/releases/tag/v0.1.0-alpha
