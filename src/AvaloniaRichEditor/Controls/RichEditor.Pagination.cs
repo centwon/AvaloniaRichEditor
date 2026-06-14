@@ -15,29 +15,95 @@ namespace AvaloniaRichEditor.Controls;
 // (the single TextLayout is the source of truth) intact.
 public partial class RichEditor
 {
-    // A4 at 96 DPI.
+    // A4 at 96 DPI — the default paper and the print fallback for the Continuous mode.
     internal const double A4PageWidth = 794;
     internal const double A4PageHeight = 1123;
 
-    // Paper margins (content box inset) and the grey-desk gap between consecutive pages.
+    // Paper margins (content box inset) and the grey-desk gap between consecutive pages — uniform
+    // across paper sizes.
     internal const double PagePadX = 48;
     internal const double PagePadY = 40;
     internal const double PageGap = 24;
-    internal const double PageContentWidth = A4PageWidth - 2 * PagePadX;    // 698
-    internal const double PageContentHeight = A4PageHeight - 2 * PagePadY;  // 1043
+    internal const double A4ContentWidth = A4PageWidth - 2 * PagePadX;    // 698
+    internal const double A4ContentHeight = A4PageHeight - 2 * PagePadY;  // 1043
 
-    /// <summary>Word-style page view: renders the document as a stack of A4 pages on a grey desk,
-    /// breaking content at line boundaries. Off (default) keeps the continuous single-column layout,
-    /// so existing hosts are unaffected.</summary>
-    public static readonly StyledProperty<bool> PageViewProperty =
-        AvaloniaProperty.Register<RichEditor, bool>(nameof(PageView));
+    /// <summary>Paper size for the document. <see cref="RichEditorPageSize.Continuous"/> (no fixed
+    /// paper) reflows the text column to the control width; any concrete size fixes the column to that
+    /// paper's content width. Default <see cref="RichEditorPageSize.A4"/>.</summary>
+    public static readonly StyledProperty<RichEditorPageSize> PageSizeProperty =
+        AvaloniaProperty.Register<RichEditor, RichEditorPageSize>(nameof(PageSize), RichEditorPageSize.A4);
 
-    /// <summary>Gets or sets whether the editor renders as discrete A4 pages (Word-style page view).</summary>
-    public bool PageView
+    /// <summary>Gets or sets the paper size. Default <see cref="RichEditorPageSize.A4"/>.</summary>
+    public RichEditorPageSize PageSize
     {
-        get => GetValue(PageViewProperty);
-        set => SetValue(PageViewProperty, value);
+        get => GetValue(PageSizeProperty);
+        set => SetValue(PageSizeProperty, value);
     }
+
+    /// <summary>For a concrete <see cref="PageSize"/>, whether to draw discrete pages on a grey desk
+    /// (Word-style print layout). Off keeps the fixed-width column flowing continuously with no page
+    /// chrome. Ignored when <see cref="PageSize"/> is <see cref="RichEditorPageSize.Continuous"/>. Default true.</summary>
+    public static readonly StyledProperty<bool> ShowPageBoundariesProperty =
+        AvaloniaProperty.Register<RichEditor, bool>(nameof(ShowPageBoundaries), true);
+
+    /// <summary>Gets or sets whether page boundaries (desk, paper, inter-page gaps) are drawn for a
+    /// concrete <see cref="PageSize"/>. Default true.</summary>
+    public bool ShowPageBoundaries
+    {
+        get => GetValue(ShowPageBoundariesProperty);
+        set => SetValue(ShowPageBoundariesProperty, value);
+    }
+
+    /// <summary>Page orientation. <see cref="RichEditorPageOrientation.Landscape"/> swaps the paper's
+    /// width and height (editor view and print/PDF). No effect for <see cref="RichEditorPageSize.Continuous"/>
+    /// on screen, but still rotates the A4 print fallback. Default
+    /// <see cref="RichEditorPageOrientation.Portrait"/>.</summary>
+    public static readonly StyledProperty<RichEditorPageOrientation> PageOrientationProperty =
+        AvaloniaProperty.Register<RichEditor, RichEditorPageOrientation>(nameof(PageOrientation));
+
+    /// <summary>Gets or sets the page orientation. Default <see cref="RichEditorPageOrientation.Portrait"/>.</summary>
+    public RichEditorPageOrientation PageOrientation
+    {
+        get => GetValue(PageOrientationProperty);
+        set => SetValue(PageOrientationProperty, value);
+    }
+
+    // A concrete paper size fixes the text-column width; Continuous reflows to the control width.
+    internal bool IsPaged => PageSize != RichEditorPageSize.Continuous;
+    // Paged AND showing chrome -> the gap-injecting page-stack layout. Paged without chrome -> a
+    // fixed-width centered column flowing continuously (no desk, no inter-page gaps).
+    private bool PagedChrome => IsPaged && ShowPageBoundaries;
+
+    // Paper pixel dimensions at 96 DPI (portrait), then swapped for landscape. Continuous falls back
+    // to A4 for print/PDF (you can't print an unbounded-width column), but its layout width comes from
+    // the control, not these.
+    private (double w, double h) PaperDims
+    {
+        get
+        {
+            var (w, h) = PageSize switch
+            {
+                RichEditorPageSize.A3 => (1123.0, 1587.0),  // 297 x 420 mm
+                RichEditorPageSize.A5 => (559.0, 794.0),    // 148 x 210 mm
+                RichEditorPageSize.B4 => (971.0, 1376.0),   // JIS 257 x 364 mm
+                RichEditorPageSize.B5 => (688.0, 971.0),    // JIS 182 x 257 mm
+                RichEditorPageSize.Letter => (816.0, 1056.0), // 8.5 x 11 in
+                RichEditorPageSize.Legal => (816.0, 1344.0),  // 8.5 x 14 in
+                RichEditorPageSize.Tabloid => (1056.0, 1632.0), // 11 x 17 in
+                _ => (A4PageWidth, A4PageHeight),           // A4, and Continuous's print fallback
+            };
+            return PageOrientation == RichEditorPageOrientation.Landscape ? (h, w) : (w, h);
+        }
+    }
+    internal double PaperWidth => PaperDims.w;
+    internal double PaperHeight => PaperDims.h;
+    internal double PaperContentWidth => PaperWidth - 2 * PagePadX;
+    internal double PaperContentHeight => PaperHeight - 2 * PagePadY;
+
+    /// <summary>The current paper's pixel size at 96 DPI (width × height), accounting for
+    /// <see cref="PageOrientation"/>. <see cref="RichEditorPageSize.Continuous"/> reports its A4 print
+    /// fallback. Useful for host fit-to-width and print math.</summary>
+    public Size GetPaperPixelSize() => new(PaperWidth, PaperHeight);
 
     /// <summary>Header text drawn in each page's top margin (page view and print/PDF output).
     /// Null or empty = no header. Does not affect pagination — the margin band hosts it.</summary>
@@ -85,7 +151,7 @@ public partial class RichEditor
         {
             var ft = new Avalonia.Media.FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
                 Avalonia.Media.FlowDirection.LeftToRight, typeface, 11, Avalonia.Media.Brushes.Gray);
-            double x = right ? paper.X + PagePadX + PageContentWidth - ft.Width : paper.X + PagePadX;
+            double x = right ? paper.X + PagePadX + PaperContentWidth - ft.Width : paper.X + PagePadX;
             double bandCenter = top ? paper.Y + PagePadY / 2 : paper.Bottom - PagePadY / 2;
             ctx.DrawText(ft, new Point(x, bandCenter - ft.Height / 2));
         }
@@ -99,16 +165,30 @@ public partial class RichEditor
     private List<double>? _pageBreaks;
 
     private List<double> EnsurePageBreaks()
-        => _pageBreaks ??= ComputePageBreaks(PageContentWidth, PageContentHeight);
+        => _pageBreaks ??= ComputePageBreaks(PaperContentWidth, PaperContentHeight);
 
     // The wrap width every walker (render, measure, the three hit-tests, BlockAtY) must use, so
-    // pagination and geometry can never disagree. Identity (= control width) when page view is off.
-    internal double ContentLayoutWidth => PageView ? PageContentWidth : Bounds.Width;
+    // pagination and geometry can never disagree. A concrete paper fixes it to the paper's content
+    // width (with or without page chrome); Continuous reflows to the control width.
+    internal double ContentLayoutWidth => IsPaged ? PaperContentWidth : Bounds.Width;
 
-    private double PageDeskX => Math.Max(0, (Bounds.Width - A4PageWidth) / 2);
+    // Left edge of the fixed-width text column when paged without page chrome: centered in the control.
+    private double NoChromeColX => Math.Max(0, (Bounds.Width - PaperContentWidth) / 2);
+
+    private double PageDeskX => Math.Max(0, (Bounds.Width - PaperWidth) / 2);
     private double PageContentOffsetX => PageDeskX + PagePadX;
-    private Rect PageRectView(int i) => new(PageDeskX, PageGap + i * (A4PageHeight + PageGap), A4PageWidth, A4PageHeight);
-    private double ContentTopView(int i) => PageGap + i * (A4PageHeight + PageGap) + PagePadY;
+    private Rect PageRectView(int i) => new(PageDeskX, PageGap + i * (PaperHeight + PageGap), PaperWidth, PaperHeight);
+    private double ContentTopView(int i) => PageGap + i * (PaperHeight + PageGap) + PagePadY;
+
+    // Bare-column mode (paged, no chrome) injects this much whitespace between pages, with the dashed
+    // separator centered in it — so consecutive pages read as separate without the full page chrome.
+    internal const double NoChromePageGap = 40;
+
+    // Per-page content origin in view space, for both paged modes (chrome page-stack and bare column).
+    private double PagedContentLeftView => PagedChrome ? PageContentOffsetX : NoChromeColX;
+    private double PagedContentTopView(int i) => PagedChrome
+        ? ContentTopView(i)                              // desk gap + paper stack + top margin
+        : EnsurePageBreaks()[i] + i * NoChromePageGap;   // bare column: just the injected gaps
 
     private int PageOfDocY(double docY)
     {
@@ -120,52 +200,56 @@ public partial class RichEditor
 
     // --- Print rendering (P-milestone Phase 3). ---
 
-    /// <summary>Number of A4 pages the document occupies when paginated for print. Independent of
-    /// <see cref="PageView"/> — printing always paginates, even from the continuous layout.</summary>
+    /// <summary>Number of pages the document occupies when paginated for print, at the current
+    /// <see cref="PageSize"/> (Continuous falls back to A4). Independent of <see cref="ShowPageBoundaries"/> —
+    /// printing always paginates, even from the continuous layout.</summary>
     public int GetPrintPageCount()
-        => ComputePageBreaks(PageContentWidth, PageContentHeight).Count;
+        => ComputePageBreaks(PaperContentWidth, PaperContentHeight).Count;
 
-    /// <summary>Renders one A4 page to a bitmap at the given DPI (96 = screen preview, 300 = print
-    /// quality; a 300-DPI page is ≈2480×3508 px / ~35 MB, so render and dispose page by page).
-    /// Content only — no caret, selection highlights, or resize handles. Must run on the UI thread.</summary>
+    /// <summary>Renders one page to a bitmap at the given DPI (96 = screen preview, 300 = print
+    /// quality; a 300-DPI A4 page is ≈2480×3508 px / ~35 MB, so render and dispose page by page).
+    /// Page dimensions follow <see cref="PageSize"/> (Continuous falls back to A4). Content only — no caret,
+    /// selection highlights, or resize handles. Must run on the UI thread.</summary>
     public Avalonia.Media.Imaging.Bitmap RenderPrintPage(int pageIndex, double dpi = 96)
     {
-        var breaks = ComputePageBreaks(PageContentWidth, PageContentHeight);
+        double paperW = PaperWidth, paperH = PaperHeight, contentW = PaperContentWidth, contentH = PaperContentHeight;
+        var breaks = ComputePageBreaks(contentW, contentH);
         if (pageIndex < 0 || pageIndex >= breaks.Count)
             throw new ArgumentOutOfRangeException(nameof(pageIndex), pageIndex, $"document has {breaks.Count} page(s)");
 
         double scale = dpi / 96.0;
         var pixels = new Avalonia.PixelSize(
-            (int)Math.Round(A4PageWidth * scale), (int)Math.Round(A4PageHeight * scale));
+            (int)Math.Round(paperW * scale), (int)Math.Round(paperH * scale));
         var rtb = new Avalonia.Media.Imaging.RenderTargetBitmap(pixels, new Vector(dpi, dpi));
         using (var ctx = rtb.CreateDrawingContext())
         {
-            ctx.FillRectangle(Avalonia.Media.Brushes.White, new Rect(0, 0, A4PageWidth, A4PageHeight));
+            ctx.FillRectangle(Avalonia.Media.Brushes.White, new Rect(0, 0, paperW, paperH));
             if (Document != null)
             {
                 double sliceTop = breaks[pageIndex];
                 double sliceBottom = pageIndex + 1 < breaks.Count ? breaks[pageIndex + 1] : double.PositiveInfinity;
                 // Same slice clip rule as the page-view render: end the clip where the slice ends.
-                var clip = new Rect(PagePadX, PagePadY, PageContentWidth,
-                    Math.Min(PageContentHeight, sliceBottom - sliceTop));
+                var clip = new Rect(PagePadX, PagePadY, contentW,
+                    Math.Min(contentH, sliceBottom - sliceTop));
                 using (ctx.PushClip(clip))
                 using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
-                    DrawDocumentBlocks(ctx, PageContentWidth, sliceTop, sliceBottom, chrome: false);
+                    DrawDocumentBlocks(ctx, contentW, sliceTop, sliceBottom, chrome: false);
             }
-            DrawPageMarginChrome(ctx, new Rect(0, 0, A4PageWidth, A4PageHeight), pageIndex, breaks.Count);
+            DrawPageMarginChrome(ctx, new Rect(0, 0, paperW, paperH), pageIndex, breaks.Count);
         }
         return rtb;
     }
 
-    /// <summary>Writes the document as a raster PDF (A4 pages, no external dependencies). Each page
-    /// is one FlateDecode RGB image at the given DPI — 300 (default) is print quality; text-heavy
-    /// pages compress well, photo-heavy documents grow large. Text is not selectable (vector PDF
-    /// would need a DrawingContext PDF backend Avalonia doesn't expose). Must run on the UI thread.</summary>
+    /// <summary>Writes the document as a raster PDF (no external dependencies), one page per
+    /// <see cref="PageSize"/> sheet (Continuous falls back to A4). Each page is one FlateDecode RGB image at
+    /// the given DPI — 300 (default) is print quality; text-heavy pages compress well, photo-heavy
+    /// documents grow large. Text is not selectable (vector PDF would need a DrawingContext PDF backend
+    /// Avalonia doesn't expose). Must run on the UI thread.</summary>
     public void SavePdf(System.IO.Stream stream, double dpi = 300)
     {
         int pages = GetPrintPageCount();
         const double ptPerPx = 72.0 / 96.0;
-        Formatters.PdfWriter.Write(stream, A4PageWidth * ptPerPx, A4PageHeight * ptPerPx, pages, i =>
+        Formatters.PdfWriter.Write(stream, PaperWidth * ptPerPx, PaperHeight * ptPerPx, pages, i =>
         {
             var bmp = RenderPrintPage(i, dpi);
             try { return BitmapToRgb24(bmp); }
@@ -205,25 +289,35 @@ public partial class RichEditor
 
     internal Point MapDocToView(Point doc)
     {
-        if (!PageView) return doc;
+        if (!IsPaged) return doc;
         int i = PageOfDocY(doc.Y);
-        return new Point(doc.X + PageContentOffsetX, doc.Y + (ContentTopView(i) - EnsurePageBreaks()[i]));
+        return new Point(doc.X + PagedContentLeftView, doc.Y + (PagedContentTopView(i) - EnsurePageBreaks()[i]));
     }
 
     internal Rect MapDocToView(Rect doc)
-        => PageView ? new Rect(MapDocToView(doc.TopLeft), doc.Size) : doc;
+        => IsPaged ? new Rect(MapDocToView(doc.TopLeft), doc.Size) : doc;
 
     internal Point MapViewToDoc(Point view)
     {
-        if (!PageView) return view;
+        if (!IsPaged) return view;
         var br = EnsurePageBreaks();
-        double band = A4PageHeight + PageGap;
-        int i = Math.Clamp((int)Math.Floor((view.Y - PageGap) / band), 0, br.Count - 1);
-        // Clamp into the page's content slice: clicks on the top/bottom paper margin or in the gap
-        // resolve to that page's first/last line instead of bleeding into the neighboring page.
-        double sliceLen = i + 1 < br.Count ? br[i + 1] - br[i] - 0.01 : double.MaxValue;
-        double local = Math.Clamp(view.Y - ContentTopView(i), 0, sliceLen);
-        return new Point(view.X - PageContentOffsetX, br[i] + local);
+        if (PagedChrome)
+        {
+            double band = PaperHeight + PageGap;
+            int i = Math.Clamp((int)Math.Floor((view.Y - PageGap) / band), 0, br.Count - 1);
+            // Clamp into the page's content slice: clicks on the top/bottom paper margin or in the gap
+            // resolve to that page's first/last line instead of bleeding into the neighboring page.
+            double sliceLen = i + 1 < br.Count ? br[i + 1] - br[i] - 0.01 : double.MaxValue;
+            double local = Math.Clamp(view.Y - ContentTopView(i), 0, sliceLen);
+            return new Point(view.X - PageContentOffsetX, br[i] + local);
+        }
+        // Bare column: pages are content slices separated by NoChromePageGap (heights vary, so search
+        // rather than divide). A click in a gap clamps to the page above's last line.
+        int p = 0;
+        while (p < br.Count - 1 && view.Y >= PagedContentTopView(p + 1)) p++;
+        double len = (p + 1 < br.Count ? br[p + 1] - br[p] : double.MaxValue) - 0.01;
+        double loc = Math.Clamp(view.Y - PagedContentTopView(p), 0, len);
+        return new Point(view.X - NoChromeColX, br[p] + loc);
     }
 
     // Document-space y positions where each page's content starts; [0] is always 0. An atom taller

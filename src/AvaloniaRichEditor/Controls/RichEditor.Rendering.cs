@@ -27,6 +27,10 @@ public partial class RichEditor
     private static readonly Avalonia.Media.Immutable.ImmutablePen AccentPen15 = new(AccentBrush, 1.5);
     private static readonly Avalonia.Media.Immutable.ImmutablePen AccentBorderPen = new(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(120, 0, 120, 215)), 1);
     private static readonly Avalonia.Media.Immutable.ImmutablePen BlockCaretPen = new(Brushes.Black, 2);
+    // Faint dashed marker at page boundaries when a paper size is set but page chrome is off.
+    private static readonly Avalonia.Media.Immutable.ImmutablePen PageBreakPen =
+        new(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(110, 0x9E, 0x9E, 0x9E)), 1,
+            new Avalonia.Media.Immutable.ImmutableDashStyle(new double[] { 4, 4 }, 0));
 
     // Total rendered height of the document at the given content width (mirrors the render advancement).
     // Reported via MeasureOverride so the hosting ScrollViewer grows its scrollable extent with content.
@@ -57,18 +61,28 @@ public partial class RichEditor
     protected override Size MeasureOverride(Size availableSize)
     {
         base.MeasureOverride(availableSize);
-        if (PageView)
+        bool noWidth = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0;
+        if (PagedChrome)
         {
             // Every edit funnels through InvalidateMeasure (NotifyStatus), so recomputing the page
             // breaks here keeps them fresh for render and hit-testing without extra invalidation.
-            _pageBreaks = ComputePageBreaks(PageContentWidth, PageContentHeight);
-            double pw = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0
-                ? A4PageWidth + 2 * PageGap
-                : Math.Max(availableSize.Width, A4PageWidth);
-            _measuredHeight = Math.Max(MinHeight, PageGap + _pageBreaks.Count * (A4PageHeight + PageGap));
+            _pageBreaks = ComputePageBreaks(PaperContentWidth, PaperContentHeight);
+            double pw = noWidth ? PaperWidth + 2 * PageGap : Math.Max(availableSize.Width, PaperWidth);
+            _measuredHeight = Math.Max(MinHeight, PageGap + _pageBreaks.Count * (PaperHeight + PageGap));
             return new Size(pw, _measuredHeight);
         }
-        double w = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0 ? 698 : availableSize.Width;
+        if (IsPaged)
+        {
+            // Paged without chrome: a fixed-width column flowing continuously, centered in any extra
+            // width, with NoChromePageGap whitespace injected between pages. The control is at least the
+            // column wide, so a narrow viewport scrolls horizontally.
+            double cw = PaperContentWidth;
+            _pageBreaks = ComputePageBreaks(cw, PaperContentHeight);
+            double contentH = MeasureContentHeight(cw) + (_pageBreaks.Count - 1) * NoChromePageGap;
+            _measuredHeight = Math.Max(MinHeight, contentH);
+            return new Size(noWidth ? cw : Math.Max(availableSize.Width, cw), _measuredHeight);
+        }
+        double w = noWidth ? A4ContentWidth : availableSize.Width;
         _measuredHeight = Math.Max(MinHeight, MeasureContentHeight(w));
         return new Size(w, _measuredHeight);
     }
@@ -141,9 +155,40 @@ public partial class RichEditor
         double caretHeight;
         Rect? blockCaretRect;
 
-        if (!PageView)
+        if (!IsPaged)
         {
+            // Continuous (Free): one walk at the control width.
             (caretPoint, caretHeight, blockCaretRect) = DrawDocumentBlocks(context, Bounds.Width, visTop, visBottom);
+        }
+        else if (!ShowPageBoundaries)
+        {
+            // Paged without chrome: a centered fixed-width column with NoChromePageGap whitespace
+            // injected between pages (a faint dashed line centered in each gap). Replay the block walk
+            // once per page under a clip + translation — same gap-injection pattern as the page-stack
+            // render, minus the desk/paper/margins. The returned caret stays document-space; MapDocToView
+            // adds the centering X and the cumulative gaps.
+            var breaks = EnsurePageBreaks();
+            caretPoint = null; caretHeight = 20; blockCaretRect = null;
+            for (int i = 0; i < breaks.Count; i++)
+            {
+                double sliceTop = breaks[i];
+                double sliceBottom = i + 1 < breaks.Count ? breaks[i + 1] : double.PositiveInfinity;
+                double viewTop = sliceTop + i * NoChromePageGap;
+                double clipH = i + 1 < breaks.Count ? sliceBottom - sliceTop : Math.Max(1, _measuredHeight - viewTop);
+                if (viewTop + clipH < visTop || viewTop > visBottom) continue;
+                if (i > 0) // dashed separator centered in the gap above this page
+                {
+                    double sepY = viewTop - NoChromePageGap / 2;
+                    context.DrawLine(PageBreakPen, new Point(NoChromeColX, sepY), new Point(NoChromeColX + PaperContentWidth, sepY));
+                }
+                using (context.PushClip(new Rect(NoChromeColX, viewTop, PaperContentWidth, clipH)))
+                using (context.PushTransform(Matrix.CreateTranslation(NoChromeColX, viewTop - sliceTop)))
+                {
+                    var (cp, ch, bcr) = DrawDocumentBlocks(context, PaperContentWidth, sliceTop, sliceBottom);
+                    if (cp != null) { caretPoint = cp; caretHeight = ch; }
+                    if (bcr != null) blockCaretRect = bcr;
+                }
+            }
         }
         else
         {
@@ -176,7 +221,7 @@ public partial class RichEditor
                 using (context.PushClip(clip))
                 using (context.PushTransform(Matrix.CreateTranslation(dx, contentBox.Y - sliceTop)))
                 {
-                    var (cp, ch, bcr) = DrawDocumentBlocks(context, PageContentWidth, sliceTop, sliceBottom);
+                    var (cp, ch, bcr) = DrawDocumentBlocks(context, PaperContentWidth, sliceTop, sliceBottom);
                     if (cp != null) { caretPoint = cp; caretHeight = ch; }
                     if (bcr != null) blockCaretRect = bcr;
                 }

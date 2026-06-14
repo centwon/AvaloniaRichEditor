@@ -22,6 +22,9 @@ public partial class MainWindow : Window
 {
     private RichEditor Editor => EditorView.Editor;
     private ComboBox? _zoomCombo;
+    private ComboBox? _paperCombo;
+    private ComboBox? _orientCombo;
+    private CheckBox? _outlineCheck;
     private bool _suppressZoomCombo;
 
     public MainWindow()
@@ -101,7 +104,7 @@ public partial class MainWindow : Window
 
         // Leading: file actions. FluentIcons here are the *app's* button icons (not the editor's
         // formatting glyphs, which stay the library's built-in vectors).
-        // Save covers all formats (JSON / .ardx / HTML) — HTML export is just another save format.
+        // Save covers all formats (JSON / .rdx / HTML) — HTML export is just another save format.
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.Save), "Demo.Save", () => _ = SaveAsync()));
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.FolderOpen), "Demo.LoadJson", () => _ = LoadAsync()));
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.Print), "Demo.PrintPreview", () => new PrintPreviewWindow(Editor).Show(this)));
@@ -115,9 +118,52 @@ public partial class MainWindow : Window
         _zoomCombo.SelectionChanged += ZoomCombo_SelectionChanged;
         tb.TrailingItems.Add(_zoomCombo);
 
-        var page = new CheckBox { Content = Loc("Demo.PageView"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
-        page.IsCheckedChanged += (_, _) => { Editor.PageView = page.IsChecked == true; if (_fitWidth) ApplyFitWidth(); };
-        tb.TrailingItems.Add(page);
+        // Paper size + orientation + page-outline toggle. "Continuous" reflows to width; a concrete
+        // size fixes the column. Orientation/outline are meaningless when continuous, so they disable
+        // there. Size names (A4, B5, …) are universal, so only "Continuous" is localized.
+        _paperCombo = new ComboBox { Width = 96, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")) };
+        var sizes = new (RichEditorPageSize size, string label)[]
+        {
+            (RichEditorPageSize.Continuous, Loc("Demo.PaperFree")),
+            (RichEditorPageSize.A4, "A4"), (RichEditorPageSize.A3, "A3"), (RichEditorPageSize.A5, "A5"),
+            (RichEditorPageSize.B4, "B4"), (RichEditorPageSize.B5, "B5"),
+            (RichEditorPageSize.Letter, "Letter"), (RichEditorPageSize.Legal, "Legal"), (RichEditorPageSize.Tabloid, "Tabloid"),
+        };
+        foreach (var (size, label) in sizes)
+            _paperCombo.Items.Add(new ComboBoxItem { Content = label, Tag = size });
+        _paperCombo.SelectedIndex = 1; // A4 (matches the editor's default)
+        ToolTip.SetTip(_paperCombo, Loc("Demo.PaperTip"));
+        tb.TrailingItems.Add(_paperCombo);
+
+        _orientCombo = new ComboBox { Width = 76, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")) };
+        _orientCombo.Items.Add(new ComboBoxItem { Content = Loc("Demo.Portrait"), Tag = RichEditorPageOrientation.Portrait });
+        _orientCombo.Items.Add(new ComboBoxItem { Content = Loc("Demo.Landscape"), Tag = RichEditorPageOrientation.Landscape });
+        _orientCombo.SelectedIndex = 0;
+        _orientCombo.SelectionChanged += (_, _) =>
+        {
+            if (_orientCombo.SelectedItem is ComboBoxItem { Tag: RichEditorPageOrientation o })
+            {
+                Editor.PageOrientation = o;
+                if (_fitWidth) ApplyFitWidth();
+            }
+        };
+        tb.TrailingItems.Add(_orientCombo);
+
+        _outlineCheck = new CheckBox { Content = Loc("Demo.PageOutline"), FontSize = 12, IsChecked = true, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
+        _outlineCheck.IsCheckedChanged += (_, _) => { Editor.ShowPageBoundaries = _outlineCheck.IsChecked == true; if (_fitWidth) ApplyFitWidth(); };
+        tb.TrailingItems.Add(_outlineCheck);
+
+        _paperCombo.SelectionChanged += (_, _) =>
+        {
+            if (_paperCombo.SelectedItem is ComboBoxItem { Tag: RichEditorPageSize size })
+            {
+                Editor.PageSize = size;
+                bool paged = size != RichEditorPageSize.Continuous;
+                _outlineCheck.IsEnabled = paged;
+                _orientCombo.IsEnabled = paged;
+                if (_fitWidth) ApplyFitWidth();
+            }
+        };
     }
 
     private static Control SymbolIcon(Symbol s) => new FluentIcons.Avalonia.SymbolIcon { Symbol = s, FontSize = 16 };
@@ -145,14 +191,25 @@ public partial class MainWindow : Window
 
     private bool _fitWidth = true; // default: fit to width
 
-    // Fit-to-width: in page view, scale the A4 page to the viewport; in the reflowing layout the
-    // editor already fills the width at 100%, so fit is just 1.0. Recomputed on resize.
+    // Fit-to-width: for a concrete paper, scale the fixed column (the paper sheet with chrome, or the
+    // content column without) to the viewport; the continuous (Free) layout already fills the width at
+    // 100%, so fit is just 1.0. Recomputed on resize.
     private void ApplyFitWidth()
     {
         if (EditorView.Bounds.Width < 50) return; // not laid out yet
-        const double a4 = 794, pad = 40;
-        EditorView.ZoomFactor = Editor.PageView
-            ? Math.Clamp((EditorView.Bounds.Width - pad) / a4, 0.2, 5.0)
+        const double pad = 40, deskGap = 24; // deskGap mirrors RichEditor.PageGap (desk margin each side)
+        // The editor's natural (unconstrained) width for a paged layout is the paper PLUS a desk gap on
+        // each side, with the paper centered between them. Scale that whole block — scaling only the
+        // paper width overshoots by 2×deskGap and clips the right edge. GetPaperPixelSize already
+        // accounts for the selected size and orientation.
+        double paperW = Editor.GetPaperPixelSize().Width; // (= A4 fallback when Free)
+        double target = Editor.PageSize == RichEditorPageSize.Continuous
+            ? 0
+            : (Editor.ShowPageBoundaries
+                ? paperW + 2 * deskGap  // paper + symmetric desk margins
+                : paperW - 96);         // bare content column (no chrome; 2×48 paper margins)
+        EditorView.ZoomFactor = target > 0
+            ? Math.Clamp((EditorView.Bounds.Width - pad) / target, 0.2, 5.0)
             : 1.0;
         UpdateZoomLabel();
     }
@@ -232,15 +289,15 @@ public partial class MainWindow : Window
             FileTypeChoices = new[]
             {
                 new Avalonia.Platform.Storage.FilePickerFileType("JSON document") { Patterns = new[] { "*.json" } },
-                new Avalonia.Platform.Storage.FilePickerFileType("ARDX package") { Patterns = new[] { "*.ardx" } },
+                new Avalonia.Platform.Storage.FilePickerFileType("RDX package") { Patterns = new[] { "*.rdx" } },
                 new Avalonia.Platform.Storage.FilePickerFileType("HTML document") { Patterns = new[] { "*.html", "*.htm" } },
             }
         });
         if (file == null) return;
 
-        // Format follows the chosen extension: .ardx = ZIP package (raw image bytes), .html/.htm =
+        // Format follows the chosen extension: .rdx = ZIP package (raw image bytes), .html/.htm =
         // HTML export, anything else = plain JSON. HTML export is just another save format.
-        if (file.Name.EndsWith(".ardx", StringComparison.OrdinalIgnoreCase))
+        if (file.Name.EndsWith(".rdx", StringComparison.OrdinalIgnoreCase))
         {
             using var stream = await file.OpenWriteAsync();
             await Editor.SavePackageAsync(stream);
@@ -280,7 +337,7 @@ public partial class MainWindow : Window
             await stream.CopyToAsync(ms);
             ms.Position = 0;
 
-            // Sniff the content: ZIP magic ("PK") = .ardx package, anything else = JSON text.
+            // Sniff the content: ZIP magic ("PK") = .rdx package, anything else = JSON text.
             if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
                 await Editor.LoadPackageAsync(ms);
             else
@@ -300,22 +357,30 @@ public partial class MainWindow : Window
     {
         RichEditorLocalization.Register("en", new Dictionary<string, string>
         {
-            ["Demo.Save"] = "Save (JSON / .ardx / HTML)",
+            ["Demo.Save"] = "Save (JSON / .rdx / HTML)",
             ["Demo.LoadJson"] = "Load JSON",
             ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = 100%)",
             ["Demo.Fit"] = "Fit",
-            ["Demo.PageView"] = "Pages",
+            ["Demo.PaperTip"] = "Paper size (Continuous = reflows to width)",
+            ["Demo.PaperFree"] = "Continuous",
+            ["Demo.PageOutline"] = "Outline",
+            ["Demo.Portrait"] = "Portrait",
+            ["Demo.Landscape"] = "Landscape",
             ["Demo.PrintPreview"] = "Print preview",
             ["Demo.Pages"] = "{0} page(s)",
             ["Demo.ImageLimitWarning"] = "⚠ {0} images — exceeds the recommended {1} (may slow down)",
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
         {
-            ["Demo.Save"] = "저장 (JSON / .ardx / HTML)",
+            ["Demo.Save"] = "저장 (JSON / .rdx / HTML)",
             ["Demo.LoadJson"] = "JSON 불러오기",
             ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=100%)",
             ["Demo.Fit"] = "맞춤",
-            ["Demo.PageView"] = "페이지",
+            ["Demo.PaperTip"] = "용지 크기 (연속 = 폭에 맞춰 흐름)",
+            ["Demo.PaperFree"] = "연속",
+            ["Demo.PageOutline"] = "쪽 윤곽",
+            ["Demo.Portrait"] = "세로",
+            ["Demo.Landscape"] = "가로",
             ["Demo.PrintPreview"] = "인쇄 미리보기",
             ["Demo.Pages"] = "{0}페이지",
             ["Demo.ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",

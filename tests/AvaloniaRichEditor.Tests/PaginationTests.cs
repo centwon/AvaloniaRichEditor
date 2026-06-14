@@ -97,9 +97,10 @@ public class PaginationTests
     // ---- Page view (Phase 2): the doc<->view mapping choke point ----
 
     [AvaloniaFact]
-    public void PageViewOff_MappingIsIdentity()
+    public void FreeMode_MappingIsIdentity()
     {
         var ed = EditorWith(EmptyPara(50));
+        ed.PageSize = RichEditorPageSize.Continuous;
         var p = new Avalonia.Point(123, 456);
         Assert.Equal(p, ed.MapDocToView(p));
         Assert.Equal(p, ed.MapViewToDoc(p));
@@ -110,7 +111,7 @@ public class PaginationTests
     {
         // 30 atoms of 50px = 1500px content; page capacity 1043 -> 20 atoms (1000px) per page -> 2 pages.
         var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
-        ed.PageView = true;
+        ed.PageSize = RichEditorPageSize.A4; // default, but explicit for the test's intent
         ed.Measure(new Avalonia.Size(900, double.PositiveInfinity));
         double expected = RichEditor.PageGap + 2 * (RichEditor.A4PageHeight + RichEditor.PageGap);
         Assert.Equal(expected, ed.DesiredSize.Height, 3);
@@ -120,7 +121,7 @@ public class PaginationTests
     public void PageView_MapRoundTrips_AcrossPages()
     {
         var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
-        ed.PageView = true; // breaks: [0, 1000]
+        ed.PageSize = RichEditorPageSize.A4; // breaks: [0, 1000]
         foreach (double docY in new[] { 0.0, 500, 999, 1000, 1250, 1499 })
         {
             var view = ed.MapDocToView(new Avalonia.Point(30, docY));
@@ -136,7 +137,7 @@ public class PaginationTests
     public void PageView_ClickInGap_ClampsToNearestPageContent()
     {
         var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
-        ed.PageView = true; // page 1 holds doc 0..1000, paper 1 spans view 24..1147, gap 1147..1171
+        ed.PageSize = RichEditorPageSize.A4; // page 1 holds doc 0..1000, paper 1 spans view 24..1147, gap 1147..1171
         double gapY = RichEditor.PageGap + RichEditor.A4PageHeight + RichEditor.PageGap / 2.0;
         var doc = ed.MapViewToDoc(new Avalonia.Point(100, gapY));
         Assert.True(doc.Y < 1000 && doc.Y > 990, $"gap click should clamp to page 1's end, got {doc.Y:F1}");
@@ -149,10 +150,10 @@ public class PaginationTests
     // ---- Print rendering (Phase 3) ----
 
     [AvaloniaFact]
-    public void PrintPageCount_MatchesPagination_RegardlessOfPageView()
+    public void PrintPageCount_MatchesPagination_EvenInFreeMode()
     {
         var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
-        Assert.False(ed.PageView); // print paginates even in continuous mode
+        ed.PageSize = RichEditorPageSize.Continuous; // print still paginates (A4 fallback)
         Assert.Equal(2, ed.GetPrintPageCount());
     }
 
@@ -231,5 +232,69 @@ public class PaginationTests
         Assert.All(gaps, g => Assert.True(g <= 200.011, $"page span {g:F2} exceeds capacity"));
         // Uniform lines → identical whole-line count per page → identical gaps.
         Assert.All(gaps, g => Assert.Equal(gaps[0], g, 2));
+    }
+
+    // ---- PageSize / ShowPageBoundaries: the three layout states ----
+
+    [AvaloniaFact]
+    public void Default_IsA4WithBoundaries()
+    {
+        var ed = new RichEditor();
+        Assert.Equal(RichEditorPageSize.A4, ed.PageSize);
+        Assert.True(ed.ShowPageBoundaries);
+    }
+
+    [AvaloniaFact]
+    public void PaperSize_FixesContentLayoutWidth_FreeReflows()
+    {
+        var ed = EditorWith(EmptyPara(50));
+        ed.PageSize = RichEditorPageSize.A4;
+        Assert.Equal(698, ed.ContentLayoutWidth, 3);   // 794 - 2*48
+        ed.PageSize = RichEditorPageSize.Letter;
+        Assert.Equal(720, ed.ContentLayoutWidth, 3);   // 816 - 2*48
+        ed.PageSize = RichEditorPageSize.Continuous;
+        Assert.Equal(0, ed.ContentLayoutWidth, 3);     // reflows to control width (0 unmeasured)
+    }
+
+    [AvaloniaFact]
+    public void FreeMode_MeasuresToControlWidth()
+    {
+        var ed = EditorWith(EmptyPara(50));
+        ed.PageSize = RichEditorPageSize.Continuous;
+        ed.Measure(new Avalonia.Size(640, double.PositiveInfinity));
+        Assert.Equal(640, ed.DesiredSize.Width, 3);
+    }
+
+    [AvaloniaFact]
+    public void Landscape_SwapsPaperDimensions()
+    {
+        var ed = EditorWith(EmptyPara(50));
+        ed.PageSize = RichEditorPageSize.A4;
+        var portrait = ed.GetPaperPixelSize();
+        Assert.Equal(794, portrait.Width, 3);
+        Assert.Equal(1123, portrait.Height, 3);
+
+        ed.PageOrientation = RichEditorPageOrientation.Landscape;
+        var land = ed.GetPaperPixelSize();
+        Assert.Equal(1123, land.Width, 3);   // dimensions swapped
+        Assert.Equal(794, land.Height, 3);
+        Assert.Equal(1123 - 2 * 48, ed.ContentLayoutWidth, 3); // wider content column
+    }
+
+    [AvaloniaFact]
+    public void PaperWithoutBoundaries_InjectsSmallGapsBetweenPages()
+    {
+        // Paged but no chrome: a small whitespace gap is injected at each page boundary (so pages read
+        // as separate), but no full desk/paper chrome. 30 atoms of 50px break at 1000 (A4 capacity 1043).
+        var ed = EditorWith(Enumerable.Range(0, 30).Select(_ => (Block)EmptyPara(50)).ToArray());
+        ed.PageSize = RichEditorPageSize.A4;
+        ed.ShowPageBoundaries = false;
+
+        // Page 0 (doc 0..1000): no gap yet.
+        Assert.Equal(500, ed.MapDocToView(new Avalonia.Point(10, 500)).Y, 3);
+        // Page 1 (doc 1000..): one gap injected.
+        var v = ed.MapDocToView(new Avalonia.Point(10, 1500));
+        Assert.Equal(1500 + RichEditor.NoChromePageGap, v.Y, 3);
+        Assert.Equal(1500, ed.MapViewToDoc(v).Y, 3); // round-trips through the gap
     }
 }

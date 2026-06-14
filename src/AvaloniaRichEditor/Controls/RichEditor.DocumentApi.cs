@@ -4,7 +4,7 @@ using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
 
-// Document-level I/O API: HTML/JSON/.ardx load-save (sync + async snapshot variants), Clear,
+// Document-level I/O API: HTML/JSON/.rdx load-save (sync + async snapshot variants), Clear,
 // plain-text extraction and undo availability. Part of RichEditor (split out of the main file
 // for readability).
 public partial class RichEditor
@@ -51,7 +51,7 @@ public partial class RichEditor
         LoadDocument(Formatters.DocumentSerializer.FromDto(dto, pool));
     }
 
-    /// <summary>Writes the document to <paramref name="destination"/> as an <c>.ardx</c> package
+    /// <summary>Writes the document to <paramref name="destination"/> as an <c>.rdx</c> package
     /// (ZIP: document.json + raw image entries, no base64 overhead) on a background thread. The DTO
     /// is built on the calling thread (snapshot + thread-affine brush reads), like <see cref="ToJsonAsync"/>;
     /// only the zip writing runs in the background.</summary>
@@ -61,7 +61,7 @@ public partial class RichEditor
         return Task.Run(() => Formatters.DocumentPackage.WriteDto(dto, images, destination));
     }
 
-    /// <summary>Reads an <c>.ardx</c> package from <paramref name="source"/> on a background thread
+    /// <summary>Reads an <c>.rdx</c> package from <paramref name="source"/> on a background thread
     /// (image decoding is already deferred to first render), then swaps the document in. Call (and
     /// await) from the UI thread.</summary>
     public async Task LoadPackageAsync(System.IO.Stream source)

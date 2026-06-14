@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Selectable paper size** — `PageSize` (`RichEditorPageSize`: `Continuous`, `A4`, `A3`, `A5`, `B4`,
+  `B5`, `Letter`, `Legal`, `Tabloid`) fixes the text-column width to the chosen sheet's content width;
+  `Continuous` reflows to the control width as before. B4/B5 use the JIS series.
+- **`PageOrientation`** (`Portrait`/`Landscape`) swaps the paper's width and height across the editor
+  view, print, and PDF.
+- **`ShowPageBoundaries`** — for a concrete paper size, toggles between the full Word-style page stack
+  (grey desk, paper sheets, margins) and a lighter centered fixed-width column that flows continuously
+  with a faint dashed separator and a small whitespace gap at each page boundary.
+- **`GetPaperPixelSize()`** returns the current paper's pixel size at 96 DPI (orientation-aware), for
+  host fit-to-width and print math.
+
+### Changed
+- **Page layout redesign**: the single `PageView` bool is replaced by the orthogonal `PageSize` +
+  `ShowPageBoundaries` (+ `PageOrientation`). The default is now **A4 with boundaries** (was the
+  continuous layout). Hosts that want the old continuous behaviour set `PageSize = Continuous`.
+- Print/PDF now follow the selected paper size and orientation (`Continuous` falls back to A4).
+- **Package file extension `.ardx` → `.rdx`** (a more generic name; the ZIP package format itself is
+  unchanged, and the stream-based `DocumentPackage` / `SavePackageAsync` API is untouched).
+
+### Removed
+- **`PageView`** (property + `PageViewProperty`). Replaced by `PageSize`/`ShowPageBoundaries`.
+
+### Fixed
+- Page-view hit-testing used a hardcoded A4 page height, so clicks/caret landed wrong for non-A4
+  paper sizes; it now uses the selected paper's height.
+
 ## [0.4.0-alpha] - 2026-06-14
 
 Clipboard interop (Word/HWP RTF, async HTML) and a round of editor UX fixes.

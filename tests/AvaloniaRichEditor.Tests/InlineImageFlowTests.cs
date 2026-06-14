@@ -15,7 +15,9 @@ public class InlineImageFlowTests
 
     private static double MeasureDoc(params Inline[] inlines)
     {
-        var ed = new RichEditor { MinHeight = 0 };
+        // These tests assert inline-image line wrapping at a known width, so use the continuous (Free)
+        // layout that measures to the given width (the default A4 paper would fix it to 698 instead).
+        var ed = new RichEditor { MinHeight = 0, PageSize = RichEditorPageSize.Continuous };
         var doc = new FlowDocument();
         var p = new Paragraph();
         foreach (var i in inlines) p.Inlines.Add(i);

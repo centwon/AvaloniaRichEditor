@@ -1,1 +1,27 @@
 #nullable enable
+*REMOVED*AvaloniaRichEditor.Controls.RichEditor.PageView.get -> bool
+*REMOVED*AvaloniaRichEditor.Controls.RichEditor.PageView.set -> void
+*REMOVED*static readonly AvaloniaRichEditor.Controls.RichEditor.PageViewProperty -> Avalonia.StyledProperty<bool>!
+AvaloniaRichEditor.Controls.RichEditor.GetPaperPixelSize() -> Avalonia.Size
+AvaloniaRichEditor.Controls.RichEditor.PageOrientation.get -> AvaloniaRichEditor.Controls.RichEditorPageOrientation
+AvaloniaRichEditor.Controls.RichEditor.PageOrientation.set -> void
+AvaloniaRichEditor.Controls.RichEditor.PageSize.get -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditor.PageSize.set -> void
+AvaloniaRichEditor.Controls.RichEditor.ShowPageBoundaries.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.ShowPageBoundaries.set -> void
+AvaloniaRichEditor.Controls.RichEditorPageOrientation
+AvaloniaRichEditor.Controls.RichEditorPageOrientation.Landscape = 1 -> AvaloniaRichEditor.Controls.RichEditorPageOrientation
+AvaloniaRichEditor.Controls.RichEditorPageOrientation.Portrait = 0 -> AvaloniaRichEditor.Controls.RichEditorPageOrientation
+AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.A3 = 2 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.A4 = 1 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.A5 = 3 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.B4 = 4 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.B5 = 5 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.Continuous = 0 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.Legal = 7 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.Letter = 6 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+AvaloniaRichEditor.Controls.RichEditorPageSize.Tabloid = 8 -> AvaloniaRichEditor.Controls.RichEditorPageSize
+static readonly AvaloniaRichEditor.Controls.RichEditor.PageOrientationProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.RichEditorPageOrientation>!
+static readonly AvaloniaRichEditor.Controls.RichEditor.PageSizeProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.RichEditorPageSize>!
+static readonly AvaloniaRichEditor.Controls.RichEditor.ShowPageBoundariesProperty -> Avalonia.StyledProperty<bool>!

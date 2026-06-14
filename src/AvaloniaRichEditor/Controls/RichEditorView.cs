@@ -72,12 +72,13 @@ public class RichEditorView : UserControl
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
         UpdateHorizontalScroll();
-        // Page view paginates to a fixed page width, so a zoomed-in page can exceed the viewport →
-        // allow horizontal scrolling there. The continuous layout reflows to the viewport, so it must
-        // stay disabled (a finite width is what makes the editor reflow instead of growing unbounded).
+        // A concrete paper size fixes the column width, so a narrow viewport (or a zoomed page) can
+        // exceed it → allow horizontal scrolling there. The continuous (Free) layout reflows to the
+        // viewport, so it must stay disabled (a finite width is what makes the editor reflow instead
+        // of growing unbounded).
         Editor.PropertyChanged += (_, e) =>
         {
-            if (e.Property == RichEditor.PageViewProperty) UpdateHorizontalScroll();
+            if (e.Property == RichEditor.PageSizeProperty) UpdateHorizontalScroll();
         };
 
         var dock = new DockPanel();
@@ -88,7 +89,7 @@ public class RichEditorView : UserControl
     }
 
     private void UpdateHorizontalScroll()
-        => _scroller.HorizontalScrollBarVisibility = Editor.PageView
+        => _scroller.HorizontalScrollBarVisibility = Editor.IsPaged
             ? ScrollBarVisibility.Auto
             : ScrollBarVisibility.Disabled;
 

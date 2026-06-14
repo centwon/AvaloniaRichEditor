@@ -5,9 +5,9 @@
 | 형식 | 용도 | 진입점 API |
 |---|---|---|
 | **JSON 문자열** (스키마 v2) | 임베드·DB TEXT 컬럼·diff·이식 | `RichEditor.ToJson()` / `LoadJson()`, `DocumentSerializer.Serialize()` / `Deserialize()` |
-| **`.ardx` 패키지** (ZIP 컨테이너) | 파일로 주고받기 (base64 오버헤드 제거) | `RichEditor.SavePackageAsync()` / `LoadPackageAsync()`, `DocumentPackage.Save()` / `Load()` |
+| **`.rdx` 패키지** (ZIP 컨테이너) | 파일로 주고받기 (base64 오버헤드 제거) | `RichEditor.SavePackageAsync()` / `LoadPackageAsync()`, `DocumentPackage.Save()` / `Load()` |
 
-HTML 입출력(`ToHtml`/`LoadHtml`)은 **교환용**이며 손실이 있을 수 있다(예: 행 높이, 일부 여백). 무손실 보존이 필요하면 JSON/`.ardx`를 사용한다.
+HTML 입출력(`ToHtml`/`LoadHtml`)은 **교환용**이며 손실이 있을 수 있다(예: 행 높이, 일부 여백). 무손실 보존이 필요하면 JSON/`.rdx`를 사용한다.
 
 > 구현 소스: [`DocumentSerializer.cs`](../src/AvaloniaRichEditor/Formatters/DocumentSerializer.cs), [`DocumentPackage.cs`](../src/AvaloniaRichEditor/Formatters/DocumentPackage.cs). 이 명세와 코드가 다르면 코드가 우선이고, 이 문서를 고친다.
 
@@ -191,12 +191,12 @@ FlowDocument
 
 ---
 
-## 3. `.ardx` 패키지 형식
+## 3. `.rdx` 패키지 형식
 
 표준 **ZIP 컨테이너**다(`System.IO.Compression`, 외부 의존성 없음). JSON 문자열 계약을 치환하지 않고 그 위에 얹힌 파일 교환 계층이다.
 
 ```
-*.ardx (ZIP)
+*.rdx (ZIP)
 ├─ document.json        ← §2의 JSON과 동일 스키마. 단, Images 풀 항목에 Data(base64)가 없고
 │                          MimeType만 남는다 (Deflate 압축)
 └─ images/<SHA256 hex>  ← 원본 인코딩 바이트. 엔트리 이름 = 풀 키 (무압축 Stored)
@@ -208,7 +208,7 @@ FlowDocument
 - 이미지 엔트리는 이미 압축된 형식(JPEG/PNG)이므로 **무압축(Stored)** 으로 저장한다.
 - 로드 시: `document.json`이 없으면 빈 문서. `images/` 엔트리의 MIME은 풀 메타에서 읽고, 메타가 없으면 **매직 넘버 스니핑**(png/jpeg/gif/bmp/webp)으로 결정한다.
 - 손상된 ZIP/JSON은 예외 없이 빈 문서를 반환한다.
-- 파일 식별: 데모는 ZIP 매직 `PK`(0x50 0x4B) 스니핑으로 `.ardx`와 일반 JSON을 구분한다. 전용 meta 엔트리는 없다 — 스키마 버전은 `document.json`의 `Version`이 담당.
+- 파일 식별: 데모는 ZIP 매직 `PK`(0x50 0x4B) 스니핑으로 `.rdx`와 일반 JSON을 구분한다. 전용 meta 엔트리는 없다 — 스키마 버전은 `document.json`의 `Version`이 담당.
 
 ---
 
@@ -227,4 +227,4 @@ FlowDocument
 **스키마를 바꿀 때**
 1. 기존 문서를 깨뜨리는 변경(필드 의미 변경·제거)이면 `CurrentSchemaVersion`을 올리고 읽기 폴백을 추가한다. 필드 *추가*는 버전 증가 없이 가능하다(생략=기본값 규칙 유지).
 2. 이 문서의 버전 이력 표(§2.2)와 필드 표를 갱신한다.
-3. 왕복 테스트(`tests/`의 JSON/ardx 라운드트립)와 레거시 로드 테스트를 추가한다.
+3. 왕복 테스트(`tests/`의 JSON/rdx 라운드트립)와 레거시 로드 테스트를 추가한다.
