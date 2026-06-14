@@ -6,7 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-alpha] - 2026-06-14
+
+A self-contained `RichEditorView` (built-in page/zoom/file-action toolbar + status bar), a Word-style
+table-size picker in the context menu, font-combo and context-menu font fixes, and idle-render
+performance work — bundled with the page-layout redesign.
+
 ### Added
+- **`RichEditorView` is now a complete drop-in view**: its toolbar carries built-in page controls
+  (paper size, orientation, page outline) and a zoom combo, plus a bottom **status bar** (character/word
+  counts, caret line/column, page count, image-limit warning). Toggle via `ShowStatusBar` /
+  `ShowFileActions`.
+- **`FitToWidth`** (default on) auto-scales the document to fill the viewport width — no horizontal
+  scrollbar — recomputing on resize and paper/orientation/outline changes. An explicit `ZoomFactor`
+  (or Ctrl+wheel / Ctrl+`+`/`-`) turns it off; Ctrl+`0` restores fit.
+- **Built-in Export / Import / Print toolbar buttons.** Export/Import use the platform file picker
+  (JSON / `.flow` / HTML); Print is delegated to the host via the new **`PrintRequested`** event, so the
+  library keeps no platform print dependency. New `RichEditorIcon.Export` / `Import` / `Print` icon
+  slots with built-in vector glyphs.
 - **Selectable paper size** — `PageSize` (`RichEditorPageSize`: `Continuous`, `A4`, `A3`, `A5`, `B4`,
   `B5`, `Letter`, `Legal`, `Tabloid`) fixes the text-column width to the chosen sheet's content width;
   `Continuous` reflows to the control width as before. B4/B5 use the JIS series.
@@ -26,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Package file extension `.ardx` → `.flow`** (a shorter, more memorable name evoking the
   `FlowDocument` model; the ZIP package format itself is unchanged, and the stream-based
   `DocumentPackage` / `SavePackageAsync` API is untouched).
+- **`RichEditorView` defaults** to A4 + no page outline + fit-to-width (a bare flowing column).
+- **Font-family combo** now renders each font name in its own typeface (in both the dropdown and the
+  selected display), scoped to the combo so the rest of the toolbar is unaffected.
+- **Context-menu "Insert Table"** is now a drag-to-size grid picker (matching the toolbar), replacing
+  the fixed 2×2 item.
+- **Performance**: passes that cannot have changed content (caret blink, scroll, pointer hover) reuse
+  the cached paragraph and table layouts without re-hashing every paragraph's text, and stale cache
+  entries for deleted paragraphs/tables are pruned — removing full-document work from the idle blink
+  and from mouse-move hit-testing.
 
 ### Removed
 - **`PageView`** (property + `PageViewProperty`). Replaced by `PageSize`/`ShowPageBoundaries`.
@@ -33,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Page-view hit-testing used a hardcoded A4 page height, so clicks/caret landed wrong for non-A4
   paper sizes; it now uses the selected paper's height.
+- The right-click context menu now uses a stable UI font instead of inheriting (and drifting with)
+  the editor's selected font.
 
 ## [0.4.0-alpha] - 2026-06-14
 
