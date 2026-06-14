@@ -7,7 +7,7 @@ using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Formatters;
 
-/// <summary>Reads and writes the <c>.rdx</c> package format (roadmap N6-7): a ZIP container with
+/// <summary>Reads and writes the <c>.flow</c> package format (roadmap N6-7): a ZIP container with
 /// <c>document.json</c> (the library's JSON schema, its image pool referencing zip entries instead
 /// of embedding base64) and <c>images/&lt;sha256&gt;</c> entries holding the original encoded bytes
 /// stored uncompressed — they are already JPEG/PNG-compressed, so the win over plain JSON is
@@ -16,7 +16,7 @@ namespace AvaloniaRichEditor.Formatters;
 /// interchange.</summary>
 public static class DocumentPackage
 {
-    /// <summary>Writes <paramref name="document"/> to <paramref name="destination"/> as an .rdx
+    /// <summary>Writes <paramref name="document"/> to <paramref name="destination"/> as a .flow
     /// package. The stream is left open.</summary>
     public static void Save(FlowDocument document, Stream destination)
     {
@@ -49,7 +49,7 @@ public static class DocumentPackage
         }
     }
 
-    /// <summary>Reads an .rdx package from <paramref name="source"/>. Returns an empty document on
+    /// <summary>Reads a .flow package from <paramref name="source"/>. Returns an empty document on
     /// malformed input, mirroring <see cref="DocumentSerializer.Deserialize"/>. Image decoding is
     /// deferred to first render. The stream is left open.</summary>
     public static FlowDocument Load(Stream source)

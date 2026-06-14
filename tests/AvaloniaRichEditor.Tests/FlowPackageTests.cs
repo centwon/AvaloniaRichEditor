@@ -9,10 +9,10 @@ using Xunit;
 
 namespace AvaloniaRichEditor.Tests;
 
-// .rdx package (roadmap N6-7): ZIP with document.json + images/<sha256> entries. Image bytes are
+// .flow package (roadmap N6-7): ZIP with document.json + images/<sha256> entries. Image bytes are
 // stored raw (no base64, no deflate) and deduplicated by hash; the document round-trips losslessly
 // against the JSON serializer.
-public class RdxPackageTests
+public class FlowPackageTests
 {
     private static byte[] FakeJpeg() => new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02, 0x03, 0x04 };
 
@@ -21,7 +21,7 @@ public class RdxPackageTests
         var doc = new FlowDocument();
         var p = new Paragraph();
         p.Inlines.Add(new Run { Text = "Hello ", FontWeight = FontWeight.Bold, Foreground = Brushes.Red });
-        p.Inlines.Add(new Run { Text = "rdx" });
+        p.Inlines.Add(new Run { Text = "flow" });
         var icon = new InlineImage { Width = 20, Height = 20 };
         icon.SetImageData(FakeJpeg(), "image/jpeg");
         p.Inlines.Add(icon);
@@ -94,7 +94,7 @@ public class RdxPackageTests
     [Fact]
     public void Package_IsSmallerThanJson_ForImageDocuments()
     {
-        // The point of .rdx: dropping the ~33% base64 overhead on image bytes.
+        // The point of .flow: dropping the ~33% base64 overhead on image bytes.
         var doc = new FlowDocument();
         var big = new byte[30_000];
         new Random(1).NextBytes(big);
@@ -105,6 +105,6 @@ public class RdxPackageTests
 
         using var ms = SaveToStream(doc);
         long jsonSize = System.Text.Encoding.UTF8.GetByteCount(DocumentSerializer.Serialize(doc));
-        Assert.True(ms.Length < jsonSize, $"rdx={ms.Length} should be < json={jsonSize}");
+        Assert.True(ms.Length < jsonSize, $"flow={ms.Length} should be < json={jsonSize}");
     }
 }

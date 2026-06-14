@@ -23,8 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ShowPageBoundaries` (+ `PageOrientation`). The default is now **A4 with boundaries** (was the
   continuous layout). Hosts that want the old continuous behaviour set `PageSize = Continuous`.
 - Print/PDF now follow the selected paper size and orientation (`Continuous` falls back to A4).
-- **Package file extension `.ardx` → `.rdx`** (a more generic name; the ZIP package format itself is
-  unchanged, and the stream-based `DocumentPackage` / `SavePackageAsync` API is untouched).
+- **Package file extension `.ardx` → `.flow`** (a shorter, more memorable name evoking the
+  `FlowDocument` model; the ZIP package format itself is unchanged, and the stream-based
+  `DocumentPackage` / `SavePackageAsync` API is untouched).
 
 ### Removed
 - **`PageView`** (property + `PageViewProperty`). Replaced by `PageSize`/`ShowPageBoundaries`.

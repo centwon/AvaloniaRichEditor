@@ -104,7 +104,7 @@ public partial class MainWindow : Window
 
         // Leading: file actions. FluentIcons here are the *app's* button icons (not the editor's
         // formatting glyphs, which stay the library's built-in vectors).
-        // Save covers all formats (JSON / .rdx / HTML) — HTML export is just another save format.
+        // Save covers all formats (JSON / .flow / HTML) — HTML export is just another save format.
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.Save), "Demo.Save", () => _ = SaveAsync()));
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.FolderOpen), "Demo.LoadJson", () => _ = LoadAsync()));
         tb.LeadingItems.Add(ShellButton(SymbolIcon(Symbol.Print), "Demo.PrintPreview", () => new PrintPreviewWindow(Editor).Show(this)));
@@ -289,15 +289,15 @@ public partial class MainWindow : Window
             FileTypeChoices = new[]
             {
                 new Avalonia.Platform.Storage.FilePickerFileType("JSON document") { Patterns = new[] { "*.json" } },
-                new Avalonia.Platform.Storage.FilePickerFileType("RDX package") { Patterns = new[] { "*.rdx" } },
+                new Avalonia.Platform.Storage.FilePickerFileType("Flow package") { Patterns = new[] { "*.flow" } },
                 new Avalonia.Platform.Storage.FilePickerFileType("HTML document") { Patterns = new[] { "*.html", "*.htm" } },
             }
         });
         if (file == null) return;
 
-        // Format follows the chosen extension: .rdx = ZIP package (raw image bytes), .html/.htm =
+        // Format follows the chosen extension: .flow = ZIP package (raw image bytes), .html/.htm =
         // HTML export, anything else = plain JSON. HTML export is just another save format.
-        if (file.Name.EndsWith(".rdx", StringComparison.OrdinalIgnoreCase))
+        if (file.Name.EndsWith(".flow", StringComparison.OrdinalIgnoreCase))
         {
             using var stream = await file.OpenWriteAsync();
             await Editor.SavePackageAsync(stream);
@@ -337,7 +337,7 @@ public partial class MainWindow : Window
             await stream.CopyToAsync(ms);
             ms.Position = 0;
 
-            // Sniff the content: ZIP magic ("PK") = .rdx package, anything else = JSON text.
+            // Sniff the content: ZIP magic ("PK") = .flow package, anything else = JSON text.
             if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
                 await Editor.LoadPackageAsync(ms);
             else
@@ -357,7 +357,7 @@ public partial class MainWindow : Window
     {
         RichEditorLocalization.Register("en", new Dictionary<string, string>
         {
-            ["Demo.Save"] = "Save (JSON / .rdx / HTML)",
+            ["Demo.Save"] = "Save (JSON / .flow / HTML)",
             ["Demo.LoadJson"] = "Load JSON",
             ["Demo.ZoomTip"] = "View zoom (Ctrl+wheel, Ctrl+0 = 100%)",
             ["Demo.Fit"] = "Fit",
@@ -372,7 +372,7 @@ public partial class MainWindow : Window
         });
         RichEditorLocalization.Register("ko", new Dictionary<string, string>
         {
-            ["Demo.Save"] = "저장 (JSON / .rdx / HTML)",
+            ["Demo.Save"] = "저장 (JSON / .flow / HTML)",
             ["Demo.LoadJson"] = "JSON 불러오기",
             ["Demo.ZoomTip"] = "보기 배율 (Ctrl+휠, Ctrl+0=100%)",
             ["Demo.Fit"] = "맞춤",

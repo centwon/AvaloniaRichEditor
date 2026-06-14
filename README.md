@@ -17,7 +17,7 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 - Find / replace, undo / redo, per-object right-click context menus
 - Clipboard: internal rich copy/paste, external **HTML** paste, image paste, Excel/TSV → table
 - HTML and JSON import/export (round-trippable) — see the
-  [document format specification](docs/DOCUMENT_FORMAT.md) (JSON schema v2 and the `.rdx` package)
+  [document format specification](docs/DOCUMENT_FORMAT.md) (JSON schema v2 and the `.flow` package)
 - Korean/CJK **IME** composition (inline preedit)
 - Word-style **A4 page view** (`PageView`, line-boundary page breaks, headers/footers/page numbers)
 - **Print & PDF**: per-page bitmap rendering (`RenderPrintPage`, 300 DPI) and dependency-free raster
