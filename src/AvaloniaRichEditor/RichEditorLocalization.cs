@@ -88,7 +88,6 @@ public static class RichEditorLocalization
             ["CopyLink"] = "Copy Link",
             // Insert
             ["InsertTable"] = "Insert Table",
-            ["InsertTable2x2"] = "Insert Table (2x2)",
             ["InsertImage"] = "Insert Image...",
             ["InsertDivider"] = "Insert Divider",
             ["DragToSelectSize"] = "Drag to choose size",
@@ -210,7 +209,6 @@ public static class RichEditorLocalization
             ["CopyLink"] = "링크 복사",
             // Insert
             ["InsertTable"] = "표 삽입",
-            ["InsertTable2x2"] = "표 삽입 (2x2)",
             ["InsertImage"] = "이미지 삽입...",
             ["InsertDivider"] = "구분선 삽입",
             ["DragToSelectSize"] = "끌어서 크기 선택",
