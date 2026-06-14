@@ -22,6 +22,10 @@ public partial class RichEditor
     // Menus are rebuilt on every right-click, so a runtime language switch needs no extra wiring.
     private static string Loc(string key) => RichEditorLocalization.GetString(key);
 
+    // The currently open context menu, so an interactive submenu item (the table-size grid picker)
+    // can dismiss it after acting. Set just before Open.
+    private ContextMenu? _openContextMenu;
+
     private static MenuItem Mi(string header, Action action, bool enabled = true, RichEditorIcon? icon = null)
     {
         var mi = new MenuItem { Header = header, IsEnabled = enabled };
@@ -36,6 +40,50 @@ public partial class RichEditor
     {
         var mi = new MenuItem { Header = header };
         mi.ItemsSource = children;
+        return mi;
+    }
+
+    // "Insert table" submenu carrying an 8×10 grid picker (hover to choose rows×columns, click to
+    // insert) — the same affordance as the toolbar button, replacing the old fixed 2×2 item.
+    private MenuItem BuildInsertTableMenu()
+    {
+        const int rows = 8, cols = 10;
+        var cells = new Border[rows, cols];
+        var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = cols, Rows = rows };
+        var label = new TextBlock
+        {
+            Text = Loc("DragToSelectSize"),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+        var active = new SolidColorBrush(Color.Parse("#90CAF9"));
+        void Highlight(int hr, int hc)
+        {
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    cells[r, c].Background = (r <= hr && c <= hc) ? active : Brushes.White;
+            label.Text = $"{hr + 1} × {hc + 1}";
+        }
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+            {
+                int rr = r, cc = c;
+                var cell = new Border
+                {
+                    Width = 16, Height = 16, Margin = new Thickness(1),
+                    Background = Brushes.White, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1),
+                };
+                cell.PointerEntered += (_, _) => Highlight(rr, cc);
+                cell.PointerPressed += (_, _) => { InsertTable(rr + 1, cc + 1); _openContextMenu?.Close(); };
+                cells[r, c] = cell;
+                grid.Children.Add(cell);
+            }
+        var panel = new StackPanel { Margin = new Thickness(8, 6) };
+        panel.Children.Add(grid);
+        panel.Children.Add(label);
+        var mi = new MenuItem { Header = Loc("InsertTable") };
+        if (RichEditorIcons.TryCreate(RichEditorIcon.InsertTable) is { } ic) mi.Icon = ic;
+        mi.ItemsSource = new Control[] { panel };
         return mi;
     }
 
@@ -116,6 +164,7 @@ public partial class RichEditor
             var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll) };
             var roMenu = NewContextMenu();
             roMenu.ItemsSource = roItems;
+            _openContextMenu = roMenu;
             roMenu.Open(this);
             return;
         }
@@ -175,6 +224,7 @@ public partial class RichEditor
         if (items.Count == 0) return;
         var menu = NewContextMenu();
         menu.ItemsSource = items;
+        _openContextMenu = menu;
         menu.Open(this);
     }
 
@@ -289,7 +339,7 @@ public partial class RichEditor
         items.Add(Mi(Loc("Redo"), DoRedo, icon: RichEditorIcon.Redo));
         // Block-insert items appear only when the corresponding feature flag is enabled (N3.5).
         if (AllowTables || AllowImages) items.Add(new Separator());
-        if (AllowTables) items.Add(Mi(Loc("InsertTable2x2"), () => InsertTable(2, 2), icon: RichEditorIcon.InsertTable));
+        if (AllowTables) items.Add(BuildInsertTableMenu());
         if (AllowImages) items.Add(Mi(Loc("InsertImage"), () => { _ = InsertImageFromFileAsync(); }, icon: RichEditorIcon.InsertImage));
         if (AllowTables || AllowImages) items.Add(Mi(Loc("InsertDivider"), InsertDivider, icon: RichEditorIcon.InsertDivider));
     }
