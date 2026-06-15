@@ -83,7 +83,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             catch { /* fall back to plain text */ }
         }
 
-        // 3. Bitmap image on the clipboard (e.g. a screenshot or copied picture). Images copied
+        // 4. Bitmap image on the clipboard (e.g. a screenshot or copied picture). Images copied
         //    in-app carry a meta string restoring inline-ness and display size.
         var (clipImage, clipBytes, clipMeta) = AllowImages
             ? await TryGetImageAsync(clipboard)
@@ -102,7 +102,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             return;
         }
 
-        // 4. Tab-separated text (e.g. Excel/HWP cells copied without HTML) -> rebuild as a table.
+        // 5. Tab-separated text (e.g. Excel/HWP cells copied without HTML) -> rebuild as a table.
         if (AllowTables && !string.IsNullOrEmpty(text) && LooksTabular(text))
         {
             PushUndo();
@@ -111,7 +111,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             return;
         }
 
-        // 5. Plain text fallback.
+        // 6. Plain text fallback.
         if (!string.IsNullOrEmpty(text))
         {
             PushUndo();

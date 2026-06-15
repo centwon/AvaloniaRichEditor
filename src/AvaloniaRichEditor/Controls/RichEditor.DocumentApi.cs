@@ -75,20 +75,28 @@ public partial class RichEditor
     /// <summary>Clears the document to a single empty paragraph.</summary>
     public void Clear() => LoadDocument(new FlowDocument());
 
-    /// <summary>The document's text content as plain text (paragraphs/cells separated by newlines).
+    /// <summary>The document's text content as plain text (paragraphs/cells separated by the platform
+    /// newline — CRLF on Windows — so the result shows real line breaks when written to a file or pasted
+    /// into a native text control; soft '\n' breaks inside a paragraph are normalized too).
     /// Used for accessibility and quick text extraction.</summary>
     public string GetPlainText()
     {
         if (Document == null) return "";
         var sb = new System.Text.StringBuilder();
-        void AddPara(Paragraph p) { if (sb.Length > 0) sb.Append('\n'); sb.Append(BuildPlain(p)); }
+        // `first` (not sb.Length): a leading empty paragraph must still place a separator before the
+        // next one — checking the buffer length conflated "first paragraph" with "buffer empty" and
+        // dropped leading blank lines.
+        bool first = true;
+        void AddPara(Paragraph p) { if (!first) sb.Append('\n'); first = false; sb.Append(BuildPlain(p)); }
         foreach (var block in Document.Blocks)
         {
             if (block is Paragraph p) AddPara(p);
             else if (block is TableBlock tb)
                 foreach (var (_, _, cell) in tb.LogicalCells()) AddPara(cell);
         }
-        return sb.ToString();
+        // LF-only renders as a single line in many Windows consumers; normalize every break (paragraph
+        // separators above + soft '\n' from BuildPlain) to the platform newline.
+        return sb.ToString().ReplaceLineEndings();
     }
 
     /// <summary>True if there is an edit to undo.</summary>

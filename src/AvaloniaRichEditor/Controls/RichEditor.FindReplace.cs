@@ -74,35 +74,55 @@ public partial class RichEditor
         if (paras.Count == 0) return false;
         var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
-        var matches = new List<(int pi, int idx, Paragraph p)>();
-        for (int pi = 0; pi < paras.Count; pi++)
+        // The last match start in `text` that is < limit (limit = text.Length means "any"). Scans
+        // forward keeping the highest qualifying index — cheap, and avoids LastIndexOf's start-index
+        // pitfalls. Returns -1 when none.
+        int LastMatchBefore(string text, int limit)
         {
-            string text = BuildPlain(paras[pi]);
-            int from = 0;
+            int best = -1, from = 0;
             while (from <= text.Length)
             {
                 int idx = text.IndexOf(query, from, cmp);
-                if (idx < 0) break;
-                matches.Add((pi, idx, paras[pi]));
+                if (idx < 0 || idx >= limit) break;
+                best = idx;
                 from = idx + 1;
             }
+            return best;
         }
-        if (matches.Count == 0) return false;
 
         if (!backwards)
         {
-            foreach (var m in matches)
-                if (m.pi > fromPi || (m.pi == fromPi && m.idx >= fromOff)) { SelectMatch(m.p, m.idx, query.Length); return true; }
-            if (wrap) { SelectMatch(matches[0].p, matches[0].idx, query.Length); return true; }
+            // First match at-or-after (fromPi, fromOff), scanning forward; stops at the first hit.
+            for (int pi = Math.Max(0, fromPi); pi < paras.Count; pi++)
+            {
+                string text = BuildPlain(paras[pi]);
+                int start = pi == fromPi ? Math.Max(0, fromOff) : 0;
+                if (start > text.Length) continue;
+                int idx = text.IndexOf(query, start, cmp);
+                if (idx >= 0) { SelectMatch(paras[pi], idx, query.Length); return true; }
+            }
+            if (wrap) // first match overall
+                for (int pi = 0; pi < paras.Count; pi++)
+                {
+                    int idx = BuildPlain(paras[pi]).IndexOf(query, cmp);
+                    if (idx >= 0) { SelectMatch(paras[pi], idx, query.Length); return true; }
+                }
         }
         else
         {
-            for (int i = matches.Count - 1; i >= 0; i--)
+            // Last match strictly before (fromPi, fromOff), scanning backward; stops at the first hit.
+            for (int pi = Math.Min(fromPi, paras.Count - 1); pi >= 0; pi--)
             {
-                var m = matches[i];
-                if (m.pi < fromPi || (m.pi == fromPi && m.idx < fromOff)) { SelectMatch(m.p, m.idx, query.Length); return true; }
+                string text = BuildPlain(paras[pi]);
+                int idx = LastMatchBefore(text, pi == fromPi ? Math.Min(fromOff, text.Length + 1) : text.Length + 1);
+                if (idx >= 0) { SelectMatch(paras[pi], idx, query.Length); return true; }
             }
-            if (wrap) { var m = matches[^1]; SelectMatch(m.p, m.idx, query.Length); return true; }
+            if (wrap) // last match overall
+                for (int pi = paras.Count - 1; pi >= 0; pi--)
+                {
+                    int idx = LastMatchBefore(BuildPlain(paras[pi]), int.MaxValue);
+                    if (idx >= 0) { SelectMatch(paras[pi], idx, query.Length); return true; }
+                }
         }
         return false;
     }

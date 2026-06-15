@@ -692,7 +692,7 @@ namespace AvaloniaRichEditor.Formatters
             string t = HtmlEntity.Entitize(r.Text);
 
             var styles = new System.Collections.Generic.List<string>();
-            if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:{r.FontFamily}");
+            if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:{AttrEscape(r.FontFamily)}");
             if (r.FontSize > 0 && System.Math.Abs(r.FontSize - 14) > 0.01)
                 styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px");
             if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
@@ -711,9 +711,14 @@ namespace AvaloniaRichEditor.Formatters
             if (styles.Count > 0) t = $"<span style='{string.Join(";", styles)}'>{t}</span>";
             if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
             if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
-            if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href='{r.NavigateUri}'>{t}</a>";
+            if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href='{AttrEscape(r.NavigateUri)}'>{t}</a>";
             sb.Append(t);
         }
+
+        // Escapes a value placed inside a single-quoted HTML attribute (style/href), so a stray
+        // quote or angle bracket in a font-family or URL can't break the emitted markup.
+        private static string AttrEscape(string s) =>
+            s.Replace("&", "&amp;").Replace("'", "&#39;").Replace("<", "&lt;").Replace(">", "&gt;");
 
         private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
         {

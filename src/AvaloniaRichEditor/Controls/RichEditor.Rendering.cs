@@ -61,30 +61,40 @@ public partial class RichEditor
     protected override Size MeasureOverride(Size availableSize)
     {
         base.MeasureOverride(availableSize);
-        bool noWidth = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0;
-        if (PagedChrome)
+        // No edit pending => content is unchanged since the last build, so the layout/table caches can
+        // be trusted here too (mirrors Render). This keeps caret-only moves — NotifyStatus funnels every
+        // one through InvalidateMeasure — from re-hashing every paragraph via ParagraphSig. An edit runs
+        // with the flag off (verified path rebuilds the changed paragraph), and a width change still
+        // misses on the width check inside BuildTextLayout and rebuilds correctly.
+        _trustLayoutCache = !_textChangedPending;
+        try
         {
-            // Every edit funnels through InvalidateMeasure (NotifyStatus), so recomputing the page
-            // breaks here keeps them fresh for render and hit-testing without extra invalidation.
-            _pageBreaks = ComputePageBreaks(PaperContentWidth, PaperContentHeight);
-            double pw = noWidth ? PaperWidth + 2 * PageGap : Math.Max(availableSize.Width, PaperWidth);
-            _measuredHeight = Math.Max(MinHeight, PageGap + _pageBreaks.Count * (PaperHeight + PageGap));
-            return new Size(pw, _measuredHeight);
+            bool noWidth = double.IsInfinity(availableSize.Width) || availableSize.Width <= 0;
+            if (PagedChrome)
+            {
+                // Every edit funnels through InvalidateMeasure (NotifyStatus), so recomputing the page
+                // breaks here keeps them fresh for render and hit-testing without extra invalidation.
+                _pageBreaks = ComputePageBreaks(PaperContentWidth, PaperContentHeight);
+                double pw = noWidth ? PaperWidth + 2 * PageGap : Math.Max(availableSize.Width, PaperWidth);
+                _measuredHeight = Math.Max(MinHeight, PageGap + _pageBreaks.Count * (PaperHeight + PageGap));
+                return new Size(pw, _measuredHeight);
+            }
+            if (IsPaged)
+            {
+                // Paged without chrome: a fixed-width column flowing continuously, centered in any extra
+                // width, with NoChromePageGap whitespace injected between pages. The control is at least the
+                // column wide, so a narrow viewport scrolls horizontally.
+                double cw = PaperContentWidth;
+                _pageBreaks = ComputePageBreaks(cw, PaperContentHeight);
+                double contentH = MeasureContentHeight(cw) + (_pageBreaks.Count - 1) * NoChromePageGap;
+                _measuredHeight = Math.Max(MinHeight, contentH);
+                return new Size(noWidth ? cw : Math.Max(availableSize.Width, cw), _measuredHeight);
+            }
+            double w = noWidth ? A4ContentWidth : availableSize.Width;
+            _measuredHeight = Math.Max(MinHeight, MeasureContentHeight(w));
+            return new Size(w, _measuredHeight);
         }
-        if (IsPaged)
-        {
-            // Paged without chrome: a fixed-width column flowing continuously, centered in any extra
-            // width, with NoChromePageGap whitespace injected between pages. The control is at least the
-            // column wide, so a narrow viewport scrolls horizontally.
-            double cw = PaperContentWidth;
-            _pageBreaks = ComputePageBreaks(cw, PaperContentHeight);
-            double contentH = MeasureContentHeight(cw) + (_pageBreaks.Count - 1) * NoChromePageGap;
-            _measuredHeight = Math.Max(MinHeight, contentH);
-            return new Size(noWidth ? cw : Math.Max(availableSize.Width, cw), _measuredHeight);
-        }
-        double w = noWidth ? A4ContentWidth : availableSize.Width;
-        _measuredHeight = Math.Max(MinHeight, MeasureContentHeight(w));
-        return new Size(w, _measuredHeight);
+        finally { _trustLayoutCache = false; } // never leak the trusted state past this measure pass
     }
 
     /// <inheritdoc/>

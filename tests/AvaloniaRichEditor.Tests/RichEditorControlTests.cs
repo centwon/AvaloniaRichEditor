@@ -103,6 +103,30 @@ public class RichEditorControlTests
     }
 
     [AvaloniaFact]
+    public void GetPlainText_SeparatesParagraphsWithPlatformNewline()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p>one</p><p>two</p>");
+        // Paragraphs must be separated by the platform newline (CRLF on Windows) so the extracted
+        // text shows real line breaks in files / native text controls, not run together.
+        Assert.Equal("one" + System.Environment.NewLine + "two", ed.GetPlainText());
+    }
+
+    [AvaloniaFact]
+    public void GetPlainText_KeepsLeadingBlankLine()
+    {
+        var ed = new RichEditor();
+        var doc = new AvaloniaRichEditor.Documents.FlowDocument();
+        doc.Blocks.Add(new AvaloniaRichEditor.Documents.Paragraph()); // leading empty line
+        doc.Blocks.Add(new AvaloniaRichEditor.Documents.Paragraph
+        { Inlines = { new AvaloniaRichEditor.Documents.Run { Text = "body" } } });
+        ed.Document = doc;
+        // A leading empty paragraph must still contribute its separator (regression: the old
+        // sb.Length>0 guard dropped it, swallowing leading blank lines).
+        Assert.Equal(System.Environment.NewLine + "body", ed.GetPlainText());
+    }
+
+    [AvaloniaFact]
     public void Clear_LeavesEmptyDocument()
     {
         var ed = new RichEditor();

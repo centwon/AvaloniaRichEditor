@@ -247,7 +247,13 @@ public static class DocumentSerializer
                         tb.Cells.Add(row);
                     }
                 tb.Rows = tb.Cells.Count;
-                tb.Columns = tb.Cells.Count > 0 ? tb.Cells[0].Count : d.Columns;
+                int maxCols = Math.Max(1, d.Columns);
+                foreach (var row in tb.Cells) if (row.Count > maxCols) maxCols = row.Count;
+                tb.Columns = maxCols;
+                // Pad jagged/short rows so the grid stays rectangular — corrupt or hand-edited JSON
+                // could otherwise make Cells[r][c] throw in render/layout/hit-testing.
+                foreach (var row in tb.Cells)
+                    while (row.Count < tb.Columns) row.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
                 // Rebuild span grids to match the loaded cell grid. Missing/legacy docs default to 1×1.
                 tb.ColSpans.Clear();
                 tb.RowSpans.Clear();

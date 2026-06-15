@@ -436,7 +436,12 @@ public partial class RichEditor
 
         if (_isSelecting)
         {
-            _selectionEnd = GetPositionFromPoint(point);
+            // Drag-select hit-testing walks the document but never mutates it, so the layout cache
+            // can be trusted — skips re-hashing every paragraph on every mouse move (mirrors the
+            // hover path below).
+            _trustLayoutCache = true;
+            try { _selectionEnd = GetPositionFromPoint(point); }
+            finally { _trustLayoutCache = false; }
             _caretPosition = new TextPointer(_selectionEnd.Paragraph, _selectionEnd.Offset);
             // A drag spanning two different cells of one table is a cell-block selection: enter cell mode
             // so subsequent single clicks select whole cells (HWP behaviour).

@@ -92,13 +92,22 @@ public partial class RichEditor
     // merged-cell rects and skipped (covered) cells stay identical across every consumer.
     private TableLayout LayoutTable(TableBlock tb, double startX, double top)
     {
-        // Trusted pass (no content change since the last build): reuse the cached geometry for the same
-        // position without re-measuring every cell. Mirrors BuildTextLayout's _trustLayoutCache gate.
-        if (_trustLayoutCache && _tableLayoutCache.TryGetValue(tb, out var ct)
-            && ct.startX == startX && ct.top == top)
-            return ct.layout;
-
         int cols = tb.Columns, rows = tb.Rows;
+
+        if (_trustLayoutCache && _tableLayoutCache.TryGetValue(tb, out var ct) && ct.startX == startX
+            && ct.rowH.Length == rows)
+        {
+            // Exact match (same startX AND top): reuse the cached geometry verbatim — zero allocation,
+            // the common case in continuous mode across blink/scroll/hover frames.
+            if (ct.top == top) return ct.layout;
+            // Same startX, different top (every frame in page view: pagination measures at continuous y,
+            // render at per-page slice y): the column geometry and the measured row heights are unchanged,
+            // so reuse them and only re-place the rows/anchors at the new top — skips re-measuring cells.
+            var moved = AssembleTableLayout(tb, ct.layout.ColX, ct.rowH, startX, top);
+            _tableLayoutCache[tb] = (startX, top, ct.rowH, moved);
+            return moved;
+        }
+
         var colX = new double[cols + 1];
         colX[0] = startX;
         for (int c = 0; c < cols; c++)
@@ -132,6 +141,19 @@ public partial class RichEditor
             if (need > have) rowH[last] += need - have;
         }
 
+        var result = AssembleTableLayout(tb, colX, rowH, startX, top);
+        // Refresh the cache (even on an untrusted/edit pass) so the next trusted frame can reuse it.
+        if (_tableLayoutCache.Count > 2000) _tableLayoutCache.Clear();
+        _tableLayoutCache[tb] = (startX, top, rowH, result);
+        return result;
+    }
+
+    // Places the rows at `top` and builds the anchor rects from the (position-independent) measured
+    // column edges `colX` and row heights `rowH`. Split out so a cached table can be re-placed at a new
+    // `top` without re-measuring its cells (the costly part).
+    private static TableLayout AssembleTableLayout(TableBlock tb, double[] colX, double[] rowH, double startX, double top)
+    {
+        int cols = tb.Columns, rows = tb.Rows;
         var rowY = new double[rows + 1];
         rowY[0] = top;
         for (int r = 0; r < rows; r++) rowY[r + 1] = rowY[r] + rowH[r];
@@ -143,11 +165,7 @@ public partial class RichEditor
             int cEnd = Math.Min(c + cs, cols), rEnd = Math.Min(r + rs, rows);
             anchors.Add((r, c, new Rect(colX[c], rowY[r], colX[cEnd] - colX[c], rowY[rEnd] - rowY[r])));
         }
-        var result = new TableLayout(colX, rowY, colX[cols] - startX, rowY[rows] - top, anchors);
-        // Refresh the cache (even on an untrusted/edit pass) so the next trusted frame can reuse it.
-        if (_tableLayoutCache.Count > 2000) _tableLayoutCache.Clear();
-        _tableLayoutCache[tb] = (startX, top, result);
-        return result;
+        return new TableLayout(colX, rowY, colX[cols] - startX, rowY[rows] - top, anchors);
     }
 
     // The block (image or table) whose rendered rectangle contains the point, or null.
