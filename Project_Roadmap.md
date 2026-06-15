@@ -300,6 +300,25 @@
 - [x] **God-class 분해(2026-06-12 완료)**: `RichEditor` 본체 3,595→**1,273줄**(65%↓), 전부 동작 불변 파일 이동(4커밋, 단계마다 120테스트 그린). 분리 결과: `ContextMenu`/`Clipboard`/`Rendering`/`Modes`(기존) + 신규 `FindReplace`(찾기/바꾸기), `Tables`(셀 탐색·Tab 내비·행/열 연산), `Images`(크기/교체/저장·블록↔인라인 변환), `DocumentApi`(HTML/JSON/.ardx 입출력·Clear·GetPlainText), `Formatting`(서식 명령·리스트 분할·하이퍼링크·포맷 페인터), `HitTesting`(GetPositionFromPoint/GetBlockAtPoint/GetLinkRunAtPoint·LayoutTable 공유 기하·인라인 이미지 오프셋 헬퍼), `Input`(포인터·키보드·IME·블록 횡단 캐럿). 남은 본체 = 속성/이벤트·undo 기계·편집 코어(InsertText/Delete/Split)·레이아웃 캐시(BuildTextLayout)·클립보드 내부 헬퍼. **인라인 표(글자처럼 취급) 착수 시 건드릴 HitTesting·Input이 단독 파일로 격리됨.**
 - **검증**: 수백 페이지 문서에서 타이핑/스크롤 지연 측정, 메모리 상한 확인.
 
+#### 🧭 2026-06-15 종합 평가 (코드 전수 리뷰 기준)
+> 기능 충실도 A−, 코드 품질 B+, 견고성/검증 B−, 프로덕션 준비도 C+(알파로는 견고). 혼자 만든 Avalonia 리치 에디터로는 상위권. 1.0 결정 과제 셋: ① 기하 워커 통합(G1, 아래), ② 테스트 깊이(렌더 픽셀·페이지 분할·복잡 표 — N4 잔여 갭), ③ 상호운용 한계 명시(클립보드 앱별 편차/벡터 PDF/in-app 인라인이미지 — 대부분 기록 완료). **정정**: 3-OS CI 매트릭스는 이미 존재·그린(N4) — 남은 건 픽셀/async-클립보드 단언과 mac/Linux *기능* 실검증.
+
+#### 🔵 G1: 기하 워커 통합 — 단일 수직 레이아웃 패스 (1순위 리스크, 미착수)
+> **문제(1순위 구조 리스크)**: 7곳이 `Document.Blocks`를 각자 걸으며 `yOffset += MarginTop … += height + MarginBottom`을 중복 계산한다 — `DrawDocumentBlocks`(Rendering), `MeasureContentHeight`, `GetPositionFromPoint`/`GetBlockAtPoint`/`GetLinkRunAtPoint`/`GetTableRect`(HitTesting), `BlockAtY`(Input), `ComputePageBreaks`(Pagination). 블록 높이·여백 계산이 한 곳만 어긋나도 캐럿·히트테스트·페이지가 미묘하게 틀어진다(주석에 남은 "하드코딩 10" MarginBottom 버그가 그 사례). 공유 헬퍼(`LayoutTable`/`ParaLeft`)로 일부 완화했을 뿐, **수직 누적은 여전히 분산**.
+>
+> **목표**: 블록별 (top, height, layout 객체)의 **단일 출처**를 만들어 모든 소비자가 공유 → "워커 드리프트" 버그 클래스를 구조적으로 제거. (핵심 불변식 1 "단일 TextLayout"의 수직 버전.)
+>
+> **단계(각 단계 독립 출하·테스트 그린 유지)**:
+> - **P0 안전망**: 헤드리스로 검증 가능한 *논리* 기하 특성화 테스트 추가 — `GetPositionFromPoint`/`GetBlockAtPoint`/`BlockAtY`(알려진 점), `MeasureOverride` DesiredSize, `ComputePageBreaks` 개수·위치. 문단/표/이미지/구분선/여백/빈문단 혼합 문서로 현 동작 고정.
+> - **P1 공유 advance 추출**: `BlockExtent(Block, width, out TextLayout? paraLayout)` 한 곳이 높이+레이아웃 객체를 캐시 통해 반환. 모든 워커의 블록별 높이 계산을 이걸 호출하도록 교체 → **높이 불일치 제거**(가장 작은 변경으로 드리프트 차단). Render는 그리기 유지, 높이만 공유.
+> - **P2 블록박스 열거자**: `IReadOnlyList<BlockBox> LayoutDocument(width)`(`BlockBox = Block, Top, Height, layout`), 레이아웃 캐시처럼 캐싱(`_trustLayoutCache` 존중). 수직 위치만 필요한 소비자(GetBlockAtPoint/BlockAtY/GetTableRect/Measure)가 이 리스트를 순회.
+> - **P3 히트테스트**: `GetPositionFromPoint`/`GetLinkRunAtPoint`가 point.Y로 BlockBox를 찾고 박스의 캐시 레이아웃으로 X/오프셋만 히트테스트(재측정·재순회 없음).
+> - **P4 페이지네이션**: `ComputePageBreaks`가 열거자 소비, 문단 줄 top은 박스의 TextLayout에서.
+> - **P5 렌더(최고 위험)**: `DrawDocumentBlocks`가 열거자로 top/height/layout 취득, 그리기·캐럿·선택·컬링·핸들 등록·페이지 replay(clip+translation)는 유지. 컬링은 박스를 visTop/visBottom로 필터. **데모 수동 검증 필수**(헤드리스 픽셀 불가).
+> - **P6 정리**: 죽은 per-워커 yOffset 코드 삭제, `_trustLayoutCache` 의미 보존 확인.
+>
+> **규모/가치**: 중-대형(다세션). 단계마다 200+ 테스트 그린 유지. 인라인 표 등 향후 기능의 전제이기도 함.
+
 ### 🔵 N6: 이미지 저장 모델 전환 및 성능 최적화 (미착수)
 
 > **배경**: 현재 이미지는 `Bitmap` 객체가 데이터 주체이며, 저장 시 매번 PNG로 재인코딩된다. 원본이 JPEG(~80KB)여도 PNG(~500KB)로 부풀고, 직렬화마다 인코딩 비용이 발생한다. 외부 의존성 추가 없이(Avalonia 내장 + .NET 내장만) 용량·속도·화질을 동시에 개선한다.
