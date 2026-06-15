@@ -938,17 +938,13 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Home)
         {
-            _caretPosition = GetPositionFromPoint(new Point(0, _lastCaretPoint.Y));
-            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            ResetCaretBlink(); e.Handled = true; return;
+            MoveToVisualLineEdge(toEnd: false, shift);
+            e.Handled = true; return;
         }
         else if (e.Key == Key.End)
         {
-            _caretPosition = GetPositionFromPoint(new Point(ContentLayoutWidth, _lastCaretPoint.Y));
-            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            ResetCaretBlink(); e.Handled = true; return;
+            MoveToVisualLineEdge(toEnd: true, shift);
+            e.Handled = true; return;
         }
         else if (e.Key == Key.Enter)
         {
@@ -1107,6 +1103,60 @@ public partial class RichEditor
         if (j < 0 || j >= Document.Blocks.Count) return null;
         var b = Document.Blocks[j];
         return (b is ImageBlock || b is TableBlock) ? b : null;
+    }
+
+    // The caret paragraph's TextLayout at the SAME wrap width the renderer uses — cell-aware (a cell wraps
+    // at its column width minus padding, a top-level paragraph at the content width minus indents).
+    private Avalonia.Media.TextFormatting.TextLayout CaretLineLayout(Paragraph p)
+    {
+        if (FindCell(p) is { } loc)
+        {
+            var tb = loc.tb;
+            var tl = LayoutTable(tb, 10 + tb.Indent, 0); // width (ColX) is top-independent
+            var (cs, _) = tb.SpanOf(loc.r, loc.c);
+            double cellWidth = tl.ColX[Math.Min(loc.c + cs, tb.Columns)] - tl.ColX[loc.c];
+            return BuildTextLayout(p, Math.Max(10, cellWidth - 10));
+        }
+        return BuildTextLayout(p, Math.Max(10, ContentLayoutWidth - 20 - ParaLeft(p) - p.MarginRight));
+    }
+
+    // Home/End: move to the start/end of the caret's current VISUAL (wrapped) line, found from the
+    // layout's line metrics rather than a far-right hit-test — which on a wrapped line returns the NEXT
+    // line's leading position (trailing), overshooting onto the following line. For End the trailing
+    // whitespace that caused the wrap is trimmed so the caret stays at the visible end of THIS line.
+    private void MoveToVisualLineEdge(bool toEnd, bool shift)
+    {
+        var p = _caretPosition.Paragraph;
+        if (p != null)
+        {
+            var layout = CaretLineLayout(p);
+            string plain = BuildPlain(p);
+            int len = plain.Length;
+            int off = Math.Clamp(_caretPosition.Offset, 0, len);
+            double caretY = layout.HitTestTextPosition(off).Y; // the caret's current visual line
+            int target = toEnd ? len : 0;
+            var lines = layout.TextLines;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                int s = lines[i].FirstTextSourceIndex;
+                double nextY = i + 1 < lines.Count
+                    ? layout.HitTestTextPosition(lines[i + 1].FirstTextSourceIndex).Y
+                    : double.PositiveInfinity;
+                if (caretY + 0.5 < nextY) // caretY belongs to line i
+                {
+                    if (!toEnd) target = s;
+                    else
+                    {
+                        int e = Math.Min(s + lines[i].Length, len);
+                        while (e > s && char.IsWhiteSpace(plain[e - 1])) e--; // soft-wrap/newline trailing ws
+                        target = e;
+                    }
+                    break;
+                }
+            }
+            _caretPosition = new TextPointer(p, Math.Clamp(target, 0, len));
+        }
+        ApplyCaretSelection(shift);
     }
 
     // The image/table block whose rendered vertical span contains y, or null (used for Up/Down into a block).

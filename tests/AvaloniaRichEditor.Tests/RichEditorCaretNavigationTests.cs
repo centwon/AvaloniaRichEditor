@@ -67,6 +67,26 @@ public class RichEditorCaretNavigationTests
     }
 
     [AvaloniaFact]
+    public void End_OnWrappedLine_StaysAtVisualLineEnd_DoesNotSplitNextLineWord()
+    {
+        // A long paragraph wraps into multiple visual lines at W=600. End from the first visual line
+        // must land at the END of that line (a word/space boundary), not one char into the next line.
+        // The old far-right hit-test returned the next line's leading position (trailing) and overshot,
+        // splitting the next line's first word (e.g. "this" -> "tXhis").
+        var ed = Editor("<p>Hello Avalonia this is a long paragraph that will certainly wrap onto a " +
+                        "second visual line here and keep going well past the right edge of the width</p>");
+        Press(ed, Key.Home, KeyModifiers.Control); // caret to start (visual line 0)
+        ForceLayout(ed);
+        Press(ed, Key.End);
+        Type(ed, "X");
+        var text = Para(ed, 0).Text();
+        int idx = text.IndexOf('X');
+        Assert.True(idx > 0 && idx < text.Length - 1, $"X should be mid-paragraph (a wrapped line end), was at {idx}: '{text}'");
+        Assert.False(char.IsLetter(text[idx - 1]) && char.IsLetter(text[idx + 1]),
+            $"End split a word ('{text[idx - 1]}X{text[idx + 1]}') — caret overshot onto the next visual line: '{text}'");
+    }
+
+    [AvaloniaFact]
     public void Down_MovesCaretToParagraphBelow()
     {
         var ed = Editor("<p>aaa</p><p>bbb</p><p>ccc</p>");
