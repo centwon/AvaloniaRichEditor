@@ -1318,13 +1318,26 @@ public partial class RichEditor : Control
         _internalClipboardText = text;
         _internalClipboardBlocks = CaptureBlockStructure(range);
 
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard != null && !string.IsNullOrEmpty(text))
+        // Rich HTML for other apps (Word, browsers). When the selection spans a table or block image,
+        // use the captured top-level blocks so the HTML keeps the <table> structure; otherwise a trimmed
+        // sub-document that preserves paragraph properties (lists/headings/alignment/indent) and inline
+        // images — so formatting and pasted-back pictures survive, and an image-only selection still has
+        // content even though its plain text is empty.
+        FlowDocument? htmlDoc;
+        if (_internalClipboardBlocks is { } caps && caps.Exists(b => b is TableBlock || b is ImageBlock))
         {
-            // Also export rich HTML so other apps (Word, browsers) keep the formatting — the read side
-            // already understands incoming HTML, so this makes copy/paste symmetric. Built from the same
-            // trimmed runs as the plain text so the two stay consistent.
-            string? html = BuildSelectionHtml(_internalClipboard);
+            htmlDoc = new FlowDocument();
+            foreach (var b in caps) htmlDoc.Blocks.Add(b);
+        }
+        else htmlDoc = BuildSelectionDocument();
+        string? html = BuildSelectionHtml(htmlDoc);
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        // Set the clipboard whenever there's anything to put on it — text OR html. Skipping when the
+        // text was empty (e.g. an inline-image-only selection) used to leave a PREVIOUS copy on the
+        // system clipboard while the internal slots said otherwise, so paste pulled in stale content.
+        if (clipboard != null && (!string.IsNullOrEmpty(text) || !string.IsNullOrEmpty(html)))
+        {
             // Another process can hold the clipboard open; an unhandled throw here would
             // crash the process (async void). The internal rich slots above are already set.
             try { await SetClipboardTextAndHtmlAsync(clipboard, text, html); }

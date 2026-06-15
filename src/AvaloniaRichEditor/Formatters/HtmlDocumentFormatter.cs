@@ -635,7 +635,7 @@ namespace AvaloniaRichEditor.Formatters
                     string pStyle = $"text-align:{align};";
                     if (p.Background is ISolidColorBrush pbg) pStyle += $"background-color:{CssColor(pbg.Color)};";
                     if (p.Indent > 0) pStyle += $"margin-left:{p.Indent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;";
-                    sb.Append($"<{tag} style='{pStyle}'>");
+                    sb.Append($"<{tag} style=\"{pStyle}\">");
                     foreach (var inline in p.Inlines) EmitInline(sb, inline);
                     sb.Append($"</{tag}>\n");
                 }
@@ -647,7 +647,7 @@ namespace AvaloniaRichEditor.Formatters
                 else if (block is TableBlock tb)
                 {
                     CloseAll();
-                    sb.Append("<table border='1' style='border-collapse:collapse; width:100%;'>\n");
+                    sb.Append("<table border=\"1\" style=\"border-collapse:collapse; width:100%;\">\n");
                     for (int r = 0; r < tb.Rows; r++)
                     {
                         sb.Append("<tr>\n");
@@ -656,9 +656,9 @@ namespace AvaloniaRichEditor.Formatters
                             if (tb.IsCovered(r, c)) continue; // covered cells are emitted via their anchor's span
                             var cell = tb.Cells[r][c];
                             var (cs, rs) = tb.SpanOf(r, c);
-                            var span = (cs > 1 ? $" colspan='{cs}'" : "") + (rs > 1 ? $" rowspan='{rs}'" : "");
+                            var span = (cs > 1 ? $" colspan=\"{cs}\"" : "") + (rs > 1 ? $" rowspan=\"{rs}\"" : "");
                             if (cell.Background is ISolidColorBrush cbg)
-                                sb.Append($"<td{span} style='background-color:{CssColor(cbg.Color)}'>");
+                                sb.Append($"<td{span} style=\"background-color:{CssColor(cbg.Color)}\">");
                             else
                                 sb.Append($"<td{span}>");
                             foreach (var inline in cell.Inlines) EmitInline(sb, inline);
@@ -692,7 +692,9 @@ namespace AvaloniaRichEditor.Formatters
             string t = HtmlEntity.Entitize(r.Text);
 
             var styles = new System.Collections.Generic.List<string>();
-            if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:{AttrEscape(r.FontFamily)}");
+            // Quote the family name: a multi-word value (e.g. Times New Roman) unquoted is invalid CSS,
+            // and Word/HWP then drop the ENTIRE style declaration — taking size/colour/decoration with it.
+            if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:'{AttrEscape(r.FontFamily).Replace("'", "")}'");
             if (r.FontSize > 0 && System.Math.Abs(r.FontSize - 14) > 0.01)
                 styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px");
             if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
@@ -708,17 +710,18 @@ namespace AvaloniaRichEditor.Formatters
             };
             if (deco != null) styles.Add($"text-decoration:{deco}");
 
-            if (styles.Count > 0) t = $"<span style='{string.Join(";", styles)}'>{t}</span>";
+            if (styles.Count > 0) t = $"<span style=\"{string.Join(";", styles)}\">{t}</span>";
             if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
             if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
-            if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href='{AttrEscape(r.NavigateUri)}'>{t}</a>";
+            if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href=\"{AttrEscape(r.NavigateUri)}\">{t}</a>";
             sb.Append(t);
         }
 
-        // Escapes a value placed inside a single-quoted HTML attribute (style/href), so a stray
-        // quote or angle bracket in a font-family or URL can't break the emitted markup.
+        // Escapes a value placed inside a DOUBLE-quoted HTML attribute (style/href/src). Double quotes
+        // are used throughout the export because clipboard-HTML consumers (Word/HWP) parse single-quoted
+        // attributes unreliably — single-quoted style attributes were silently dropped on paste.
         private static string AttrEscape(string s) =>
-            s.Replace("&", "&amp;").Replace("'", "&#39;").Replace("<", "&lt;").Replace(">", "&gt;");
+            s.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;");
 
         private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
         {
@@ -756,9 +759,9 @@ namespace AvaloniaRichEditor.Formatters
             }
             else return "";
             string size = "";
-            if (!double.IsNaN(w) && w > 0) size += $" width='{(int)w}'";
-            if (!double.IsNaN(h) && h > 0) size += $" height='{(int)h}'";
-            return $"<img src='data:{m};base64,{b64}'{size}/>";
+            if (!double.IsNaN(w) && w > 0) size += $" width=\"{(int)w}\"";
+            if (!double.IsNaN(h) && h > 0) size += $" height=\"{(int)h}\"";
+            return $"<img src=\"data:{m};base64,{b64}\"{size}/>";
         }
     }
 }

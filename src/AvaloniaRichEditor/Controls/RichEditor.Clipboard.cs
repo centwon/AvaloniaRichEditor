@@ -261,11 +261,13 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     // bytes format is used so we control the exact UTF-8 payload (the CF_HTML byte offsets must match).
     private static readonly DataFormat<byte[]> CfHtmlFormat = DataFormat.CreateBytesPlatformFormat("HTML Format");
 
-    // Puts the selection on the system clipboard as both plain text and (on Windows) CF_HTML rich text,
-    // in one DataTransfer item. Mirrors the read side, which already understands incoming HTML.
+    // Puts the selection on the system clipboard as plain text and (on Windows) CF_HTML rich text, in one
+    // DataTransfer item. Either may be empty (e.g. an inline-image-only selection has HTML but no text);
+    // the item carries whichever formats are present. Mirrors the read side, which understands HTML.
     private static async Task SetClipboardTextAndHtmlAsync(IClipboard clipboard, string text, string? html)
     {
-        var item = DataTransferItem.CreateText(text);
+        var item = new DataTransferItem();
+        if (!string.IsNullOrEmpty(text)) item.SetText(text);
         if (!string.IsNullOrEmpty(html) && OperatingSystem.IsWindows())
             item.Set(CfHtmlFormat, System.Text.Encoding.UTF8.GetBytes(BuildCfHtml(html!)));
         var dt = new DataTransfer();
@@ -273,22 +275,80 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         await clipboard.SetDataAsync(dt);
     }
 
-    // Reconstructs the copied selection as HTML from its captured rich runs (the same trimmed runs used
-    // for the internal clipboard), so the exported HTML matches the copied plain text exactly. Paragraph
-    // breaks are the lone "\n" runs GetRichRuns inserts between paragraphs. Tables/images flatten to
-    // paragraphs here (as the plain-text path also does); null when there is nothing to emit.
-    private static string? BuildSelectionHtml(System.Collections.Generic.List<Run>? runs)
+    // Renders a trimmed selection sub-document (paragraph properties + inline images preserved — see
+    // BuildSelectionDocument) to HTML, wrapped so the editor's base font/size is inherited: ToHtml omits
+    // the default 14 px and an empty font-family, which would otherwise fall back to the consumer's own
+    // defaults (Word → Calibri 11 pt) and look like the font/size was lost. Runs with explicit
+    // font/size still emit overriding spans. Null when there is nothing to emit.
+    private string? BuildSelectionHtml(FlowDocument? doc)
     {
-        if (runs == null || runs.Count == 0) return null;
+        if (doc == null || doc.Blocks.Count == 0) return null;
+        string inner = HtmlDocumentFormatter.ToHtml(doc);
+        if (string.IsNullOrEmpty(inner)) return null;
+        // Double-quoted attribute + single-quoted (and thus valid for multi-word/CJK names) font-family,
+        // matching ToHtml — a single-quoted style attribute or an unquoted family name is dropped by
+        // Word/HWP on paste.
+        string family = (DefaultFontFamily.Name ?? "").Replace("'", "").Replace("\"", "");
+        return $"<div style=\"font-family:'{family}';font-size:14px\">{inner}</div>";
+    }
+
+    // A trimmed FlowDocument for the current selection that, unlike GetRichRuns (runs only), preserves
+    // each paragraph's list/heading/alignment/indent/background AND inline images — so HTML export keeps
+    // bullets/numbers, headings, and pasted-back pictures. Table cells / block images flatten to
+    // paragraphs (same as the plain-text path). Null when the selection is empty.
+    private FlowDocument? BuildSelectionDocument()
+    {
+        if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null) return null;
+        int cmp = _selectionStart.CompareTo(_selectionEnd);
+        if (cmp == 0) return null;
+        var s = cmp < 0 ? _selectionStart : _selectionEnd;
+        var e = cmp < 0 ? _selectionEnd : _selectionStart;
+
+        var all = GetAllParagraphsInOrder();
+        int si = all.IndexOf(s.Paragraph!), ei = all.IndexOf(e.Paragraph!);
+        if (si < 0 || ei < 0 || si > ei) return null;
+
         var doc = new FlowDocument();
-        var cur = new Paragraph();
-        foreach (var r in runs)
+        for (int i = si; i <= ei; i++)
         {
-            if (r.Text == "\n") { doc.Blocks.Add(cur); cur = new Paragraph(); }
-            else { var c = (Run)r.Clone(); c.Parent = cur; cur.Inlines.Add(c); }
+            var p = all[i];
+            int from = i == si ? s.Offset : 0;
+            int to = i == ei ? e.Offset : GetParagraphLength(p);
+            doc.Blocks.Add(CloneParagraphRange(p, from, to));
         }
-        doc.Blocks.Add(cur);
-        return HtmlDocumentFormatter.ToHtml(doc);
+        return doc;
+    }
+
+    // Clones paragraph-level formatting plus the inlines (text runs trimmed to [from,to); inline images
+    // whose single position falls inside the range) of one paragraph.
+    private static Paragraph CloneParagraphRange(Paragraph p, int from, int to)
+    {
+        var np = new Paragraph
+        {
+            ListType = p.ListType, ListLevel = p.ListLevel, HeadingLevel = p.HeadingLevel,
+            TextAlignment = p.TextAlignment, Indent = p.Indent, MarginRight = p.MarginRight,
+            IsQuote = p.IsQuote, Background = p.Background, LineHeight = p.LineHeight
+        };
+        int idx = 0;
+        foreach (var inl in p.Inlines)
+        {
+            int len = InlineLen(inl);
+            int segStart = idx, segEnd = idx + len;
+            idx = segEnd;
+            if (len == 0 || segEnd <= from || segStart >= to) continue;
+            if (inl is Run r && r.Text != null)
+            {
+                int a = Math.Max(from, segStart) - segStart;
+                int b = Math.Min(to, segEnd) - segStart;
+                if (b > a) { var c = (Run)r.Clone(); c.Text = r.Text.Substring(a, b - a); c.Parent = np; np.Inlines.Add(c); }
+            }
+            else if (inl is InlineImage img && segStart >= from && segEnd <= to)
+            {
+                var c = (InlineImage)img.Clone(); c.Parent = np; np.Inlines.Add(c);
+            }
+        }
+        if (np.Inlines.Count == 0) np.Inlines.Add(new Run { Text = "" });
+        return np;
     }
 
     // Wraps an HTML fragment in the Windows CF_HTML envelope: a header whose StartHTML/EndHTML/
