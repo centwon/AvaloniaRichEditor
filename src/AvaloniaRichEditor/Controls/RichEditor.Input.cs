@@ -814,6 +814,14 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Up)
         {
+            // First navigate the current paragraph/cell's own visual lines; only cross out when already
+            // on its top line.
+            if (TryMoveCaretByLineWithinParagraph(down: false))
+            {
+                if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+                else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                ResetCaretBlink(); e.Handled = true; return;
+            }
             // Leaving a table cell upward from its first row -> the table's "before" caret.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0)
             {
@@ -835,6 +843,14 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Down)
         {
+            // First navigate the current paragraph/cell's own visual lines; only cross out when already
+            // on its bottom line.
+            if (TryMoveCaretByLineWithinParagraph(down: true))
+            {
+                if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
+                else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+                ResetCaretBlink(); e.Handled = true; return;
+            }
             // Leaving a table cell downward from its last row -> the table's "after" caret.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc
                 && fc.r + fc.tb.SpanOf(fc.r, fc.c).rs - 1 >= fc.tb.Rows - 1)
@@ -1157,6 +1173,40 @@ public partial class RichEditor
             _caretPosition = new TextPointer(p, Math.Clamp(target, 0, len));
         }
         ApplyCaretSelection(shift);
+    }
+
+    // Tries to move the caret up/down by ONE visual (wrapped) line within its current paragraph (a cell
+    // or a top-level paragraph), keeping the caret's current X. Returns false when the caret is already
+    // on the paragraph's first (up) / last (down) visual line — the caller then crosses to an adjacent
+    // cell / paragraph or leaves the table. This makes ↑/↓ navigate a multi-line cell's own lines first
+    // (the old fixed ±20/30 px step skipped lines shorter than the step and jumped straight to another
+    // cell), matching Word/Excel.
+    private bool TryMoveCaretByLineWithinParagraph(bool down)
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null) return false;
+        var layout = CaretLineLayout(p);
+        var lines = layout.TextLines;
+        if (lines.Count <= 1) return false; // single visual line: nothing to move within
+        int len = BuildPlain(p).Length;
+        int off = Math.Clamp(_caretPosition.Offset, 0, len);
+        var cur = layout.HitTestTextPosition(off);
+        // The caret's current visual line = first line whose following line starts below the caret.
+        int li = lines.Count - 1;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            double nextY = i + 1 < lines.Count
+                ? layout.HitTestTextPosition(lines[i + 1].FirstTextSourceIndex).Y
+                : double.PositiveInfinity;
+            if (cur.Y + 0.5 < nextY) { li = i; break; }
+        }
+        int targetLine = down ? li + 1 : li - 1;
+        if (targetLine < 0 || targetLine >= lines.Count) return false; // already on the first/last line
+        double targetY = layout.HitTestTextPosition(lines[targetLine].FirstTextSourceIndex).Y;
+        var hit = layout.HitTestPoint(new Point(cur.X, targetY + 1)); // same X, one line over
+        int idx = hit.TextPosition + (hit.IsTrailing ? 1 : 0);
+        _caretPosition = new TextPointer(p, Math.Clamp(idx, 0, len));
+        return true;
     }
 
     // The image/table block whose rendered vertical span contains y, or null (used for Up/Down into a block).

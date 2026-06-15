@@ -114,6 +114,30 @@ public class RichEditorCaretNavigationTests
     }
 
     [AvaloniaFact]
+    public void Down_InMultiLineCell_MovesWithinCell_NotToAnotherCell()
+    {
+        // A multi-line cell: ↓ from its first line must move to the cell's SECOND line, not jump to the
+        // cell below (the old fixed-pixel step crossed rows for cells shorter than the step).
+        var ed = new RichEditor();
+        var doc = new FlowDocument();
+        var tb = new TableBlock(2, 2);
+        ((Run)tb.Cells[0][0].Inlines[0]).Text = "AAA\nBBB"; // two visual lines via a soft break
+        doc.Blocks.Add(tb);
+        ed.Document = doc;
+
+        Press(ed, Key.Home, KeyModifiers.Control); // caret to the leading paragraph before the table
+        Press(ed, Key.Right); // -> block caret before the table
+        Press(ed, Key.Right); // -> into cell [0][0], offset 0 (first line "AAA")
+        ForceLayout(ed);
+        Press(ed, Key.Down);  // should land on the cell's second line ("BBB"), same cell
+        Type(ed, "X");
+
+        var table = (TableBlock)ed.Document!.Blocks.First(b => b is TableBlock);
+        Assert.Equal("AAA\nXBBB", table.Cells[0][0].Text()); // moved within the cell to line 2
+        Assert.Equal("", table.Cells[1][0].Text());          // did NOT jump to the cell below
+    }
+
+    [AvaloniaFact]
     public void ShiftHome_SelectsToLineStart()
     {
         // Shift+Home extends the selection from the caret to the line start; Backspace then clears it.
