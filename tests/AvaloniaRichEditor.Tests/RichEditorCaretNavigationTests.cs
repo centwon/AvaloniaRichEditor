@@ -138,6 +138,32 @@ public class RichEditorCaretNavigationTests
     }
 
     [AvaloniaFact]
+    public void Down_FromEmptyCellInTallRow_MovesToRowBelow()
+    {
+        // An empty cell sharing a tall row (a sibling cell has several lines): ↓ must still cross to the
+        // cell directly below. The old fixed +30 px step didn't clear the tall row, so the caret stayed
+        // put in the empty cell ("no response").
+        var ed = new RichEditor();
+        var doc = new FlowDocument();
+        var tb = new TableBlock(2, 2);
+        ((Run)tb.Cells[0][0].Inlines[0]).Text = "L1\nL2\nL3"; // makes row 0 tall; cell[0][1] stays empty
+        doc.Blocks.Add(tb);
+        ed.Document = doc;
+
+        Press(ed, Key.Home, KeyModifiers.Control);
+        Press(ed, Key.Right); // block caret before the table
+        Press(ed, Key.Right); // into cell [0][0]
+        Press(ed, Key.Tab);   // -> cell [0][1] (empty, in the tall row)
+        ForceLayout(ed);
+        Press(ed, Key.Down);
+        Type(ed, "X");
+
+        var t = (TableBlock)ed.Document!.Blocks.First(b => b is TableBlock);
+        Assert.Equal("", t.Cells[0][1].Text());  // did NOT stay stuck in the empty cell
+        Assert.Equal("X", t.Cells[1][1].Text());  // crossed to the cell directly below
+    }
+
+    [AvaloniaFact]
     public void ShiftHome_SelectsToLineStart()
     {
         // Shift+Home extends the selection from the caret to the line start; Backspace then clears it.

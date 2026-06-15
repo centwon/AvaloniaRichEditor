@@ -828,7 +828,9 @@ public partial class RichEditor
                 _caretBlock = fc.tb; _caretBlockAfter = false;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            double ty = Math.Max(0, _lastCaretPoint.Y - 20);
+            // In a (possibly tall) cell, step just above the cell's top edge so the move always clears
+            // it into the row above; outside a cell, a small fixed step is enough.
+            double ty = CaretCellRect() is { } upCell ? upCell.Top - 2 : Math.Max(0, _lastCaretPoint.Y - 20);
             if (!shift && BlockAtY(ty) is { } ub && !CaretInBlock(ub))
             {
                 _caretBlock = ub; _caretBlockAfter = true; // entering a block from below
@@ -858,7 +860,9 @@ public partial class RichEditor
                 _caretBlock = fc.tb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            double ty = _lastCaretPoint.Y + 30;
+            // In a (possibly tall) cell, step just below the cell's bottom edge so the move always
+            // clears it into the row below; outside a cell, a small fixed step is enough.
+            double ty = CaretCellRect() is { } dnCell ? dnCell.Bottom + 2 : _lastCaretPoint.Y + 30;
             if (!shift && BlockAtY(ty) is { } db && !CaretInBlock(db))
             {
                 _caretBlock = db; _caretBlockAfter = false; // entering a block from above
@@ -1207,6 +1211,20 @@ public partial class RichEditor
         int idx = hit.TextPosition + (hit.IsTrailing ? 1 : 0);
         _caretPosition = new TextPointer(p, Math.Clamp(idx, 0, len));
         return true;
+    }
+
+    // The caret cell's rectangle in document space, or null when the caret isn't in a table cell. Used
+    // by ↑/↓ to step just past the cell's top/bottom edge when crossing to an adjacent row — a fixed
+    // pixel step doesn't clear a tall row (e.g. an empty cell beside a multi-line one), so the caret
+    // stayed put ("no response").
+    private Avalonia.Rect? CaretCellRect()
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null || FindCell(p) is not { } fc || GetTableRect(fc.tb) is not { } tr) return null;
+        var (ar, ac) = fc.tb.AnchorOf(fc.r, fc.c);
+        foreach (var (r, c, rect) in tr.tl.AnchorRects)
+            if (r == ar && c == ac) return rect;
+        return null;
     }
 
     // The image/table block whose rendered vertical span contains y, or null (used for Up/Down into a block).
