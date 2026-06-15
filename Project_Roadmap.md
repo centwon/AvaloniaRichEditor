@@ -319,7 +319,7 @@
 >
 > **규모/가치**: 중-대형(다세션). 단계마다 200+ 테스트 그린 유지. 인라인 표 등 향후 기능의 전제이기도 함.
 >
-> **진행(2026-06-16)**: [x] **P0** — `GeometryConsistencyTests` 3건(측정이 마지막 블록까지 도달, 혼합문서>빈문서, 표 추가 시 높이 증가 — Continuous 모드로 `MeasureContentHeight` 직접 검증). [x] **P1+읽기전용 워커 통합** — `BlockExtent(block,width,top,out paraLayout,out tableLayout)` 도입, **6개 읽기 전용 워커**(`MeasureContentHeight`·`GetBlockAtPoint`·`GetTableRect`·`GetLinkRunAtPoint`·`GetPositionFromPoint`·`BlockAtY`)를 전부 이 단일 출처로 라우팅. 기존 200 테스트 그린 = 동작 보존. **남음**: P4(`ComputePageBreaks` — 문단 줄 분할 처리), P5(`DrawDocumentBlocks` 렌더 — 최고 위험, 데모 수동검증), P2(`BlockBox` 캐싱 열거자 — 성능 선택).
+> **진행(2026-06-16)**: [x] **P0** — `GeometryConsistencyTests` 3건(측정이 마지막 블록까지 도달, 혼합문서>빈문서, 표 추가 시 높이 증가 — Continuous 모드로 `MeasureContentHeight` 직접 검증). [x] **P1+읽기전용 워커 통합** — `BlockExtent(block,width,top,out paraLayout,out tableLayout)` 도입, **6개 읽기 전용 워커**(`MeasureContentHeight`·`GetBlockAtPoint`·`GetTableRect`·`GetLinkRunAtPoint`·`GetPositionFromPoint`·`BlockAtY`)를 전부 이 단일 출처로 라우팅. 기존 200 테스트 그린 = 동작 보존. [x] **P4 페이지네이션 통합(2026-06-16)** — `ComputePageBreaks`의 블록별 높이/레이아웃 계산을 `BlockExtent`로 라우팅(중복 `LayoutTable`/`BuildTextLayout`/`switch` 제거). 페이지네이션 고유 로직(테이블 행·문단 줄 atom 분할)만 남음. MarginBottom 처리도 `block.MarginBottom`으로 통일 → 수직 누적이 `MeasureContentHeight`와 라인 단위로 동일. 207 테스트 그린(Pagination 18 + Geometry 등). **남음**: P5(`DrawDocumentBlocks` 렌더 — 최고 위험, 헤드리스 픽셀 불가 → **데모 수동검증 필수, 별도 세션 권장**), P2(`BlockBox` 캐싱 열거자 — 성능 선택, 미착수).
 
 ### 🔵 N6: 이미지 저장 모델 전환 및 성능 최적화 (미착수)
 

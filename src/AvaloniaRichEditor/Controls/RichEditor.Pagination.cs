@@ -350,59 +350,49 @@ public partial class RichEditor
         foreach (var block in Document.Blocks)
         {
             y += block.MarginTop;
-            if (block is TableBlock tb)
+            // Block height + layout objects come from the single source (G1 BlockExtent), so the
+            // vertical advance here can never drift from MeasureContentHeight / the hit-tests. Only the
+            // *within-block* atom split (table rows, paragraph lines) is pagination-specific and stays.
+            double height = BlockExtent(block, contentWidth, y, out var paraLayout, out var tableLayout);
+            if (tableLayout is { } tl)
             {
                 // Rows are the atoms (Word's default): a table taller than the remaining page
                 // continues on the next page at a row boundary — the page-view clip+replay then
                 // shows the leading rows on one page and the rest on the next automatically.
-                // (Cells spanning rows across a break are split visually, like Word.)
-                var tl = LayoutTable(tb, 10 + tb.Indent, y);
-                for (int r = 0; r < tb.Rows; r++)
+                // (Cells spanning rows across a break are split visually, like Word.) The row heights
+                // sum to BlockExtent's TotalHeight, so PlaceAtom advances y by the same amount.
+                for (int r = 0; r < ((TableBlock)block).Rows; r++)
                     PlaceAtom(tl.RowY[r + 1] - tl.RowY[r]);
-                y += tb.MarginBottom;
             }
-            else if (block is ImageBlock img)
+            else if (paraLayout is { } layout)
             {
-                PlaceAtom(img.Height > 0 ? img.Height : 200);
-                y += img.MarginBottom;
-            }
-            else if (block is DividerBlock dv)
-            {
-                PlaceAtom(DividerHeight);
-                y += dv.MarginBottom;
-            }
-            else if (block is Paragraph p)
-            {
-                if (GetParagraphLength(p) == 0)
+                double paraTop = y;
+                // Line atom boundaries come from the layout's own line-top positions (the same
+                // geometry Render draws at), NOT from summing TextLine.Height — line spacing /
+                // LineHeight overrides make height sums drift from real line tops, which sliced
+                // glyphs in half at page boundaries.
+                var lines = layout.TextLines;
+                double atomTop = 0;
+                for (int li = 1; li <= lines.Count; li++)
                 {
-                    PlaceAtom(!double.IsNaN(p.LineHeight) ? p.LineHeight : 20);
-                }
-                else
-                {
-                    var layout = BuildTextLayout(p, Math.Max(10, contentWidth - 20 - ParaLeft(p) - p.MarginRight));
-                    double paraTop = y;
-                    // Line atom boundaries come from the layout's own line-top positions (the same
-                    // geometry Render draws at), NOT from summing TextLine.Height — line spacing /
-                    // LineHeight overrides make height sums drift from real line tops, which sliced
-                    // glyphs in half at page boundaries.
-                    var lines = layout.TextLines;
-                    double atomTop = 0;
-                    for (int li = 1; li <= lines.Count; li++)
+                    double atomBottom = li < lines.Count
+                        ? layout.HitTestTextPosition(lines[li].FirstTextSourceIndex).Y
+                        : layout.Height;
+                    if (paraTop + atomBottom > pageStart + pageContentHeight + eps && paraTop + atomTop > pageStart)
                     {
-                        double atomBottom = li < lines.Count
-                            ? layout.HitTestTextPosition(lines[li].FirstTextSourceIndex).Y
-                            : layout.Height;
-                        if (paraTop + atomBottom > pageStart + pageContentHeight + eps && paraTop + atomTop > pageStart)
-                        {
-                            breaks.Add(paraTop + atomTop);
-                            pageStart = paraTop + atomTop;
-                        }
-                        atomTop = atomBottom;
+                        breaks.Add(paraTop + atomTop);
+                        pageStart = paraTop + atomTop;
                     }
-                    y = paraTop + layout.Height;
+                    atomTop = atomBottom;
                 }
-                y += p.MarginBottom;
+                y = paraTop + layout.Height;
             }
+            else
+            {
+                // Indivisible single-atom block: image, divider, or an empty paragraph.
+                PlaceAtom(height);
+            }
+            y += block.MarginBottom;
         }
         return breaks;
     }

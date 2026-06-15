@@ -150,8 +150,9 @@ public partial class RichEditor
     // TableLayout; null otherwise). Every read-only document walk — measure, hit-tests, block-at-y —
     // advances through this so they can never disagree on a block's height the way the duplicated
     // per-walker `switch`es used to (the historical hardcoded-10 MarginBottom bug came from exactly that
-    // drift). Render and pagination still compute their own advance (they need draw/line-split logic);
-    // migrating them is a later G1 phase.
+    // drift). Pagination also advances through this (it adds only the within-block row/line atom split
+    // on top). Render still computes its own advance (it needs the draw/cull logic); migrating it is the
+    // last G1 phase.
     private double BlockExtent(Block block, double maxWidth, double top,
         out Avalonia.Media.TextFormatting.TextLayout? paraLayout, out TableLayout? tableLayout)
     {
