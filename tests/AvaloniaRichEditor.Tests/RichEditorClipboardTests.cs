@@ -16,6 +16,40 @@ public class RichEditorClipboardTests
     // ---- CF_HTML fragment extraction ----
 
     [Fact]
+    public void BuildCfHtml_RoundTripsThroughExtractor()
+    {
+        const string frag = "<p>real <b>content</b></p>";
+        var cf = RichEditor.BuildCfHtml(frag);
+        // The envelope our copy writes must be readable by our own extractor (and Word/browsers).
+        Assert.StartsWith("Version:0.9", cf);
+        Assert.Equal(frag, RichEditor.ExtractHtmlFragment(cf));
+    }
+
+    [Fact]
+    public void BuildCfHtml_OffsetsAreByteAccurateWithMultibyte()
+    {
+        // Korean fragment: CF_HTML offsets are BYTE offsets (UTF-8), not char offsets — a char-based
+        // offset would point mid-byte and corrupt the fragment in consumers.
+        const string frag = "<p>한글 <b>굵게</b></p>";
+        var cf = RichEditor.BuildCfHtml(frag);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(cf);
+
+        int Read(string key)
+        {
+            int i = cf.IndexOf(key + ":", System.StringComparison.Ordinal) + key.Length + 1;
+            return int.Parse(cf.Substring(i, 10), System.Globalization.CultureInfo.InvariantCulture);
+        }
+        int startFragment = Read("StartFragment");
+        int endFragment = Read("EndFragment");
+        int endHtml = Read("EndHTML");
+
+        // The bytes between StartFragment and EndFragment must decode back to exactly the fragment.
+        var slice = System.Text.Encoding.UTF8.GetString(bytes, startFragment, endFragment - startFragment);
+        Assert.Equal(frag, slice);
+        Assert.Equal(bytes.Length, endHtml); // EndHTML = end of the whole payload
+    }
+
+    [Fact]
     public void ExtractHtmlFragment_StripsCfHtmlMarkers()
     {
         const string raw =

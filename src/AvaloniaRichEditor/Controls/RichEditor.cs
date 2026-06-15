@@ -857,12 +857,21 @@ public partial class RichEditor : Control
 
     // Draws a list item's marker (• or "N.") right-aligned just left of the text (small fixed gap),
     // so the marker hugs the content regardless of its width. No-op for non-list paragraphs.
-    private static void DrawListMarker(DrawingContext context, Paragraph p, int num, double textLeft, double y)
+    // The marker takes the item's own text styling (its first run: size, family, weight, colour) so a
+    // heading / coloured / enlarged list item gets a matching bullet or number instead of a fixed
+    // small black default. Instance method so it can fall back to the editor's default font/size.
+    private void DrawListMarker(DrawingContext context, Paragraph p, int num, double textLeft, double y)
     {
         if (p.ListType == ListKind.None) return;
         string m = p.ListType == ListKind.Bullet ? "•" : $"{num}.";
+        Run? first = null;
+        foreach (var inl in p.Inlines) if (inl is Run r) { first = r; break; }
+        double size = first is { FontSize: > 0 } ? first.FontSize : DefaultFontSize;
+        var family = first != null && !string.IsNullOrEmpty(first.FontFamily) ? new FontFamily(first.FontFamily) : DefaultFontFamily;
+        var weight = first?.FontWeight ?? FontWeight.Normal;
+        var brush = first?.Foreground ?? Brushes.Black;
         var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, Typeface.Default, 14, Brushes.Black);
+            FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), size, brush);
         const double gap = 6;
         context.DrawText(ft, new Point(textLeft - gap - ft.Width, y));
     }
@@ -1312,9 +1321,13 @@ public partial class RichEditor : Control
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard != null && !string.IsNullOrEmpty(text))
         {
+            // Also export rich HTML so other apps (Word, browsers) keep the formatting — the read side
+            // already understands incoming HTML, so this makes copy/paste symmetric. Built from the same
+            // trimmed runs as the plain text so the two stay consistent.
+            string? html = BuildSelectionHtml(_internalClipboard);
             // Another process can hold the clipboard open; an unhandled throw here would
             // crash the process (async void). The internal rich slots above are already set.
-            try { await clipboard.SetTextAsync(text); }
+            try { await SetClipboardTextAndHtmlAsync(clipboard, text, html); }
             catch { }
         }
     }

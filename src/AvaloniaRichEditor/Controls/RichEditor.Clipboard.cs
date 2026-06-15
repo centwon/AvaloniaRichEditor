@@ -256,6 +256,63 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     private static readonly DataFormat<string> AreImageMetaFormat =
         DataFormat.CreateStringApplicationFormat("AvaloniaRichEditor.ImageMeta");
 
+    // The Windows native "HTML Format" (CF_HTML) clipboard format: a platform (system-named) format, so
+    // other apps (Word, browsers) receive the copied selection as rich text, not just plain text. A
+    // bytes format is used so we control the exact UTF-8 payload (the CF_HTML byte offsets must match).
+    private static readonly DataFormat<byte[]> CfHtmlFormat = DataFormat.CreateBytesPlatformFormat("HTML Format");
+
+    // Puts the selection on the system clipboard as both plain text and (on Windows) CF_HTML rich text,
+    // in one DataTransfer item. Mirrors the read side, which already understands incoming HTML.
+    private static async Task SetClipboardTextAndHtmlAsync(IClipboard clipboard, string text, string? html)
+    {
+        var item = DataTransferItem.CreateText(text);
+        if (!string.IsNullOrEmpty(html) && OperatingSystem.IsWindows())
+            item.Set(CfHtmlFormat, System.Text.Encoding.UTF8.GetBytes(BuildCfHtml(html!)));
+        var dt = new DataTransfer();
+        dt.Add(item);
+        await clipboard.SetDataAsync(dt);
+    }
+
+    // Reconstructs the copied selection as HTML from its captured rich runs (the same trimmed runs used
+    // for the internal clipboard), so the exported HTML matches the copied plain text exactly. Paragraph
+    // breaks are the lone "\n" runs GetRichRuns inserts between paragraphs. Tables/images flatten to
+    // paragraphs here (as the plain-text path also does); null when there is nothing to emit.
+    private static string? BuildSelectionHtml(System.Collections.Generic.List<Run>? runs)
+    {
+        if (runs == null || runs.Count == 0) return null;
+        var doc = new FlowDocument();
+        var cur = new Paragraph();
+        foreach (var r in runs)
+        {
+            if (r.Text == "\n") { doc.Blocks.Add(cur); cur = new Paragraph(); }
+            else { var c = (Run)r.Clone(); c.Parent = cur; cur.Inlines.Add(c); }
+        }
+        doc.Blocks.Add(cur);
+        return HtmlDocumentFormatter.ToHtml(doc);
+    }
+
+    // Wraps an HTML fragment in the Windows CF_HTML envelope: a header whose StartHTML/EndHTML/
+    // StartFragment/EndFragment are byte offsets (UTF-8) into the payload, plus the fragment markers.
+    // The offsets are fixed-width (10 digits), so the header length is the same with placeholder zeros
+    // and with the real values — one measuring pass suffices. (internal for unit-test coverage.)
+    internal static string BuildCfHtml(string fragmentHtml)
+    {
+        const string headerFmt =
+            "Version:0.9\r\nStartHTML:{0:0000000000}\r\nEndHTML:{1:0000000000}\r\n" +
+            "StartFragment:{2:0000000000}\r\nEndFragment:{3:0000000000}\r\n";
+        const string pre = "<html><body>\r\n<!--StartFragment-->";
+        const string post = "<!--EndFragment-->\r\n</body></html>";
+        var enc = System.Text.Encoding.UTF8;
+        int headerLen = enc.GetByteCount(string.Format(System.Globalization.CultureInfo.InvariantCulture, headerFmt, 0, 0, 0, 0));
+        int startHtml = headerLen;
+        int startFragment = startHtml + enc.GetByteCount(pre);
+        int endFragment = startFragment + enc.GetByteCount(fragmentHtml);
+        int endHtml = endFragment + enc.GetByteCount(post);
+        string header = string.Format(System.Globalization.CultureInfo.InvariantCulture, headerFmt,
+            startHtml, endHtml, startFragment, endFragment);
+        return header + pre + fragmentHtml + post;
+    }
+
     // Copies an image (block or inline) to the OS clipboard. Paste re-enters through the image
     // branch of PasteFromClipboardAsync, which prefers the original-bytes format.
     private async Task CopyImageToClipboardAsync(byte[]? rawBytes, Bitmap? bmp, bool inline, double width, double height)

@@ -97,9 +97,13 @@ public partial class RichEditor
         finally { _trustLayoutCache = false; } // never leak the trusted state past this measure pass
     }
 
+    // The peer is created lazily (only when assistive tech attaches); kept so state changes
+    // (read-only toggle) can be surfaced to it. Null until then.
+    private RichEditorAutomationPeer? _automationPeer;
+
     /// <inheritdoc/>
     protected override Avalonia.Automation.Peers.AutomationPeer OnCreateAutomationPeer()
-        => new RichEditorAutomationPeer(this);
+        => _automationPeer = new RichEditorAutomationPeer(this);
 
     // Draw-culling redraw contract: blocks outside the viewport are skipped in Render, so scrolling
     // must re-run Render for blocks entering the viewport to appear. Avalonia happens to re-render
