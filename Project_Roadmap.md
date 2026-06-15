@@ -318,6 +318,8 @@
 > - **P6 정리**: 죽은 per-워커 yOffset 코드 삭제, `_trustLayoutCache` 의미 보존 확인.
 >
 > **규모/가치**: 중-대형(다세션). 단계마다 200+ 테스트 그린 유지. 인라인 표 등 향후 기능의 전제이기도 함.
+>
+> **진행(2026-06-16)**: [x] **P0** — `GeometryConsistencyTests` 3건(측정이 마지막 블록까지 도달, 혼합문서>빈문서, 표 추가 시 높이 증가 — Continuous 모드로 `MeasureContentHeight` 직접 검증). [x] **P1+읽기전용 워커 통합** — `BlockExtent(block,width,top,out paraLayout,out tableLayout)` 도입, **6개 읽기 전용 워커**(`MeasureContentHeight`·`GetBlockAtPoint`·`GetTableRect`·`GetLinkRunAtPoint`·`GetPositionFromPoint`·`BlockAtY`)를 전부 이 단일 출처로 라우팅. 기존 200 테스트 그린 = 동작 보존. **남음**: P4(`ComputePageBreaks` — 문단 줄 분할 처리), P5(`DrawDocumentBlocks` 렌더 — 최고 위험, 데모 수동검증), P2(`BlockBox` 캐싱 열거자 — 성능 선택).
 
 ### 🔵 N6: 이미지 저장 모델 전환 및 성능 최적화 (미착수)
 

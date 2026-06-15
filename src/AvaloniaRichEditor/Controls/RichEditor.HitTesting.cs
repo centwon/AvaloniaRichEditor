@@ -16,17 +16,16 @@ public partial class RichEditor
     private Run? GetLinkRunAtPoint(Point p)
     {
         if (Document == null) return null;
-        double yOffset = 0;
-        double maxWidth = ContentLayoutWidth;
-
+        double yOffset = 0, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
-            if (block is TableBlock tb)
+            double top = yOffset;
+            double h = BlockExtent(block, maxWidth, top, out var ft, out var tl);
+            yOffset += h + block.MarginBottom;
+            if (block is TableBlock tb && tl is { } t)
             {
-                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
-                foreach (var (r, c, rect) in tl.AnchorRects)
-                {
+                foreach (var (r, c, rect) in t.AnchorRects)
                     if (rect.Contains(p))
                     {
                         var cell = tb.Cells[r][c];
@@ -34,34 +33,12 @@ public partial class RichEditor
                         var hit = layout.HitTestPoint(new Point(p.X - (rect.X + 5), p.Y - (rect.Y + 5)));
                         return hit.IsInside ? RunAtOffset(cell, hit.TextPosition) : null;
                     }
-                }
-                yOffset += tl.TotalHeight + tb.MarginBottom;
             }
-            else if (block is Paragraph paragraph)
+            else if (block is Paragraph paragraph && ft != null && p.Y >= top && p.Y <= top + h)
             {
-                string fullText = BuildPlain(paragraph);
-                if (fullText == "")
-                {
-                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
-                    continue;
-                }
                 double plink = ParaLeft(paragraph);
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - plink - paragraph.MarginRight));
-                double height = layout.Height;
-                if (p.Y >= yOffset && p.Y <= yOffset + height)
-                {
-                    var hit = layout.HitTestPoint(new Point(p.X - plink, p.Y - yOffset));
-                    return hit.IsInside ? RunAtOffset(paragraph, hit.TextPosition) : null;
-                }
-                yOffset += height + paragraph.MarginBottom;
-            }
-            else if (block is ImageBlock img)
-            {
-                yOffset += (img.Height > 0 ? img.Height : 200) + img.MarginBottom;
-            }
-            else if (block is DividerBlock dv)
-            {
-                yOffset += DividerHeight + dv.MarginBottom;
+                var hit = ft.HitTestPoint(new Point(p.X - plink, p.Y - top));
+                return hit.IsInside ? RunAtOffset(paragraph, hit.TextPosition) : null;
             }
         }
         return null;
@@ -168,6 +145,38 @@ public partial class RichEditor
         return new TableLayout(colX, rowY, colX[cols] - startX, rowY[rows] - top, anchors);
     }
 
+    // G1 — single source of a block's vertical extent (height, EXCLUDING MarginTop/MarginBottom) at the
+    // given top, plus the layout objects the walkers reuse (a paragraph's TextLayout / a table's
+    // TableLayout; null otherwise). Every read-only document walk — measure, hit-tests, block-at-y —
+    // advances through this so they can never disagree on a block's height the way the duplicated
+    // per-walker `switch`es used to (the historical hardcoded-10 MarginBottom bug came from exactly that
+    // drift). Render and pagination still compute their own advance (they need draw/line-split logic);
+    // migrating them is a later G1 phase.
+    private double BlockExtent(Block block, double maxWidth, double top,
+        out Avalonia.Media.TextFormatting.TextLayout? paraLayout, out TableLayout? tableLayout)
+    {
+        paraLayout = null;
+        tableLayout = null;
+        switch (block)
+        {
+            case TableBlock tb:
+                var tl = LayoutTable(tb, 10 + tb.Indent, top);
+                tableLayout = tl;
+                return tl.TotalHeight;
+            case ImageBlock img:
+                return img.Height > 0 ? img.Height : 200;
+            case DividerBlock:
+                return DividerHeight;
+            case Paragraph p:
+                if (GetParagraphLength(p) == 0)
+                    return !double.IsNaN(p.LineHeight) ? p.LineHeight : 20;
+                paraLayout = BuildTextLayout(p, Math.Max(10, maxWidth - 20 - ParaLeft(p) - p.MarginRight));
+                return paraLayout.Height;
+            default:
+                return 0;
+        }
+    }
+
     // The block (image or table) whose rendered rectangle contains the point, or null.
     private Block? GetBlockAtPoint(Point p)
     {
@@ -176,34 +185,17 @@ public partial class RichEditor
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
-            if (block is TableBlock tb)
+            double top = yOffset;
+            double h = BlockExtent(block, maxWidth, top, out _, out var tl);
+            yOffset += h + block.MarginBottom;
+            if (block is TableBlock tb && tl is { } t)
             {
-                double tableTop = yOffset;
-                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
-                yOffset += tl.TotalHeight;
-                if (p.X >= 10 + tb.Indent && p.X <= 10 + tb.Indent + tl.TableWidth && p.Y >= tableTop && p.Y <= yOffset) return tb;
-                yOffset += tb.MarginBottom;
-            }
-            else if (block is Paragraph paragraph)
-            {
-                if (GetParagraphLength(paragraph) == 0)
-                {
-                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
-                    continue;
-                }
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph) - paragraph.MarginRight));
-                yOffset += layout.Height + paragraph.MarginBottom;
-            }
-            else if (block is DividerBlock dv)
-            {
-                yOffset += DividerHeight + dv.MarginBottom;
+                if (p.X >= 10 + tb.Indent && p.X <= 10 + tb.Indent + t.TableWidth && p.Y >= top && p.Y <= top + h) return tb;
             }
             else if (block is ImageBlock img)
             {
                 double w = img.Width > 0 ? img.Width : 200;
-                double h = img.Height > 0 ? img.Height : 200;
-                if (p.X >= listIndent + img.Indent && p.X <= listIndent + img.Indent + w && p.Y >= yOffset && p.Y <= yOffset + h) return img;
-                yOffset += h + img.MarginBottom;
+                if (p.X >= listIndent + img.Indent && p.X <= listIndent + img.Indent + w && p.Y >= top && p.Y <= top + h) return img;
             }
         }
         return null;
@@ -217,24 +209,10 @@ public partial class RichEditor
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
-            if (block is TableBlock tb)
-            {
-                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
-                if (tb == target) return (yOffset, tl);
-                yOffset += tl.TotalHeight + tb.MarginBottom;
-            }
-            else if (block is Paragraph paragraph)
-            {
-                if (GetParagraphLength(paragraph) == 0)
-                {
-                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
-                    continue;
-                }
-                var layout = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph) - paragraph.MarginRight));
-                yOffset += layout.Height + paragraph.MarginBottom;
-            }
-            else if (block is DividerBlock dv) yOffset += DividerHeight + dv.MarginBottom;
-            else if (block is ImageBlock img) yOffset += (img.Height > 0 ? img.Height : 200) + img.MarginBottom;
+            double top = yOffset;
+            double h = BlockExtent(block, maxWidth, top, out _, out var tl);
+            if (block == target && tl is { } t) return (top, t);
+            yOffset += h + block.MarginBottom;
         }
         return null;
     }
@@ -325,10 +303,12 @@ public partial class RichEditor
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
-            if (block is TableBlock tb)
+            double top = yOffset;
+            double h = BlockExtent(block, maxWidth, top, out var ft, out var tl);
+            yOffset += h + block.MarginBottom;
+            if (block is TableBlock tb && tl is { } t)
             {
-                var tl = LayoutTable(tb, 10 + tb.Indent, yOffset);
-                foreach (var (r, c, rect) in tl.AnchorRects)
+                foreach (var (r, c, rect) in t.AnchorRects)
                 {
                     var cell = tb.Cells[r][c];
                     var (cs, _) = tb.SpanOf(r, c);
@@ -342,7 +322,7 @@ public partial class RichEditor
                     }
                 }
                 // Outside any cell: remember the nearest anchor (by vertical distance) as a fallback.
-                foreach (var (r, c, rect) in tl.AnchorRects)
+                foreach (var (r, c, rect) in t.AnchorRects)
                 {
                     double distY = p.Y < rect.Y ? rect.Y - p.Y : (p.Y > rect.Bottom ? p.Y - rect.Bottom : 0);
                     if (distY < bestDistY)
@@ -352,42 +332,25 @@ public partial class RichEditor
                         bestLocalIndex = GetParagraphLength(bestPara);
                     }
                 }
-                yOffset += tl.TotalHeight + tb.MarginBottom;
             }
             else if (block is Paragraph paragraph)
             {
-                string fullText = BuildPlain(paragraph);
-
-                if (fullText == "")
+                if (ft == null) // empty paragraph: extent is a single line height
                 {
-                    double lh = !double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20;
-                    double dY = p.Y < yOffset ? yOffset - p.Y : (p.Y > yOffset + lh ? p.Y - (yOffset + lh) : 0);
+                    double dY = p.Y < top ? top - p.Y : (p.Y > top + h ? p.Y - (top + h) : 0);
                     if (dY < bestDistY) { bestDistY = dY; bestPara = paragraph; bestLocalIndex = 0; }
-                    yOffset += paragraph.MarginBottom + lh;
-                    continue;
                 }
-
-                double ppos = ParaLeft(paragraph);
-                var ft = BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ppos - paragraph.MarginRight));
-                double height = ft.Height;
-
-                double distY2 = p.Y < yOffset ? yOffset - p.Y : (p.Y > yOffset + height ? p.Y - (yOffset + height) : 0);
-                if (distY2 < bestDistY)
+                else
                 {
-                    bestDistY = distY2;
-                    bestPara = paragraph;
-                    bestLocalIndex = HitTestIndex(ft, new Point(p.X - ppos, p.Y - yOffset));
+                    double ppos = ParaLeft(paragraph);
+                    double distY2 = p.Y < top ? top - p.Y : (p.Y > top + h ? p.Y - (top + h) : 0);
+                    if (distY2 < bestDistY)
+                    {
+                        bestDistY = distY2;
+                        bestPara = paragraph;
+                        bestLocalIndex = HitTestIndex(ft, new Point(p.X - ppos, p.Y - top));
+                    }
                 }
-                yOffset += height + paragraph.MarginBottom;
-            }
-            else if (block is ImageBlock img)
-            {
-                double height = img.Height > 0 ? img.Height : 200;
-                yOffset += height + img.MarginBottom;
-            }
-            else if (block is DividerBlock dv)
-            {
-                yOffset += DividerHeight + dv.MarginBottom;
             }
         }
         return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) : new TextPointer(Document.Blocks[0] as Paragraph, 0);

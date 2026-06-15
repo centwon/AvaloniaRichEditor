@@ -1118,26 +1118,10 @@ public partial class RichEditor
         {
             yOffset += block.MarginTop;
             double top = yOffset;
-            if (block is TableBlock tb)
-            {
-                double h = LayoutTable(tb, 10 + tb.Indent, yOffset).TotalHeight;
-                if (y >= top && y <= top + h) return tb;
-                yOffset += h + tb.MarginBottom;
-            }
-            else if (block is ImageBlock img)
-            {
-                double h = img.Height > 0 ? img.Height : 200;
-                if (y >= top && y <= top + h) return img;
-                yOffset += h + img.MarginBottom;
-            }
-            else if (block is Paragraph paragraph)
-            {
-                if (GetParagraphLength(paragraph) == 0)
-                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
-                else
-                    yOffset += BuildTextLayout(paragraph, Math.Max(10, maxWidth - 20 - ParaLeft(paragraph) - paragraph.MarginRight)).Height + paragraph.MarginBottom;
-            }
-            else if (block is DividerBlock dv) yOffset += DividerHeight + dv.MarginBottom;
+            double h = BlockExtent(block, maxWidth, top, out _, out _);
+            // Only image/table blocks are "entered" by Up/Down arrow navigation.
+            if ((block is TableBlock || block is ImageBlock) && y >= top && y <= top + h) return block;
+            yOffset += h + block.MarginBottom;
         }
         return null;
     }

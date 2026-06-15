@@ -41,16 +41,7 @@ public partial class RichEditor
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
-            if (block is TableBlock tb) yOffset += LayoutTable(tb, 10 + tb.Indent, yOffset).TotalHeight + tb.MarginBottom;
-            else if (block is ImageBlock img) yOffset += (img.Height > 0 ? img.Height : 200) + img.MarginBottom;
-            else if (block is DividerBlock dv) yOffset += DividerHeight + dv.MarginBottom;
-            else if (block is Paragraph p)
-            {
-                if (GetParagraphLength(p) == 0)
-                    yOffset += p.MarginBottom + (!double.IsNaN(p.LineHeight) ? p.LineHeight : 20);
-                else
-                    yOffset += BuildTextLayout(p, Math.Max(10, width - 20 - ParaLeft(p) - p.MarginRight)).Height + p.MarginBottom;
-            }
+            yOffset += BlockExtent(block, width, yOffset, out _, out _) + block.MarginBottom;
         }
         return yOffset + 40; // a little breathing room at the bottom
     }
