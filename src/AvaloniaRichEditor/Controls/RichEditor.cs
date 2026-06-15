@@ -38,10 +38,10 @@ public partial class RichEditor : Control
     private Block? _caretBlock;
     private bool _caretBlockAfter; // false = caret before the block, true = caret after it
 
-    // Internal rich clipboard: preserves run formatting for copy/paste within the app.
+    // Internal rich clipboard: preserves run formatting AND inline images for copy/paste within the app.
     // The plain text put on the system clipboard is mirrored here; on paste we use the rich
     // version only when the system clipboard text still matches what we copied.
-    private static List<Run>? _internalClipboard;
+    private static List<Inline>? _internalClipboard;
     private static string? _internalClipboardText;
     // When the copied selection spans whole tables/images or multiple top-level blocks, we also
     // keep cloned block structure so paste can rebuild tables instead of flattening to text.
@@ -1076,11 +1076,13 @@ public partial class RichEditor : Control
         if (Document == null) return;
 
         // Inline-only single paragraph: paste inline at the caret to keep the current line's flow.
+        // Carries runs AND inline images so a pasted single-line fragment keeps its pictures.
         if (parsed.Blocks.Count == 1 && parsed.Blocks[0] is Paragraph sp && _caretPosition.Paragraph != null)
         {
-            var runs = new List<Run>();
-            foreach (var inl in sp.Inlines) if (inl is Run r) runs.Add((Run)r.Clone());
-            if (runs.Count > 0) { InsertRuns(runs); return; }
+            var inlines = new List<Inline>();
+            foreach (var inl in sp.Inlines)
+                if (inl is Run or InlineImage) inlines.Add((Inline)inl.Clone());
+            if (inlines.Count > 0) { InsertInlines(inlines); return; }
         }
 
         // Otherwise splice the parsed blocks in after the caret's top-level block.
@@ -1314,7 +1316,7 @@ public partial class RichEditor : Control
         // still holds when re-pasting in-app.
         string text = range.GetText().ReplaceLineEndings();
         // Capture the rich fragment synchronously (cloned) before any await / later edits.
-        _internalClipboard = range.GetRichRuns();
+        _internalClipboard = range.GetRichInlines();
         _internalClipboardText = text;
         _internalClipboardBlocks = CaptureBlockStructure(range);
 
@@ -1405,20 +1407,23 @@ public partial class RichEditor : Control
     }
 
     // Inserts a list of formatted Runs at the current caret, splitting the run under the caret.
-    private void InsertRuns(List<Run> runs)
+    // Inserts a list of inlines (formatted Runs and/or InlineImages) at the caret, splitting the run
+    // under it. Carries inline images through in-app paste (the run-only path dropped them).
+    private void InsertInlines(List<Inline> inlines)
     {
-        if (Document == null || _caretPosition.Paragraph == null || runs.Count == 0) return;
+        if (Document == null || _caretPosition.Paragraph == null || inlines.Count == 0) return;
         if (_selectionStart != _selectionEnd) DeleteSelection();
 
         var p = _caretPosition.Paragraph;
         int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
         int added = 0;
-        foreach (var r in runs)
+        foreach (var inl in inlines)
         {
-            var clone = (Run)r.Clone();
+            if (inl is InlineImage && !AllowImages) continue; // honor the image feature flag on paste
+            var clone = (Inline)inl.Clone();
             clone.Parent = p;
             p.Inlines.Insert(insertAt++, clone);
-            added += clone.Text?.Length ?? 0;
+            added += InlineLen(clone);
         }
         _caretPosition.Offset += added;
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);

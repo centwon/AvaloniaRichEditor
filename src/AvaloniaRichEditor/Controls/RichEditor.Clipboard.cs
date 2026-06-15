@@ -33,7 +33,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             if (_internalClipboardBlocks != null)
                 InsertBlocks(_internalClipboardBlocks);
             else
-                InsertRuns(_internalClipboard!);
+                InsertInlines(_internalClipboard!);
             ResetCaretBlink(); // caret sits at the end of the pasted content — scroll it into view
             return;
         }

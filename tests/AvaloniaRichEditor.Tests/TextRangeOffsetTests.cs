@@ -26,6 +26,21 @@ public class TextRangeOffsetTests
     }
 
     [Fact]
+    public void GetRichInlines_KeepsInlineImage()
+    {
+        // Unlike GetRichRuns (drops images), GetRichInlines captures the inline image so an in-app
+        // copy/paste round-trips it. Range 1..4 spans B, the image, and C.
+        var p = ImageParagraph();
+        var inlines = new TextRange(new TextPointer(p, 1), new TextPointer(p, 4)).GetRichInlines();
+        Assert.Equal(3, inlines.Count);
+        Assert.Contains(inlines, i => i is InlineImage);
+        Assert.Equal("B", (inlines[0] as Run)?.Text);
+        Assert.Equal("C", (inlines[2] as Run)?.Text);
+        // GetRichRuns still drops the image (unchanged behavior): just B and C.
+        Assert.Equal(2, new TextRange(new TextPointer(p, 1), new TextPointer(p, 4)).GetRichRuns().Count);
+    }
+
+    [Fact]
     public void Delete_RangeCoveringInlineImage_RemovesImage()
     {
         var p = ImageParagraph();

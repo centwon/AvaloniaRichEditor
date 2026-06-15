@@ -189,6 +189,63 @@ public class TextRange
         return result;
     }
 
+    /// <summary>Like <see cref="GetRichRuns"/> but also captures <see cref="InlineImage"/>s, so an
+    /// in-app copy/paste preserves inline images (the run-only version drops them). Paragraph breaks are
+    /// <see cref="Run"/>s with <c>Text = "\n"</c>.</summary>
+    public List<Inline> GetRichInlines()
+    {
+        var result = new List<Inline>();
+        if (IsEmpty) return result;
+        var sp = _start.Paragraph;
+        var ep = _end.Paragraph;
+        if (sp == null || ep == null) return result;
+
+        if (ReferenceEquals(sp, ep))
+        {
+            result.AddRange(GetParagraphInlines(sp, _start.Offset, _end.Offset));
+            return result;
+        }
+
+        var doc = GetFlowDocument(sp);
+        if (doc == null) return result;
+        var all = GetAllParagraphsInOrder(doc);
+        int si = all.IndexOf(sp), ei = all.IndexOf(ep);
+
+        result.AddRange(GetParagraphInlines(sp, _start.Offset, GetParagraphLength(sp)));
+        for (int i = si + 1; i < ei; i++)
+        {
+            result.Add(new Run { Text = "\n" });
+            result.AddRange(GetParagraphInlines(all[i], 0, GetParagraphLength(all[i])));
+        }
+        result.Add(new Run { Text = "\n" });
+        result.AddRange(GetParagraphInlines(ep, 0, _end.Offset));
+        return result;
+    }
+
+    private List<Inline> GetParagraphInlines(Paragraph p, int startOffset, int endOffset)
+    {
+        var result = new List<Inline>();
+        int idx = 0;
+        foreach (var inline in p.Inlines)
+        {
+            int len = InlineLen(inline);
+            int segStart = idx, segEnd = idx + len;
+            idx = segEnd;
+            if (len == 0 || segEnd <= startOffset || segStart >= endOffset) continue;
+            if (inline is Run run)
+            {
+                int rs = Math.Max(startOffset, segStart) - segStart;
+                int re = Math.Min(endOffset, segEnd) - segStart;
+                if (re > rs) { var c = (Run)run.Clone(); c.Text = run.Text!.Substring(rs, re - rs); result.Add(c); }
+            }
+            else if (inline is InlineImage img && segStart >= startOffset && segEnd <= endOffset)
+            {
+                result.Add((InlineImage)img.Clone());
+            }
+        }
+        return result;
+    }
+
     /// <summary>Applies <paramref name="styleAction"/> to every <see cref="Run"/> within the range,
     /// splitting runs at boundaries as needed.</summary>
     public void ApplyPropertyValue(Action<Run> styleAction)

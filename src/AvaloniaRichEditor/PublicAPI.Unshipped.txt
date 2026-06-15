@@ -1,1 +1,2 @@
 #nullable enable
+AvaloniaRichEditor.Documents.TextRange.GetRichInlines() -> System.Collections.Generic.List<AvaloniaRichEditor.Documents.Inline!>!
