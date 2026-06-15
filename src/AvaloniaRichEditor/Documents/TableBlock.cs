@@ -207,7 +207,10 @@ public class TableBlock : Block
             ColSpans[r].Insert(at, 1);
             RowSpans[r].Insert(at, 1);
         }
-        ColumnWidths.Insert(System.Math.Clamp(at, 0, ColumnWidths.Count), 100);
+        // Pad up to `at` so the new width lands at the same index as the inserted cells; a clamp
+        // alone would misplace it when ColumnWidths is shorter than the column count.
+        while (ColumnWidths.Count < at) ColumnWidths.Add(100);
+        ColumnWidths.Insert(at, 100);
         Columns++;
         // Grow colspan anchors that straddle the inserted column, and cover the new cells they reach.
         for (int c = 0; c < at; c++)

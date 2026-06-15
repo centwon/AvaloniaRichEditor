@@ -207,6 +207,9 @@ public partial class RichEditor
             _isCaretVisible = true;
             _caretTimer.Start();
         }
+        // Let assistive tech know the control's editability flipped (exposed via the Value pattern's
+        // IsReadOnly). No-op until an automation peer has been created.
+        _automationPeer?.NotifyReadOnlyChanged(!readOnly, readOnly);
         InvalidateVisual();
     }
 }

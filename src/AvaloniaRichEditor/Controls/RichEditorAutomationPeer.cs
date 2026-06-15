@@ -38,4 +38,11 @@ internal sealed class RichEditorAutomationPeer : ControlAutomationPeer, IValuePr
         if (_owner.IsReadOnly) return;
         _owner.LoadHtml(System.Net.WebUtility.HtmlEncode(value ?? string.Empty));
     }
+
+    // Raised by the owner when IsReadOnly toggles, so assistive tech learns the control's editability
+    // changed. (Per-keystroke Value notifications are intentionally NOT raised: with only the Value
+    // pattern they would make screen readers re-announce the whole document on every keystroke — the
+    // correct fix would be ITextProvider, which Avalonia's public automation model doesn't expose.)
+    public void NotifyReadOnlyChanged(bool oldValue, bool newValue)
+        => RaisePropertyChangedEvent(ValuePatternIdentifiers.IsReadOnlyProperty, oldValue, newValue);
 }

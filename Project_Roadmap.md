@@ -101,6 +101,21 @@
 **문서 후속**
 - [x] **명세-코드 표류 감지 (2026-06-14)** — `--roundtrip` CLI 대신 **테스트**로 구현(CI는 `dotnet test`만 돌리므로 표류를 CI에서 잡으려면 테스트가 맞는 그릇). `docs/DOCUMENT_FORMAT.md` §2.6 예제를 자체 일관성 있는 로드 가능 JSON으로 확정(1×1 PNG 실바이트 + 매칭 SHA-256 풀 키)하고, `DocumentFormatSpecTests`가 문서에서 ```json 펜스를 추출→`Deserialize`→문서화된 구조(제목 문단·이미지 풀 해석·1×2 표) 단언. 필드명/판별자 표류 시 실패.
 
+**🔍 2026-06-15 추가 리뷰 (코드 전수 재점검 — 핵심 엔진+포매터)**
+> 성능/정합성 수정과 기능 3건 반영(테스트 195→199 그린), 기능 후보 3건 보류.
+
+- [x] **성능**: 드래그선택 hit-test 캐시 신뢰(마우스 이동마다 전체 `ParagraphSig` 재해시 제거), `MeasureOverride`가 편집無일 때 캐시 신뢰(캐럿 이동마다 전체 재해시 제거), `GetStatus` 단일패스(전체 문서 문자열+`Split` 할당 제거), `FindCore` 조기종료(전체 매치 리스트 materialization 제거), `LayoutTable` 2단계 캐시(같은 startX·다른 top일 때 셀 재측정 생략 → 페이지뷰 표 스래싱 해소).
+- [x] **정합성**: `TextRange`를 `LogicalCells()` 기준 통일(병합표 인덱스 일치), `ToHtml` 속성값(NavigateUri/FontFamily) 이스케이프, `TableBlock.InsertColumn` 너비 인덱스 정합, JSON 표 로드 직사각형 보장(짧은 행 패딩).
+- [x] **텍스트 추출 줄바꿈**: `GetPlainText`/클립보드 평문이 플랫폼 줄바꿈(LF→CRLF on Windows) + 선행 빈 단락 보존, `InsertText`가 붙여넣기 CRLF를 `\n`으로 정규화. (Windows 소비자에서 한 줄로 보이던 문제 해소. 회귀 테스트 2건.)
+- [x] **복사 시 HTML 서식 내보내기** — `CopySelectionToClipboard`가 평문 + Windows **CF_HTML**(`DataFormat.CreateBytesPlatformFormat("HTML Format")`, 시스템명 검증)을 함께 올림 → Word/브라우저로 붙여넣을 때 서식 보존. 기존 `ToHtml()` 재활용, `BuildCfHtml` 봉투(UTF-8 바이트 오프셋) 단위 테스트 2건(round-trip + 한글 멀티바이트). 입출력 비대칭(읽기는 HTML 파싱, 쓰기는 평문) 해소.
+- [x] **리스트 마커가 항목 서식 따름** — `DrawListMarker`가 고정 14pt/검정 대신 항목 첫 런의 크기/폰트/굵기/색 사용.
+- [x] **접근성** — `IsReadOnly` 토글 시 자동화 피어가 상태 변경 통지(`RaisePropertyChangedEvent`). **단 Avalonia 12 공개 자동화 모델에 `ITextProvider`/`ITextRangeProvider`가 없어 캐럿/선택/줄 단위 노출은 불가**(`IValueProvider`가 천장). 키 입력마다 Value 통지는 전체 문서 재낭독을 유발하므로 의도적 생략. → **프레임워크 한계로 기록.**
+
+**보류 (3건, 2026-06-15 — 양 대비 가치 낮음 또는 대형)**
+- **단락 경계 넘는 Find**: 전체 문서를 `\n`으로 이어붙인 문자열 + "인덱스→(단락,오프셋)" 역매핑 필요(소~중, ~50–80줄). 그러나 Enter가 단락을 나누므로 *줄바꿈을 포함한* 검색어만 해당 — 실사용 빈도 극저. 가성비 낮아 보류.
+- **ReplaceAll 진정한 O(n)**: 현재 `FindCore` 조기종료로 일반 문서는 충분히 빠름. 진짜 O(n)은 매치 일괄수집+역순 치환 또는 단락 in-place 재작성(중, ~80–120줄, 서식 보존 유지가 까다로움). "초대형 문서 + 수천 매치"라는 드문 조건에만 이득 — 보류.
+- **벡터(선택 가능) PDF**: Avalonia가 PDF DrawingContext 백엔드 미제공 → content stream 직접 생성 + **폰트 서브셋팅**(CJK 글리프 수천 개 = 난제). "무의존성 + AOT" 방침과 충돌. 자체 구현 비추천 — 필요 시 외부 PDF 라이브러리 도입 검토. 현 래스터 PDF는 합리적 v1. 보류.
+
 - **✅ 사용성(UX) 제안 — 전부 구현 완료** (2026-06-12 점검에서 확인, 항목별 완료 시점은 이전 작업들):
   - ✅ 더블클릭=단어 선택 / 세 번 클릭=문단 선택 (`RichEditor.Input.cs` ClickCount 분기)
   - ✅ 자동 목록: `- `/`* `/`N. ` + 공백 → 리스트 전환 (`TryAutoList`)

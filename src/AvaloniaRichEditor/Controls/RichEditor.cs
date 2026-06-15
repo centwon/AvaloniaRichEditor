@@ -231,7 +231,11 @@ public partial class RichEditor : Control
     // each hit-test. Keyed by table; reused while the table's position (startX/top) and content are
     // unchanged, gated by _trustLayoutCache like the paragraph cache so a trusted pass (blink/scroll/
     // hover) skips the recompute entirely. Edits run untrusted and refresh the entry.
-    private readonly Dictionary<TableBlock, (double startX, double top, TableLayout layout)> _tableLayoutCache = new();
+    // `rowH` (the measured per-row heights) is kept alongside so a trusted pass at the SAME startX but a
+    // different `top` — which happens every frame in page view, where pagination measures at continuous
+    // y and render at per-page slice y — can rebuild only the y-positions/anchors instead of re-measuring
+    // every cell (the expensive part, which depends on width/content, not on top).
+    private readonly Dictionary<TableBlock, (double startX, double top, double[] rowH, TableLayout layout)> _tableLayoutCache = new();
 
     /// <summary>Initializes a new <see cref="RichEditor"/> with a single empty paragraph and default settings.</summary>
     public RichEditor()
@@ -514,26 +518,42 @@ public partial class RichEditor : Control
     public (int chars, int words, int line, int col) GetStatus()
     {
         if (Document == null) return (0, 0, 1, 1);
-        var full = new System.Text.StringBuilder();
-        int caretGlobal = -1;
+
+        // Single pass over the same char stream the old code joined into one big string
+        // (paragraphs separated by '\n'): every '\n' breaks a word, isn't counted in chars, and
+        // advances the line; every other char counts (an inline image's U+FFFC placeholder counts
+        // as one). Avoids the whole-document StringBuilder + the string.Split array on each call.
+        static bool IsSep(char ch) => ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r';
+
+        int chars = 0, words = 0;
+        int curLine = 1, curCol = 1;       // running (line, col), 1-based, at the next char to consume
+        int capLine = 1, capCol = 1;       // captured when the running index reaches the caret
+        bool captured = false, inWord = false, firstPara = true;
+
+        void Consume(char ch)
+        {
+            if (ch == '\n') { curLine++; curCol = 1; inWord = false; }
+            else { chars++; curCol++; if (IsSep(ch)) inWord = false; else { if (!inWord) words++; inWord = true; } }
+        }
+
         foreach (var p in GetAllParagraphsInOrder())
         {
-            if (ReferenceEquals(p, _caretPosition.Paragraph))
-                caretGlobal = full.Length + Math.Clamp(_caretPosition.Offset, 0, GetParagraphLength(p));
-            full.Append(BuildPlain(p));
-            full.Append('\n');
+            if (!firstPara) Consume('\n'); // the newline that joined consecutive paragraphs
+            firstPara = false;
+
+            string plain = BuildPlain(p);
+            int caretOff = ReferenceEquals(p, _caretPosition.Paragraph)
+                ? Math.Clamp(_caretPosition.Offset, 0, plain.Length) : -1;
+
+            for (int i = 0; i < plain.Length; i++)
+            {
+                if (!captured && i == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
+                Consume(plain[i]);
+            }
+            if (!captured && caretOff == plain.Length) { capLine = curLine; capCol = curCol; captured = true; }
         }
-        string text = full.ToString();
-        int chars = 0;
-        foreach (char ch in text) if (ch != '\n') chars++;
-        int words = text.Split(new[] { ' ', '\n', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
-        if (caretGlobal < 0) caretGlobal = 0;
-        string before = text.Substring(0, Math.Min(caretGlobal, text.Length));
-        int line = 1;
-        foreach (char ch in before) if (ch == '\n') line++;
-        int lastNl = before.LastIndexOf('\n');
-        int col = before.Length - (lastNl + 1) + 1;
-        return (chars, words, line, col);
+
+        return (chars, words, captured ? capLine : 1, captured ? capCol : 1);
     }
 
     // Guarantees the caret can always sit next to any image/table: the document starts and ends
@@ -595,6 +615,10 @@ public partial class RichEditor : Control
     public void InsertText(string text)
     {
         if (Document == null || IsReadOnly || _caretPosition.Paragraph == null) return;
+        // Normalize pasted/external line endings to the model's '\n' (a run may hold soft '\n'; the
+        // editor renders multi-line runs). Without this, CRLF leaves a stray '\r' in the run. The
+        // Contains check keeps the common single-char typing path allocation-free.
+        if (text.Contains('\r')) text = text.Replace("\r\n", "\n").Replace('\r', '\n');
         if (_selectionStart != _selectionEnd) DeleteSelection();
 
         // Smart list: typing the space after "-"/"*" or "N." at a paragraph start turns it into a list.
@@ -833,12 +857,21 @@ public partial class RichEditor : Control
 
     // Draws a list item's marker (• or "N.") right-aligned just left of the text (small fixed gap),
     // so the marker hugs the content regardless of its width. No-op for non-list paragraphs.
-    private static void DrawListMarker(DrawingContext context, Paragraph p, int num, double textLeft, double y)
+    // The marker takes the item's own text styling (its first run: size, family, weight, colour) so a
+    // heading / coloured / enlarged list item gets a matching bullet or number instead of a fixed
+    // small black default. Instance method so it can fall back to the editor's default font/size.
+    private void DrawListMarker(DrawingContext context, Paragraph p, int num, double textLeft, double y)
     {
         if (p.ListType == ListKind.None) return;
         string m = p.ListType == ListKind.Bullet ? "•" : $"{num}.";
+        Run? first = null;
+        foreach (var inl in p.Inlines) if (inl is Run r) { first = r; break; }
+        double size = first is { FontSize: > 0 } ? first.FontSize : DefaultFontSize;
+        var family = first != null && !string.IsNullOrEmpty(first.FontFamily) ? new FontFamily(first.FontFamily) : DefaultFontFamily;
+        var weight = first?.FontWeight ?? FontWeight.Normal;
+        var brush = first?.Foreground ?? Brushes.Black;
         var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, Typeface.Default, 14, Brushes.Black);
+            FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), size, brush);
         const double gap = 6;
         context.DrawText(ft, new Point(textLeft - gap - ft.Width, y));
     }
@@ -1275,7 +1308,11 @@ public partial class RichEditor : Control
     {
         if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null || _selectionStart.CompareTo(_selectionEnd) == 0) return;
         var range = new TextRange(_selectionStart, _selectionEnd);
-        string text = range.GetText();
+        // GetText joins paragraphs with LF; LF-only shows as a single line in many Windows consumers
+        // (Notepad, native text boxes), so put the platform newline on the system clipboard. Store the
+        // SAME normalized form internally so the paste round-trip match (system text == what we copied)
+        // still holds when re-pasting in-app.
+        string text = range.GetText().ReplaceLineEndings();
         // Capture the rich fragment synchronously (cloned) before any await / later edits.
         _internalClipboard = range.GetRichRuns();
         _internalClipboardText = text;
@@ -1284,9 +1321,13 @@ public partial class RichEditor : Control
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard != null && !string.IsNullOrEmpty(text))
         {
+            // Also export rich HTML so other apps (Word, browsers) keep the formatting — the read side
+            // already understands incoming HTML, so this makes copy/paste symmetric. Built from the same
+            // trimmed runs as the plain text so the two stay consistent.
+            string? html = BuildSelectionHtml(_internalClipboard);
             // Another process can hold the clipboard open; an unhandled throw here would
             // crash the process (async void). The internal rich slots above are already set.
-            try { await clipboard.SetTextAsync(text); }
+            try { await SetClipboardTextAndHtmlAsync(clipboard, text, html); }
             catch { }
         }
     }
