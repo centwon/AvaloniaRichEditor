@@ -6,6 +6,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Copy now exports rich HTML.** Copying a selection puts Windows `CF_HTML` ("HTML Format") on the
+  clipboard alongside the plain text, so pasting into Word, browsers, or other rich editors preserves
+  bold/italic/size/colour — making copy/paste symmetric with the existing HTML *import*. Built from the
+  same trimmed runs as the copied text via the existing `ToHtml()`.
+
+### Changed
+- **`GetPlainText()` and copied plain text now use the platform newline** (CRLF on Windows) instead of a
+  bare `\n`, so extracted/copied text shows real line breaks in files and native text controls rather
+  than running together on one line. Soft line breaks inside a paragraph are normalized too.
+- **List markers follow the item's own text style.** Bullets/numbers now take the first run's font
+  size, family, weight, and colour instead of a fixed 14 px black default, so a heading or coloured
+  list item gets a matching marker.
+
+### Fixed
+- `GetPlainText()` no longer drops a leading blank line (an empty first paragraph now contributes its
+  separator).
+- Pasted text with `\r\n` line endings no longer leaves stray `\r` characters in runs (normalized to
+  the model's `\n` on insert).
+- HTML export now escapes `'`/`<`/`>`/`&` in `NavigateUri` and `FontFamily` attribute values, so a
+  quote in a URL or font name can't break the emitted markup.
+- `TableBlock.InsertColumn` keeps column widths aligned with columns when the width list was shorter
+  than the column count; JSON table load pads jagged/short rows so the grid stays rectangular.
+
+### Performance
+- Caret moves no longer re-hash every paragraph: `MeasureOverride` trusts the layout cache when no edit
+  is pending, and drag-selection hit-testing trusts it too (previously each mouse-move/arrow-key
+  re-fingerprinted the whole document).
+- `GetStatus()` computes character/word/line/column in a single pass without building a whole-document
+  string or a `string.Split` array.
+- Find/Replace stops at the first qualifying match instead of materializing every match in the document.
+- Table geometry is reused across page-view passes (same column widths and measured row heights at a
+  different vertical offset no longer re-measure every cell).
+
+### Accessibility
+- The automation peer now reports when the editor's read-only state toggles. (Caret/selection exposure
+  still isn't possible — Avalonia's public automation model has no `ITextProvider`.)
+
 ## [0.5.0-alpha] - 2026-06-14
 
 A self-contained `RichEditorView` (built-in page/zoom/file-action toolbar + status bar), a Word-style
