@@ -23,7 +23,11 @@ public partial class RichEditor
     // across paper sizes.
     internal const double PagePadX = 48;
     internal const double PagePadY = 40;
-    internal const double PageGap = 24;
+    // Grey-desk gap above the first page and between consecutive pages in page-outline view. Kept thin
+    // (~2 pt) so pages sit close together with just a sliver of desk between them, rather than a wide
+    // grey band. The whole page-stack layout (MeasureOverride height, PageRectView, MapViewToDoc) is
+    // derived from this one constant, so changing it stays consistent.
+    internal const double PageGap = 3;
     internal const double A4ContentWidth = A4PageWidth - 2 * PagePadX;    // 698
     internal const double A4ContentHeight = A4PageHeight - 2 * PagePadY;  // 1043
 

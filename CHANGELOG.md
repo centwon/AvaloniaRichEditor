@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Copy now exports rich HTML.** Copying a selection puts Windows `CF_HTML` ("HTML Format") on the
   clipboard alongside the plain text, so pasting into Word, browsers, or other rich editors preserves
-  bold/italic/size/colour — making copy/paste symmetric with the existing HTML *import*. Built from the
-  same trimmed runs as the copied text via the existing `ToHtml()`.
+  formatting — making copy/paste symmetric with the existing HTML *import*. The HTML is built from a
+  trimmed sub-document that keeps paragraph properties (lists, headings, alignment, indent), tables, and
+  inline images, so bullets/numbers, headings, table grids, and pasted-back pictures survive.
+  For maximum consumer compatibility the markup uses double-quoted attributes, quoted font-family names,
+  `pt` font sizes, `<s>`/`<u>` tags, and explicit `list-style-type`. Note: Word and HWP honour different
+  subsets of clipboard CSS, so exact font/size/colour fidelity varies by target app — a documented limit.
 
 ### Changed
 - **`GetPlainText()` and copied plain text now use the platform newline** (CRLF on Windows) instead of a
@@ -19,14 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **List markers follow the item's own text style.** Bullets/numbers now take the first run's font
   size, family, weight, and colour instead of a fixed 14 px black default, so a heading or coloured
   list item gets a matching marker.
+- **Page-outline view uses thinner grey margins.** The desk gap above/between pages and on the sides
+  shrank from 24 px to ~2 pt (`PageGap`), so pages sit close together with just a sliver of desk instead
+  of a wide grey band; the fit-to-width side margin now follows the same constant.
 
 ### Fixed
 - `GetPlainText()` no longer drops a leading blank line (an empty first paragraph now contributes its
   separator).
 - Pasted text with `\r\n` line endings no longer leaves stray `\r` characters in runs (normalized to
   the model's `\n` on insert).
-- HTML export now escapes `'`/`<`/`>`/`&` in `NavigateUri` and `FontFamily` attribute values, so a
-  quote in a URL or font name can't break the emitted markup.
+- HTML export now escapes `"`/`<`/`>`/`&` in `NavigateUri` and `FontFamily` attribute values, so a
+  quote in a URL or font name can't break the emitted (double-quoted) markup.
 - `TableBlock.InsertColumn` keeps column widths aligned with columns when the width list was shorter
   than the column count; JSON table load pads jagged/short rows so the grid stays rectangular.
 

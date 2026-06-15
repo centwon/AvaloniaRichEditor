@@ -116,6 +116,12 @@
 - **ReplaceAll 진정한 O(n)**: 현재 `FindCore` 조기종료로 일반 문서는 충분히 빠름. 진짜 O(n)은 매치 일괄수집+역순 치환 또는 단락 in-place 재작성(중, ~80–120줄, 서식 보존 유지가 까다로움). "초대형 문서 + 수천 매치"라는 드문 조건에만 이득 — 보류.
 - **벡터(선택 가능) PDF**: Avalonia가 PDF DrawingContext 백엔드 미제공 → content stream 직접 생성 + **폰트 서브셋팅**(CJK 글리프 수천 개 = 난제). "무의존성 + AOT" 방침과 충돌. 자체 구현 비추천 — 필요 시 외부 PDF 라이브러리 도입 검토. 현 래스터 PDF는 합리적 v1. 보류.
 
+**🔍 2026-06-15 후속 (글루 파일 전수 + 복사 HTML 실앱 튜닝 + 쪽 윤곽 여백)**
+- [x] **미정독 글루 파일 리뷰 — 버그 없음**: `PdfWriter`(xref 오프셋/객체번호/zlib 정확), `DocumentPackage`(.flow zip, MIME 폴백/예외처리), `ContextMenu`(표 그리드·이미지·병합 가드), 작은 모델(Block/ImageBlock/TextPointer/ImageMime) 전수 확인. (대형 순수 UI인 `RichEditorView`/`Toolbar`는 폭맞춤 로직만 확인.)
+- [x] **복사 HTML 실앱 튜닝(Word/HWP 반복 검증)**: 큰따옴표 속성 + 글꼴명 인용(다단어 CSS 유효화) + `pt` 크기 + `<s>`/`<u>` 태그 + `list-style-type` 명시 + 문단속성/표/인라인이미지 보존. **결론: Word와 HWP의 클립보드 CSS 지원이 상충**(Word는 font-family/pt 수용·색/취소선 무시, HWP는 반대)해 단일 CF_HTML로 양쪽 완벽 재현 불가 → **알려진 한계로 기록**, 추가 튜닝(`<font>` 태그 동원 등)은 가치 대비 비용으로 보류. 굵게/기울임/표/이미지/리스트/정렬은 양쪽 정상.
+- [x] **인라인 이미지 복사 stale 버그 수정**: 이미지만 선택 시 평문이 비어 시스템 클립보드를 안 set → 이전 복사본이 붙던 것을, text/html 중 하나라도 있으면 set하도록. (in-app 인라인이미지 붙여넣기 자체는 `InsertRuns`/`InsertParsedDocument`가 런만 처리하는 기존 한계로 별개 — 이미지 빠짐, stale은 해소.)
+- [x] **쪽 윤곽 회색 여백 축소(사용자 요청)**: `PageGap` 24→3(≈2pt) — 상/하/페이지 사이. 좌우 데스크는 `RichEditorView.ApplyFitWidth`의 하드코딩 `deskGap=24`가 원인이라 `RichEditor.PageGap` 직접 참조로 연동(주석은 "mirrors PageGap"인데 실제로 안 따라가던 것). 상수 1개로 사방 일괄 조정 가능.
+
 - **✅ 사용성(UX) 제안 — 전부 구현 완료** (2026-06-12 점검에서 확인, 항목별 완료 시점은 이전 작업들):
   - ✅ 더블클릭=단어 선택 / 세 번 클릭=문단 선택 (`RichEditor.Input.cs` ClickCount 분기)
   - ✅ 자동 목록: `- `/`* `/`N. ` + 공백 → 리스트 전환 (`TryAutoList`)

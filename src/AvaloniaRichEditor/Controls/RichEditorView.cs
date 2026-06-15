@@ -201,7 +201,10 @@ public class RichEditorView : UserControl
         if (!FitToWidth) return;
         double vw = Bounds.Width;
         if (vw < 50) return; // not laid out yet
-        const double pad = 40, deskGap = 24; // deskGap mirrors RichEditor.PageGap (desk margin each side)
+        const double pad = 40;
+        // Reference the actual desk gap so the fit target leaves the same thin grey margin each side as
+        // the top/inter-page gap (was hardcoded 24, leaving a wide grey band even after PageGap shrank).
+        const double deskGap = RichEditor.PageGap;
         double target;
         if (Editor.PageSize == RichEditorPageSize.Continuous)
             target = 0;

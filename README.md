@@ -15,7 +15,8 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 - **Tables** with cell merge (colspan/rowspan), column & row resize, and Tab cell navigation
 - Inline and block **images** (insert, resize, replace, save)
 - Find / replace, undo / redo, per-object right-click context menus
-- Clipboard: internal rich copy/paste, external **HTML** paste, image paste, Excel/TSV → table
+- Clipboard: internal rich copy/paste, rich **HTML copy-out** (`CF_HTML`) and external HTML paste, image
+  paste, Excel/TSV → table
 - HTML and JSON import/export (round-trippable) — see the
   [document format specification](docs/DOCUMENT_FORMAT.md) (JSON schema v2 and the `.flow` package)
 - Korean/CJK **IME** composition (inline preedit)
