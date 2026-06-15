@@ -618,7 +618,13 @@ namespace AvaloniaRichEditor.Formatters
             {
                 while (listStack.Count > level + 1) CloseOne();
                 if (listStack.Count == level + 1 && listStack[^1] != kind) CloseOne();
-                while (listStack.Count < level + 1) { sb.Append(kind == ListKind.Ordered ? "<ol>\n" : "<ul>\n"); listStack.Add(kind); }
+                // Explicit list-style-type: Word's clipboard import otherwise renders <ol> as bullets
+                // instead of numbers.
+                while (listStack.Count < level + 1)
+                {
+                    sb.Append(kind == ListKind.Ordered ? "<ol style=\"list-style-type:decimal\">\n" : "<ul style=\"list-style-type:disc\">\n");
+                    listStack.Add(kind);
+                }
             }
 
             foreach (var block in doc.Blocks)
@@ -693,24 +699,21 @@ namespace AvaloniaRichEditor.Formatters
 
             var styles = new System.Collections.Generic.List<string>();
             // Quote the family name: a multi-word value (e.g. Times New Roman) unquoted is invalid CSS,
-            // and Word/HWP then drop the ENTIRE style declaration — taking size/colour/decoration with it.
+            // and Word/HWP then drop the ENTIRE style declaration — taking size/colour with it.
             if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:'{AttrEscape(r.FontFamily).Replace("'", "")}'");
+            // Size in pt, not px: Word/HWP clipboard import ignores px font-size (a well-known quirk) but
+            // honours pt. 1px = 0.75pt at 96 DPI.
             if (r.FontSize > 0 && System.Math.Abs(r.FontSize - 14) > 0.01)
-                styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px");
+                styles.Add($"font-size:{(r.FontSize * 0.75).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt");
             if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
             if (r.Background is ISolidColorBrush bg) styles.Add($"background-color:{CssColor(bg.Color)}");
-            bool u = HasDecoration(r.TextDecorations, TextDecorationLocation.Underline);
-            bool s = HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough);
-            string? deco = (u, s) switch
-            {
-                (true, true) => "underline line-through",
-                (true, false) => "underline",
-                (false, true) => "line-through",
-                _ => null
-            };
-            if (deco != null) styles.Add($"text-decoration:{deco}");
 
             if (styles.Count > 0) t = $"<span style=\"{string.Join(";", styles)}\">{t}</span>";
+            // Underline/strikethrough as <u>/<s> TAGS, not CSS text-decoration: clipboard importers
+            // (Word/HWP) reliably honour the tags but routinely drop CSS text-decoration — and an
+            // unrecognized decoration declaration can make Word discard the whole style (losing colour).
+            if (HasDecoration(r.TextDecorations, TextDecorationLocation.Underline)) t = $"<u>{t}</u>";
+            if (HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)) t = $"<s>{t}</s>";
             if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
             if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
             if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href=\"{AttrEscape(r.NavigateUri)}\">{t}</a>";

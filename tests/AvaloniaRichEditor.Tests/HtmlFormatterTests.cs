@@ -100,10 +100,44 @@ public class HtmlFormatterTests
     }
 
     [Fact]
+    public void ToHtml_EmitsClipboardFriendlyMarkup()
+    {
+        // Word/HWP clipboard import drops CSS text-decoration and px font-size, and renders <ol> as
+        // bullets without an explicit list-style. So strike/underline go out as <s>/<u> tags, sizes in
+        // pt, and ordered lists carry list-style-type:decimal.
+        var doc = new FlowDocument();
+        var p = new Paragraph();
+        p.Inlines.Add(new Run
+        {
+            Text = "x",
+            FontSize = 20,
+            TextDecorations = new TextDecorationCollection { new TextDecoration { Location = TextDecorationLocation.Strikethrough } }
+        });
+        doc.Blocks.Add(p);
+        var ol = new Paragraph { ListType = ListKind.Ordered };
+        ol.Inlines.Add(new Run { Text = "one" });
+        doc.Blocks.Add(ol);
+
+        var html = HtmlDocumentFormatter.ToHtml(doc);
+        Assert.Contains("<s>", html);
+        Assert.DoesNotContain("text-decoration", html);
+        Assert.Contains("15pt", html);                   // 20px -> 15pt
+        Assert.DoesNotContain("font-size:20px", html);
+        Assert.Contains("list-style-type:decimal", html);
+
+        // Round-trips back: <s> -> strikethrough, pt -> px, <ol> -> ordered list.
+        var rt = HtmlDocumentFormatter.ParseHtml(html);
+        Assert.Contains(rt.Blocks.OfType<Paragraph>(),
+            q => q.Inlines.OfType<Run>().Any(run => run.TextDecorations != null
+                && run.TextDecorations.Any(d => d.Location == TextDecorationLocation.Strikethrough)));
+        Assert.Contains(rt.Blocks.OfType<Paragraph>(), q => q.ListType == ListKind.Ordered);
+    }
+
+    [Fact]
     public void RoundTrip_PreservesList()
     {
         var doc = HtmlDocumentFormatter.ParseHtml("<ul><li>one</li><li>two</li></ul>");
         Assert.Contains(doc.Blocks.OfType<Paragraph>(), p => p.ListType == ListKind.Bullet);
-        Assert.Contains("<ul>", HtmlDocumentFormatter.ToHtml(doc));
+        Assert.Contains("<ul", HtmlDocumentFormatter.ToHtml(doc)); // may carry a list-style-type attribute
     }
 }

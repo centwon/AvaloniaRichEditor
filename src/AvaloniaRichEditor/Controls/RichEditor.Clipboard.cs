@@ -289,7 +289,9 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         // matching ToHtml — a single-quoted style attribute or an unquoted family name is dropped by
         // Word/HWP on paste.
         string family = (DefaultFontFamily.Name ?? "").Replace("'", "").Replace("\"", "");
-        return $"<div style=\"font-family:'{family}';font-size:14px\">{inner}</div>";
+        // pt, not px (Word/HWP ignore px font-size on paste); 14px = 10.5pt, matching ToHtml's skipped
+        // default so unstyled runs inherit the right base size.
+        return $"<div style=\"font-family:'{family}';font-size:10.5pt\">{inner}</div>";
     }
 
     // A trimmed FlowDocument for the current selection that, unlike GetRichRuns (runs only), preserves
