@@ -103,4 +103,18 @@ public class EditorModeTests
         ed.IsReadOnly = true;
         Assert.False(ed.CanUndo);
     }
+
+    [AvaloniaFact]
+    public void ReadOnly_BlocksInsertHtml()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p>abc</p>");
+        ed.IsReadOnly = true;
+        int before = ed.Document!.Blocks.Count;
+
+        ed.InsertHtml("<p>injected</p>"); // a programmatic mutation must be refused while read-only
+
+        Assert.Equal(before, ed.Document.Blocks.Count);
+        Assert.DoesNotContain("injected", ed.GetPlainText());
+    }
 }

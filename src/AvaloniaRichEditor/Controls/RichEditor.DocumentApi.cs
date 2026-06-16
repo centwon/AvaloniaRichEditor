@@ -119,7 +119,7 @@ public partial class RichEditor
     /// <summary>Parses an HTML fragment and inserts the resulting blocks at the caret position.</summary>
     public void InsertHtml(string html)
     {
-        if (Document == null || string.IsNullOrEmpty(html)) return;
+        if (Document == null || IsReadOnly || string.IsNullOrEmpty(html)) return;
         var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages);
         if (parsed.Blocks.Count == 0) return;
         PushUndo();

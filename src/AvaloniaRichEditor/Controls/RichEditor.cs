@@ -1201,31 +1201,6 @@ public partial class RichEditor : Control
         _selectionEnd = new TextPointer(np, 0);
     }
 
-    private void ApplyInlinesToFormattedText(FormattedText formattedText, Paragraph paragraph)
-    {
-        int localIndex = 0;
-        foreach (var inline in paragraph.Inlines)
-        {
-            if (inline is Run run && !string.IsNullOrEmpty(run.Text))
-            {
-                int length = run.Text.Length;
-                if (run.FontWeight != FontWeight.Normal)
-                    formattedText.SetFontWeight(run.FontWeight, localIndex, length);
-                if (run.FontStyle != FontStyle.Normal)
-                    formattedText.SetFontStyle(run.FontStyle, localIndex, length);
-                if (run.FontSize != 14)
-                    formattedText.SetFontSize(run.FontSize, localIndex, length);
-                if (run.Foreground != null)
-                    formattedText.SetForegroundBrush(run.Foreground, localIndex, length);
-                if (!string.IsNullOrEmpty(run.NavigateUri))
-                    formattedText.SetTextDecorations(TextDecorations.Underline, localIndex, length);
-                if (run.TextDecorations != null)
-                    formattedText.SetTextDecorations(run.TextDecorations, localIndex, length);
-                localIndex += length;
-            }
-        }
-    }
-
     private List<Paragraph> GetAllParagraphsInOrder()
     {
         var result = new List<Paragraph>();
