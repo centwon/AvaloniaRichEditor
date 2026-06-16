@@ -196,7 +196,7 @@
 >
 > **1.0 게이트(전부 검증, N4/N5/G1 잔여)**: ① 렌더 **픽셀** 테스트(헤드리스 기본 드로잉 no-op 우회 — 실 Skia 인프라), ② mac/Linux **기능** 실검증(현재 CI는 build+test만 그린), ③ 대형 문서 **성능 실측**(수백 페이지 타이핑/스크롤 지연·메모리 상한). 기능 추가가 아니라 *증명*.
 >
-> **[착수] 게이트 ① (2026-06-16)**: 별도 테스트 프로젝트 `AvaloniaRichEditor.Tests.Render` — `UseHeadlessDrawing=false` + `.UseSkia()` + 번들 Inter 폰트로 **실제 글리프 래스터**. 구조적 픽셀 테스트 3건(골든 이미지 아님 — AA/폰트가 OS마다 달라 비휴대적): 글리프 실제 래스터(스모크), 제목>본문 ink 높이(C1 픽셀 검증), 구분선 가로줄. **3-OS CI 통합**(Linux는 `libfontconfig1` 설치). 픽셀 읽기 배관은 기존 `RenderPrintPage`/`BitmapToRgb24`(`RenderTargetBitmap`+`CopyPixels`) 재사용. 다음: 선택 하이라이트·인라인 이미지·페이지 경계 분할 등 커버 확대.
+> **[착수] 게이트 ① (2026-06-16)**: 별도 테스트 프로젝트 `AvaloniaRichEditor.Tests.Render` — `UseHeadlessDrawing=false` + `.UseSkia()` + 번들 Inter 폰트로 **실제 글리프 래스터**. 구조적 픽셀 테스트 **5건**(골든 이미지 아님 — AA/폰트가 OS마다 달라 비휴대적): 글리프 실제 래스터(스모크), 제목>본문 ink 높이(C1 픽셀 검증), 구분선 가로줄, **페이지 경계 분할**(P5가 재배선한 페이지-스택 replay가 page 2에 실제 콘텐츠를 그리는지 — 최고위험 경로 검증, A5 2페이지), **선택 하이라이트**(액센트 파랑 픽셀). 페이지 뷰는 불투명 회색 데스크라 alpha 대신 *어두운 글리프* 검출. **3-OS CI 통합**(Linux는 `libfontconfig1` 설치). 픽셀 읽기 배관은 기존 `RenderPrintPage`/`BitmapToRgb24`(`RenderTargetBitmap`+`CopyPixels`) 재사용. → **게이트 ① 실질 충족**(인프라+핵심 경로). 추가 커버(인라인 이미지·표 그리드 등)는 선택.
 
 ### 🟢 [대부분 완료] 최우선: GitHub 저장소 생성 + 푸시 (단일 차단점 해소, 2026-06-10)
 > **N1 잔여·N3 잔여(mac/Linux 스모크)·N4 잔여(CI 그린)·`0.1.0-alpha` 체크리스트 전체가 이 하나에 막혀 있었다.** → 저장소 생성·푸시·CI 그린으로 핵심 차단 해제.

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Headless.XUnit;
@@ -11,69 +12,96 @@ namespace AvaloniaRichEditor.Tests.Render;
 
 // 1.0 gate ①: render PIXEL tests. The main test project runs with no-op drawing (fast, but the bitmap
 // is blank), so it can only assert geometry/PixelSize. Here the real Skia backend rasterizes glyphs, so
-// we can assert that something was actually drawn and that relative sizes hold. Assertions are
-// STRUCTURAL (ink present / heading taller than body / a horizontal divider line), not golden-image
-// comparisons — anti-aliasing and font rendering differ per platform, so exact pixels aren't portable;
-// relative checks against a bundled deterministic font (Inter) are.
+// we can assert that something was actually drawn and that relative sizes/positions/colours hold.
+// Assertions are STRUCTURAL (ink present / heading taller than body / a divider line / page-2 content /
+// a selection highlight), not golden-image comparisons — anti-aliasing and font rendering differ per
+// platform, so exact pixels aren't portable; relative checks against a bundled font (Inter) are.
 public class RenderPixelTests
 {
-    private const int W = 400, H = 240;
     private static readonly FontFamily Inter = new("avares://Avalonia.Fonts.Inter/Assets#Inter");
 
-    private static RichEditor MakeEditor(string html)
+    private static RichEditor MakeEditor(string html, RichEditorPageSize size = RichEditorPageSize.Continuous)
     {
-        var ed = new RichEditor
-        {
-            PageSize = RichEditorPageSize.Continuous, // no page chrome — text starts at the top-left
-            DefaultFontFamily = Inter,                // deterministic glyphs across platforms
-        };
+        var ed = new RichEditor { PageSize = size, DefaultFontFamily = Inter };
         ed.LoadHtml(html);
         return ed;
     }
 
-    // Renders the editor to a real bitmap and returns its BGRA pixels (top-down).
-    private static byte[] Render(RichEditor ed)
+    // Renders the editor to a real w×h bitmap and returns its BGRA pixels (top-down, premultiplied).
+    private static byte[] Render(RichEditor ed, int w, int h)
     {
-        ed.Measure(new Size(W, double.PositiveInfinity));
-        ed.Arrange(new Rect(0, 0, W, H));
-        var rtb = new RenderTargetBitmap(new PixelSize(W, H));
+        ed.Measure(new Size(w, double.PositiveInfinity));
+        ed.Arrange(new Rect(0, 0, w, Math.Max(h, ed.DesiredSize.Height)));
+        var rtb = new RenderTargetBitmap(new PixelSize(w, h));
         rtb.Render(ed);
-        int stride = W * 4;
-        var buf = new byte[stride * H];
+        int stride = w * 4;
+        var buf = new byte[stride * h];
         var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
-        try { rtb.CopyPixels(new PixelRect(0, 0, W, H), handle.AddrOfPinnedObject(), buf.Length, stride); }
+        try { rtb.CopyPixels(new PixelRect(0, 0, w, h), handle.AddrOfPinnedObject(), buf.Length, stride); }
         finally { handle.Free(); }
         return buf;
     }
 
-    // The control fills a transparent background, so any pixel with non-trivial alpha is drawn "ink".
-    private static bool IsInk(byte[] bgra, int x, int y) => bgra[(y * W + x) * 4 + 3] > 40;
+    private static (byte b, byte g, byte r, byte a) Px(byte[] bgra, int w, int x, int y)
+    {
+        int i = (y * w + x) * 4;
+        return (bgra[i], bgra[i + 1], bgra[i + 2], bgra[i + 3]);
+    }
 
-    private static int InkCount(byte[] bgra)
+    // Transparent-background modes: any pixel with non-trivial alpha is drawn "ink".
+    private static bool IsInk(byte[] bgra, int w, int x, int y) => Px(bgra, w, x, y).a > 40;
+
+    // Page view paints an opaque grey desk + white paper, so alpha is useless there; near-black pixels
+    // are the text glyphs (desk 158, paper 255, page border ~128 are all well above this).
+    private static bool IsDarkText(byte[] bgra, int w, int x, int y)
+    {
+        var (b, g, r, _) = Px(bgra, w, x, y);
+        return r < 100 && g < 100 && b < 100;
+    }
+
+    private static int InkCount(byte[] bgra, int w, int h)
     {
         int n = 0;
-        for (int y = 0; y < H; y++)
-            for (int x = 0; x < W; x++)
-                if (IsInk(bgra, x, y)) n++;
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) if (IsInk(bgra, w, x, y)) n++;
         return n;
     }
 
-    // Vertical extent (last - first row containing ink), i.e. how tall the drawn content is.
-    private static int InkRowSpan(byte[] bgra)
+    // Vertical extent (last - first row containing ink): how tall the drawn content is.
+    private static int InkRowSpan(byte[] bgra, int w, int h)
     {
         int first = -1, last = -1;
-        for (int y = 0; y < H; y++)
-            for (int x = 0; x < W; x++)
-                if (IsInk(bgra, x, y)) { if (first < 0) first = y; last = y; break; }
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (IsInk(bgra, w, x, y)) { if (first < 0) first = y; last = y; break; }
         return first < 0 ? 0 : last - first + 1;
+    }
+
+    private static bool AnyDarkTextInBand(byte[] bgra, int w, int y0, int y1)
+    {
+        for (int y = y0; y < y1; y++) for (int x = 0; x < w; x++) if (IsDarkText(bgra, w, x, y)) return true;
+        return false;
+    }
+
+    // Accent-blue selection highlight pixels (blue channel clearly dominant). Black text and the
+    // transparent background both have b ≈ r, so only the highlight qualifies.
+    private static int BlueCount(byte[] bgra, int w, int h)
+    {
+        int n = 0;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                var (b, _, r, a) = Px(bgra, w, x, y);
+                if (a > 20 && b > r + 30) n++;
+            }
+        return n;
     }
 
     [AvaloniaFact]
     public void RealSkia_ActuallyRastersGlyphs()
     {
         // The setup proof: with no-op drawing this is 0; with real Skia the text leaves ink.
-        var px = Render(MakeEditor("<p>Hello world</p>"));
-        Assert.True(InkCount(px) > 50, $"expected rasterized glyphs, got {InkCount(px)} ink pixels");
+        var px = Render(MakeEditor("<p>Hello world</p>"), 400, 240);
+        Assert.True(InkCount(px, 400, 240) > 50, $"expected rasterized glyphs, got {InkCount(px, 400, 240)} ink pixels");
     }
 
     [AvaloniaFact]
@@ -81,13 +109,12 @@ public class RenderPixelTests
     {
         // C1 at the pixel level: a heading paragraph (render-time size, via SetHeading) draws taller
         // glyphs than the same text as body. Same characters ("Hg" = full cap height + a descender).
-        var bodyEd = MakeEditor("<p>Hg</p>");
-        int bodySpan = InkRowSpan(Render(bodyEd));
+        int bodySpan = InkRowSpan(Render(MakeEditor("<p>Hg</p>"), 400, 240), 400, 240);
 
         var headingEd = MakeEditor("<p>Hg</p>");
         headingEd.FocusDocumentEnd();
         headingEd.SetHeading(1);
-        int headingSpan = InkRowSpan(Render(headingEd));
+        int headingSpan = InkRowSpan(Render(headingEd, 400, 240), 400, 240);
 
         Assert.True(bodySpan > 0 && headingSpan > bodySpan,
             $"H1 ink should be taller than body ({headingSpan} vs {bodySpan})");
@@ -97,18 +124,50 @@ public class RenderPixelTests
     public void Divider_DrawsAHorizontalLine()
     {
         // A DividerBlock renders a horizontal rule: some row must carry a long continuous run of ink.
-        var px = Render(MakeEditor("<hr/>"));
+        var px = Render(MakeEditor("<hr/>"), 400, 240);
         int widestRun = 0;
-        for (int y = 0; y < H; y++)
+        for (int y = 0; y < 240; y++)
         {
             int run = 0, best = 0;
-            for (int x = 0; x < W; x++)
+            for (int x = 0; x < 400; x++)
             {
-                if (IsInk(px, x, y)) { run++; best = Math.Max(best, run); }
+                if (IsInk(px, 400, x, y)) { run++; best = Math.Max(best, run); }
                 else run = 0;
             }
             widestRun = Math.Max(widestRun, best);
         }
         Assert.True(widestRun > 100, $"expected a horizontal divider line, widest ink run was {widestRun}px");
+    }
+
+    [AvaloniaFact]
+    public void PageView_RendersContentOnSecondPage()
+    {
+        // The riskiest render path P5 reworked: the page-stack replay draws each page's document slice
+        // under its own clip+translation. Verify content actually lands on page 2 — if the replay were
+        // broken, page 2 would be blank. (A5 keeps the two-page bitmap a manageable size.)
+        var html = string.Concat(Enumerable.Range(0, 60).Select(i => $"<p>Line {i} of the document</p>"));
+        var ed = MakeEditor(html, RichEditorPageSize.A5);
+        Assert.True(ed.GetPrintPageCount() >= 2, "test setup: content should span more than one page");
+
+        int paperH = (int)ed.GetPaperPixelSize().Height; // A5 portrait ≈ 794
+        int w = 700, h = paperH * 2 + 30;
+        var px = Render(ed, w, h);
+
+        Assert.True(AnyDarkTextInBand(px, w, 0, paperH), "page 1 should carry text");
+        Assert.True(AnyDarkTextInBand(px, w, paperH + 10, h), "page 2 should carry text (page-stack replay)");
+    }
+
+    [AvaloniaFact]
+    public void Selection_DrawsHighlightPixels()
+    {
+        // Selecting text paints the accent-blue highlight behind it; an unselected render has none.
+        int blueNone = BlueCount(Render(MakeEditor("<p>Hello world</p>"), 400, 240), 400, 240);
+
+        var selected = MakeEditor("<p>Hello world</p>");
+        Assert.True(selected.FindNext("Hello world", matchCase: false)); // public way to select a range
+        int blueSel = BlueCount(Render(selected, 400, 240), 400, 240);
+
+        Assert.True(blueNone < 10, $"no selection should paint ~no blue, got {blueNone}");
+        Assert.True(blueSel > 100, $"selection should paint a blue highlight, got {blueSel}");
     }
 }
