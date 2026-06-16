@@ -417,6 +417,11 @@ public partial class RichEditor
                 _resizingTable.ColumnWidths[_resizingColumnIndex + 1] = _initialNextColumnWidth - diff;
             }
 
+            // The table-geometry cache keys on startX/row-count, NOT on column widths, and a drag runs as
+            // a "trusted" (no-edit) layout pass after the first move — so without this the cache would
+            // serve the pre-drag widths and the table would only snap to the new size once the drag ended.
+            // Evicting the entry forces LayoutTable to re-measure with the new widths every move (smooth).
+            _tableLayoutCache.Remove(_resizingTable);
             InvalidateMeasure(); // narrower columns reflow cell text taller -> total height changes
             InvalidateVisual();
             return;
@@ -429,6 +434,7 @@ public partial class RichEditor
                 _resizingRowTable.RowHeights.Add(0);
             // Renderer clamps up to content height, so 20 is just a hard floor for the stored value.
             _resizingRowTable.RowHeights[_resizingRowIndex] = Math.Max(20, _initialRowHeight + diff);
+            _tableLayoutCache.Remove(_resizingRowTable); // see the column branch — keep the drag live, not snapped
             InvalidateMeasure(); // the table's total height changed -> grow the scroll extent now,
             InvalidateVisual();  // not only on the next click (otherwise the resize hitches mid-drag)
             return;
