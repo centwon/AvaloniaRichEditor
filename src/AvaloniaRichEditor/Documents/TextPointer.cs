@@ -36,13 +36,34 @@ public class TextPointer : IComparable<TextPointer>
             return Offset.CompareTo(other.Offset);
         }
 
-        // Compare by traversing FlowDocument blocks
-        // We need to find the root FlowDocument
+        // Different paragraphs: order by position in the document. A single ordered walk records both
+        // paragraphs' global indices (it used to run two full traversals, one per pointer) and exits as
+        // soon as both are located — their relative order can't change after that. A paragraph not found
+        // keeps index -1, so it sorts before any present one (unchanged from the prior behaviour).
         var doc = GetFlowDocument(this.Paragraph);
         if (doc == null) return 0; // cannot compare without document
 
-        int thisIdx = GetGlobalIndex(doc, this.Paragraph);
-        int otherIdx = GetGlobalIndex(doc, other.Paragraph);
+        int index = 0, thisIdx = -1, otherIdx = -1;
+        void Locate(Paragraph cell)
+        {
+            if (thisIdx < 0 && ReferenceEquals(cell, this.Paragraph)) thisIdx = index;
+            if (otherIdx < 0 && ReferenceEquals(cell, other.Paragraph)) otherIdx = index;
+            index++;
+        }
+
+        foreach (var block in doc.Blocks)
+        {
+            if (block is Paragraph p) Locate(p);
+            else if (block is TableBlock tb)
+            {
+                index++; // the table itself occupies one index, matching the historical numbering
+                for (int r = 0; r < tb.Rows; r++)
+                    for (int c = 0; c < tb.Columns; c++)
+                        Locate(tb.Cells[r][c]);
+            }
+            else index++;
+            if (thisIdx >= 0 && otherIdx >= 0) break; // both located: their order is now fixed
+        }
 
         return thisIdx.CompareTo(otherIdx);
     }
@@ -57,45 +78,5 @@ public class TextPointer : IComparable<TextPointer>
             else break;
         }
         return null;
-    }
-
-    private int GetGlobalIndex(FlowDocument doc, Paragraph? target)
-    {
-        int index = 0;
-        bool found = false;
-
-        void TraverseBlocks(System.Collections.IEnumerable blocks)
-        {
-            foreach (var block in blocks)
-            {
-                if (found) return;
-
-                if (block is Paragraph p)
-                {
-                    if (p == target) { found = true; return; }
-                    index++;
-                }
-                else if (block is TableBlock tb)
-                {
-                    index++; // table itself
-                    for (int r = 0; r < tb.Rows; r++)
-                    {
-                        for (int c = 0; c < tb.Columns; c++)
-                        {
-                            var cell = tb.Cells[r][c];
-                            if (cell == target) { found = true; return; }
-                            index++;
-                        }
-                    }
-                }
-                else
-                {
-                    index++;
-                }
-            }
-        }
-
-        TraverseBlocks(doc.Blocks);
-        return found ? index : -1;
     }
 }
