@@ -1,1 +1,4 @@
 #nullable enable
+AvaloniaRichEditor.Controls.RichEditor.LoadRtf(string? rtf) -> void
+AvaloniaRichEditor.Controls.RichEditor.ToRtf() -> string!
+static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.Write(AvaloniaRichEditor.Documents.FlowDocument! document) -> string!

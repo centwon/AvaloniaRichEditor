@@ -23,6 +23,17 @@ public partial class RichEditor
             ? new FlowDocument()
             : await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(html, AllowLocalFileImages));
 
+    /// <summary>Serializes the document to RTF (Rich Text Format) — readable by Word, WordPad, LibreOffice,
+    /// and HWP. Covers paragraphs, runs (bold/italic/underline/strike, size, colour, font), alignment,
+    /// headings, lists (as markers), tables, and embedded PNG/JPEG images.</summary>
+    public string ToRtf() => Document != null ? Formatters.RtfDocumentFormatter.Write(Document) : "";
+
+    /// <summary>Replaces the document with one parsed from RTF (empty document if null/empty or not RTF).</summary>
+    public void LoadRtf(string? rtf)
+        => LoadDocument(string.IsNullOrEmpty(rtf) || !Formatters.RtfDocumentFormatter.LooksLikeRtf(rtf)
+            ? new FlowDocument()
+            : Formatters.RtfDocumentFormatter.Parse(rtf));
+
     /// <summary>Serializes the document to the library's JSON format.</summary>
     public string ToJson() => Document != null ? Formatters.DocumentSerializer.Serialize(Document) : "";
 

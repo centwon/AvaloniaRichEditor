@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **RTF export** (`RichEditor.ToRtf()` / `RtfDocumentFormatter.Write`), making RTF symmetric with the
+  existing import: the document saves as Rich Text Format readable by Word, WordPad, LibreOffice, and
+  HWP. Covers paragraphs, runs (bold/italic/underline/strike, size, colour, font family), alignment and
+  indent, headings (exported at their displayed size/weight), lists (as markers), tables, and embedded
+  PNG/JPEG images; non-ASCII text is emitted as `\u` escapes so the output is code-page independent.
+- **`RichEditor.LoadRtf(string)`** loads a document from RTF, and the bundled `RichEditorView`'s
+  Export/Import buttons now offer `.rtf` alongside JSON/`.flow`/HTML (import sniffs the `{\rtf` header).
+  Round-trip (write → parse) preserves text, character formatting, colour, tables, images, and Unicode.
+
 ## [0.6.0-beta] - 2026-06-16
 
 First **beta**. The public API is stabilizing (the whole surface is tracked by the PublicAPI analyzer;

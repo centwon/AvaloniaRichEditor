@@ -449,12 +449,13 @@ public class RichEditorView : UserControl
                 new Avalonia.Platform.Storage.FilePickerFileType("JSON document") { Patterns = new[] { "*.json" } },
                 new Avalonia.Platform.Storage.FilePickerFileType("Flow package") { Patterns = new[] { "*.flow" } },
                 new Avalonia.Platform.Storage.FilePickerFileType("HTML document") { Patterns = new[] { "*.html", "*.htm" } },
+                new Avalonia.Platform.Storage.FilePickerFileType("RTF document") { Patterns = new[] { "*.rtf" } },
             }
         });
         if (file == null) return;
 
         // Format follows the chosen extension: .flow = ZIP package (raw image bytes), .html/.htm = HTML,
-        // anything else = plain JSON.
+        // .rtf = Rich Text Format, anything else = plain JSON.
         var name = file.Name;
         if (name.EndsWith(".flow", StringComparison.OrdinalIgnoreCase))
         {
@@ -467,6 +468,14 @@ public class RichEditorView : UserControl
             using var stream = await file.OpenWriteAsync();
             using var writer = new System.IO.StreamWriter(stream);
             await writer.WriteAsync(html);
+        }
+        else if (name.EndsWith(".rtf", StringComparison.OrdinalIgnoreCase))
+        {
+            string rtf = Editor.ToRtf();
+            using var stream = await file.OpenWriteAsync();
+            // RTF is ASCII (non-ASCII text is \u-escaped), so Latin-1 keeps the bytes exact.
+            using var writer = new System.IO.StreamWriter(stream, System.Text.Encoding.Latin1);
+            await writer.WriteAsync(rtf);
         }
         else
         {
@@ -493,11 +502,21 @@ public class RichEditorView : UserControl
             using var ms = new System.IO.MemoryStream();
             await stream.CopyToAsync(ms);
             ms.Position = 0;
-            // Sniff the content: ZIP magic ("PK") = .flow package, anything else = JSON text.
+            // Sniff the content: ZIP magic ("PK") = .flow package, "{\rtf" = RTF, anything else = JSON.
             if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
+            {
                 await Editor.LoadPackageAsync(ms);
+            }
             else
-                await Editor.LoadJsonAsync(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+            {
+                // RTF bytes are ASCII/Latin-1 (the parser decodes \'hh with the document code page itself),
+                // so decode as Latin-1 to keep bytes intact; fall back to UTF-8 JSON otherwise.
+                string latin1 = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+                if (AvaloniaRichEditor.Formatters.RtfDocumentFormatter.LooksLikeRtf(latin1))
+                    Editor.LoadRtf(latin1);
+                else
+                    await Editor.LoadJsonAsync(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+            }
         }
         catch (Exception ex)
         {

@@ -35,6 +35,12 @@ public static class RtfDocumentFormatter
         try { return new RtfParser(rtf).Run(); }
         catch { return new FlowDocument(); }
     }
+
+    /// <summary>Serializes a <see cref="FlowDocument"/> to an RTF string (the inverse of <see cref="Parse"/>):
+    /// paragraphs, runs (bold/italic/underline/strike, size, colour, font family), alignment/indent,
+    /// headings, lists (as literal markers), tables, and embedded PNG/JPEG images. Non-ASCII text is
+    /// emitted as <c>\u</c> escapes, so the output is code-page independent and reads in Word/HWP/WordPad.</summary>
+    public static string Write(FlowDocument document) => new RtfWriter().Build(document);
 }
 
 // One pass over the RTF char stream. Group state (character formatting + the active "destination")
@@ -459,5 +465,196 @@ internal sealed class RtfParser
     {
         try { return Encoding.GetEncoding(codepage); }
         catch { return Encoding.Latin1; }
+    }
+}
+
+// Serializes a FlowDocument to RTF — the inverse of RtfParser, covering the same subset. The body is
+// built first (collecting the fonts and colours it references), then the \fonttbl/\colortbl headers are
+// prepended, since RTF requires them before the content.
+internal sealed class RtfWriter
+{
+    private readonly StringBuilder _body = new();
+    private readonly List<string> _fonts = new() { "" };  // \f0 = default
+    private readonly List<Color> _colors = new();          // \colortbl entry 0 is "auto"; these are 1-based
+    private readonly Dictionary<string, int> _fontIndex = new(StringComparer.Ordinal);
+    private readonly Dictionary<uint, int> _colorIndex = new();
+
+    public string Build(FlowDocument doc)
+    {
+        int ordered = 0;
+        foreach (var block in doc.Blocks)
+        {
+            if (block is Paragraph p && p.ListType == ListKind.Ordered) ordered++;
+            else ordered = 0;
+            WriteBlock(block, ordered);
+        }
+
+        var sb = new StringBuilder();
+        sb.Append(@"{\rtf1\ansi\ansicpg1252\deff0");
+        sb.Append(@"{\fonttbl");
+        for (int i = 0; i < _fonts.Count; i++)
+            sb.Append($@"{{\f{i}\fnil ").Append(EscapeText(_fonts[i].Length == 0 ? "Default" : _fonts[i])).Append(";}");
+        sb.Append('}');
+        sb.Append(@"{\colortbl;");
+        foreach (var c in _colors) sb.Append($@"\red{c.R}\green{c.G}\blue{c.B};");
+        sb.Append('}').Append('\n');
+        sb.Append(_body);
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    private void WriteBlock(Block block, int ordered)
+    {
+        switch (block)
+        {
+            case Paragraph p: WriteParagraph(p, ordered); break;
+            case TableBlock tb: WriteTable(tb); break;
+            case ImageBlock ib when ib.RawBytes != null:
+                _body.Append(@"\pard ");
+                WritePict(ib.RawBytes, ib.MimeType, ib.Width, ib.Height);
+                _body.Append(@"\par").Append('\n');
+                break;
+            case DividerBlock:
+                // A thin bottom border on an empty paragraph reads as a horizontal rule.
+                _body.Append(@"\pard\brdrb\brdrs\brdrw10\brsp20 \par").Append('\n');
+                break;
+        }
+    }
+
+    private void WriteParagraph(Paragraph p, int ordered)
+    {
+        _body.Append(@"\pard");
+        switch (p.TextAlignment)
+        {
+            case TextAlignment.Center: _body.Append(@"\qc"); break;
+            case TextAlignment.Right: _body.Append(@"\qr"); break;
+            case TextAlignment.Justify: _body.Append(@"\qj"); break;
+        }
+        if (p.Indent > 0) _body.Append($@"\li{(int)(p.Indent * 15)}");
+        _body.Append(' ');
+
+        // Lists have no portable round-trip in this subset, so emit a literal marker + tab (Word renders
+        // it; our parser treats it as text). Headings export as the larger/bold look the editor shows.
+        if (p.ListType == ListKind.Bullet) _body.Append(@"\bullet\tab ");
+        else if (p.ListType == ListKind.Ordered) _body.Append($@"{ordered}.\tab ");
+
+        bool heading = p.HeadingLevel is >= 1 and <= 6;
+        double headingSize = heading ? HeadingSize(p.HeadingLevel) : 0;
+        foreach (var inline in p.Inlines)
+        {
+            if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, heading, headingSize);
+            else if (inline is InlineImage img && img.RawBytes != null) WritePict(img.RawBytes, img.MimeType, img.Width, img.Height);
+        }
+        _body.Append(@"\par").Append('\n');
+    }
+
+    private void WriteRun(Run r, bool heading, double headingSize)
+    {
+        _body.Append('{');
+        if (r.FontWeight == FontWeight.Bold || heading) _body.Append(@"\b");
+        if (r.FontStyle == FontStyle.Italic) _body.Append(@"\i");
+        if (HasDecoration(r.TextDecorations, TextDecorationLocation.Underline) || !string.IsNullOrEmpty(r.NavigateUri)) _body.Append(@"\ul");
+        if (HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)) _body.Append(@"\strike");
+        int f = FontIndex(r.FontFamily);
+        if (f > 0) _body.Append($@"\f{f}");
+        double size = r.FontSize <= 0 ? 14 : r.FontSize;
+        if (heading && (r.FontSize <= 0 || Math.Abs(r.FontSize - 14) < 0.01)) size = headingSize;
+        _body.Append($@"\fs{(int)Math.Round(size * 2)}");
+        int c = ColorIndex(r.Foreground);
+        if (c > 0) _body.Append($@"\cf{c}");
+        _body.Append(' ');
+        WriteEscaped(r.Text!);
+        _body.Append('}');
+    }
+
+    private void WriteTable(TableBlock tb)
+    {
+        for (int row = 0; row < tb.Rows; row++)
+        {
+            _body.Append(@"\trowd");
+            // Cumulative right cell boundaries in twips (px*15), from the column widths.
+            int x = 0;
+            for (int col = 0; col < tb.Columns; col++)
+            {
+                int wpx = col < tb.ColumnWidths.Count ? (int)tb.ColumnWidths[col] : 100;
+                x += wpx * 15;
+                _body.Append($@"\cellx{x}");
+            }
+            for (int col = 0; col < tb.Columns; col++)
+            {
+                _body.Append(@"\pard\intbl ");
+                var cell = tb.Cells[row][col];
+                foreach (var inline in cell.Inlines)
+                    if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
+                _body.Append(@"\cell");
+            }
+            _body.Append(@"\row").Append('\n');
+        }
+        _body.Append(@"\pard").Append('\n');
+    }
+
+    // {\*\shppict{\pict ...}} — the modern wrapper our parser un-skips; bytes go out as hex, size in twips.
+    private void WritePict(byte[] bytes, string? mime, double w, double h)
+    {
+        _body.Append(@"{\*\shppict{\pict");
+        _body.Append(mime != null && mime.Contains("jpeg", StringComparison.OrdinalIgnoreCase) ? @"\jpegblip" : @"\pngblip");
+        if (w > 0) _body.Append($@"\picwgoal{(int)(w * 15)}");
+        if (h > 0) _body.Append($@"\pichgoal{(int)(h * 15)}");
+        _body.Append(' ');
+        foreach (byte b in bytes) _body.Append(b.ToString("x2", CultureInfo.InvariantCulture));
+        _body.Append("}}");
+    }
+
+    private int FontIndex(string? family)
+    {
+        if (string.IsNullOrEmpty(family)) return 0;
+        if (_fontIndex.TryGetValue(family, out var i)) return i;
+        i = _fonts.Count;
+        _fonts.Add(family);
+        _fontIndex[family] = i;
+        return i;
+    }
+
+    private int ColorIndex(IBrush? brush)
+    {
+        if (brush is not ISolidColorBrush s) return 0;
+        var col = s.Color;
+        // Black is the default text colour — no \cf needed (keeps the output clean and matches the model
+        // default where a null foreground also renders black).
+        if (col.R == 0 && col.G == 0 && col.B == 0) return 0;
+        uint key = ((uint)col.R << 16) | ((uint)col.G << 8) | col.B;
+        if (_colorIndex.TryGetValue(key, out var i)) return i;
+        _colors.Add(col);
+        i = _colors.Count; // 1-based: \colortbl entry 0 is the auto colour
+        _colorIndex[key] = i;
+        return i;
+    }
+
+    private static double HeadingSize(int level)
+        => level switch { 1 => 24, 2 => 20, 3 => 16, 4 => 14, 5 => 13, 6 => 12, _ => 14 };
+
+    private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
+    {
+        if (decos == null) return false;
+        foreach (var d in decos) if (d.Location == loc) return true;
+        return false;
+    }
+
+    private void WriteEscaped(string text) => _body.Append(EscapeText(text));
+
+    // Escapes RTF specials and emits non-ASCII as \uN? (signed 16-bit, per UTF-16 code unit — surrogate
+    // pairs come out as two \u, which readers recombine). Soft '\n' becomes \line.
+    private static string EscapeText(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (char ch in text)
+        {
+            if (ch == '\\' || ch == '{' || ch == '}') sb.Append('\\').Append(ch);
+            else if (ch == '\n') sb.Append(@"\line ");
+            else if (ch == '\r') { /* skip */ }
+            else if (ch < 128) sb.Append(ch);
+            else { int code = ch > 0x7FFF ? ch - 0x10000 : ch; sb.Append(@"\u").Append(code.ToString(CultureInfo.InvariantCulture)).Append('?'); }
+        }
+        return sb.ToString();
     }
 }
