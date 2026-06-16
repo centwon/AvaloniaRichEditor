@@ -213,17 +213,16 @@ public partial class RichEditor
     }
 
     /// <summary>Sets the heading level of the caret paragraph (1–6 = h1–h6, 0 = body).
-    /// Also adjusts run font sizes to match the heading style for in-editor preview.</summary>
+    /// The heading's larger, bold look is applied at layout time (to runs left at the body default),
+    /// not baked into the runs — so toggling a heading on and back off never overwrites or loses a
+    /// run's manually-set font size.</summary>
     public void SetHeading(int level)
     {
         if (_caretPosition.Paragraph == null || IsReadOnly) return;
         if (Document != null) PushUndo();
-        var p = _caretPosition.Paragraph;
-        p.HeadingLevel = level;
-        double size = level switch { 1 => 24, 2 => 20, 3 => 16, 4 => 14, 5 => 13, 6 => 12, _ => 14 };
-        var weight = level is >= 1 and <= 6 ? FontWeight.Bold : FontWeight.Normal;
-        foreach (var inl in p.Inlines) if (inl is Run r) { r.FontSize = size; r.FontWeight = weight; }
+        _caretPosition.Paragraph.HeadingLevel = level;
         InvalidateVisual();
+        NotifyStatus(); // the heading size changes the paragraph's height -> re-measure the scroll extent
     }
 
     /// <summary>Toggles strikethrough on the current selection (or the caret run).</summary>

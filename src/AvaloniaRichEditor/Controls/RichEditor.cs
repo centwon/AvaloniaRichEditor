@@ -847,6 +847,15 @@ public partial class RichEditor : Control
         }
     }
 
+    // The layout font size for a heading paragraph (1–6 = h1–h6); 0/other = body. Applied at layout
+    // time to runs left at the body default, so the heading look never has to be baked into the model.
+    internal static double HeadingFontSize(int level)
+        => level switch { 1 => 24, 2 => 20, 3 => 16, 4 => 14, 5 => 13, 6 => 12, _ => 14 };
+
+    // A run is at the "body default" size (and so inherits a heading paragraph's size) when its size
+    // is unset (<=0) or the 14 px model default. An explicitly-sized run keeps its own size.
+    private static bool RunSizeIsBodyDefault(Run r) => r.FontSize <= 0 || Math.Abs(r.FontSize - 14) < 0.01;
+
     // Width reserved to the left of list-item text for its bullet/number marker.
     private const double ListMarkerWidth = 22;
 
@@ -869,6 +878,13 @@ public partial class RichEditor : Control
         double size = first is { FontSize: > 0 } ? first.FontSize : DefaultFontSize;
         var family = first != null && !string.IsNullOrEmpty(first.FontFamily) ? new FontFamily(first.FontFamily) : DefaultFontFamily;
         var weight = first?.FontWeight ?? FontWeight.Normal;
+        // Match the heading look applied to the text in BuildTextLayout, so a heading list item's
+        // bullet/number isn't left small and thin beside its enlarged text.
+        if (p.HeadingLevel is >= 1 and <= 6)
+        {
+            if (first == null || RunSizeIsBodyDefault(first)) size = HeadingFontSize(p.HeadingLevel);
+            weight = FontWeight.Bold;
+        }
         var brush = first?.Foreground ?? Brushes.Black;
         var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), size, brush);
@@ -896,6 +912,7 @@ public partial class RichEditor : Control
             Mix(BitConverter.DoubleToInt64Bits(p.Indent));
             Mix((long)p.ListType);
             Mix(p.ListLevel);
+            Mix(p.HeadingLevel); // now drives the layout (heading size/weight applied in BuildTextLayout)
             foreach (var inl in p.Inlines)
             {
                 if (inl is Run r)
@@ -947,18 +964,25 @@ public partial class RichEditor : Control
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
             new Typeface(defaultFamily), defaultSize, null, Brushes.Black);
 
+        // Heading look (bigger + bold) is applied here, not baked into the runs (see SetHeading).
+        bool heading = p.HeadingLevel is >= 1 and <= 6;
+        double headingSize = heading ? HeadingFontSize(p.HeadingLevel) : 0;
+
         var segs = new List<LayoutSeg>();
         foreach (var inline in p.Inlines)
         {
             if (inline is Run r && !string.IsNullOrEmpty(r.Text))
             {
                 var family = string.IsNullOrEmpty(r.FontFamily) ? defaultFamily : new FontFamily(r.FontFamily);
-                var typeface = new Typeface(family, r.FontStyle, r.FontWeight);
+                var weight = heading ? FontWeight.Bold : r.FontWeight;
+                var typeface = new Typeface(family, r.FontStyle, weight);
                 TextDecorationCollection? decos = r.TextDecorations;
                 if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
+                double size = r.FontSize <= 0 ? defaultSize : r.FontSize;
+                if (heading && RunSizeIsBodyDefault(r)) size = headingSize;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,
-                    r.FontSize <= 0 ? defaultSize : r.FontSize,
+                    size,
                     decos,
                     r.Foreground ?? Brushes.Black,
                     r.Background);
