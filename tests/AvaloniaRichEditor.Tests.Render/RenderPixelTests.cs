@@ -82,16 +82,20 @@ public class RenderPixelTests
         return false;
     }
 
-    // Accent-blue selection highlight pixels (blue channel clearly dominant). Black text and the
-    // transparent background both have b ≈ r, so only the highlight qualifies.
-    private static int BlueCount(byte[] bgra, int w, int h)
+    // Chromatic (coloured) pixels — one channel well above another. The accent selection highlight is
+    // strongly coloured; black text, white paper, and the grey desk are all neutral (channels ≈ equal),
+    // so this isolates the highlight. Uses the max−min spread, so it's independent of channel order
+    // (RTB byte order can differ across platforms — a blue-vs-red test failed on macOS for that reason).
+    private static int ColouredCount(byte[] bgra, int w, int h)
     {
         int n = 0;
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
-                var (b, _, r, a) = Px(bgra, w, x, y);
-                if (a > 20 && b > r + 30) n++;
+                int i = (y * w + x) * 4;
+                int max = Math.Max(bgra[i], Math.Max(bgra[i + 1], bgra[i + 2]));
+                int min = Math.Min(bgra[i], Math.Min(bgra[i + 1], bgra[i + 2]));
+                if (bgra[i + 3] > 20 && max - min > 40) n++;
             }
         return n;
     }
@@ -160,14 +164,14 @@ public class RenderPixelTests
     [AvaloniaFact]
     public void Selection_DrawsHighlightPixels()
     {
-        // Selecting text paints the accent-blue highlight behind it; an unselected render has none.
-        int blueNone = BlueCount(Render(MakeEditor("<p>Hello world</p>"), 400, 240), 400, 240);
+        // Selecting text paints the accent (coloured) highlight behind it; an unselected render has none.
+        int colNone = ColouredCount(Render(MakeEditor("<p>Hello world</p>"), 400, 240), 400, 240);
 
         var selected = MakeEditor("<p>Hello world</p>");
         Assert.True(selected.FindNext("Hello world", matchCase: false)); // public way to select a range
-        int blueSel = BlueCount(Render(selected, 400, 240), 400, 240);
+        int colSel = ColouredCount(Render(selected, 400, 240), 400, 240);
 
-        Assert.True(blueNone < 10, $"no selection should paint ~no blue, got {blueNone}");
-        Assert.True(blueSel > 100, $"selection should paint a blue highlight, got {blueSel}");
+        Assert.True(colNone < 10, $"no selection should paint ~no coloured pixels, got {colNone}");
+        Assert.True(colSel > 100, $"selection should paint a coloured highlight, got {colSel}");
     }
 }
