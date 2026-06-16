@@ -289,12 +289,17 @@ public partial class RichEditor
         foreach (var block in Document!.Blocks)
         {
             yOffset += block.MarginTop;
+            // G1 P5: source each block's height + layout objects from the single BlockExtent pass — the
+            // same one measure/hit-tests/pagination consume — so the render walk can never drift from
+            // them on a block's height. Drawing, culling, caret/selection and the per-cell IME-preedit
+            // layout below all stay in render; only the geometry source is unified.
+            double beHeight = BlockExtent(block, maxWidth, yOffset, out var beParaLayout, out var beTableLayout);
             if (block is TableBlock tb)
             {
                 orderedIndex = 0;
                 double startX = 10 + tb.Indent;
                 double tableTop = yOffset;
-                var tl = LayoutTable(tb, startX, tableTop);
+                var tl = beTableLayout!.Value; // == LayoutTable(tb, 10 + tb.Indent, tableTop) from BlockExtent
                 if (ReferenceEquals(tb, _caretBlock))
                     blockCaretRect = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
 
@@ -410,14 +415,16 @@ public partial class RichEditor
                         caretPoint = new Point(px, yOffset);
                         _lastCaretPoint = caretPoint.Value;
                     }
-                    yOffset += paragraph.MarginBottom + (!double.IsNaN(paragraph.LineHeight) ? paragraph.LineHeight : 20);
+                    yOffset += paragraph.MarginBottom + beHeight; // empty-paragraph height, from BlockExtent
                     continue;
                 }
 
                 double pWidth = Math.Max(10, maxWidth - 20 - px - paragraph.MarginRight);
+                // Non-preedit: reuse the cached layout BlockExtent already built (same width). The IME path
+                // rebuilds with the inline composition text, which is transient and never cached.
                 var layout = hasPreedit
                     ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
-                    : BuildTextLayout(paragraph, pWidth);
+                    : (beParaLayout ?? BuildTextLayout(paragraph, pWidth));
 
                 // Cull check: the layout above is still built (cached; its height advances yOffset),
                 // but off-screen paragraphs issue no draw commands. The caret paragraph always draws.
@@ -485,7 +492,7 @@ public partial class RichEditor
             else if (block is ImageBlock img)
             {
                 orderedIndex = 0;
-                double cullHeight = img.Height > 0 ? img.Height : 200;
+                double cullHeight = beHeight; // == img.Height (or 200 fallback), from BlockExtent
                 // Cull check before touching img.Image: the getter lazily decodes RawBytes (N6-2), so
                 // skipping it means off-screen images are never decoded at all. yOffset advances by the
                 // declared size, matching MeasureContentHeight's unconditional advance.
@@ -498,7 +505,7 @@ public partial class RichEditor
                 if (img.Image != null)
                 {
                     double width = img.Width > 0 ? img.Width : 200;
-                    double height = img.Height > 0 ? img.Height : 200;
+                    double height = beHeight; // == img.Height (or 200), shared with measure/hit-tests
                     double imgX = listIndent + img.Indent;
                     var imgRect = new Rect(imgX, yOffset, width, height);
                     context.DrawImage(img.Image, imgRect);
@@ -527,12 +534,12 @@ public partial class RichEditor
             else if (block is DividerBlock dv)
             {
                 orderedIndex = 0;
-                if (yOffset + DividerHeight >= visTop && yOffset <= visBottom)
+                if (yOffset + beHeight >= visTop && yOffset <= visBottom)
                 {
-                    double y = yOffset + DividerHeight / 2;
+                    double y = yOffset + beHeight / 2; // beHeight == DividerHeight, from BlockExtent
                     context.DrawLine(GrayBorderPen, new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
                 }
-                yOffset += DividerHeight + dv.MarginBottom;
+                yOffset += beHeight + dv.MarginBottom;
             }
         }
 
