@@ -8,6 +8,9 @@ namespace AvaloniaRichEditor.Documents;
 public class InlineImage : Inline
 {
     private Bitmap? _cachedBitmap;
+    // See ImageBlock: a failed decode stops retrying but never discards the bytes (a save must not
+    // drop the picture just because this platform's codec couldn't decode it).
+    private bool _decodeFailed;
 
     /// <summary>Original encoded image bytes (JPEG/PNG/...). When present this is the data source
     /// of truth: serialization stores these bytes verbatim (no re-encoding) and <see cref="Image"/>
@@ -24,18 +27,18 @@ public class InlineImage : Inline
     {
         get
         {
-            if (_cachedBitmap == null && RawBytes != null)
+            if (_cachedBitmap == null && RawBytes != null && !_decodeFailed)
             {
                 try
                 {
                     using var ms = new System.IO.MemoryStream(RawBytes);
                     _cachedBitmap = new Bitmap(ms);
                 }
-                catch { RawBytes = null; MimeType = null; } // undecodable bytes: don't retry every render
+                catch { _decodeFailed = true; } // undecodable now: stop retrying, but keep the bytes
             }
             return _cachedBitmap;
         }
-        set { _cachedBitmap = value; RawBytes = null; MimeType = null; }
+        set { _cachedBitmap = value; RawBytes = null; MimeType = null; _decodeFailed = false; }
     }
 
     /// <summary>Sets the image from its original encoded bytes. Pass <paramref name="decoded"/>
@@ -45,6 +48,7 @@ public class InlineImage : Inline
         RawBytes = bytes;
         MimeType = mimeType ?? "image/png";
         _cachedBitmap = decoded;
+        _decodeFailed = false; // new bytes deserve a fresh decode attempt
     }
 
     /// <summary>Display width in device-independent pixels. Default: 16.</summary>

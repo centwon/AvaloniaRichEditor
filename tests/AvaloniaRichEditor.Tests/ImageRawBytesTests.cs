@@ -108,14 +108,33 @@ public class ImageRawBytesTests
         Assert.Null(ib.MimeType);
     }
 
+    // A2: a failed decode returns null without throwing AND keeps the encoded bytes. These [Fact] tests
+    // run without the Avalonia platform, so `new Bitmap` genuinely throws (the headless platform's image
+    // loader would instead stub a 1x1 bitmap) — the only way to exercise the decode-failure branch.
     [Fact]
-    public void Image_UndecodableBytes_ReturnsNullWithoutThrowing()
+    public void Image_UndecodableBytes_ReturnsNullButKeepsRawBytes()
     {
+        var bytes = FakeJpeg();
         var ib = new ImageBlock();
-        ib.SetImageData(FakeJpeg(), "image/jpeg");
+        ib.SetImageData(bytes, "image/jpeg");
 
-        Assert.Null(ib.Image);     // lazy decode fails gracefully
-        Assert.Null(ib.RawBytes);  // poisoned bytes are dropped so render doesn't retry forever
+        Assert.Null(ib.Image);            // lazy decode fails gracefully (no throw)
+        Assert.Same(bytes, ib.RawBytes);  // bytes are KEPT so a later save still round-trips the picture
+        Assert.Equal("image/jpeg", ib.MimeType);
+        Assert.Null(ib.Image);            // a second access doesn't retry the decode and doesn't drop them
+        Assert.Same(bytes, ib.RawBytes);
+    }
+
+    [Fact]
+    public void InlineImage_UndecodableBytes_ReturnsNullButKeepsRawBytes()
+    {
+        var bytes = FakeJpeg();
+        var im = new InlineImage();
+        im.SetImageData(bytes, "image/jpeg");
+
+        Assert.Null(im.Image);
+        Assert.Same(bytes, im.RawBytes);
+        Assert.Equal("image/jpeg", im.MimeType);
     }
 
     [Fact]

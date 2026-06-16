@@ -7,6 +7,10 @@ namespace AvaloniaRichEditor.Documents;
 public class ImageBlock : Block
 {
     private Bitmap? _cachedBitmap;
+    // Set when a decode of RawBytes threw, so the render path doesn't retry the bad bytes every frame.
+    // Crucially the bytes themselves are KEPT (the format may decode on another platform/codec, and a
+    // save must not silently drop the picture); only the decode attempt is suppressed.
+    private bool _decodeFailed;
 
     /// <summary>Original encoded image bytes (JPEG/PNG/...). When present this is the data source
     /// of truth: serialization stores these bytes verbatim (no re-encoding) and <see cref="Image"/>
@@ -23,18 +27,18 @@ public class ImageBlock : Block
     {
         get
         {
-            if (_cachedBitmap == null && RawBytes != null)
+            if (_cachedBitmap == null && RawBytes != null && !_decodeFailed)
             {
                 try
                 {
                     using var ms = new System.IO.MemoryStream(RawBytes);
                     _cachedBitmap = new Bitmap(ms);
                 }
-                catch { RawBytes = null; MimeType = null; } // undecodable bytes: don't retry every render
+                catch { _decodeFailed = true; } // undecodable now: stop retrying, but keep the bytes
             }
             return _cachedBitmap;
         }
-        set { _cachedBitmap = value; RawBytes = null; MimeType = null; }
+        set { _cachedBitmap = value; RawBytes = null; MimeType = null; _decodeFailed = false; }
     }
 
     /// <summary>Sets the image from its original encoded bytes. Pass <paramref name="decoded"/>
@@ -44,6 +48,7 @@ public class ImageBlock : Block
         RawBytes = bytes;
         MimeType = mimeType ?? "image/png";
         _cachedBitmap = decoded;
+        _decodeFailed = false; // new bytes deserve a fresh decode attempt
     }
 
     /// <summary>Display width in device-independent pixels. <see cref="double.NaN"/> = natural size.</summary>
