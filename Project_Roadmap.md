@@ -319,7 +319,7 @@
 >
 > **규모/가치**: 중-대형(다세션). 단계마다 200+ 테스트 그린 유지. 인라인 표 등 향후 기능의 전제이기도 함.
 >
-> **진행(2026-06-16)**: [x] **P0** — `GeometryConsistencyTests` 3건(측정이 마지막 블록까지 도달, 혼합문서>빈문서, 표 추가 시 높이 증가 — Continuous 모드로 `MeasureContentHeight` 직접 검증). [x] **P1+읽기전용 워커 통합** — `BlockExtent(block,width,top,out paraLayout,out tableLayout)` 도입, **6개 읽기 전용 워커**(`MeasureContentHeight`·`GetBlockAtPoint`·`GetTableRect`·`GetLinkRunAtPoint`·`GetPositionFromPoint`·`BlockAtY`)를 전부 이 단일 출처로 라우팅. 기존 200 테스트 그린 = 동작 보존. [x] **P4 페이지네이션 통합(2026-06-16)** — `ComputePageBreaks`의 블록별 높이/레이아웃 계산을 `BlockExtent`로 라우팅(중복 `LayoutTable`/`BuildTextLayout`/`switch` 제거). 페이지네이션 고유 로직(테이블 행·문단 줄 atom 분할)만 남음. MarginBottom 처리도 `block.MarginBottom`으로 통일 → 수직 누적이 `MeasureContentHeight`와 라인 단위로 동일. 207 테스트 그린(Pagination 18 + Geometry 등). **남음**: P5(`DrawDocumentBlocks` 렌더 — 최고 위험, 헤드리스 픽셀 불가 → **데모 수동검증 필수, 별도 세션 권장**), P2(`BlockBox` 캐싱 열거자 — 성능 선택, 미착수).
+> **진행(2026-06-16)**: [x] **P0** — `GeometryConsistencyTests` 3건(측정이 마지막 블록까지 도달, 혼합문서>빈문서, 표 추가 시 높이 증가 — Continuous 모드로 `MeasureContentHeight` 직접 검증). [x] **P1+읽기전용 워커 통합** — `BlockExtent(block,width,top,out paraLayout,out tableLayout)` 도입, **6개 읽기 전용 워커**(`MeasureContentHeight`·`GetBlockAtPoint`·`GetTableRect`·`GetLinkRunAtPoint`·`GetPositionFromPoint`·`BlockAtY`)를 전부 이 단일 출처로 라우팅. 기존 200 테스트 그린 = 동작 보존. [x] **P4 페이지네이션 통합(2026-06-16)** — `ComputePageBreaks`의 블록별 높이/레이아웃 계산을 `BlockExtent`로 라우팅(중복 `LayoutTable`/`BuildTextLayout`/`switch` 제거). 페이지네이션 고유 로직(테이블 행·문단 줄 atom 분할)만 남음. MarginBottom 처리도 `block.MarginBottom`으로 통일 → 수직 누적이 `MeasureContentHeight`와 라인 단위로 동일. 207 테스트 그린(Pagination 18 + Geometry 등). [x] **P5 렌더 통합(2026-06-16)** — `DrawDocumentBlocks`가 블록별 높이·레이아웃을 직접 계산하던 것을 루프 상단 단일 `BlockExtent` 호출에서 취득(그리기·컬링·캐럿/선택·핸들·페이지 replay·셀별 IME preedit은 render에 유지). 동일 캐시 객체·동일 높이라 동작 불변, 223 논리 테스트 그린 + **데모 육안검증 통과**(본문/제목/표/이미지/구분선/선택/캐럿/페이지뷰/IME). → **G1 사실상 완료**(워커 드리프트 버그 클래스 구조적 제거). **남음**: P2(`BlockBox` 캐싱 열거자 — 성능 선택, 측정상 비병목이라 미착수).
 
 #### 🧹 2026-06-16 코드 전수 리뷰 패스 (엔진 ~12k줄 정독)
 > P4 마무리 후 전 소스 정독으로 버그·성능·정리 항목을 도출하고, **위험 대비 효용이 높은 것만** 처리. 크래시급 버그 없음. 테스트 **190→222(+32)**, 전부 그린.
@@ -331,7 +331,9 @@
 > - [x] **B2 — `TextPointer.CompareTo` 단일 패스**: 문단이 다른 두 포인터 비교가 문서를 두 번 완전 순회하던 것을 한 번의 순회(둘 다 찾으면 조기 종료)로. 부재(stale) 시맨틱까지 동일 보존(특성화 테스트 4건). 데드 `GetGlobalIndex` 제거. *worst-case O(n)은 유지* — 표 셀까지 추적하는 무효화 캐시는 측정상 비병목 대비 위험 과함.
 > - [x] **D1 — 데드 코드 `ApplyInlinesToFormattedText` 제거**(호출처 0; `FormattedText`는 레이아웃 미사용 타입). [x] **D2 — 화살표/PageUp·Down 7분기 선택갱신 중복을 `ApplyCaretSelection`로 통일**(외형 정리).
 >
-> **의도적 보류(근거)**: B1=P2(`ComputePageBreaks` 매 측정 재계산) — N5 실측 "편집 경로 실병목 없음", 캐시 무효화 위험 과함 → 벤치 선행. B3(HTML `HasBlockOrMedia` O(n²))·B4(`ReplaceAll` O(N²))·B6(`FindCell`) — 희귀 경로 + 안전망/무효화 위험. B5(`CheckImageLimit` 매 flush 카운트) — 비용 미미. A2(손상 이미지 디코드 실패 시 `RawBytes` 소실) — 저위험·격리이나 손상 입력 테스트 까다로움. C3(RTF 셀 병합 미파싱) — 문서화된 서브셋 한계.
+> **의도적 보류(근거)**: B1=P2(`ComputePageBreaks` 매 측정 재계산) — N5 실측 "편집 경로 실병목 없음", 캐시 무효화 위험 과함 → 벤치 선행. B3(HTML `HasBlockOrMedia` O(n²))·B4(`ReplaceAll` O(N²))·B6(`FindCell`) — 희귀 경로 + 안전망/무효화 위험. B5(`CheckImageLimit` 매 flush 카운트) — 비용 미미. C3(RTF 셀 병합 미파싱) — 문서화된 서브셋 한계.
+>
+> **베타 게이트 마무리(2026-06-16)**: [x] **A2** — 이미지 디코드 실패 시 `RawBytes` 보존(소실→저장 시 그림 누락 수정). 실패 분기는 `[Fact]`(플랫폼 없음→`new Bitmap` 실제 예외)로만 재현 가능(헤드리스 로더는 1×1 더미). [x] **G1 P5** 렌더 통합(위 G1 절). [x] **표/셀 리사이즈 끊김 수정** — `_tableLayoutCache`가 `ColumnWidths`/`RowHeights`를 키로 안 잡아 drag 중 옛 치수 반환하던 것을, 리사이즈 이동마다 캐시 무효화로 라이브 반영. → **`0.6.0-beta` 게시**(alpha 0.1~0.5 이후 첫 beta; API 안정화 신호 + `GetRichInlines` Shipped 승격). **남은 1.0 게이트는 기능이 아니라 검증**: 렌더 픽셀 테스트(헤드리스 no-op 한계), mac/Linux 기능 실검증, 대형 문서 성능 실측.
 
 ### 🔵 N6: 이미지 저장 모델 전환 및 성능 최적화 (미착수)
 

@@ -301,6 +301,7 @@ AvaloniaRichEditor.Documents.TextRange
 AvaloniaRichEditor.Documents.TextRange.ApplyPropertyValue(System.Action<AvaloniaRichEditor.Documents.Run!>! styleAction) -> void
 AvaloniaRichEditor.Documents.TextRange.Delete() -> void
 AvaloniaRichEditor.Documents.TextRange.End.get -> AvaloniaRichEditor.Documents.TextPointer!
+AvaloniaRichEditor.Documents.TextRange.GetRichInlines() -> System.Collections.Generic.List<AvaloniaRichEditor.Documents.Inline!>!
 AvaloniaRichEditor.Documents.TextRange.GetRichRuns() -> System.Collections.Generic.List<AvaloniaRichEditor.Documents.Run!>!
 AvaloniaRichEditor.Documents.TextRange.GetText() -> string!
 AvaloniaRichEditor.Documents.TextRange.IsEmpty.get -> bool

@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0-beta] - 2026-06-16
+
+First **beta**. The public API is stabilizing (the whole surface is tracked by the PublicAPI analyzer;
+this release promotes `TextRange.GetRichInlines`), and the geometry-worker unification — render, measure,
+hit-testing, and pagination now derive every block's position/height/layout from one shared source —
+closes the last structural drift-risk. Headlines: rich-HTML copy export, a heading-formatting data-loss
+fix, live (no-snap) table resize, and image-decode hardening. The remaining gates before `1.0` are
+verification depth (render pixel tests, cross-platform functional checks, large-document performance),
+not features.
+
 ### Added
 - **Copy now exports rich HTML.** Copying a selection puts Windows `CF_HTML` ("HTML Format") on the
   clipboard alongside the plain text, so pasting into Word, browsers, or other rich editors preserves
@@ -26,8 +36,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Page-outline view uses thinner grey margins.** The desk gap above/between pages and on the sides
   shrank from 24 px to ~2 pt (`PageGap`), so pages sit close together with just a sliver of desk instead
   of a wide grey band; the fit-to-width side margin now follows the same constant.
+- **Headings are a render-time style, not baked into runs.** Setting a heading level now styles the
+  paragraph (larger + bold) at layout time and leaves each run's own font size untouched, so toggling a
+  heading on and back to body text no longer overwrites manually-set sizes. (`GetCaretFormat` / the
+  toolbar report a heading run's underlying size, not the displayed heading size.)
 
 ### Fixed
+- **Heading toggle no longer loses formatting**: applying a heading and switching back to body text used
+  to flatten every run to 14 px / normal weight, discarding manually-set sizes — see the render-time
+  heading change above.
+- **A decode-failing image is no longer dropped on save.** When a picture's encoded bytes can't be
+  decoded on this platform, the bytes are now kept (the format may decode elsewhere) instead of being
+  cleared on first render, so a later save still round-trips the image. The decode just isn't retried.
+- **Table/cell resize is now live.** Dragging a column or row border (or a cell handle) resizes the
+  table continuously during the drag instead of snapping to the new size only after the mouse stops.
+- **`InsertHtml` honours `IsReadOnly`** (no-ops on a read-only editor), matching the other mutating commands.
 - `GetPlainText()` no longer drops a leading blank line (an empty first paragraph now contributes its
   separator).
 - Pasted text with `\r\n` line endings no longer leaves stray `\r` characters in runs (normalized to
@@ -46,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Find/Replace stops at the first qualifying match instead of materializing every match in the document.
 - Table geometry is reused across page-view passes (same column widths and measured row heights at a
   different vertical offset no longer re-measure every cell).
+- **Adjacent same-format runs coalesce** after merges, deletes, and style toggles, so the run list no
+  longer fragments over an editing session (cheaper layout fingerprinting, less memory).
+- **`TextPointer.CompareTo`** compares two positions in a single early-exiting document pass (was two
+  full traversals per comparison).
+- **One geometry source**: render, measure, hit-testing, and pagination now all derive each block's
+  top/height/layout from a single shared pass (`BlockExtent`) instead of duplicating the per-block height
+  math, eliminating a class of caret / hit-test / page-break drift bugs.
 
 ### Accessibility
 - The automation peer now reports when the editor's read-only state toggles. (Caret/selection exposure
@@ -326,7 +356,8 @@ editing on Windows; the public API may still change before `1.0`.
 - Word images exported as VML (not standard `<img>`) are not imported.
 - Precise pagination / PDF printing is not implemented (browser print fallback only).
 
-[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.5.0-alpha...HEAD
+[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.6.0-beta...HEAD
+[0.6.0-beta]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.5.0-alpha...v0.6.0-beta
 [0.5.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.4.0-alpha...v0.5.0-alpha
 [0.4.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.3.0-alpha...v0.4.0-alpha
 [0.3.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.2.0-alpha...v0.3.0-alpha
