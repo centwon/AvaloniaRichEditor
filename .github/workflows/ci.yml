@@ -26,6 +26,12 @@ jobs:
         run: dotnet build AvaloniaRichEditor.slnx -c Release --no-restore
       - name: Test
         run: dotnet test tests/AvaloniaRichEditor.Tests/AvaloniaRichEditor.Tests.csproj -c Release --no-build
+      # The render tests rasterize with real Skia; Linux needs fontconfig for glyph rendering.
+      - name: Install Linux font libs
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1
+      - name: Test (render pixels, real Skia)
+        run: dotnet test tests/AvaloniaRichEditor.Tests.Render/AvaloniaRichEditor.Tests.Render.csproj -c Release --no-build
 
   pack:
     name: Pack & Publish (on tag)

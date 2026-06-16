@@ -7,5 +7,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AvaloniaRichEditor.Tests/AvaloniaRichEditor.Tests.csproj" />
+    <Project Path="tests/AvaloniaRichEditor.Tests.Render/AvaloniaRichEditor.Tests.Render.csproj" />
   </Folder>
 </Solution>
