@@ -321,6 +321,18 @@
 >
 > **진행(2026-06-16)**: [x] **P0** — `GeometryConsistencyTests` 3건(측정이 마지막 블록까지 도달, 혼합문서>빈문서, 표 추가 시 높이 증가 — Continuous 모드로 `MeasureContentHeight` 직접 검증). [x] **P1+읽기전용 워커 통합** — `BlockExtent(block,width,top,out paraLayout,out tableLayout)` 도입, **6개 읽기 전용 워커**(`MeasureContentHeight`·`GetBlockAtPoint`·`GetTableRect`·`GetLinkRunAtPoint`·`GetPositionFromPoint`·`BlockAtY`)를 전부 이 단일 출처로 라우팅. 기존 200 테스트 그린 = 동작 보존. [x] **P4 페이지네이션 통합(2026-06-16)** — `ComputePageBreaks`의 블록별 높이/레이아웃 계산을 `BlockExtent`로 라우팅(중복 `LayoutTable`/`BuildTextLayout`/`switch` 제거). 페이지네이션 고유 로직(테이블 행·문단 줄 atom 분할)만 남음. MarginBottom 처리도 `block.MarginBottom`으로 통일 → 수직 누적이 `MeasureContentHeight`와 라인 단위로 동일. 207 테스트 그린(Pagination 18 + Geometry 등). **남음**: P5(`DrawDocumentBlocks` 렌더 — 최고 위험, 헤드리스 픽셀 불가 → **데모 수동검증 필수, 별도 세션 권장**), P2(`BlockBox` 캐싱 열거자 — 성능 선택, 미착수).
 
+#### 🧹 2026-06-16 코드 전수 리뷰 패스 (엔진 ~12k줄 정독)
+> P4 마무리 후 전 소스 정독으로 버그·성능·정리 항목을 도출하고, **위험 대비 효용이 높은 것만** 처리. 크래시급 버그 없음. 테스트 **190→222(+32)**, 전부 그린.
+>
+> **처리 완료**:
+> - [x] **A1 — `InsertHtml` ReadOnly 가드**: 공개 변형 API 중 유일하게 `IsReadOnly` 미확인 → 읽기 전용 문서가 호스트 호출로 변경되던 결함. 회귀 테스트 추가.
+> - [x] **C1 — 제목 렌더 타임 스타일 전환(데이터 손실 수정)**: `SetHeading`이 모든 런의 `FontSize`/`FontWeight`를 구워넣어 본문으로 되돌리면 사용자 지정 크기/굵기가 소실. 이제 `HeadingLevel`만 설정하고 큰/굵은 모양은 `BuildTextLayout`에서 본문 기본값(≤0/14px) 런에만 적용 → 토글 왕복 비파괴. `ParagraphSig`에 `HeadingLevel` 포함, `DrawListMarker` 일치, `SetHeading` measure 무효화(높이 변경 잠복 결함 동시 해결). **부수효과**: 툴바는 제목 텍스트의 내부 런 크기(14)를 표시(시각 24 아님); HTML 가져오기 경로는 여전히 크기를 런에 굽음(파서 미변경, 렌더 동일).
+> - [x] **C2(+확장) — 동일서식 인접 런 합류**: 병합/삭제/서식토글이 동일 서식 경계 런을 파편으로 남겨 `ParagraphSig`·메모리가 누적되던 것을, `TextRange.CoalesceRuns`로 모든 편집 경로에서 자동 합류(서식 8필드 일치 시만, 오프셋 불변). 인라인 이미지는 경계.
+> - [x] **B2 — `TextPointer.CompareTo` 단일 패스**: 문단이 다른 두 포인터 비교가 문서를 두 번 완전 순회하던 것을 한 번의 순회(둘 다 찾으면 조기 종료)로. 부재(stale) 시맨틱까지 동일 보존(특성화 테스트 4건). 데드 `GetGlobalIndex` 제거. *worst-case O(n)은 유지* — 표 셀까지 추적하는 무효화 캐시는 측정상 비병목 대비 위험 과함.
+> - [x] **D1 — 데드 코드 `ApplyInlinesToFormattedText` 제거**(호출처 0; `FormattedText`는 레이아웃 미사용 타입). [x] **D2 — 화살표/PageUp·Down 7분기 선택갱신 중복을 `ApplyCaretSelection`로 통일**(외형 정리).
+>
+> **의도적 보류(근거)**: B1=P2(`ComputePageBreaks` 매 측정 재계산) — N5 실측 "편집 경로 실병목 없음", 캐시 무효화 위험 과함 → 벤치 선행. B3(HTML `HasBlockOrMedia` O(n²))·B4(`ReplaceAll` O(N²))·B6(`FindCell`) — 희귀 경로 + 안전망/무효화 위험. B5(`CheckImageLimit` 매 flush 카운트) — 비용 미미. A2(손상 이미지 디코드 실패 시 `RawBytes` 소실) — 저위험·격리이나 손상 입력 테스트 까다로움. C3(RTF 셀 병합 미파싱) — 문서화된 서브셋 한계.
+
 ### 🔵 N6: 이미지 저장 모델 전환 및 성능 최적화 (미착수)
 
 > **배경**: 현재 이미지는 `Bitmap` 객체가 데이터 주체이며, 저장 시 매번 PNG로 재인코딩된다. 원본이 JPEG(~80KB)여도 PNG(~500KB)로 부풀고, 직렬화마다 인코딩 비용이 발생한다. 외부 의존성 추가 없이(Avalonia 내장 + .NET 내장만) 용량·속도·화질을 동시에 개선한다.
