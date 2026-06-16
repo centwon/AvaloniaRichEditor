@@ -739,6 +739,7 @@ public partial class RichEditor : Control
             else i++;
             pos = segEnd;
         }
+        TextRange.CoalesceRuns(p); // a removed run can leave equal-format neighbours adjacent
     }
 
     private void TryInsertTextCore(Paragraph p, string text, int localIndex)

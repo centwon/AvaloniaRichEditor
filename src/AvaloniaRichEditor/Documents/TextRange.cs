@@ -318,6 +318,7 @@ public class TextRange
             currentLeft += len;
         }
         foreach (var item in toRemove) p.Inlines.Remove(item);
+        CoalesceRuns(p); // removing a run can leave its former neighbours adjacent with equal formatting
     }
 
     private void MergeParagraphs(Paragraph target, Paragraph source, FlowDocument doc)
@@ -448,6 +449,7 @@ public class TextRange
             }
             currentIndex += len;
         }
+        CoalesceRuns(p); // toggling a style back off can make the split runs match their neighbours again
     }
 
     private void SplitRunAtOffset(Paragraph p, int offset)

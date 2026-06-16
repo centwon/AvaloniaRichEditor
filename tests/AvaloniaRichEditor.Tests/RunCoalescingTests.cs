@@ -47,6 +47,38 @@ public class RunCoalescingTests
         Assert.Equal(2, RunCount(p1)); // formatting differs -> not merged
     }
 
+    [Fact]
+    public void DeleteWithinParagraph_RemovingMiddleRun_CoalescesNeighbours()
+    {
+        var p = TestHelpers.Para(
+            new Run { Text = "a" },
+            new Run { Text = "X", FontWeight = FontWeight.Bold },
+            new Run { Text = "c" });
+        TestHelpers.Doc(p);
+
+        new TextRange(new TextPointer(p, 1), new TextPointer(p, 2)).Delete(); // delete "X"
+
+        Assert.Equal("ac", p.Text());
+        Assert.Equal(1, RunCount(p)); // the two default neighbours merged
+    }
+
+    [Fact]
+    public void StyleToggledOnThenOff_CoalescesBackToOneRun()
+    {
+        var p = TestHelpers.Para(new Run { Text = "abcdef" });
+        TestHelpers.Doc(p);
+
+        new TextRange(new TextPointer(p, 2), new TextPointer(p, 4))
+            .ApplyPropertyValue(r => r.FontWeight = FontWeight.Bold);   // splits into 3 runs
+        Assert.Equal(3, RunCount(p));
+
+        new TextRange(new TextPointer(p, 2), new TextPointer(p, 4))
+            .ApplyPropertyValue(r => r.FontWeight = FontWeight.Normal); // all uniform again
+
+        Assert.Equal("abcdef", p.Text());
+        Assert.Equal(1, RunCount(p));
+    }
+
     // ---- editor level: Backspace / Delete boundary merges ----
 
     private static void Press(RichEditor ed, Key key, KeyModifiers mods = KeyModifiers.None)
@@ -83,6 +115,24 @@ public class RunCoalescingTests
 
         Assert.Single(ed.Document!.Blocks);
         Assert.Equal("abcd", Para(ed, 0).Text());
+        Assert.Equal(1, RunCount(Para(ed, 0)));
+    }
+
+    [AvaloniaFact]
+    public void Delete_MiddleStyledRun_CoalescesViaEditPipeline()
+    {
+        var p = TestHelpers.Para(
+            new Run { Text = "a" },
+            new Run { Text = "X", FontWeight = FontWeight.Bold },
+            new Run { Text = "c" });
+        var ed = new RichEditor();
+        ed.Document = TestHelpers.Doc(p);
+        ed.FocusDocumentEnd();
+        Press(ed, Key.Home, KeyModifiers.Control); // caret at paragraph start
+        Press(ed, Key.Right);                      // caret after "a" (offset 1)
+        Press(ed, Key.Delete);                     // delete the bold "X"
+
+        Assert.Equal("ac", Para(ed, 0).Text());
         Assert.Equal(1, RunCount(Para(ed, 0)));
     }
 }
