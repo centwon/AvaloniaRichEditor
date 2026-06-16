@@ -733,9 +733,7 @@ public partial class RichEditor
             double step = PageStep();
             double ty = e.Key == Key.PageUp ? Math.Max(0, _lastCaretPoint.Y - step) : _lastCaretPoint.Y + step;
             _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, ty));
-            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            ResetCaretBlink(); e.Handled = true; return;
+            ApplyCaretSelection(shift); e.Handled = true; return;
         }
 
         if (e.Key == Key.Tab)
@@ -782,9 +780,7 @@ public partial class RichEditor
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             MoveCaretLeft();
-            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            ResetCaretBlink();
+            ApplyCaretSelection(shift);
             e.Handled = true;
             return;
         }
@@ -806,9 +802,7 @@ public partial class RichEditor
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             MoveCaretRight();
-            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            ResetCaretBlink();
+            ApplyCaretSelection(shift);
             e.Handled = true;
             return;
         }
@@ -818,9 +812,7 @@ public partial class RichEditor
             // on its top line.
             if (TryMoveCaretByLineWithinParagraph(down: false))
             {
-                if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-                else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                ResetCaretBlink(); e.Handled = true; return;
+                ApplyCaretSelection(shift); e.Handled = true; return;
             }
             // Leaving a table cell upward from its first row -> the table's "before" caret.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0)
@@ -837,9 +829,7 @@ public partial class RichEditor
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, ty));
-            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            ResetCaretBlink();
+            ApplyCaretSelection(shift);
             e.Handled = true;
             return;
         }
@@ -849,9 +839,7 @@ public partial class RichEditor
             // on its bottom line.
             if (TryMoveCaretByLineWithinParagraph(down: true))
             {
-                if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-                else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                ResetCaretBlink(); e.Handled = true; return;
+                ApplyCaretSelection(shift); e.Handled = true; return;
             }
             // Leaving a table cell downward from its last row -> the table's "after" caret.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc
@@ -869,9 +857,7 @@ public partial class RichEditor
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, ty));
-            if (!shift) { _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset); }
-            else _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            ResetCaretBlink();
+            ApplyCaretSelection(shift);
             e.Handled = true;
             return;
         }
