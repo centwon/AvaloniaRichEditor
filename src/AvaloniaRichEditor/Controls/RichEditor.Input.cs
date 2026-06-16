@@ -921,6 +921,7 @@ public partial class RichEditor
                     Document.Blocks.Remove(_caretPosition.Paragraph);
                     _caretPosition.Paragraph = prev;
                     _caretPosition.Offset = prevLen;
+                    TextRange.CoalesceRuns(prev); // the joined boundary runs may share formatting
                 }
             }
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -950,6 +951,7 @@ public partial class RichEditor
                         _caretPosition.Paragraph.Inlines.Add(inline);
                     }
                     Document.Blocks.Remove(next);
+                    TextRange.CoalesceRuns(_caretPosition.Paragraph); // joined boundary runs may share formatting
                 }
             }
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);

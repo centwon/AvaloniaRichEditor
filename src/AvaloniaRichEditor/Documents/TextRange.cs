@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Avalonia.Media;
 
 namespace AvaloniaRichEditor.Documents;
 
@@ -329,6 +330,54 @@ public class TextRange
         source.Inlines.Clear();
 
         RemoveParagraphFromDocument(doc, source);
+        CoalesceRuns(target); // the boundary runs may now be adjacent with identical formatting
+    }
+
+    // Merges adjacent <see cref="Run"/>s that share all formatting into one, so an edit (paragraph
+    // merge, mid-paragraph delete) doesn't leave the run list fragmented. Text and logical offsets are
+    // unchanged — only the run count shrinks — so caret/selection positions stay valid. Inline images
+    // act as boundaries (never merged). Shared by the editor's manual merge paths too.
+    internal static void CoalesceRuns(Paragraph p)
+    {
+        for (int i = 0; i < p.Inlines.Count - 1; )
+        {
+            if (p.Inlines[i] is Run a && p.Inlines[i + 1] is Run b && RunFormatEquals(a, b))
+            {
+                a.Text = (a.Text ?? "") + (b.Text ?? "");
+                p.Inlines.RemoveAt(i + 1); // stay at i to fold a whole run of identical neighbours
+            }
+            else i++;
+        }
+    }
+
+    private static bool RunFormatEquals(Run a, Run b)
+        => a.FontWeight == b.FontWeight
+        && a.FontStyle == b.FontStyle
+        && a.FontSize.Equals(b.FontSize)
+        && a.FontFamily == b.FontFamily
+        && a.NavigateUri == b.NavigateUri
+        && BrushEquals(a.Foreground, b.Foreground)
+        && BrushEquals(a.Background, b.Background)
+        && DecorationEquals(a.TextDecorations, b.TextDecorations);
+
+    // Equal brushes (so re-instantiated same-colour brushes still coalesce) without forcing every
+    // brush type to be value-comparable: same reference, or two solid brushes of the same colour.
+    private static bool BrushEquals(IBrush? a, IBrush? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is ISolidColorBrush sa && b is ISolidColorBrush sb) return sa.Color == sb.Color;
+        return false;
+    }
+
+    private static bool DecorationEquals(TextDecorationCollection? a, TextDecorationCollection? b)
+        => HasLocation(a, TextDecorationLocation.Underline) == HasLocation(b, TextDecorationLocation.Underline)
+        && HasLocation(a, TextDecorationLocation.Strikethrough) == HasLocation(b, TextDecorationLocation.Strikethrough);
+
+    private static bool HasLocation(TextDecorationCollection? decos, TextDecorationLocation loc)
+    {
+        if (decos == null) return false;
+        foreach (var d in decos) if (d.Location == loc) return true;
+        return false;
     }
 
     private void RemoveParagraphFromDocument(FlowDocument doc, Paragraph p)
