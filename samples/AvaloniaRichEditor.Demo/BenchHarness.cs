@@ -27,6 +27,9 @@ namespace AvaloniaRichEditor.Demo;
 internal static class BenchHarness
 {
     public static bool Enabled;
+    // --bench-text: large TEXT documents (hundreds of pages) instead of the image scenarios — gate ③
+    // (large-document performance: layout/measure/scroll/typing latency + managed memory).
+    public static bool TextMode;
 }
 
 // RichEditor with its managed Render() pass timed — the cost draw culling would cut.
@@ -67,19 +70,30 @@ internal class BenchWindow : Window
 
     private async Task RunAllAsync()
     {
-        string outFile = Path.Combine(Environment.CurrentDirectory, "bench-results.txt");
+        string outFile = Path.Combine(Environment.CurrentDirectory,
+            BenchHarness.TextMode ? "bench-text-results.txt" : "bench-results.txt");
         try
         {
             _report.AppendLine($"RichEditor bench — {DateTime.Now:yyyy-MM-dd HH:mm} | window {Width}x{Height} | {RuntimeInformation.OSDescription}");
             _report.AppendLine($"build: {(Debugger.IsAttached ? "debugger" : "standalone")}, config: {(IsReleaseBuild() ? "Release" : "Debug")}");
             _report.AppendLine();
 
-            var images = Enumerable.Range(0, 4).Select(i => MakePng(800, 600, seed: 100 + i)).ToArray();
-            _report.AppendLine($"image variants: 4x 800x600 PNG, {string.Join(", ", images.Select(b => $"{b.Length / 1024}KB"))}");
-            _report.AppendLine();
+            if (BenchHarness.TextMode)
+            {
+                _report.AppendLine("mode: large TEXT documents (gate ③) — A4 page view, mixed runs + headings + a table every 50 paragraphs");
+                _report.AppendLine();
+                foreach (int n in new[] { 1000, 3000, 6000 })
+                    await RunTextScenarioAsync(n);
+            }
+            else
+            {
+                var images = Enumerable.Range(0, 4).Select(i => MakePng(800, 600, seed: 100 + i)).ToArray();
+                _report.AppendLine($"image variants: 4x 800x600 PNG, {string.Join(", ", images.Select(b => $"{b.Length / 1024}KB"))}");
+                _report.AppendLine();
 
-            foreach (int count in new[] { 10, 20, 50, 100 })
-                await RunScenarioAsync(count, images);
+                foreach (int count in new[] { 10, 20, 50, 100 })
+                    await RunScenarioAsync(count, images);
+            }
 
             _report.AppendLine("done.");
         }
@@ -168,6 +182,109 @@ internal class BenchWindow : Window
         // Unfocus so the caret-blink timer doesn't bleed into the next scenario.
         Focus();
         await SettleAsync();
+    }
+
+    // Gate ③: a large TEXT document (hundreds of pages). Measures the costs that actually scale with
+    // document size — cold full layout, the warm per-caret-move re-measure (ComputePageBreaks +
+    // cache-hit layouts), scroll FPS / managed Render() time, typing latency, and managed heap.
+    private async Task RunTextScenarioAsync(int paragraphs)
+    {
+        _report.AppendLine($"=== {paragraphs} paragraphs ===");
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        long memBefore = GC.GetTotalMemory(forceFullCollection: true);
+
+        var doc = BuildTextDoc(paragraphs);
+        _editor.Document = doc;
+        _scroller.Offset = default;
+        await SettleAsync();
+
+        int paras = doc.Blocks.OfType<Paragraph>().Count();
+        int tables = doc.Blocks.OfType<TableBlock>().Count();
+        int pages = _editor.GetPrintPageCount();
+        string plain = _editor.GetPlainText();
+        _report.AppendLine($"doc: {doc.Blocks.Count} blocks ({paras} paras, {tables} tables), {plain.Length:N0} chars, ~{pages} pages, extent {_scroller.Extent.Height:N0}px");
+
+        // Cold full layout — content just changed, so the cache rebuilds every paragraph.
+        _editor.InvalidateMeasure();
+        var sw = Stopwatch.StartNew();
+        _editor.UpdateLayout();
+        sw.Stop();
+        _report.AppendLine($"full layout (cold):  {sw.Elapsed.TotalMilliseconds:F1} ms");
+
+        // Warm re-measure — a caret move re-runs MeasureOverride (ComputePageBreaks + cache-hit layouts)
+        // with no content change; this is the per-interaction cost a BlockBox cache (G1 P2) would cut.
+        var warm = Time(10, () => { _editor.InvalidateMeasure(); _editor.UpdateLayout(); });
+        _report.AppendLine($"re-measure (warm):   median {Median(warm):F1} ms, max {warm.Max():F1} ms  (per caret-move cost)");
+
+        // Managed heap held by the document + layout caches.
+        long memAfter = GC.GetTotalMemory(forceFullCollection: true);
+        _report.AppendLine($"managed heap:        {(memAfter - memBefore) / 1024.0 / 1024.0:F1} MB");
+
+        // Scroll FPS (composited vs. invalidated every frame) + managed Render() time.
+        double extent = Math.Max(0, _scroller.Extent.Height - _scroller.Viewport.Height);
+        _editor.RenderMs.Clear();
+        var (fA, dA) = await AnimateScrollAsync(0, extent, TimeSpan.FromSeconds(2), invalidateEachFrame: false);
+        _report.AppendLine($"scroll (composited):  {fA / dA.TotalSeconds:F0} fps  ({_editor.RenderMs.Count} managed renders)");
+        _editor.RenderMs.Clear();
+        var (fB, dB) = await AnimateScrollAsync(extent, 0, TimeSpan.FromSeconds(2), invalidateEachFrame: true);
+        var renders = _editor.RenderMs.ToList();
+        _report.AppendLine($"scroll (invalidated): {fB / dB.TotalSeconds:F0} fps  ({renders.Count} managed renders)");
+        if (renders.Count > 0)
+            _report.AppendLine($"Render() time: median {Median(renders):F1} ms, p95 {Percentile(renders, 95):F1} ms, max {renders.Max():F1} ms");
+
+        // Typing latency at document end (UpdateLayout each keystroke forces the measure walk).
+        _editor.Focus();
+        _editor.FocusDocumentEnd();
+        await SettleAsync();
+        var keyMs = new List<double>();
+        for (int i = 0; i < 30; i++)
+        {
+            sw.Restart();
+            _editor.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "가" });
+            _editor.UpdateLayout();
+            sw.Stop();
+            keyMs.Add(sw.Elapsed.TotalMilliseconds);
+        }
+        _report.AppendLine($"typing: first {keyMs[0]:F1} ms, rest median {Median(keyMs.Skip(1).ToList()):F1} ms, max {keyMs.Skip(1).Max():F1} ms");
+        _report.AppendLine();
+
+        Focus();
+        await SettleAsync();
+    }
+
+    // A large text document: mostly mixed-format paragraphs, an h2 heading every 25 paragraphs, and a
+    // small 2×3 table every 50 — structural variety so the layout walk isn't all identical paragraphs.
+    private static FlowDocument BuildTextDoc(int paragraphs)
+    {
+        const string ko = "대형 문서 성능 측정용 문단입니다. 수백 페이지에서 레이아웃·측정·타이핑 지연과 메모리를 실측합니다. ";
+        const string en = "The quick brown fox jumps over the lazy dog, exercising shaping and line breaking across many pages. ";
+        var doc = new FlowDocument();
+        for (int i = 0; i < paragraphs; i++)
+        {
+            if (i % 50 == 49)
+            {
+                var tb = new TableBlock(2, 3);
+                for (int r = 0; r < 2; r++)
+                    for (int c = 0; c < 3; c++)
+                        ((Run)tb.Cells[r][c].Inlines[0]).Text = $"r{r}c{c} {en}";
+                doc.Blocks.Add(tb);
+                continue;
+            }
+            var p = new Paragraph();
+            if (i % 25 == 0)
+            {
+                p.HeadingLevel = 2;
+                p.Inlines.Add(new Run { Text = $"Section {i / 25}" });
+            }
+            else
+            {
+                p.Inlines.Add(new Run { Text = $"[{i}] " + ko, FontSize = 14 });
+                p.Inlines.Add(new Run { Text = en, FontSize = 13, FontWeight = FontWeight.Bold });
+                p.Inlines.Add(new Run { Text = ko, FontSize = 12, Foreground = Brushes.Gray });
+            }
+            doc.Blocks.Add(p);
+        }
+        return doc;
     }
 
     // ---- helpers ----------------------------------------------------------
