@@ -1,10 +1,12 @@
 #nullable enable
 *REMOVED*AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null) -> void
-AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null, bool Quote = false, double LineSpacing = 0) -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null, bool Quote = false, double LineSpacing = 0, AvaloniaRichEditor.Documents.ListMarkerStyle ListMarker = AvaloniaRichEditor.Documents.ListMarkerStyle.Default) -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Quote.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Quote.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.LineSpacing.get -> double
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.LineSpacing.init -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.ListMarker.get -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.ListMarker.init -> void
 *REMOVED*const AvaloniaRichEditor.Formatters.DocumentSerializer.CurrentSchemaVersion = 2 -> int
 const AvaloniaRichEditor.Formatters.DocumentSerializer.CurrentSchemaVersion = "1.0" -> string!
 AvaloniaRichEditor.Controls.RichEditor.LoadRtf(string? rtf) -> void

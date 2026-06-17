@@ -256,7 +256,7 @@ public class RichEditorView : UserControl
         {
             var cb = new ComboBox
             {
-                Width = width, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
+                Width = width, FontSize = 12, MinHeight = 28, VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(6, 0, 0, 0),
                 BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
             };

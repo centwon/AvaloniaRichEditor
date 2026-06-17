@@ -6,9 +6,9 @@ using Avalonia.Media;
 
 namespace AvaloniaRichEditor.Controls;
 
-// Built-in vector glyphs for RichEditorToolbar's default look — hand-drawn stroke icons on a 24×24
-// canvas, scaled into a 16px box. Keeps the library icon-dependency-free (a host can still override
-// any slot via RichEditorIcons.Provider, which wins over these). Only the symbol buttons are
+// Built-in vector glyphs for RichEditorToolbar's default look — hand-drawn stroke icons on a 24x24
+// canvas, scaled into the requested box size. Keeps the library icon-dependency-free (a host can still
+// override any slot via RichEditorIcons.Provider, which wins over these). Only the symbol buttons are
 // vectorized; letter-conventional ones (B/I/U/S, color "A") stay as styled text and Create returns
 // null for them so the caller falls back to the glyph.
 internal static class ToolbarIcons
@@ -16,6 +16,9 @@ internal static class ToolbarIcons
     // Immutable: no dispatcher thread affinity (a shared mutable brush is one less thing that can
     // bite if a host ever builds the toolbar off the UI thread). Shared across every icon path.
     private static readonly IBrush Ink = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#3C4043"));
+    // Lighter/thinner than Ink for dropdown chevrons, so the chevron reads as a subtle hint (matching the
+    // ComboBox chevron) rather than a bold mark.
+    private static readonly IBrush ChevronInk = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#70757A"));
 
     // A layer is one path: stroke (outline) or fill (solid shapes like arrowheads/dots).
     private static Control Build(double box, params (string Data, bool Fill)[] layers)
@@ -31,7 +34,9 @@ internal static class ToolbarIcons
             else
             {
                 p.Stroke = Ink;
-                p.StrokeThickness = 2;
+                // The 24-canvas stroke is scaled by the Viewbox: at the 20px box this renders ~1.25px,
+                // keeping the larger icons crisp rather than heavy (a 2px stroke looked bold/muddy).
+                p.StrokeThickness = 1.5;
                 p.StrokeLineCap = PenLineCap.Round;
                 p.StrokeJoin = PenLineJoin.Round;
             }
@@ -43,65 +48,65 @@ internal static class ToolbarIcons
     /// <summary>Built-in vector for a toolbar slot, or null if that slot uses a styled-text glyph.</summary>
     public static Control? Create(RichEditorIcon kind) => kind switch
     {
-        RichEditorIcon.FormatPainter => Build(16,
+        RichEditorIcon.FormatPainter => Build(20,
             ("M4 5 H15 V9 H4 Z", false),
             ("M15 7 H18 V11 H10.5 V13", false),
             ("M8.5 13 H12.5 V20 H8.5 Z", false)),
 
-        RichEditorIcon.BulletList => Build(16,
+        RichEditorIcon.BulletList => Build(20,
             ("M9 7 H20 M9 12 H20 M9 17 H20", false),
             ("M4.5 7 m-1.4 0 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0 Z M4.5 12 m-1.4 0 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0 Z M4.5 17 m-1.4 0 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0 Z", true)),
 
-        RichEditorIcon.NumberedList => Build(16,
+        RichEditorIcon.NumberedList => Build(20,
             ("M9 7 H20 M9 12 H20 M9 17 H20", false),
             ("M3 5.6 L4.3 5 V9 M2.6 16 H4.6 M2.6 19 H4.6", false),
             ("M2.7 11 Q3 10.2 3.9 10.2 Q4.9 10.2 4.9 11.1 Q4.9 12 2.7 13.8 H4.9", false)),
 
         // Up/down double arrow beside stacked text lines — the universal line-spacing glyph.
-        RichEditorIcon.LineSpacing => Build(16,
+        RichEditorIcon.LineSpacing => Build(20,
             ("M5 7 V17 M11 6 H21 M11 12 H21 M11 18 H21", false),
             ("M5 3 L8 7 L2 7 Z M5 21 L8 17 L2 17 Z", true)),
 
-        RichEditorIcon.IndentIncrease => Build(16,
+        RichEditorIcon.IndentIncrease => Build(20,
             ("M4 6 H20 M4 18 H20 M11 12 H20", false),
             ("M4 9 L8 12 L4 15 Z", true)),
-        RichEditorIcon.IndentDecrease => Build(16,
+        RichEditorIcon.IndentDecrease => Build(20,
             ("M4 6 H20 M4 18 H20 M11 12 H20", false),
             ("M8 9 L4 12 L8 15 Z", true)),
 
-        RichEditorIcon.InsertTable => Build(16,
+        RichEditorIcon.InsertTable => Build(20,
             ("M3 5 H21 V19 H3 Z M3 11 H21 M3 15 H21 M9 5 V19 M15 5 V19", false)),
 
-        RichEditorIcon.InsertImage => Build(16,
+        RichEditorIcon.InsertImage => Build(20,
             ("M3 5 H21 V19 H3 Z", false),
             ("M3 16 L9 11 L13 15 L16 12 L21 16", false),
             ("M9 10 m-1.6 0 a1.6 1.6 0 1 0 3.2 0 a1.6 1.6 0 1 0 -3.2 0 Z", true)),
 
-        RichEditorIcon.InsertDivider => Build(16,
+        RichEditorIcon.InsertDivider => Build(20,
             ("M4 12 H20", false)),
 
-        RichEditorIcon.Undo => Build(16,
+        RichEditorIcon.Undo => Build(20,
             ("M5 11 H14 A4.5 4.5 0 0 1 14 20 H9", false),
             ("M5 11 L9 7.5 L9 14.5 Z", true)),
-        RichEditorIcon.Redo => Build(16,
+        RichEditorIcon.Redo => Build(20,
             ("M19 11 H10 A4.5 4.5 0 0 0 10 20 H15", false),
             ("M19 11 L15 7.5 L15 14.5 Z", true)),
 
-        RichEditorIcon.Highlight => Build(16,
+        RichEditorIcon.Highlight => Build(20,
             ("M13 4 L20 11 L12 19 H6 L4 17 Z M6 19 L11 14", false)),
 
         // Export: a tray with text leaving it (up-and-out arrow).
-        RichEditorIcon.Export => Build(16,
+        RichEditorIcon.Export => Build(20,
             ("M5 14 V19 H19 V14", false),
             ("M12 16 V5", false),
             ("M12 3 L8 8 H16 Z", true)),
         // Import: a tray taking text in (down-and-in arrow).
-        RichEditorIcon.Import => Build(16,
+        RichEditorIcon.Import => Build(20,
             ("M5 14 V19 H19 V14", false),
             ("M12 4 V13", false),
             ("M12 16 L8 11 H16 Z", true)),
         // Print: printer body with a top feed sheet and an output sheet.
-        RichEditorIcon.Print => Build(16,
+        RichEditorIcon.Print => Build(20,
             ("M7 8 V4 H17 V8", false),
             ("M5 8 H19 V16 H17", false),
             ("M7 16 H5 V8", false),
@@ -110,6 +115,19 @@ internal static class ToolbarIcons
         _ => null,
     };
 
-    /// <summary>Small downward chevron for dropdown buttons (e.g. the table picker).</summary>
-    public static Control ChevronDown() => Build(10, ("M6 9 L12 15 L18 9", false));
+    /// <summary>Downward chevron for dropdown buttons (table picker, list-style and line-spacing
+    /// dropdowns). Drawn directly (not via Build) so it gets a thin, light stroke matching the ComboBox
+    /// chevron — ~10px wide, 1.1px stroke, soft grey.</summary>
+    public static Control ChevronDown() => new Path
+    {
+        Data = Geometry.Parse("M0 0 L5 5 L10 0"),
+        Stroke = ChevronInk,
+        StrokeThickness = 1.1,
+        StrokeLineCap = PenLineCap.Round,
+        StrokeJoin = PenLineJoin.Round,
+        Width = 10,
+        Height = 5,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
 }

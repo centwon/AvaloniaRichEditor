@@ -46,9 +46,10 @@ public class RichEditorToolbar : UserControl
     private static readonly IBrush ActiveBrush = new SolidColorBrush(Color.Parse("#90CAF9"));
 
     // Controls that reflect caret state (assigned in Build).
-    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _undoBtn, _redoBtn;
+    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _bulletBtn, _numberBtn, _undoBtn, _redoBtn;
     private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo;
-    private TextBlock? _spacingLabel; // current line-spacing % shown next to the icon
+    private TextBox? _spacingBox; // editable line-spacing %, reflects/sets the caret paragraph
+    private TextBlock? _bulletPreview, _numberPreview; // current list marker shown in the list combo boxes
     private static readonly int[] SpacingPercents = { 100, 110, 120, 130, 150, 160, 180, 200, 250, 300 };
     private Control? _tableBtn, _imageBtn, _dividerBtn;
     // Color-picker faces, synced to the caret's run: either a swatch bar under the built-in glyph,
@@ -57,6 +58,7 @@ public class RichEditorToolbar : UserControl
     private ContentControl? _colorIconHost, _highlightIconHost;
 
     private static readonly IBrush NoColorBrush = new SolidColorBrush(Color.Parse("#DDDDDD"));
+    private static readonly IBrush DimInk = new SolidColorBrush(Color.Parse("#BFC3C7")); // inactive list marker
 
     // Shows `brush` as the picker's current colour, whichever face style is in use.
     private void ReflectPickerColor(bool highlight, IBrush brush)
@@ -158,15 +160,17 @@ public class RichEditorToolbar : UserControl
         {
             // Icon precedence: host override (RichEditorIcons.Provider) > built-in vector glyph
             // (ToolbarIcons) > styled-text fallback (`content`, for letter-conventional buttons).
+            var resolved = (icon is { } k ? RichEditorIcons.TryCreate(k) : null)
+                          ?? (icon is { } vk ? ToolbarIcons.Create(vk) : null);
             var b = new Button
             {
-                Content = (icon is { } k ? RichEditorIcons.TryCreate(k) : null)
-                          ?? (icon is { } vk ? ToolbarIcons.Create(vk) : null)
-                          ?? content,
+                Content = resolved ?? content,
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(5),
-                Padding = new Thickness(9, 5),
+                // Icon buttons get tighter padding so the larger (20px) glyph keeps the same button size
+                // the letter buttons (B/I/U/S) have with their original padding.
+                Padding = resolved != null ? new Thickness(7, 3) : new Thickness(9, 5),
                 Margin = new Thickness(1, 0),
                 MinWidth = 30,
                 FontSize = 13,
@@ -181,7 +185,7 @@ public class RichEditorToolbar : UserControl
             var cb = new ComboBox
             {
                 Margin = new Thickness(2, 0),
-                MinHeight = 30,
+                MinHeight = 28,
                 MinWidth = minWidth,
                 VerticalAlignment = VerticalAlignment.Center,
                 FontSize = 12,
@@ -210,8 +214,8 @@ public class RichEditorToolbar : UserControl
         _italicBtn = Btn(new TextBlock { Text = "I", FontStyle = FontStyle.Italic }, Loc("Italic") + " (Ctrl+I)", () => Target?.ToggleItalic(), RichEditorIcon.Italic);
         _underlineBtn = Btn(new TextBlock { Text = "U", TextDecorations = TextDecorations.Underline }, Loc("Underline") + " (Ctrl+U)", () => Target?.ToggleUnderline(), RichEditorIcon.Underline);
         _strikeBtn = Btn(new TextBlock { Text = "S", TextDecorations = TextDecorations.Strikethrough }, Loc("Strikethrough"), () => Target?.ToggleStrikethrough(), RichEditorIcon.Strikethrough);
-        _painterBtn = Btn("🖌", Loc("FormatPainterTip"), () => Target?.StartFormatPainter(), RichEditorIcon.FormatPainter);
-        Add(_boldBtn); Add(_italicBtn); Add(_underlineBtn); Add(_strikeBtn); Add(_painterBtn);
+        // Format painter is available via StartFormatPainter()/the API; no toolbar button (rarely used).
+        Add(_boldBtn); Add(_italicBtn); Add(_underlineBtn); Add(_strikeBtn);
         Add(Div());
 
         // Color pickers
@@ -284,19 +288,19 @@ public class RichEditorToolbar : UserControl
         Add(_alignCombo);
         Add(Div());
 
-        // Lists / indent. Each list button toggles its default marker; the adjacent ▾ dropdown picks a
-        // specific bullet glyph (•/◦/▪/–) or number format (1./1)/a)/A)/i)).
-        _bulletBtn = Btn("•", Loc("BulletList"), () => Target?.ToggleBullet(), RichEditorIcon.BulletList);
-        _numberBtn = Btn("1.", Loc("NumberedList"), () => Target?.ToggleNumbering(), RichEditorIcon.NumberedList);
-        Add(_bulletBtn);
-        Add(BuildListStyleDropdown(Loc("BulletList"),
+        // Lists / indent. Each is a combo-style box: [icon (toggles the list) | current marker | ▾ (picks
+        // a specific bullet glyph •/◦/▪/– or number format 1./1)/a)/A)/i))], matching the line-spacing box.
+        var bullet = BuildListBox(RichEditorIcon.BulletList, Loc("BulletList"), () => Target?.ToggleBullet(), ListKind.Bullet,
             (ListMarkerStyle.Disc, "•"), (ListMarkerStyle.Circle, "◦"),
-            (ListMarkerStyle.Square, "▪"), (ListMarkerStyle.Dash, "–")));
-        Add(_numberBtn);
-        Add(BuildListStyleDropdown(Loc("NumberedList"),
+            (ListMarkerStyle.Square, "▪"), (ListMarkerStyle.Dash, "–"));
+        _bulletBtn = bullet.Icon; _bulletPreview = bullet.Preview;
+        Add(bullet.Box);
+        var number = BuildListBox(RichEditorIcon.NumberedList, Loc("NumberedList"), () => Target?.ToggleNumbering(), ListKind.Ordered,
             (ListMarkerStyle.Decimal, "1."), (ListMarkerStyle.DecimalParen, "1)"),
             (ListMarkerStyle.LowerAlpha, "a)"), (ListMarkerStyle.UpperAlpha, "A)"),
-            (ListMarkerStyle.LowerRoman, "i)")));
+            (ListMarkerStyle.LowerRoman, "i)"));
+        _numberBtn = number.Icon; _numberPreview = number.Preview;
+        Add(number.Box);
         // Quote (blockquote) is available via the right-click List menu and ToggleQuote(); no toolbar button.
         Add(Btn("→|", Loc("IndentIncrease"), () => Target?.Indent(20), RichEditorIcon.IndentIncrease));
         Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20), RichEditorIcon.IndentDecrease));
@@ -304,7 +308,7 @@ public class RichEditorToolbar : UserControl
 
         // Line spacing: an icon dropdown (HWP-style %), where the value maps to Paragraph.LineSpacing
         // = %/100. 160% is the HWP default; the list spans 100–300%. Scales with font size.
-        Add(BuildLineSpacingButton());
+        Add(BuildLineSpacingControl());
         Add(Div());
 
         // Block inserts (gated by the target's feature flags in ApplyFlags)
@@ -512,32 +516,72 @@ public class RichEditorToolbar : UserControl
         return btn;
     }
 
-    // Line-spacing icon dropdown: a glyph + the current % + chevron, opening a list of HWP-style
-    // percentages; each applies Paragraph.LineSpacing = %/100 (proportional — scales with font size).
-    private Button BuildLineSpacingButton()
+    // Line-spacing control: one bordered box (matching the combos) holding the glyph, an editable % box,
+    // tight ▲▼ steppers and a ▾ presets dropdown. Each maps to Paragraph.LineSpacing = %/100.
+    private Control BuildLineSpacingControl()
     {
-        var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-        var glyph = RichEditorIcons.TryCreate(RichEditorIcon.LineSpacing) ?? ToolbarIcons.Create(RichEditorIcon.LineSpacing);
-        if (glyph != null) face.Children.Add(glyph);
-        else face.Children.Add(new TextBlock { Text = "↕", FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
-        _spacingLabel = new TextBlock { Text = "100%", FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
-        face.Children.Add(_spacingLabel);
-        face.Children.Add(ToolbarIcons.ChevronDown());
+        var ink = new SolidColorBrush(Color.Parse("#80868B")); // soft grey for the steppers (not stark black)
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
 
-        var btn = new Button
+        var glyph = RichEditorIcons.TryCreate(RichEditorIcon.LineSpacing) ?? ToolbarIcons.Create(RichEditorIcon.LineSpacing);
+        if (glyph != null) { if (glyph is Layoutable lg) lg.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(glyph); }
+
+        _spacingBox = new TextBox
         {
-            Content = face,
+            Text = "100%",
+            MinWidth = 0,                            // hug the content (no fixed width => no inner gap)
+            FontSize = 12,
+            MinHeight = 0,
+            Padding = new Thickness(0, 1),
+            BorderThickness = new Thickness(0),     // blends into the outer border
             Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(5),
-            Padding = new Thickness(9, 5),
-            Margin = new Thickness(1, 0),
-            MinWidth = 30,
-            FontSize = 13,
+            TextAlignment = Avalonia.Media.TextAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        ToolTip.SetTip(btn, Loc("LineSpacing"));
+        void Commit() => ApplySpacingPercent(CurrentSpacingPercent());
+        _spacingBox.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Enter) { Commit(); e.Handled = true; } };
+        _spacingBox.LostFocus += (_, _) => Commit();
+        ToolTip.SetTip(_spacingBox, Loc("LineSpacing"));
+        row.Children.Add(_spacingBox);
 
+        // Tight ▲▼ steppers (±10%): crisp vector chevrons (not stretched glyphs), stacked close together.
+        Button Step(bool up, int delta)
+        {
+            var chevron = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Avalonia.Media.Geometry.Parse(up ? "M0 3 L3 0 L6 3" : "M0 0 L3 3 L6 0"),
+                Stroke = ink, StrokeThickness = 1.2,
+                StrokeLineCap = Avalonia.Media.PenLineCap.Round, StrokeJoin = Avalonia.Media.PenLineJoin.Round,
+                Width = 6, Height = 3,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            };
+            var b = new Button
+            {
+                Content = chevron,
+                Width = 15, Height = 8, Padding = new Thickness(0),
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(2),
+                VerticalAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center,
+            };
+            b.Click += (_, _) => ApplySpacingPercent(CurrentSpacingPercent() + delta);
+            return b;
+        }
+        var steppers = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center, Spacing = 0 };
+        steppers.Children.Add(Step(true, +10));
+        steppers.Children.Add(Step(false, -10));
+
+        var presets = new Button
+        {
+            Content = ToolbarIcons.ChevronDown(), // same thin chevron as the combos / list dropdowns
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(2, 0),
+            MinWidth = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(presets, Loc("LineSpacing"));
+        var flyout = new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft };
         var panel = new StackPanel { MinWidth = 64 };
         foreach (var pct in SpacingPercents)
         {
@@ -550,52 +594,113 @@ public class RichEditorToolbar : UserControl
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
             };
-            item.Click += (_, _) =>
-            {
-                Target?.SetLineSpacing(p / 100.0);
-                (btn.Flyout as FlyoutBase)?.Hide();
-            };
+            item.Click += (_, _) => { ApplySpacingPercent(p); flyout.Hide(); };
             panel.Children.Add(item);
         }
-        btn.Flyout = new Flyout { Content = panel };
-        return btn;
-    }
+        flyout.Content = panel;
+        row.Children.Add(presets);   // dropdown before the spinner
+        row.Children.Add(steppers);
 
-    // A small ▾ dropdown beside a list button that applies a specific marker style (bullet glyph or
-    // number format) to the selected paragraphs, turning that list kind on.
-    private Button BuildListStyleDropdown(string tip, params (ListMarkerStyle Style, string Glyph)[] options)
-    {
-        var btn = new Button
+        // Unify with the toolbar combos: same border colour, height and vertical centring.
+        var box = new Border
         {
-            Content = ToolbarIcons.ChevronDown(),
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(5),
-            Padding = new Thickness(3, 5),
-            Margin = new Thickness(0, 0, 1, 0),
-            MinWidth = 16,
+            Child = row,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 0),
+            Margin = new Thickness(2, 0),
+            MinHeight = 28,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        ToolTip.SetTip(btn, tip);
+        // Open the preset menu below the whole box (like a ComboBox), not anchored to the small ▾ button.
+        Avalonia.Controls.Primitives.FlyoutBase.SetAttachedFlyout(box, flyout);
+        presets.Click += (_, _) => Avalonia.Controls.Primitives.FlyoutBase.ShowAttachedFlyout(box);
+        return box;
+    }
 
+    // The percentage currently shown in the spacing box (digits only); 100 when empty/unparsable.
+    private int CurrentSpacingPercent()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (char c in _spacingBox?.Text ?? "") if (char.IsDigit(c)) sb.Append(c);
+        return int.TryParse(sb.ToString(), out int p) && p > 0 ? p : 100;
+    }
+
+    // Clamps a line-spacing %, reflects it in the box, and applies it to the caret paragraph.
+    private void ApplySpacingPercent(int pct)
+    {
+        pct = System.Math.Clamp(pct, 100, 1000);
+        if (_spacingBox != null) _spacingBox.Text = pct + "%";
+        Target?.SetLineSpacing(pct / 100.0);
+    }
+
+    // A combo-style list control: a bordered box of [icon (toggles the list) | current marker | ▾ (style
+    // menu)], matching the line-spacing box. Returns the box plus the icon button and preview label so
+    // Sync can highlight the active state and show the caret paragraph's current marker.
+    private (Control Box, Button Icon, TextBlock Preview) BuildListBox(
+        RichEditorIcon iconKind, string tip, Action toggle, ListKind kind,
+        params (ListMarkerStyle Style, string Glyph)[] options)
+    {
+        var glyph = RichEditorIcons.TryCreate(iconKind) ?? ToolbarIcons.Create(iconKind);
+        var icon = new Button
+        {
+            Content = glyph ?? (object)options[0].Glyph,
+            Background = Brushes.Transparent, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(2, 0), VerticalAlignment = VerticalAlignment.Center,
+        };
+        icon.Click += (_, _) => toggle();
+        ToolTip.SetTip(icon, tip);
+
+        var preview = new TextBlock
+        {
+            Text = options[0].Glyph, FontSize = 12, MinWidth = 16,
+            TextAlignment = Avalonia.Media.TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var presets = new Button
+        {
+            Content = ToolbarIcons.ChevronDown(),
+            Background = Brushes.Transparent, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(2, 0), MinWidth = 16, VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(presets, tip);
+        var flyout = new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft };
         var panel = new StackPanel { MinWidth = 64 };
-        foreach (var (style, glyph) in options)
+        foreach (var (style, g) in options)
         {
             var s = style;
             var item = new Button
             {
-                Content = glyph,
+                Content = g,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                FontSize = 14,
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0), FontSize = 14,
             };
-            item.Click += (_, _) => { Target?.SetListStyle(s); (btn.Flyout as FlyoutBase)?.Hide(); };
+            item.Click += (_, _) => { Target?.SetListStyle(s); flyout.Hide(); };
             panel.Children.Add(item);
         }
-        btn.Flyout = new Flyout { Content = panel };
-        return btn;
+        flyout.Content = panel;
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(icon); row.Children.Add(preview); row.Children.Add(presets);
+        var box = new Border
+        {
+            Child = row,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(4, 0),
+            Margin = new Thickness(2, 0),
+            MinHeight = 28,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        // Open the menu below the whole box (like a ComboBox), not anchored to the small ▾ button.
+        Avalonia.Controls.Primitives.FlyoutBase.SetAttachedFlyout(box, flyout);
+        presets.Click += (_, _) => Avalonia.Controls.Primitives.FlyoutBase.ShowAttachedFlyout(box);
+        return (box, icon, preview);
     }
 
     // ---------------- Target state -> toolbar ----------------
@@ -629,15 +734,29 @@ public class RichEditorToolbar : UserControl
         SetActive(_strikeBtn, f.Strike);
         SetActive(_bulletBtn, f.List == ListKind.Bullet);
         SetActive(_numberBtn, f.List == ListKind.Ordered);
-        SetActive(_painterBtn, rt.IsFormatPainterActive);
+        // List combo previews show the caret paragraph's current marker; dimmed (inactive) when the
+        // caret isn't in that list kind, full-ink (active) when it is.
+        if (_bulletPreview != null)
+        {
+            bool on = f.List == ListKind.Bullet;
+            _bulletPreview.Text = RichEditor.ListMarkerText(ListKind.Bullet, on ? f.ListMarker : ListMarkerStyle.Default, 1);
+            _bulletPreview.Foreground = on ? Brushes.Black : DimInk;
+        }
+        if (_numberPreview != null)
+        {
+            bool on = f.List == ListKind.Ordered;
+            _numberPreview.Text = RichEditor.ListMarkerText(ListKind.Ordered, on ? f.ListMarker : ListMarkerStyle.Default, 1);
+            _numberPreview.Foreground = on ? Brushes.Black : DimInk;
+        }
         if (_undoBtn != null) _undoBtn.IsEnabled = rt.CanUndo;
         if (_redoBtn != null) _redoBtn.IsEnabled = rt.CanRedo;
-        // Line-spacing label shows the caret paragraph's current % (unset / ≤1.0 = single = 100%).
-        if (_spacingLabel != null)
+        // Spacing box shows the caret paragraph's current % (unset / ≤1.0 = single = 100%). Set the text
+        // directly (not via ApplySpacingPercent) so reflecting the caret doesn't re-apply to the document.
+        if (_spacingBox != null && !_spacingBox.IsFocused)
         {
             double ls = f.LineSpacing;
             int pct = double.IsNaN(ls) || ls <= 0 ? 100 : (int)System.Math.Round(ls * 100);
-            _spacingLabel.Text = pct + "%";
+            _spacingBox.Text = pct + "%";
         }
 
         // Picker colours follow the caret's run: explicit colours show as-is, defaults fall back to

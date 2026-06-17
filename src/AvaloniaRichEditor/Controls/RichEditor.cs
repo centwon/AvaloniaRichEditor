@@ -470,7 +470,8 @@ public partial class RichEditor : Control
     /// Obtain via <see cref="GetCaretFormat"/>.</summary>
     public readonly record struct CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike,
         double FontSize, string? FontFamily, TextAlignment Align, ListKind List, int Heading,
-        IBrush? Foreground = null, IBrush? Background = null, bool Quote = false, double LineSpacing = 0);
+        IBrush? Foreground = null, IBrush? Background = null, bool Quote = false, double LineSpacing = 0,
+        ListMarkerStyle ListMarker = ListMarkerStyle.Default);
 
     private static bool HasDeco(Run? r, TextDecorationLocation loc)
     {
@@ -512,7 +513,8 @@ public partial class RichEditor : Control
             run?.Foreground,
             run?.Background,
             p?.IsQuote ?? false,
-            p?.LineSpacing ?? double.NaN);
+            p?.LineSpacing ?? double.NaN,
+            p?.ListMarker ?? ListMarkerStyle.Default);
     }
 
     /// <summary>Returns document statistics: total character count, word count, and the caret's
