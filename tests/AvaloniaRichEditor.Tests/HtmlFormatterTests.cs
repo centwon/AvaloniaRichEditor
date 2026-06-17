@@ -67,6 +67,18 @@ public class HtmlFormatterTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesJustifyAlignment()
+    {
+        var doc = HtmlDocumentFormatter.ParseHtml("<p style=\"text-align:justify\">hello</p>");
+        Assert.Equal(TextAlignment.Justify, ((Paragraph)doc.Blocks[0]).TextAlignment);
+
+        var html = HtmlDocumentFormatter.ToHtml(doc);
+        Assert.Contains("justify", html);
+        var rt = HtmlDocumentFormatter.ParseHtml(html);
+        Assert.Equal(TextAlignment.Justify, ((Paragraph)rt.Blocks[0]).TextAlignment);
+    }
+
+    [Fact]
     public void ParseHtml_BuildsTable()
     {
         var doc = HtmlDocumentFormatter.ParseHtml(

@@ -265,7 +265,7 @@ public class RichEditorToolbar : UserControl
         Add(_headingCombo);
 
         _alignCombo = Combo(Loc("Alignment"));
-        foreach (var key in new[] { "AlignLeft", "AlignCenter", "AlignRight" })
+        foreach (var key in new[] { "AlignLeft", "AlignCenter", "AlignRight", "AlignJustify" })
             _alignCombo.Items.Add(new ComboBoxItem { Content = Loc(key) });
         _alignCombo.SelectionChanged += (_, _) =>
         {
@@ -274,6 +274,7 @@ public class RichEditorToolbar : UserControl
             {
                 1 => TextAlignment.Center,
                 2 => TextAlignment.Right,
+                3 => TextAlignment.Justify,
                 _ => TextAlignment.Left,
             });
         };
@@ -579,6 +580,7 @@ public class RichEditorToolbar : UserControl
         {
             TextAlignment.Center => 1,
             TextAlignment.Right => 2,
+            TextAlignment.Justify => 3,
             _ => 0,
         };
         _suppress = false;

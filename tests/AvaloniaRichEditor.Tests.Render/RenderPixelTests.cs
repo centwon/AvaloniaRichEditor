@@ -161,6 +161,59 @@ public class RenderPixelTests
         Assert.True(AnyDarkTextInBand(px, w, paperH + 10, h), "page 2 should carry text (page-stack replay)");
     }
 
+    // Rightmost x with ink within the row band [y0, y1).
+    private static int RightmostInk(byte[] bgra, int w, int h, int y0, int y1)
+    {
+        int maxX = -1;
+        for (int y = y0; y < Math.Min(y1, h); y++)
+            for (int x = w - 1; x > maxX; x--)
+                if (IsInk(bgra, w, x, y)) { maxX = x; break; }
+        return maxX;
+    }
+
+    private static int FirstInkRow(byte[] bgra, int w, int h)
+    {
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (IsInk(bgra, w, x, y)) return y;
+        return -1;
+    }
+
+    [AvaloniaFact]
+    public void Justify_StretchesNonLastLineToFullWidth()
+    {
+        // The risk for justify is whether Avalonia 12's TextLayout actually HONOURS it. Decisive check:
+        // render a wrapping paragraph left-aligned vs justified — if justify were ignored the two bitmaps
+        // would be identical. They must differ, and the justified first (non-last) line must reach
+        // further right (filled to the margin) than the ragged left-aligned one.
+        const string text = "<p>The quick brown fox jumps over the lazy dog and then keeps running " +
+                            "across the wide green field under the bright morning sky every single day</p>";
+        int w = 400, h = 240;
+
+        var leftPx = Render(MakeEditor(text), w, h);
+
+        var jEd = MakeEditor(text);
+        jEd.FocusDocumentEnd();
+        jEd.SetTextAlignment(TextAlignment.Justify);
+        var jPx = Render(jEd, w, h);
+
+        int diff = 0;
+        for (int i = 0; i < leftPx.Length; i++) if (leftPx[i] != jPx[i]) diff++;
+        Assert.True(diff > 200, $"justify should change the rendering vs left-aligned (Avalonia must honour it); differing bytes={diff}");
+
+        // Justify pulls the ragged non-last lines out to the margin, so the total rightward reach
+        // (summed over every text row) is larger than left-aligned, where most lines stop short.
+        long leftReach = 0, justReach = 0;
+        for (int y = 0; y < h; y++)
+        {
+            int lr = RightmostInk(leftPx, w, h, y, y + 1); if (lr > 0) leftReach += lr;
+            int jr = RightmostInk(jPx, w, h, y, y + 1); if (jr > 0) justReach += jr;
+        }
+        Assert.True(justReach > leftReach, $"justified text should reach further right overall ({justReach} vs {leftReach})");
+        Assert.True(RightmostInk(jPx, w, h, FirstInkRow(jPx, w, h), h) > w * 0.8,
+            "justified text should fill near the full content width");
+    }
+
     [AvaloniaFact]
     public void Selection_DrawsHighlightPixels()
     {

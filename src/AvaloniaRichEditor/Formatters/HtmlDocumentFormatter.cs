@@ -270,7 +270,7 @@ namespace AvaloniaRichEditor.Formatters
             var style = node.GetAttributeValue("style", "").ToLowerInvariant();
             var m = System.Text.RegularExpressions.Regex.Match(style, "text-align\\s*:\\s*(left|center|right|justify)");
             if (m.Success) a = m.Groups[1].Value;
-            return a switch { "center" => TextAlignment.Center, "right" => TextAlignment.Right, _ => TextAlignment.Left };
+            return a switch { "center" => TextAlignment.Center, "right" => TextAlignment.Right, "justify" => TextAlignment.Justify, _ => TextAlignment.Left };
         }
 
         private static double HeadingSize(string name, out FontWeight weight)
@@ -637,7 +637,7 @@ namespace AvaloniaRichEditor.Formatters
                     string tag = p.IsListItem ? "li"
                         : p.IsQuote ? "blockquote"
                         : (p.HeadingLevel >= 1 && p.HeadingLevel <= 6 ? $"h{p.HeadingLevel}" : "p");
-                    string align = p.TextAlignment switch { TextAlignment.Center => "center", TextAlignment.Right => "right", _ => "left" };
+                    string align = p.TextAlignment switch { TextAlignment.Center => "center", TextAlignment.Right => "right", TextAlignment.Justify => "justify", _ => "left" };
                     string pStyle = $"text-align:{align};";
                     if (p.Background is ISolidColorBrush pbg) pStyle += $"background-color:{CssColor(pbg.Color)};";
                     if (p.Indent > 0) pStyle += $"margin-left:{p.Indent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;";

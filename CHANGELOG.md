@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new **Quote** toggle (`RichEditor.ToggleQuote()`) applies blockquote styling — available on the
   toolbar (next to the list buttons) and in the right-click List submenu. `CaretFormat` gains a `Quote`
   flag so the toolbar reflects the current paragraph's quote state.
+- **Justify alignment**: text can now be justified (both edges flush) via the toolbar alignment
+  dropdown and the right-click Alignment submenu. Round-trips through JSON, HTML (`text-align:justify`),
+  and RTF (`\qj`). A real-Skia render test confirms Avalonia stretches non-last lines to the margin.
 
 ### Changed
 - **Image context menu**: the size presets (Original / 1/2 / 1/3 / 1/4) now live in a single **Size**
