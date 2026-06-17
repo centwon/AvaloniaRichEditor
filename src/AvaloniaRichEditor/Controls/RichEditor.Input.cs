@@ -139,13 +139,13 @@ public partial class RichEditor
         // Images: single click selects. Tables: single click selects, double-click (or a click
         // while already editing that table) enters cell editing.
         var clickedBlock = GetBlockAtPoint(point);
-        if (clickedBlock is ImageBlock)
+        if (clickedBlock is ImageBlock clickedImage)
         {
-            // Place a block caret in front of the image (Space indents it; Del/Backspace deletes).
-            _caretBlock = clickedBlock; _caretBlockAfter = false;
-            _selectedBlock = null;
-            _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-            _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
+            // Select the image (blue border), mirroring right-click and inline-image selection, so it
+            // can be deleted with Del/Backspace. Keyboard arrows still place a block caret around it.
+            _selectedBlock = clickedImage;
+            _caretBlock = null;
+            CollapseSelectionToCaret();
             ResetCaretBlink();
             InvalidateVisual();
             return;

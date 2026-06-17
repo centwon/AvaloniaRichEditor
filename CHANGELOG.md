@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Export/Import buttons now offer `.rtf` alongside JSON/`.flow`/HTML (import sniffs the `{\rtf` header).
   Round-trip (write → parse) preserves text, character formatting, colour, tables, images, and Unicode.
 
+### Changed
+- **Image context menu**: the size presets (Original / 1/2 / 1/3 / 1/4) now live in a single **Size**
+  submenu instead of cluttering the top level, and the fractions now scale the **current displayed
+  size** (so they compound) rather than always restarting from the natural size. "Original" still
+  resets to the natural size. Applies to both block and inline images.
+- **Left-clicking a block image now selects it** (blue border), matching right-click and inline-image
+  behaviour, so it can be deleted with Delete/Backspace without first opening the context menu.
+
 ## [0.6.0-beta] - 2026-06-16
 
 First **beta**. The public API is stabilizing (the whole surface is tracked by the PublicAPI analyzer;

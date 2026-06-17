@@ -28,13 +28,16 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // Sets the display size to a fraction of the natural size (context-menu presets).
+    // Scales the display size by a factor relative to the CURRENT size (so presets compound),
+    // falling back to natural size when no explicit size is set. Display size only — bytes untouched.
     private void ScaleImageSize(ImageBlock img, double factor)
     {
         if (Document == null || img.Image == null) return;
         PushUndo();
-        img.Width = Math.Max(1, img.Image.Size.Width * factor);
-        img.Height = Math.Max(1, img.Image.Size.Height * factor);
+        double baseW = img.Width > 0 ? img.Width : img.Image.Size.Width;
+        double baseH = img.Height > 0 ? img.Height : img.Image.Size.Height;
+        img.Width = Math.Max(1, baseW * factor);
+        img.Height = Math.Max(1, baseH * factor);
         InvalidateVisual();
     }
 
@@ -166,14 +169,16 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // Sets the display size to a fraction of the natural size (context-menu presets), mirroring
-    // the block-image presets. Display size only — the encoded bytes are untouched.
+    // Scales the display size by a factor relative to the CURRENT size (so presets compound),
+    // mirroring the block-image presets. Display size only — the encoded bytes are untouched.
     private void ScaleInlineImageSize(InlineImage img, double factor)
     {
         if (Document == null || img.Image == null) return;
         PushUndo();
-        img.Width = Math.Max(1, img.Image.Size.Width * factor);
-        img.Height = Math.Max(1, img.Image.Size.Height * factor);
+        double baseW = img.Width > 0 ? img.Width : img.Image.Size.Width;
+        double baseH = img.Height > 0 ? img.Height : img.Image.Size.Height;
+        img.Width = Math.Max(1, baseW * factor);
+        img.Height = Math.Max(1, baseH * factor);
         InvalidateVisual();
     }
 

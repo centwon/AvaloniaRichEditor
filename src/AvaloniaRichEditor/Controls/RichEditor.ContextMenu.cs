@@ -349,12 +349,13 @@ public partial class RichEditor
         items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: false, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy));
         items.Add(Mi(Loc("Delete"), () => DeleteBlock(img), icon: RichEditorIcon.Delete));
         items.Add(new Separator());
-        items.Add(Mi(Loc("OriginalSize"), () => ResetImageSize(img), img.Image != null));
-        // Scale presets relative to the natural size. Width/Height only — the encoded bytes are
-        // untouched (no generation loss), matching the drag-handle behavior.
-        items.Add(Mi(Loc("HalfSize"), () => ScaleImageSize(img, 1.0 / 2), img.Image != null));
-        items.Add(Mi(Loc("ThirdSize"), () => ScaleImageSize(img, 1.0 / 3), img.Image != null));
-        items.Add(Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), img.Image != null));
+        // Size presets in a submenu. "Original" resets to natural size; the fractions scale the
+        // current display size (so they compound). Width/Height only — encoded bytes untouched.
+        items.Add(Sub(Loc("ImageSize"),
+            Mi(Loc("OriginalSize"), () => ResetImageSize(img), img.Image != null),
+            Mi(Loc("HalfSize"), () => ScaleImageSize(img, 1.0 / 2), img.Image != null),
+            Mi(Loc("ThirdSize"), () => ScaleImageSize(img, 1.0 / 3), img.Image != null),
+            Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), img.Image != null)));
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
         items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveImageAsync(img); }, img.Image != null, RichEditorIcon.SaveImageAs));
         items.Add(MarginMenu(img));
@@ -386,10 +387,11 @@ public partial class RichEditor
         items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: true, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy));
         items.Add(Mi(Loc("Delete"), () => DeleteInlineImage(p, img), icon: RichEditorIcon.Delete));
         items.Add(new Separator());
-        items.Add(Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), img.Image != null));
-        items.Add(Mi(Loc("HalfSize"), () => ScaleInlineImageSize(img, 1.0 / 2), img.Image != null));
-        items.Add(Mi(Loc("ThirdSize"), () => ScaleInlineImageSize(img, 1.0 / 3), img.Image != null));
-        items.Add(Mi(Loc("QuarterSize"), () => ScaleInlineImageSize(img, 1.0 / 4), img.Image != null));
+        items.Add(Sub(Loc("ImageSize"),
+            Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), img.Image != null),
+            Mi(Loc("HalfSize"), () => ScaleInlineImageSize(img, 1.0 / 2), img.Image != null),
+            Mi(Loc("ThirdSize"), () => ScaleInlineImageSize(img, 1.0 / 3), img.Image != null),
+            Mi(Loc("QuarterSize"), () => ScaleInlineImageSize(img, 1.0 / 4), img.Image != null)));
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceInlineImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
         items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveBitmapAsync(img.Image); }, img.Image != null, RichEditorIcon.SaveImageAs));
         items.Add(new Separator());

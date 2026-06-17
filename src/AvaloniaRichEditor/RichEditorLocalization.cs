@@ -92,6 +92,7 @@ public static class RichEditorLocalization
             ["InsertDivider"] = "Insert Divider",
             ["DragToSelectSize"] = "Drag to choose size",
             // Images
+            ["ImageSize"] = "Size",
             ["OriginalSize"] = "Original Size",
             ["HalfSize"] = "1/2 Size",
             ["ThirdSize"] = "1/3 Size",
@@ -213,6 +214,7 @@ public static class RichEditorLocalization
             ["InsertDivider"] = "구분선 삽입",
             ["DragToSelectSize"] = "끌어서 크기 선택",
             // Images
+            ["ImageSize"] = "크기",
             ["OriginalSize"] = "원본 크기로",
             ["HalfSize"] = "1/2 크기",
             ["ThirdSize"] = "1/3 크기",
