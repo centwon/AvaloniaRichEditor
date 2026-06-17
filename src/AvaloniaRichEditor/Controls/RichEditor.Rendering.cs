@@ -361,7 +361,7 @@ public partial class RichEditor
                         cr = FixCaretAfterTrailingImage(layout, cell, _caretPosition.Offset, caretDisp, cr);
                         double th = CaretTextHeight(cell, _caretPosition.Offset);
                         if (cr.Height > 0 && th > cr.Height) th = cr.Height;
-                        caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y + Math.Max(0, cr.Height - th));
+                        caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y + CaretYInLine(cell, cr.Height, th));
                         caretHeight = th;
                         _lastCaretPoint = caretPoint.Value;
                     }
@@ -480,7 +480,7 @@ public partial class RichEditor
                     cr = FixCaretAfterTrailingImage(layout, paragraph, _caretPosition.Offset, caretDisp, cr);
                     double th = CaretTextHeight(paragraph, _caretPosition.Offset);
                     if (cr.Height > 0 && th > cr.Height) th = cr.Height;
-                    caretPoint = new Point(px + cr.X, yOffset + cr.Y + Math.Max(0, cr.Height - th));
+                    caretPoint = new Point(px + cr.X, yOffset + cr.Y + CaretYInLine(paragraph, cr.Height, th));
                     caretHeight = th;
                     _lastCaretPoint = caretPoint.Value;
                 }

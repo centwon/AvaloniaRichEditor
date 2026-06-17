@@ -1024,6 +1024,17 @@ public partial class RichEditor
         return Math.Ceiling(PtToPx(fs) * 1.4);
     }
 
+    // Vertical offset of the glyph-sized caret within its (possibly taller) line box. Inline images make
+    // the line tall with the smaller text run sitting on the baseline near the bottom, so the caret
+    // bottom-aligns there. Otherwise Avalonia centers the text in a line box expanded by a line-spacing/
+    // height override (extra leading split half above / half below), so the caret centers too.
+    private static double CaretYInLine(Paragraph p, double lineHeight, double caretHeight)
+    {
+        double extra = Math.Max(0, lineHeight - caretHeight);
+        foreach (var inl in p.Inlines) if (inl is InlineImage) return extra;
+        return extra / 2;
+    }
+
     private void SetPreedit(string? text)
     {
         _preeditText = text;

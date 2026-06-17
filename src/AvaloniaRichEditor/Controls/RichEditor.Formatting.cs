@@ -305,6 +305,10 @@ public partial class RichEditor
                 (_pendingCaretStyles ??= new List<Action<Run>>()).Add(styleAction);
             }
         }
+        // Font size / family change a run's line height, so the measure (block heights + ScrollViewer
+        // extent + the viewport used by Draw-culling) must be re-run, not just the paint — otherwise the
+        // selection highlight is drawn against the previous size's layout for one frame.
+        InvalidateMeasure();
         InvalidateVisual();
     }
 
