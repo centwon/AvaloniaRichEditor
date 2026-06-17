@@ -46,7 +46,7 @@ public class RichEditorToolbar : UserControl
     private static readonly IBrush ActiveBrush = new SolidColorBrush(Color.Parse("#90CAF9"));
 
     // Controls that reflect caret state (assigned in Build).
-    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _quoteBtn, _undoBtn, _redoBtn;
+    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _undoBtn, _redoBtn;
     private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo;
     private TextBlock? _spacingLabel; // current line-spacing % shown next to the icon
     private static readonly int[] SpacingPercents = { 100, 110, 120, 130, 150, 160, 180, 200, 250, 300 };
@@ -288,7 +288,6 @@ public class RichEditorToolbar : UserControl
         // specific bullet glyph (•/◦/▪/–) or number format (1./1)/a)/A)/i)).
         _bulletBtn = Btn("•", Loc("BulletList"), () => Target?.ToggleBullet(), RichEditorIcon.BulletList);
         _numberBtn = Btn("1.", Loc("NumberedList"), () => Target?.ToggleNumbering(), RichEditorIcon.NumberedList);
-        _quoteBtn = Btn("❝", Loc("Quote"), () => Target?.ToggleQuote());
         Add(_bulletBtn);
         Add(BuildListStyleDropdown(Loc("BulletList"),
             (ListMarkerStyle.Disc, "•"), (ListMarkerStyle.Circle, "◦"),
@@ -298,7 +297,7 @@ public class RichEditorToolbar : UserControl
             (ListMarkerStyle.Decimal, "1."), (ListMarkerStyle.DecimalParen, "1)"),
             (ListMarkerStyle.LowerAlpha, "a)"), (ListMarkerStyle.UpperAlpha, "A)"),
             (ListMarkerStyle.LowerRoman, "i)")));
-        Add(_quoteBtn);
+        // Quote (blockquote) is available via the right-click List menu and ToggleQuote(); no toolbar button.
         Add(Btn("→|", Loc("IndentIncrease"), () => Target?.Indent(20), RichEditorIcon.IndentIncrease));
         Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20), RichEditorIcon.IndentDecrease));
         Add(Div());
@@ -630,7 +629,6 @@ public class RichEditorToolbar : UserControl
         SetActive(_strikeBtn, f.Strike);
         SetActive(_bulletBtn, f.List == ListKind.Bullet);
         SetActive(_numberBtn, f.List == ListKind.Ordered);
-        SetActive(_quoteBtn, f.Quote);
         SetActive(_painterBtn, rt.IsFormatPainterActive);
         if (_undoBtn != null) _undoBtn.IsEnabled = rt.CanUndo;
         if (_redoBtn != null) _redoBtn.IsEnabled = rt.CanRedo;
