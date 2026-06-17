@@ -71,4 +71,32 @@ public class RichEditorHeadingTests
         Assert.True(headingHeight > bodyHeight,
             $"H1 should render taller than body ({headingHeight} vs {bodyHeight})");
     }
+
+    [AvaloniaFact]
+    public void SetHeading_Level6_ReflectsInCaretFormat()
+    {
+        var p = TestHelpers.Para(new Run { Text = "x", FontSize = 14 });
+        var ed = EditorWithCaretIn(p);
+
+        ed.SetHeading(6);
+
+        Assert.Equal(6, p.HeadingLevel);
+        Assert.Equal(6, ed.GetCaretFormat().Heading);
+    }
+
+    [AvaloniaFact]
+    public void ToggleQuote_FlipsIsQuote_AndReflectsInCaretFormat()
+    {
+        var p = TestHelpers.Para(new Run { Text = "quote me", FontSize = 14 });
+        var ed = EditorWithCaretIn(p);
+        Assert.False(ed.GetCaretFormat().Quote);
+
+        ed.ToggleQuote();
+        Assert.True(p.IsQuote);
+        Assert.True(ed.GetCaretFormat().Quote);
+
+        ed.ToggleQuote();
+        Assert.False(p.IsQuote);
+        Assert.False(ed.GetCaretFormat().Quote);
+    }
 }

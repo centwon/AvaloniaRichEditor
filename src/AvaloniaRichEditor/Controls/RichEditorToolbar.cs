@@ -46,7 +46,7 @@ public class RichEditorToolbar : UserControl
     private static readonly IBrush ActiveBrush = new SolidColorBrush(Color.Parse("#90CAF9"));
 
     // Controls that reflect caret state (assigned in Build).
-    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _undoBtn, _redoBtn;
+    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _quoteBtn, _undoBtn, _redoBtn;
     private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo, _spacingCombo;
     private Control? _tableBtn, _imageBtn, _dividerBtn;
     // Color-picker faces, synced to the caret's run: either a swatch bar under the built-in glyph,
@@ -255,7 +255,7 @@ public class RichEditorToolbar : UserControl
 
         // Paragraph style / alignment
         _headingCombo = Combo(Loc("ParagraphStyle"));
-        foreach (var key in new[] { "BodyText", "Heading1", "Heading2", "Heading3" })
+        foreach (var key in new[] { "BodyText", "Heading1", "Heading2", "Heading3", "Heading4", "Heading5", "Heading6" })
             _headingCombo.Items.Add(new ComboBoxItem { Content = Loc(key) });
         _headingCombo.SelectionChanged += (_, _) =>
         {
@@ -283,7 +283,8 @@ public class RichEditorToolbar : UserControl
         // Lists / indent
         _bulletBtn = Btn("•", Loc("BulletList"), () => Target?.ToggleBullet(), RichEditorIcon.BulletList);
         _numberBtn = Btn("1.", Loc("NumberedList"), () => Target?.ToggleNumbering(), RichEditorIcon.NumberedList);
-        Add(_bulletBtn); Add(_numberBtn);
+        _quoteBtn = Btn("❝", Loc("Quote"), () => Target?.ToggleQuote());
+        Add(_bulletBtn); Add(_numberBtn); Add(_quoteBtn);
         Add(Btn("→|", Loc("IndentIncrease"), () => Target?.Indent(20), RichEditorIcon.IndentIncrease));
         Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20), RichEditorIcon.IndentDecrease));
         Add(Div());
@@ -537,6 +538,7 @@ public class RichEditorToolbar : UserControl
         SetActive(_strikeBtn, f.Strike);
         SetActive(_bulletBtn, f.List == ListKind.Bullet);
         SetActive(_numberBtn, f.List == ListKind.Ordered);
+        SetActive(_quoteBtn, f.Quote);
         SetActive(_painterBtn, rt.IsFormatPainterActive);
         if (_undoBtn != null) _undoBtn.IsEnabled = rt.CanUndo;
         if (_redoBtn != null) _redoBtn.IsEnabled = rt.CanRedo;
@@ -572,7 +574,7 @@ public class RichEditorToolbar : UserControl
                 _fontCombo.FontFamily = string.IsNullOrEmpty(eff) ? FontFamily.Default : new FontFamily(eff);
             }
         }
-        if (_headingCombo != null) _headingCombo.SelectedIndex = Math.Min(f.Heading, 3);
+        if (_headingCombo != null) _headingCombo.SelectedIndex = Math.Min(f.Heading, 6);
         if (_alignCombo != null) _alignCombo.SelectedIndex = f.Align switch
         {
             TextAlignment.Center => 1,

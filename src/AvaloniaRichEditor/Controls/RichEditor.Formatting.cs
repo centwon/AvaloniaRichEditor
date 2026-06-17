@@ -225,6 +225,16 @@ public partial class RichEditor
         NotifyStatus(); // the heading size changes the paragraph's height -> re-measure the scroll extent
     }
 
+    /// <summary>Toggles blockquote styling (indented, with a quote bar) on the caret paragraph.</summary>
+    public void ToggleQuote()
+    {
+        if (_caretPosition.Paragraph == null || IsReadOnly) return;
+        if (Document != null) PushUndo();
+        _caretPosition.Paragraph.IsQuote = !_caretPosition.Paragraph.IsQuote;
+        InvalidateVisual();
+        NotifyStatus();
+    }
+
     /// <summary>Toggles strikethrough on the current selection (or the caret run).</summary>
     public void ToggleStrikethrough() { ApplyStyleToSelection(r => r.TextDecorations = ToggleDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)); }
     /// <summary>Toggles underline on the current selection (or the caret run).</summary>

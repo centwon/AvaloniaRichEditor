@@ -25,7 +25,7 @@ dotnet add package AvaloniaRichEditor --prerelease
 - Find / replace, undo / redo, per-object right-click context menus
 - Clipboard: internal rich copy/paste, rich **HTML copy-out** (`CF_HTML`) and external HTML/**RTF** paste
   (Word/HWP), image paste, Excel/TSV → table
-- HTML and JSON import/export (round-trippable) — see the
+- HTML, JSON, and **RTF** import/export (round-trippable) — see the
   [document format specification](docs/DOCUMENT_FORMAT.md) (JSON schema v2 and the `.flow` package)
 - Korean/CJK **IME** composition (inline preedit)
 - Word-style **page view** with selectable paper size (`PageSize`: A4/A3/A5/B4/B5/Letter/Legal/Tabloid),

@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`RichEditor.LoadRtf(string)`** loads a document from RTF, and the bundled `RichEditorView`'s
   Export/Import buttons now offer `.rtf` alongside JSON/`.flow`/HTML (import sniffs the `{\rtf` header).
   Round-trip (write → parse) preserves text, character formatting, colour, tables, images, and Unicode.
+- **More paragraph styles**: the paragraph-style dropdown now offers **Heading 1–6** (was 1–3), and a
+  new **Quote** toggle (`RichEditor.ToggleQuote()`) applies blockquote styling — available on the
+  toolbar (next to the list buttons) and in the right-click List submenu. `CaretFormat` gains a `Quote`
+  flag so the toolbar reflects the current paragraph's quote state.
 
 ### Changed
 - **Image context menu**: the size presets (Original / 1/2 / 1/3 / 1/4) now live in a single **Size**

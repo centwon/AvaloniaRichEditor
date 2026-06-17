@@ -1,4 +1,9 @@
 #nullable enable
+*REMOVED*AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null) -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null, bool Quote = false) -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Quote.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Quote.init -> void
 AvaloniaRichEditor.Controls.RichEditor.LoadRtf(string? rtf) -> void
 AvaloniaRichEditor.Controls.RichEditor.ToRtf() -> string!
+AvaloniaRichEditor.Controls.RichEditor.ToggleQuote() -> void
 static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.Write(AvaloniaRichEditor.Documents.FlowDocument! document) -> string!
