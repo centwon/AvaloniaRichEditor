@@ -14,7 +14,7 @@
   <!-- NuGet package metadata (roadmap N1, target 0.1.0-alpha) -->
   <PropertyGroup>
     <PackageId>AvaloniaRichEditor</PackageId>
-    <Version>0.6.0-beta</Version>
+    <Version>0.7.0</Version>
     <Authors>centwon</Authors>
     <Description>A from-scratch rich text editor control for Avalonia, built purely on the TextLayout engine. Supports inline formatting, paragraphs, lists, tables (with cell merge), images, hyperlinks, HTML/JSON round-trip, find/replace, undo/redo, CJK IME, a Word-style A4 page view, and print/PDF page rendering.</Description>
     <PackageTags>avalonia;richtextbox;editor;wysiwyg;rich-text;flowdocument;text</PackageTags>

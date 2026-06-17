@@ -28,7 +28,6 @@ AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Background.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Bold.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Bold.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat() -> void
-AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null) -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.FontFamily.get -> string?
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.FontFamily.init -> void
 AvaloniaRichEditor.Controls.RichEditor.CaretFormat.FontSize.get -> double
@@ -413,3 +412,33 @@ static readonly AvaloniaRichEditor.Controls.RichEditor.ShowPageBoundariesPropert
 static readonly AvaloniaRichEditor.Controls.RichEditorView.FitToWidthProperty -> Avalonia.StyledProperty<bool>!
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowFileActionsProperty -> Avalonia.StyledProperty<bool>!
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowStatusBarProperty -> Avalonia.StyledProperty<bool>!
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.CaretFormat(bool Bold, bool Italic, bool Underline, bool Strike, double FontSize, string? FontFamily, Avalonia.Media.TextAlignment Align, AvaloniaRichEditor.Documents.ListKind List, int Heading, Avalonia.Media.IBrush? Foreground = null, Avalonia.Media.IBrush? Background = null, bool Quote = false, double LineSpacing = 0, AvaloniaRichEditor.Documents.ListMarkerStyle ListMarker = AvaloniaRichEditor.Documents.ListMarkerStyle.Default) -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Quote.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.Quote.init -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.LineSpacing.get -> double
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.LineSpacing.init -> void
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.ListMarker.get -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Controls.RichEditor.CaretFormat.ListMarker.init -> void
+const AvaloniaRichEditor.Formatters.DocumentSerializer.CurrentSchemaVersion = "1.0" -> string!
+AvaloniaRichEditor.Controls.RichEditor.LoadRtf(string? rtf) -> void
+AvaloniaRichEditor.Controls.RichEditor.SetListStyle(AvaloniaRichEditor.Documents.ListMarkerStyle style) -> void
+AvaloniaRichEditor.Controls.RichEditorIcon.LineSpacing = 44 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.Circle = 2 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.Dash = 4 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.Decimal = 5 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.DecimalParen = 6 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.Default = 0 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.Disc = 1 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.LowerAlpha = 7 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.LowerRoman = 9 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.Square = 3 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.ListMarkerStyle.UpperAlpha = 8 -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.Paragraph.ListMarker.get -> AvaloniaRichEditor.Documents.ListMarkerStyle
+AvaloniaRichEditor.Documents.Paragraph.ListMarker.set -> void
+AvaloniaRichEditor.Controls.RichEditor.SetLineSpacing(double multiplier) -> void
+AvaloniaRichEditor.Documents.Paragraph.LineSpacing.get -> double
+AvaloniaRichEditor.Documents.Paragraph.LineSpacing.set -> void
+AvaloniaRichEditor.Controls.RichEditor.ToRtf() -> string!
+AvaloniaRichEditor.Controls.RichEditor.ToggleQuote() -> void
+static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.Write(AvaloniaRichEditor.Documents.FlowDocument! document) -> string!

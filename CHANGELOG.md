@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-18
+
+The first release to **drop the pre-release suffix** (alpha/beta) — on the 0.x line the API may still
+evolve before 1.0, but the editor is feature-complete and usable for general work. Headlines: a
+**breaking** switch to point-based font sizes, proportional line spacing, bullet/number marker styles,
+RTF export, a SemVer document-format version (`"1.0"`), and a reworked, combo-consistent toolbar.
+
 ### Added
 - **Bullet and number list styles** (`Paragraph.ListMarker` / `RichEditor.SetListStyle(ListMarkerStyle)`):
   bullets can be a disc (•), circle (◦), square (▪) or dash (–), and numbered lists can use `1.`, `1)`,
@@ -13,9 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   right-click List menu adds Bullet Style / Number Style submenus. Round-trips through JSON; HTML maps to
   the closest `list-style-type` and RTF emits the literal marker (the `)` suffix and dash bullet have no
   equivalent there — lossy by design). The bullet/numbered-list toolbar buttons also get vector icons.
-- **Line-spacing toolbar control is now an icon dropdown** (was a labelled combo): a line-spacing glyph
-  shows the caret paragraph's current percentage (e.g. `100%`) and opens a list of HWP-style percentages
-  (100–300%). `CaretFormat` gains a `LineSpacing` field so the toolbar reflects the caret.
 - **Proportional line spacing** (`Paragraph.LineSpacing` / `RichEditor.SetLineSpacing(double)`): line
   spacing as a multiple of the natural single-line height (1.0 = single, 1.5 = 1.5 lines, 2.0 = double —
   i.e. HWP's % ÷ 100 or Word's "Multiple"), which **scales with font size**. The toolbar's line-spacing
@@ -48,15 +52,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CaretFormat.FontSize`, and the JSON/`.flow`/HTML/RTF serializers all carry **pt**; the value is
   converted to device-independent pixels (×4/3 at 96 DPI) only at the render boundary. The body default
   is now **10pt** (was 14px) and the toolbar size list is in pt (8–72). Headings render at a pt ladder
-  (h1–h6 = 20/16/14/12/11/10). The JSON schema version stays **2** with no runtime migration — beta has
-  no external stored documents, so old px-valued files are simply reinterpreted as pt and appear ~33%
-  larger. See `docs/DOCUMENT_FORMAT.md` (`FontSize` field + schema notes).
+  (h1–h6 = 20/16/14/12/11/10). No runtime migration — old px-valued files are simply reinterpreted as pt
+  (and appear ~33% larger); the document-format version (see above) marks the pt baseline. See
+  `docs/DOCUMENT_FORMAT.md` (`FontSize` field + schema notes).
 - **Image context menu**: the size presets (Original / 1/2 / 1/3 / 1/4) now live in a single **Size**
   submenu instead of cluttering the top level, and the fractions now scale the **current displayed
   size** (so they compound) rather than always restarting from the natural size. "Original" still
   resets to the natural size. Applies to both block and inline images.
 - **Left-clicking a block image now selects it** (blue border), matching right-click and inline-image
   behaviour, so it can be deleted with Delete/Backspace without first opening the context menu.
+- **Toolbar UI refresh**: the line-spacing control and the bullet/numbered-list controls are now
+  combo-style bordered boxes — `[icon | current value/marker | ▾ menu]` — matching the other combos in
+  border, height (28px) and dropdown placement (menus open below the box like a ComboBox). The line-spacing
+  box adds an editable `%` field (type a value, or step ±10% with ▲▼); the list boxes show the caret
+  paragraph's current marker live and dim it when the list is inactive. Built-in vector icons are larger
+  (16→20px) with lighter strokes, and the rarely-used Format Painter toolbar button was removed (the
+  `RichEditor.StartFormatPainter()` API is unchanged). `CaretFormat` gains `LineSpacing` and `ListMarker`
+  fields so the toolbar can reflect the caret paragraph's spacing and list marker.
+
+### Fixed
+- **Caret and selection geometry at large font sizes / line spacing.** The caret no longer drops below
+  (or rises above) the glyph on lines expanded by line spacing — it now centres within the line box, the
+  way Avalonia positions the text (inline-image lines still baseline-align). And changing the font size of
+  a selection now updates the highlight in the same frame instead of a frame late (`ApplyStyleToSelection`
+  was invalidating only the visual, not the measure, leaving the layout stale until the next interaction).
 
 ## [0.6.0-beta] - 2026-06-16
 
