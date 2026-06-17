@@ -157,9 +157,9 @@ public partial class RichEditor : Control
 
     /// <inheritdoc cref="DefaultFontSize"/>
     public static readonly StyledProperty<double> DefaultFontSizeProperty =
-        AvaloniaProperty.Register<RichEditor, double>(nameof(DefaultFontSize), 14.0);
+        AvaloniaProperty.Register<RichEditor, double>(nameof(DefaultFontSize), BodyFontSizePt);
 
-    /// <summary>Font size used for runs that don't specify one.</summary>
+    /// <summary>Font size in points (pt) used for runs that don't specify one. Default: 10.</summary>
     public double DefaultFontSize
     {
         get => GetValue(DefaultFontSizeProperty);
@@ -504,7 +504,7 @@ public partial class RichEditor : Control
             run?.FontStyle == FontStyle.Italic,
             HasDeco(run, TextDecorationLocation.Underline),
             HasDeco(run, TextDecorationLocation.Strikethrough),
-            run != null && run.FontSize > 0 ? run.FontSize : 14,
+            run != null && run.FontSize > 0 ? run.FontSize : BodyFontSizePt,
             run?.FontFamily,
             p?.TextAlignment ?? TextAlignment.Left,
             p?.ListType ?? ListKind.None,
@@ -849,14 +849,27 @@ public partial class RichEditor : Control
         }
     }
 
-    // The layout font size for a heading paragraph (1–6 = h1–h6); 0/other = body. Applied at layout
+    // The body (non-heading) default font size, in points. Single source for the magic value that
+    // marks a run as "unstyled" so it inherits a heading paragraph's size (see RunSizeIsBodyDefault).
+    internal const double BodyFontSizePt = 10;
+
+    // Font sizes in the model / public API / serialization are points (pt). Avalonia's TextLayout and
+    // FormattedText take device-independent pixels (px) at a 96-DPI baseline, where 1pt = 4/3 px.
+    // Convert only here, at the render boundary, so the rest of the engine speaks pt.
+    internal static double PtToPx(double pt) => pt * (4.0 / 3.0);
+
+    // Natural single-line height as a multiple of font size (typical ≈1.2 incl. leading). Used to turn
+    // a proportional Paragraph.LineSpacing (1.0 = single, 1.5 = 1.5 lines) into an absolute px line box.
+    internal const double NaturalLineFactor = 1.2;
+
+    // The layout font size (pt) for a heading paragraph (1–6 = h1–h6); 0/other = body. Applied at layout
     // time to runs left at the body default, so the heading look never has to be baked into the model.
     internal static double HeadingFontSize(int level)
-        => level switch { 1 => 24, 2 => 20, 3 => 16, 4 => 14, 5 => 13, 6 => 12, _ => 14 };
+        => level switch { 1 => 20, 2 => 16, 3 => 14, 4 => 12, 5 => 11, 6 => 10, _ => BodyFontSizePt };
 
     // A run is at the "body default" size (and so inherits a heading paragraph's size) when its size
-    // is unset (<=0) or the 14 px model default. An explicitly-sized run keeps its own size.
-    private static bool RunSizeIsBodyDefault(Run r) => r.FontSize <= 0 || Math.Abs(r.FontSize - 14) < 0.01;
+    // is unset (<=0) or the 10 pt model default. An explicitly-sized run keeps its own size.
+    private static bool RunSizeIsBodyDefault(Run r) => r.FontSize <= 0 || Math.Abs(r.FontSize - BodyFontSizePt) < 0.01;
 
     // Width reserved to the left of list-item text for its bullet/number marker.
     private const double ListMarkerWidth = 22;
@@ -866,15 +879,58 @@ public partial class RichEditor : Control
     private static double ParaLeft(Paragraph p)
         => 10 + p.Indent + p.ListLevel * 20 + (p.ListType != ListKind.None ? ListMarkerWidth : 0);
 
-    // Draws a list item's marker (• or "N.") right-aligned just left of the text (small fixed gap),
-    // so the marker hugs the content regardless of its width. No-op for non-list paragraphs.
+    // The marker text for a list item: a bullet glyph or a formatted number, per the paragraph's
+    // ListMarker style (Default = • for bullets, "N." for numbers).
+    internal static string ListMarkerText(ListKind kind, ListMarkerStyle style, int num)
+    {
+        if (kind == ListKind.Bullet)
+            return style switch
+            {
+                ListMarkerStyle.Circle => "◦",
+                ListMarkerStyle.Square => "▪",
+                ListMarkerStyle.Dash => "–",
+                _ => "•",
+            };
+        return style switch
+        {
+            ListMarkerStyle.DecimalParen => $"{num})",
+            ListMarkerStyle.LowerAlpha => $"{ToAlpha(num, false)})",
+            ListMarkerStyle.UpperAlpha => $"{ToAlpha(num, true)})",
+            ListMarkerStyle.LowerRoman => $"{ToRoman(num)})",
+            _ => $"{num}.",
+        };
+    }
+
+    // 1->a, 26->z, 27->aa (bijective base-26), upper- or lower-case.
+    internal static string ToAlpha(int n, bool upper)
+    {
+        if (n < 1) n = 1;
+        var sb = new System.Text.StringBuilder();
+        while (n > 0) { n--; sb.Insert(0, (char)((upper ? 'A' : 'a') + n % 26)); n /= 26; }
+        return sb.ToString();
+    }
+
+    // 1->i, 4->iv, 9->ix (lowercase Roman numerals).
+    internal static string ToRoman(int n)
+    {
+        if (n < 1) return n.ToString();
+        int[] vals = { 1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1 };
+        string[] syms = { "m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i" };
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < vals.Length && n > 0; i++)
+            while (n >= vals[i]) { sb.Append(syms[i]); n -= vals[i]; }
+        return sb.ToString();
+    }
+
+    // Draws a list item's marker (bullet glyph or number) right-aligned just left of the text (small
+    // fixed gap), so the marker hugs the content regardless of its width. No-op for non-list paragraphs.
     // The marker takes the item's own text styling (its first run: size, family, weight, colour) so a
     // heading / coloured / enlarged list item gets a matching bullet or number instead of a fixed
     // small black default. Instance method so it can fall back to the editor's default font/size.
     private void DrawListMarker(DrawingContext context, Paragraph p, int num, double textLeft, double y)
     {
         if (p.ListType == ListKind.None) return;
-        string m = p.ListType == ListKind.Bullet ? "•" : $"{num}.";
+        string m = ListMarkerText(p.ListType, p.ListMarker, num);
         Run? first = null;
         foreach (var inl in p.Inlines) if (inl is Run r) { first = r; break; }
         double size = first is { FontSize: > 0 } ? first.FontSize : DefaultFontSize;
@@ -889,7 +945,7 @@ public partial class RichEditor : Control
         }
         var brush = first?.Foreground ?? Brushes.Black;
         var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
-            FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), size, brush);
+            FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), PtToPx(size), brush);
         const double gap = 6;
         context.DrawText(ft, new Point(textLeft - gap - ft.Width, y));
     }
@@ -911,8 +967,10 @@ public partial class RichEditor : Control
 
             Mix((long)p.TextAlignment);
             Mix(BitConverter.DoubleToInt64Bits(p.LineHeight));
+            Mix(BitConverter.DoubleToInt64Bits(p.LineSpacing));
             Mix(BitConverter.DoubleToInt64Bits(p.Indent));
             Mix((long)p.ListType);
+            Mix((long)p.ListMarker);
             Mix(p.ListLevel);
             Mix(p.HeadingLevel); // now drives the layout (heading size/weight applied in BuildTextLayout)
             foreach (var inl in p.Inlines)
@@ -962,15 +1020,16 @@ public partial class RichEditor : Control
         }
 
         var defaultFamily = DefaultFontFamily;
-        double defaultSize = DefaultFontSize;
+        double defaultSize = DefaultFontSize; // pt; kept in pt for the run-size fallback below
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-            new Typeface(defaultFamily), defaultSize, null, Brushes.Black);
+            new Typeface(defaultFamily), PtToPx(defaultSize), null, Brushes.Black);
 
         // Heading look (bigger + bold) is applied here, not baked into the runs (see SetHeading).
         bool heading = p.HeadingLevel is >= 1 and <= 6;
         double headingSize = heading ? HeadingFontSize(p.HeadingLevel) : 0;
 
         var segs = new List<LayoutSeg>();
+        double maxRunPt = 0; // largest run size (pt) in the paragraph; drives proportional line spacing
         foreach (var inline in p.Inlines)
         {
             if (inline is Run r && !string.IsNullOrEmpty(r.Text))
@@ -980,11 +1039,12 @@ public partial class RichEditor : Control
                 var typeface = new Typeface(family, r.FontStyle, weight);
                 TextDecorationCollection? decos = r.TextDecorations;
                 if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
-                double size = r.FontSize <= 0 ? defaultSize : r.FontSize;
+                double size = r.FontSize <= 0 ? defaultSize : r.FontSize; // pt
                 if (heading && RunSizeIsBodyDefault(r)) size = headingSize;
+                if (size > maxRunPt) maxRunPt = size;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,
-                    size,
+                    PtToPx(size),
                     decos,
                     r.Foreground ?? Brushes.Black,
                     r.Background);
@@ -1004,11 +1064,19 @@ public partial class RichEditor : Control
         if (!string.IsNullOrEmpty(preeditText) && preeditOffset >= 0)
         {
             var preeditProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-                Typeface.Default, 14, TextDecorations.Underline, Brushes.Black);
+                Typeface.Default, PtToPx(DefaultFontSize), TextDecorations.Underline, Brushes.Black);
             SplicePreedit(segs, preeditOffset, preeditText!, preeditProps);
         }
 
-        double lh = !double.IsNaN(p.LineHeight) ? p.LineHeight : double.NaN;
+        // Line spacing: proportional LineSpacing wins (scales with the paragraph's font); single/≤1.0
+        // stays NaN so the font's natural metrics apply (never clips). Else an absolute LineHeight, else auto.
+        double lh;
+        if (!double.IsNaN(p.LineSpacing))
+        {
+            double basePt = maxRunPt > 0 ? maxRunPt : (heading ? headingSize : defaultSize);
+            lh = p.LineSpacing <= 1.0 + 1e-6 ? double.NaN : p.LineSpacing * PtToPx(basePt) * NaturalLineFactor;
+        }
+        else lh = !double.IsNaN(p.LineHeight) ? p.LineHeight : double.NaN;
         var paraProps = new Avalonia.Media.TextFormatting.GenericTextParagraphProperties(
             FlowDirection.LeftToRight,
             p.TextAlignment,

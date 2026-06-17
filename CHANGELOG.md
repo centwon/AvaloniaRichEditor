@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Bullet and number list styles** (`Paragraph.ListMarker` / `RichEditor.SetListStyle(ListMarkerStyle)`):
+  bullets can be a disc (•), circle (◦), square (▪) or dash (–), and numbered lists can use `1.`, `1)`,
+  `a)`, `A)` or `i)`. Each list button on the toolbar gains a ▾ dropdown to pick the marker, and the
+  right-click List menu adds Bullet Style / Number Style submenus. Round-trips through JSON; HTML maps to
+  the closest `list-style-type` and RTF emits the literal marker (the `)` suffix and dash bullet have no
+  equivalent there — lossy by design). The bullet/numbered-list toolbar buttons also get vector icons.
+- **Line-spacing toolbar control is now an icon dropdown** (was a labelled combo): a line-spacing glyph
+  opens a list of HWP-style percentages (100–300%).
+- **Proportional line spacing** (`Paragraph.LineSpacing` / `RichEditor.SetLineSpacing(double)`): line
+  spacing as a multiple of the natural single-line height (1.0 = single, 1.5 = 1.5 lines, 2.0 = double —
+  i.e. HWP's % ÷ 100 or Word's "Multiple"), which **scales with font size**. The toolbar's line-spacing
+  dropdown now shows HWP-style percentages (100–300%). The existing `Paragraph.LineHeight` is retained as
+  an absolute-pixel ("exactly") value; `LineSpacing` takes priority when both are set. Round-trips through
+  JSON. (Also corrects `LineHeight`'s XML doc, which described a multiplier the field never implemented.)
 - **RTF export** (`RichEditor.ToRtf()` / `RtfDocumentFormatter.Write`), making RTF symmetric with the
   existing import: the document saves as Rich Text Format readable by Word, WordPad, LibreOffice, and
   HWP. Covers paragraphs, runs (bold/italic/underline/strike, size, colour, font family), alignment and
@@ -24,6 +38,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and RTF (`\qj`). A real-Skia render test confirms Avalonia stretches non-last lines to the margin.
 
 ### Changed
+- **Document format version is now a SemVer string, starting at `"1.0"`** (was an incrementing integer,
+  last `2`). It marks the stable baseline (image pool + pt font sizes + proportional line spacing) and is
+  tracked independently of the NuGet package version. The reader accepts both the new string and the
+  legacy integer forms, so older files still load. The `.flow` package now also carries a `meta.json`
+  container marker (`{"format":"flow","version":"1.0"}`) so the container layout can version separately;
+  readers tolerate its absence. `DocumentSerializer.CurrentSchemaVersion` changes type `int` → `string`.
+- **BREAKING — font sizes are now points (pt), not pixels.** `Run.FontSize`, `RichEditor.DefaultFontSize`,
+  `CaretFormat.FontSize`, and the JSON/`.flow`/HTML/RTF serializers all carry **pt**; the value is
+  converted to device-independent pixels (×4/3 at 96 DPI) only at the render boundary. The body default
+  is now **10pt** (was 14px) and the toolbar size list is in pt (8–72). Headings render at a pt ladder
+  (h1–h6 = 20/16/14/12/11/10). The JSON schema version stays **2** with no runtime migration — beta has
+  no external stored documents, so old px-valued files are simply reinterpreted as pt and appear ~33%
+  larger. See `docs/DOCUMENT_FORMAT.md` (`FontSize` field + schema notes).
 - **Image context menu**: the size presets (Original / 1/2 / 1/3 / 1/4) now live in a single **Size**
   submenu instead of cluttering the top level, and the fractions now scale the **current displayed
   size** (so they compound) rather than always restarting from the natural size. "Original" still

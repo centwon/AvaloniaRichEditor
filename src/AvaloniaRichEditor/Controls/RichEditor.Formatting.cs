@@ -82,18 +82,35 @@ public partial class RichEditor
     }
     /// <summary>Sets the text alignment of the caret paragraph.</summary>
     public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
-    /// <summary>Sets the line height multiplier of the caret paragraph.</summary>
+    /// <summary>Sets the absolute line-box height (px) of the caret paragraph ("exactly" spacing).
+    /// Prefer <see cref="SetLineSpacing"/> for proportional spacing that scales with font size.</summary>
     public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
+    /// <summary>Sets proportional line spacing on the caret paragraph as a multiple of the natural
+    /// single-line height (1.0 = single, 1.5 = 1.5 lines; HWP % ÷ 100). <see cref="double.NaN"/> clears it.</summary>
+    public void SetLineSpacing(double multiplier) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineSpacing = multiplier; InvalidateVisual(); } }
     /// <summary>Toggles a bullet list on the selected paragraphs.</summary>
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
     /// <summary>Toggles a numbered list on the selected paragraphs.</summary>
     public void ToggleNumbering() { SetListType(ListKind.Ordered); }
+    /// <summary>Applies a specific bullet/number marker style to the selected paragraphs, turning the
+    /// list on (never a toggle). The style implies the list kind (bullets vs numbers).</summary>
+    public void SetListStyle(ListMarkerStyle style) { SetListType(ListMarkerStyleKind(style), style); }
 
-    private void SetListType(ListKind kind)
+    // The list kind a marker style belongs to (number formats -> Ordered, everything else -> Bullet).
+    private static ListKind ListMarkerStyleKind(ListMarkerStyle s) => s switch
+    {
+        ListMarkerStyle.Decimal or ListMarkerStyle.DecimalParen or ListMarkerStyle.LowerAlpha
+            or ListMarkerStyle.UpperAlpha or ListMarkerStyle.LowerRoman => ListKind.Ordered,
+        _ => ListKind.Bullet,
+    };
+
+    private void SetListType(ListKind kind, ListMarkerStyle? marker = null)
     {
         if (_caretPosition.Paragraph == null || Document == null || IsReadOnly) return;
         PushUndo();
-        bool turningOff = _caretPosition.Paragraph.ListType == kind;
+        // A style pick always turns the list on (never toggles off); a plain bullet/number button toggles.
+        bool turningOff = marker == null && _caretPosition.Paragraph.ListType == kind;
+        void ApplyMarker(Paragraph par) { if (marker.HasValue) par.ListMarker = marker.Value; }
 
         // Apply to every selected top-level paragraph (just the caret's when there's no selection).
         var targets = SelectedTopLevelParagraphs();
@@ -101,6 +118,7 @@ public partial class RichEditor
         {
             // Caret in a table cell etc. -> just flag that paragraph.
             _caretPosition.Paragraph.ListType = turningOff ? ListKind.None : kind;
+            ApplyMarker(_caretPosition.Paragraph);
             InvalidateVisual();
             return;
         }
@@ -132,9 +150,9 @@ public partial class RichEditor
         foreach (var tp in targets.OrderByDescending(t => Document.Blocks.IndexOf(t)))
         {
             int idx = Document.Blocks.IndexOf(tp);
-            if (idx < 0) { tp.ListType = kind; continue; }
+            if (idx < 0) { tp.ListType = kind; ApplyMarker(tp); continue; }
             var items = SplitByNewlines(tp);
-            foreach (var it in items) { it.ListType = kind; it.Parent = Document; }
+            foreach (var it in items) { it.ListType = kind; ApplyMarker(it); it.Parent = Document; }
             Document.Blocks.RemoveAt(idx);
             for (int k = 0; k < items.Count; k++) Document.Blocks.Insert(idx + k, items[k]);
             if (tp == ssP) { var (p2, o2) = MapInto(items, tp, ssO); nSs = new TextPointer(p2, o2); }
@@ -296,7 +314,7 @@ public partial class RichEditor
         {
             r.FontWeight = FontWeight.Normal;
             r.FontStyle = FontStyle.Normal;
-            r.FontSize = 14;
+            r.FontSize = DefaultFontSize;
             r.Foreground = Brushes.Black;
             r.Background = null;
             r.FontFamily = null;

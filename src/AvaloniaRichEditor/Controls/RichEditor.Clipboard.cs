@@ -277,7 +277,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
 
     // Renders a trimmed selection sub-document (paragraph properties + inline images preserved — see
     // BuildSelectionDocument) to HTML, wrapped so the editor's base font/size is inherited: ToHtml omits
-    // the default 14 px and an empty font-family, which would otherwise fall back to the consumer's own
+    // the default 10pt and an empty font-family, which would otherwise fall back to the consumer's own
     // defaults (Word → Calibri 11 pt) and look like the font/size was lost. Runs with explicit
     // font/size still emit overriding spans. Null when there is nothing to emit.
     private string? BuildSelectionHtml(FlowDocument? doc)
@@ -289,9 +289,9 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         // matching ToHtml — a single-quoted style attribute or an unquoted family name is dropped by
         // Word/HWP on paste.
         string family = (DefaultFontFamily.Name ?? "").Replace("'", "").Replace("\"", "");
-        // pt, not px (Word/HWP ignore px font-size on paste); 14px = 10.5pt, matching ToHtml's skipped
-        // default so unstyled runs inherit the right base size.
-        return $"<div style=\"font-family:'{family}';font-size:10.5pt\">{inner}</div>";
+        // pt, not px (Word/HWP ignore px font-size on paste); the 10pt body default matches ToHtml's
+        // skipped default so unstyled runs inherit the right base size.
+        return $"<div style=\"font-family:'{family}';font-size:10pt\">{inner}</div>";
     }
 
     // A trimmed FlowDocument for the current selection that, unlike GetRichRuns (runs only), preserves
@@ -327,9 +327,9 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     {
         var np = new Paragraph
         {
-            ListType = p.ListType, ListLevel = p.ListLevel, HeadingLevel = p.HeadingLevel,
+            ListType = p.ListType, ListMarker = p.ListMarker, ListLevel = p.ListLevel, HeadingLevel = p.HeadingLevel,
             TextAlignment = p.TextAlignment, Indent = p.Indent, MarginRight = p.MarginRight,
-            IsQuote = p.IsQuote, Background = p.Background, LineHeight = p.LineHeight
+            IsQuote = p.IsQuote, Background = p.Background, LineHeight = p.LineHeight, LineSpacing = p.LineSpacing
         };
         int idx = 0;
         foreach (var inl in p.Inlines)

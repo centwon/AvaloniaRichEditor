@@ -310,7 +310,7 @@ internal sealed class RtfParser
             Text = text,
             FontWeight = _st.Bold ? FontWeight.Bold : FontWeight.Normal,
             FontStyle = _st.Italic ? FontStyle.Italic : FontStyle.Normal,
-            FontSize = _st.FontSize > 0 ? _st.FontSize : 14,
+            FontSize = _st.FontSize > 0 ? _st.FontSize : 10, // pt; body default
         };
         if (_st.Underline || _st.Strike)
         {
@@ -534,9 +534,14 @@ internal sealed class RtfWriter
         _body.Append(' ');
 
         // Lists have no portable round-trip in this subset, so emit a literal marker + tab (Word renders
-        // it; our parser treats it as text). Headings export as the larger/bold look the editor shows.
-        if (p.ListType == ListKind.Bullet) _body.Append(@"\bullet\tab ");
-        else if (p.ListType == ListKind.Ordered) _body.Append($@"{ordered}.\tab ");
+        // it; our parser treats it as text). The bullet glyph / number format follows ListMarker (the
+        // marker text is reused from the editor; non-ASCII bullets are \u-escaped). Headings export as
+        // the larger/bold look the editor shows.
+        if (p.ListType != ListKind.None)
+        {
+            WriteEscaped(Controls.RichEditor.ListMarkerText(p.ListType, p.ListMarker, ordered));
+            _body.Append(@"\tab ");
+        }
 
         bool heading = p.HeadingLevel is >= 1 and <= 6;
         double headingSize = heading ? HeadingSize(p.HeadingLevel) : 0;
@@ -557,9 +562,9 @@ internal sealed class RtfWriter
         if (HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)) _body.Append(@"\strike");
         int f = FontIndex(r.FontFamily);
         if (f > 0) _body.Append($@"\f{f}");
-        double size = r.FontSize <= 0 ? 14 : r.FontSize;
-        if (heading && (r.FontSize <= 0 || Math.Abs(r.FontSize - 14) < 0.01)) size = headingSize;
-        _body.Append($@"\fs{(int)Math.Round(size * 2)}");
+        double size = r.FontSize <= 0 ? 10 : r.FontSize; // pt; body default
+        if (heading && (r.FontSize <= 0 || Math.Abs(r.FontSize - 10) < 0.01)) size = headingSize;
+        _body.Append($@"\fs{(int)Math.Round(size * 2)}"); // \fs is half-points; model size is already pt
         int c = ColorIndex(r.Foreground);
         if (c > 0) _body.Append($@"\cf{c}");
         _body.Append(' ');
@@ -630,8 +635,9 @@ internal sealed class RtfWriter
         return i;
     }
 
+    // Heading sizes in points (pt), mirroring RichEditor.HeadingFontSize.
     private static double HeadingSize(int level)
-        => level switch { 1 => 24, 2 => 20, 3 => 16, 4 => 14, 5 => 13, 6 => 12, _ => 14 };
+        => level switch { 1 => 20, 2 => 16, 3 => 14, 4 => 12, 5 => 11, 6 => 10, _ => 10 };
 
     private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
     {

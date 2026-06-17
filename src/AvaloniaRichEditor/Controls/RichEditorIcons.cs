@@ -105,6 +105,10 @@ public enum RichEditorIcon
     Import,
     /// <summary>Print the document.</summary>
     Print,
+    // Appended (not grouped) to preserve the shipped ordinal values of the entries above — the
+    // PublicAPI analyzer tracks each enum member by value, so inserting mid-list renumbers them.
+    /// <summary>Line spacing.</summary>
+    LineSpacing,
 }
 
 /// <summary>

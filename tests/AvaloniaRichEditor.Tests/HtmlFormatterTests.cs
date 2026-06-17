@@ -133,11 +133,11 @@ public class HtmlFormatterTests
         var html = HtmlDocumentFormatter.ToHtml(doc);
         Assert.Contains("<s>", html);
         Assert.DoesNotContain("text-decoration", html);
-        Assert.Contains("15pt", html);                   // 20px -> 15pt
+        Assert.Contains("20pt", html);                   // model pt emitted directly
         Assert.DoesNotContain("font-size:20px", html);
         Assert.Contains("list-style-type:decimal", html);
 
-        // Round-trips back: <s> -> strikethrough, pt -> px, <ol> -> ordered list.
+        // Round-trips back: <s> -> strikethrough, pt -> pt, <ol> -> ordered list.
         var rt = HtmlDocumentFormatter.ParseHtml(html);
         Assert.Contains(rt.Blocks.OfType<Paragraph>(),
             q => q.Inlines.OfType<Run>().Any(run => run.TextDecorations != null

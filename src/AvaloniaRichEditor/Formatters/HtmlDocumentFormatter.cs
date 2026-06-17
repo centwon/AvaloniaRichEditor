@@ -252,15 +252,28 @@ namespace AvaloniaRichEditor.Formatters
         // Recursively flattens a <ul>/<ol> into list-item paragraphs tagged with their nesting level.
         private static void ParseList(HtmlNode listNode, FlowDocument flow, ListKind kind, int level, string? linkUri)
         {
+            // Bullet glyph / number format from the list's CSS list-style-type (Default when absent/unknown).
+            var marker = ListMarkerFromCss(ReadStyleValue(listNode, "list-style-type"));
             foreach (var li in listNode.ChildNodes.Where(n => n.Name.Equals("li", StringComparison.OrdinalIgnoreCase)))
             {
-                var p = new Paragraph { ListType = kind, ListLevel = level };
+                var p = new Paragraph { ListType = kind, ListLevel = level, ListMarker = marker };
                 ParseInlines(li, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
                 if (p.Inlines.Count > 0) flow.Blocks.Add(p);
 
                 foreach (var nested in li.ChildNodes.Where(n => n.Name.Equals("ul", StringComparison.OrdinalIgnoreCase) || n.Name.Equals("ol", StringComparison.OrdinalIgnoreCase)))
                     ParseList(nested, flow, nested.Name.Equals("ol", StringComparison.OrdinalIgnoreCase) ? ListKind.Ordered : ListKind.Bullet, level + 1, linkUri);
             }
+        }
+
+        // The raw value of a CSS property from a node's style attribute (e.g. "list-style-type" -> "circle"),
+        // or null if absent.
+        private static string? ReadStyleValue(HtmlNode node, string prop)
+        {
+            var style = node.GetAttributeValue("style", "");
+            if (string.IsNullOrEmpty(style)) return null;
+            var m = System.Text.RegularExpressions.Regex.Match(style, prop + @"\s*:\s*([^;]+)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return m.Success ? m.Groups[1].Value.Trim() : null;
         }
 
         // Paragraph text alignment from a node's align attr or style text-align.
@@ -273,15 +286,19 @@ namespace AvaloniaRichEditor.Formatters
             return a switch { "center" => TextAlignment.Center, "right" => TextAlignment.Right, "justify" => TextAlignment.Justify, _ => TextAlignment.Left };
         }
 
+        // Heading sizes in points (pt), mirroring RichEditor.HeadingFontSize so headings render and
+        // round-trip consistently.
         private static double HeadingSize(string name, out FontWeight weight)
         {
             switch (name)
             {
-                case "h1": weight = FontWeight.Bold; return 24;
-                case "h2": weight = FontWeight.Bold; return 20;
-                case "h3": weight = FontWeight.Bold; return 16;
-                case "h4": case "h5": case "h6": weight = FontWeight.Bold; return 14;
-                default: weight = FontWeight.Normal; return 14;
+                case "h1": weight = FontWeight.Bold; return 20;
+                case "h2": weight = FontWeight.Bold; return 16;
+                case "h3": weight = FontWeight.Bold; return 14;
+                case "h4": weight = FontWeight.Bold; return 12;
+                case "h5": weight = FontWeight.Bold; return 11;
+                case "h6": weight = FontWeight.Bold; return 10;
+                default: weight = FontWeight.Normal; return 10;
             }
         }
 
@@ -445,9 +462,9 @@ namespace AvaloniaRichEditor.Formatters
                 if (name == "i" || name == "em") cs = FontStyle.Italic;
                 if (name == "u") cunder = true;
                 if (name == "s" || name == "strike" || name == "del") cstrike = true;
-                if (name == "h1") { cw = FontWeight.Bold; sz = 24; }
-                if (name == "h2") { cw = FontWeight.Bold; sz = 20; }
-                if (name == "h3") { cw = FontWeight.Bold; sz = 16; }
+                if (name == "h1") { cw = FontWeight.Bold; sz = 20; } // pt, mirrors HeadingSize
+                if (name == "h2") { cw = FontWeight.Bold; sz = 16; }
+                if (name == "h3") { cw = FontWeight.Bold; sz = 14; }
 
                 bool childInLink = inLink || name == "a";
                 if (name == "a")
@@ -540,10 +557,11 @@ namespace AvaloniaRichEditor.Formatters
                 if (!string.IsNullOrEmpty(fam)) family = fam;
             }
 
-            // Accept px and pt (external editors/HWP paste often uses pt); convert pt -> px (96/72).
+            // Accept px and pt (external editors/HWP paste often uses pt). The model stores pt, so pt
+            // passes through and px (or a bare number) converts px -> pt (×72/96 = ×0.75).
             var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
             if (fm.Success && double.TryParse(fm.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out double val) && val > 0)
-                size = fm.Groups[2].Value == "pt" ? val * 96.0 / 72.0 : val;
+                size = fm.Groups[2].Value == "pt" ? val : val * 72.0 / 96.0;
         }
 
         // Left indent (px) from style margin-left / padding-left (px or pt).
@@ -602,6 +620,29 @@ namespace AvaloniaRichEditor.Formatters
             };
         }
 
+        // Maps a list marker style to the closest CSS list-style-type. Dash bullets and the ")" number
+        // suffix have no CSS equivalent and degrade to disc/decimal (HTML export is lossy by design).
+        private static string CssListStyle(ListKind kind, ListMarkerStyle marker) => marker switch
+        {
+            ListMarkerStyle.Circle => "circle",
+            ListMarkerStyle.Square => "square",
+            ListMarkerStyle.LowerAlpha => "lower-alpha",
+            ListMarkerStyle.UpperAlpha => "upper-alpha",
+            ListMarkerStyle.LowerRoman => "lower-roman",
+            _ => kind == ListKind.Ordered ? "decimal" : "disc",
+        };
+
+        // Reverse of CssListStyle: a CSS list-style-type value to a marker style (Default when unknown).
+        private static ListMarkerStyle ListMarkerFromCss(string? cssValue) => (cssValue ?? "").Trim().ToLowerInvariant() switch
+        {
+            "circle" => ListMarkerStyle.Circle,
+            "square" => ListMarkerStyle.Square,
+            "lower-alpha" or "lower-latin" => ListMarkerStyle.LowerAlpha,
+            "upper-alpha" or "upper-latin" => ListMarkerStyle.UpperAlpha,
+            "lower-roman" => ListMarkerStyle.LowerRoman,
+            _ => ListMarkerStyle.Default,
+        };
+
         /// <summary>Serializes <paramref name="doc"/> to an HTML string.</summary>
         public static string ToHtml(FlowDocument doc)
         {
@@ -614,15 +655,17 @@ namespace AvaloniaRichEditor.Formatters
                 listStack.RemoveAt(listStack.Count - 1);
             }
             void CloseAll() { while (listStack.Count > 0) CloseOne(); }
-            void SyncList(ListKind kind, int level)
+            void SyncList(ListKind kind, ListMarkerStyle marker, int level)
             {
                 while (listStack.Count > level + 1) CloseOne();
                 if (listStack.Count == level + 1 && listStack[^1] != kind) CloseOne();
                 // Explicit list-style-type: Word's clipboard import otherwise renders <ol> as bullets
-                // instead of numbers.
+                // instead of numbers. The bullet glyph / number format maps to the closest CSS value
+                // (the ")" suffix and the dash bullet have no CSS equivalent — lossy, by design for HTML).
                 while (listStack.Count < level + 1)
                 {
-                    sb.Append(kind == ListKind.Ordered ? "<ol style=\"list-style-type:decimal\">\n" : "<ul style=\"list-style-type:disc\">\n");
+                    string lst = CssListStyle(kind, marker);
+                    sb.Append(kind == ListKind.Ordered ? $"<ol style=\"list-style-type:{lst}\">\n" : $"<ul style=\"list-style-type:{lst}\">\n");
                     listStack.Add(kind);
                 }
             }
@@ -631,7 +674,7 @@ namespace AvaloniaRichEditor.Formatters
             {
                 if (block is Paragraph p)
                 {
-                    if (p.IsListItem) SyncList(p.ListType, p.ListLevel);
+                    if (p.IsListItem) SyncList(p.ListType, p.ListMarker, p.ListLevel);
                     else CloseAll();
 
                     string tag = p.IsListItem ? "li"
@@ -702,9 +745,9 @@ namespace AvaloniaRichEditor.Formatters
             // and Word/HWP then drop the ENTIRE style declaration — taking size/colour with it.
             if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:'{AttrEscape(r.FontFamily).Replace("'", "")}'");
             // Size in pt, not px: Word/HWP clipboard import ignores px font-size (a well-known quirk) but
-            // honours pt. 1px = 0.75pt at 96 DPI.
-            if (r.FontSize > 0 && System.Math.Abs(r.FontSize - 14) > 0.01)
-                styles.Add($"font-size:{(r.FontSize * 0.75).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt");
+            // honours pt. The model already stores pt, so emit it directly (skip the 10pt body default).
+            if (r.FontSize > 0 && System.Math.Abs(r.FontSize - 10) > 0.01)
+                styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt");
             if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
             if (r.Background is ISolidColorBrush bg) styles.Add($"background-color:{CssColor(bg.Color)}");
 

@@ -18,8 +18,9 @@ public class Run : Inline
     public IBrush? Background { get; set; }
     /// <summary>Font family name. <see langword="null"/> falls back to <see cref="Controls.RichEditor.DefaultFontFamily"/>.</summary>
     public string? FontFamily { get; set; }
-    /// <summary>Font size in device-independent pixels. Default: 14.</summary>
-    public double FontSize { get; set; } = 14;
+    /// <summary>Font size in points (pt). Default: 10. Converted to device-independent pixels
+    /// (×4/3 at 96 DPI) only at the render boundary; the model, public API and serialization speak pt.</summary>
+    public double FontSize { get; set; } = 10;
     /// <summary>Hyperlink URL. When non-null the run is rendered as a blue underlined link.</summary>
     public string? NavigateUri { get; set; }
     /// <summary>Text decorations such as underline or strikethrough.</summary>

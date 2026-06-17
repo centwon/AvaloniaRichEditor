@@ -8,6 +8,7 @@ using AvaloniaRichEditor.Documents;
 namespace AvaloniaRichEditor.Formatters;
 
 /// <summary>Reads and writes the <c>.flow</c> package format (roadmap N6-7): a ZIP container with
+/// <c>meta.json</c> (container format marker: <c>{"format":"flow","version":"1.0"}</c>),
 /// <c>document.json</c> (the library's JSON schema, its image pool referencing zip entries instead
 /// of embedding base64) and <c>images/&lt;sha256&gt;</c> entries holding the original encoded bytes
 /// stored uncompressed — they are already JPEG/PNG-compressed, so the win over plain JSON is
@@ -37,6 +38,18 @@ public static class DocumentPackage
         }
 
         using var zip = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
+
+        // Container manifest: marks the package format independently of the JSON document schema, so the
+        // .flow layout can evolve (extra entries, etc.) and a reader can tell a too-new package apart.
+        // The version mirrors the document format version (single source). Readers tolerate its absence.
+        var metaEntry = zip.CreateEntry("meta.json", CompressionLevel.Optimal);
+        using (var s = metaEntry.Open())
+        {
+            var meta = System.Text.Encoding.UTF8.GetBytes(
+                $"{{\"format\":\"flow\",\"version\":\"{DocumentSerializer.CurrentSchemaVersion}\"}}");
+            s.Write(meta, 0, meta.Length);
+        }
+
         var docEntry = zip.CreateEntry("document.json", CompressionLevel.Optimal); // text deflates well
         using (var s = docEntry.Open())
             JsonSerializer.Serialize(s, dto, DocumentJsonContext.Default.FlowDocumentDto);

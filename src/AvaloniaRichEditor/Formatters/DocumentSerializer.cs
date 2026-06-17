@@ -19,11 +19,12 @@ internal partial class DocumentJsonContext : JsonSerializerContext { }
 /// set without raw bytes fall back to base64 PNG. Uses AOT-safe source-generated JSON.</summary>
 public static class DocumentSerializer
 {
-    /// <summary>Current JSON schema version written by <see cref="Serialize"/>. Bump when the on-disk
-    /// shape changes; older documents (no "version" field) are read back as version 1.
-    /// History: 1 = inline base64 per image; 2 = document-level image pool keyed by SHA-256,
-    /// images reference the pool (identical bytes are stored once).</summary>
-    public const int CurrentSchemaVersion = 2;
+    /// <summary>Current document-format version written by <see cref="Serialize"/> (a SemVer string).
+    /// Tracked independently of the NuGet package version. The reader does not branch on it — it is an
+    /// informational stamp — and accepts both the new string form and the legacy integer form.
+    /// History: legacy "1" = inline base64 per image; legacy "2" = document-level image pool keyed by
+    /// SHA-256; "1.0" = stable baseline (image pool + font sizes in points + proportional line spacing).</summary>
+    public const string CurrentSchemaVersion = "1.0";
 
     /// <summary>Serializes <paramref name="document"/> to a JSON string.</summary>
     public static string Serialize(FlowDocument document)
@@ -167,10 +168,12 @@ public static class DocumentSerializer
             Inlines = new List<InlineDto>(),
             TextAlignment = p.TextAlignment.ToString(),
             LineHeight = NanToNull(p.LineHeight),
+            LineSpacing = NanToNull(p.LineSpacing),
             MarginTop = p.MarginTop,
             MarginBottom = p.MarginBottom,
             MarginRight = p.MarginRight,
             ListType = p.ListType.ToString(),
+            ListMarker = p.ListMarker == ListMarkerStyle.Default ? null : p.ListMarker.ToString(),
             HeadingLevel = p.HeadingLevel,
             Background = BrushToString(p.Background),
             Indent = p.Indent,
@@ -280,6 +283,7 @@ public static class DocumentSerializer
         var p = new Paragraph
         {
             LineHeight = d.LineHeight ?? double.NaN,
+            LineSpacing = d.LineSpacing ?? double.NaN,
             MarginTop = d.MarginTop ?? 0,
             MarginBottom = d.MarginBottom ?? 10,
             MarginRight = d.MarginRight ?? 0,
@@ -288,7 +292,8 @@ public static class DocumentSerializer
             Indent = d.Indent,
             IsQuote = d.IsQuote,
             ListLevel = d.ListLevel,
-            ListType = Enum.TryParse<ListKind>(d.ListType, out var lk) ? lk : (d.IsListItem ? ListKind.Bullet : ListKind.None)
+            ListType = Enum.TryParse<ListKind>(d.ListType, out var lk) ? lk : (d.IsListItem ? ListKind.Bullet : ListKind.None),
+            ListMarker = Enum.TryParse<ListMarkerStyle>(d.ListMarker, out var lm) ? lm : ListMarkerStyle.Default
         };
         if (Enum.TryParse<TextAlignment>(d.TextAlignment, out var ta)) p.TextAlignment = ta;
         if (d.Inlines != null)
@@ -311,7 +316,7 @@ public static class DocumentSerializer
                         Text = id.Text,
                         FontWeight = id.Bold ? FontWeight.Bold : FontWeight.Normal,
                         FontStyle = id.Italic ? FontStyle.Italic : FontStyle.Normal,
-                        FontSize = id.FontSize <= 0 ? 14 : id.FontSize,
+                        FontSize = id.FontSize <= 0 ? 10 : id.FontSize, // pt; body default
                         Foreground = StringToBrush(id.Foreground),
                         Background = StringToBrush(id.Background),
                         FontFamily = id.FontFamily,
@@ -399,8 +404,10 @@ public static class DocumentSerializer
 
 internal class FlowDocumentDto
 {
-    // Schema version. Absent in pre-versioning documents → deserializes to the initializer (1).
-    public int Version { get; set; } = 1;
+    // Document-format version. Absent in pre-versioning documents → "1" (legacy). The converter reads
+    // both the legacy integer form (1, 2) and the current SemVer string ("1.0") so old files still load.
+    [JsonConverter(typeof(SchemaVersionConverter))]
+    public string Version { get; set; } = "1";
     public List<BlockDto> Blocks { get; set; } = new();
     // v2: image pool keyed by SHA-256 hex of the encoded bytes; identical images stored once.
     public Dictionary<string, ImagePoolDto>? Images { get; set; }
@@ -420,6 +427,7 @@ internal class BlockDto
     public List<InlineDto>? Inlines { get; set; }
     public string? TextAlignment { get; set; }
     public double? LineHeight { get; set; }
+    public double? LineSpacing { get; set; } // proportional line spacing multiplier; null = unset
     // Nullable so pre-margin documents (field absent) fall back to the per-block-type defaults
     // instead of 0 — images/tables historically rendered with a fixed 10px bottom gap.
     public double? MarginTop { get; set; }
@@ -427,6 +435,7 @@ internal class BlockDto
     public double? MarginRight { get; set; } // paragraphs only (narrows the wrap width)
     public bool IsListItem { get; set; } // legacy (read fallback); replaced by ListType
     public string? ListType { get; set; }
+    public string? ListMarker { get; set; } // bullet glyph / number format; null = Default
     public int HeadingLevel { get; set; }
     public string? Background { get; set; }
     public double Indent { get; set; }
@@ -458,7 +467,7 @@ internal class InlineDto
     public string? Text { get; set; }
     public bool Bold { get; set; }
     public bool Italic { get; set; }
-    public double FontSize { get; set; } = 14;
+    public double FontSize { get; set; } = 10; // pt; body default
     public string? Foreground { get; set; }
     public string? Background { get; set; }
     public string? FontFamily { get; set; }
@@ -472,4 +481,23 @@ internal class InlineDto
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }
+}
+
+// Reads the document-format version as either the legacy integer form (1, 2 — earlier schema versions)
+// or the current SemVer string ("1.0"), so files written before the switch still load. Always writes
+// the string form.
+internal sealed class SchemaVersionConverter : JsonConverter<string>
+{
+    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.TokenType switch
+        {
+            JsonTokenType.String => reader.GetString() ?? "1",
+            JsonTokenType.Number => reader.TryGetInt64(out var n)
+                ? n.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : reader.GetDouble().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => "1"
+        };
+
+    public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value);
 }

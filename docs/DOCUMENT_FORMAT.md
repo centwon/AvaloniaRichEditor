@@ -51,7 +51,7 @@ FlowDocument
 
 ```jsonc
 {
-  "Version": 2,                  // 스키마 버전. 필드가 없으면 1로 간주
+  "Version": "1.0",              // 포맷 버전(SemVer 문자열). 레거시 정수(1·2)도 읽음, 없으면 "1"
   "Blocks": [ /* BlockDto[] */ ],
   "Images": {                    // v2 이미지 풀 (이미지가 없으면 생략)
     "<SHA256 hex(대문자)>": { "Data": "<base64>", "MimeType": "image/jpeg" }
@@ -61,14 +61,18 @@ FlowDocument
 
 #### 버전 이력
 
+> **버전 표기**: 포맷 버전은 이제 **SemVer 문자열**(`"Version": "1.0"`)이다. 판독기는 로직에서 이 값을 분기하지 않으며(정보용 스탬프), **레거시 정수형(`1`·`2`)도 그대로 읽는다**(숫자/문자열 모두 허용). 필드가 없으면 `"1"`(레거시)로 간주.
+
 | 버전 | 변경 | 읽기 호환 |
 |---|---|---|
-| (없음)→1 | 초기 형식. 이미지는 블록마다 인라인 base64(`ImageBase64`) | 항상 지원(레거시 폴백) |
-| 2 (현재) | 문서 수준 `Images` 풀 도입. 블록은 `ImageRef`(SHA-256 hex 키)로 참조. 동일 이미지 1회 저장 | v1 필드(`ImageBase64`, `IsListItem`)는 읽기 폴백 유지 |
+| (없음)/`1` | 초기 형식. 이미지는 블록마다 인라인 base64(`ImageBase64`) | 항상 지원(레거시 폴백) |
+| `2` | 문서 수준 `Images` 풀 도입. 블록은 `ImageRef`(SHA-256 hex 키)로 참조. 동일 이미지 1회 저장 | v1 필드(`ImageBase64`, `IsListItem`)는 읽기 폴백 유지 |
+| `"1.0"` (현재) | 안정 기준선. 정수→SemVer 표기 전환 + 이미지 풀 + **글자 크기 pt** + **비례 줄 간격(`LineSpacing`)** | 레거시 정수 버전 문서를 그대로 읽음 |
 
 - 풀 키 = **원본 인코딩 바이트의 SHA-256, 대문자 16진 문자열** (`Convert.ToHexString`).
 - 로드 시 풀 항목은 한 번만 디코드되고, 같은 키를 참조하는 모든 블록이 **동일한 `byte[]` 인스턴스를 공유**한다.
 - 이미지 바이트는 **원본 인코딩 그대로**(JPEG는 JPEG로) 저장한다 — 재인코딩 금지. `RawBytes` 없이 Bitmap만 있는 이미지는 PNG로 1회 인코딩 후 풀에 합류한다.
+- **글자 크기 단위 = pt**: `FontSize`는 **pt**로 저장된다(이전 px). 런타임 마이그레이션은 없다 — 베타 시점에 외부 저장 문서가 없어 호환 부담이 없기 때문. 레거시 정수 버전(px 시절)으로 저장된 구 문서는 같은 숫자를 pt로 읽어 약 33% 크게 보인다. 포맷 버전 `"1.0"`이 pt 기준 형식을 표시한다.
 
 ### 2.3 블록: `BlockDto`
 
@@ -88,9 +92,11 @@ FlowDocument
 |---|---|---|
 | `Inlines` | InlineDto[] | 인라인 목록 (아래 §2.4) |
 | `TextAlignment` | string | Avalonia `TextAlignment` 이름(`"Left"`/`"Center"`/`"Right"`/`"Justify"` 등). 파싱 실패 시 Left |
-| `LineHeight` | number? | 줄 높이 px. 없으면 NaN(=단일 간격) |
+| `LineHeight` | number? | 절대 줄 높이 px("고정값"). 없으면 NaN(=미설정). `LineSpacing` 설정 시 무시됨 |
+| `LineSpacing` | number? | 비례 줄 간격 배수(1.0=단일, 1.5=1.5줄, 2.0=2배 — HWP %÷100). 글자 크기에 비례. 없으면 NaN. `LineHeight`보다 우선 |
 | `MarginRight` | number? | 오른쪽 여백 px(줄바꿈 폭 축소). **문단 전용**. 없으면 0 |
 | `ListType` | string | `"None"`/`"Bullet"`/`"Ordered"`. 파싱 실패 시 레거시 `IsListItem` 참조 |
+| `ListMarker` | string? | 글머리표/번호 모양: `Disc`/`Circle`/`Square`/`Dash`(글머리표), `Decimal`/`DecimalParen`/`LowerAlpha`/`UpperAlpha`/`LowerRoman`(번호). 없으면 `Default`(•/"1.") |
 | `IsListItem` | bool | **v1 레거시, 읽기 전용 폴백**: `ListType` 없고 true면 Bullet |
 | `ListLevel` | int | 중첩 리스트 깊이 (0=최상위) |
 | `HeadingLevel` | int | 0=본문, 1~6=h1~h6 |
@@ -132,7 +138,7 @@ FlowDocument
 |---|---|---|
 | `Text` | string? | 텍스트. `\n` = 하드 줄바꿈 |
 | `Bold`, `Italic` | bool | 굵게/기울임 |
-| `FontSize` | number | 글자 크기 px. 기본 14, 읽을 때 ≤0이면 14 |
+| `FontSize` | number | 글자 크기 **pt**(이전 px). 기본 10, 읽을 때 ≤0이면 10. 렌더 시 ×4/3로 px 변환 |
 | `FontFamily` | string? | 글꼴 이름. 없으면 에디터 기본 글꼴. **주의: OS가 현지화한 이름(예: "맑은 고딕")이 저장될 수 있어 다른 OS에서 해석되지 않을 수 있음** |
 | `Foreground` | string? | 글자색 (§2.5). 없으면 기본(검정) |
 | `Background` | string? | 형광펜 배경색 |
@@ -151,13 +157,13 @@ FlowDocument
 
 ```json
 {
-  "Version": 2,
+  "Version": "1.0",
   "Blocks": [
     {
       "Type": "Paragraph",
       "Inlines": [
         { "Type": "Run", "Text": "제목", "Bold": true, "Italic": false,
-          "FontSize": 24, "Underline": false, "Strikethrough": false }
+          "FontSize": 20, "Underline": false, "Strikethrough": false }
       ],
       "TextAlignment": "Left", "MarginTop": 0, "MarginBottom": 10,
       "ListType": "None", "HeadingLevel": 1, "Indent": 0,
@@ -173,7 +179,7 @@ FlowDocument
       "Type": "Table", "Rows": 1, "Columns": 2,
       "ColumnWidths": [100, 100], "RowHeights": [],
       "Cells": [[
-        { "Type": "Paragraph", "Inlines": [ { "Type": "Run", "Text": "셀1", "Bold": false, "Italic": false, "FontSize": 14, "Underline": false, "Strikethrough": false } ], "HeadingLevel": 0, "Indent": 0, "IsQuote": false, "ListLevel": 0, "IsListItem": false },
+        { "Type": "Paragraph", "Inlines": [ { "Type": "Run", "Text": "셀1", "Bold": false, "Italic": false, "FontSize": 10, "Underline": false, "Strikethrough": false } ], "HeadingLevel": 0, "Indent": 0, "IsQuote": false, "ListLevel": 0, "IsListItem": false },
         { "Type": "Paragraph", "Inlines": [], "HeadingLevel": 0, "Indent": 0, "IsQuote": false, "ListLevel": 0, "IsListItem": false }
       ]],
       "ColSpans": [[1, 1]], "RowSpans": [[1, 1]],
@@ -197,6 +203,7 @@ FlowDocument
 
 ```
 *.flow (ZIP)
+├─ meta.json            ← 컨테이너 포맷 마커: {"format":"flow","version":"1.0"} (Deflate)
 ├─ document.json        ← §2의 JSON과 동일 스키마. 단, Images 풀 항목에 Data(base64)가 없고
 │                          MimeType만 남는다 (Deflate 압축)
 └─ images/<SHA256 hex>  ← 원본 인코딩 바이트. 엔트리 이름 = 풀 키 (무압축 Stored)
@@ -208,7 +215,8 @@ FlowDocument
 - 이미지 엔트리는 이미 압축된 형식(JPEG/PNG)이므로 **무압축(Stored)** 으로 저장한다.
 - 로드 시: `document.json`이 없으면 빈 문서. `images/` 엔트리의 MIME은 풀 메타에서 읽고, 메타가 없으면 **매직 넘버 스니핑**(png/jpeg/gif/bmp/webp)으로 결정한다.
 - 손상된 ZIP/JSON은 예외 없이 빈 문서를 반환한다.
-- 파일 식별: 데모는 ZIP 매직 `PK`(0x50 0x4B) 스니핑으로 `.flow`와 일반 JSON을 구분한다. 전용 meta 엔트리는 없다 — 스키마 버전은 `document.json`의 `Version`이 담당.
+- 파일 식별: 데모는 ZIP 매직 `PK`(0x50 0x4B) 스니핑으로 `.flow`와 일반 JSON을 구분한다.
+- `meta.json`은 **컨테이너 포맷** 버전 마커다(`document.json`의 문서 포맷 버전과 같은 값으로 기록). 컨테이너 레이아웃이 독립적으로 진화할 여지를 남기고, 너무 새로운 패키지를 판독기가 구분할 수 있게 한다. 현재 판독기는 로직에서 사용하지 않으며 **없어도 무방**(이전 버전 `.flow`와 하위호환).
 
 ---
 

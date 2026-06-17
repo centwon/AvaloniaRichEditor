@@ -170,7 +170,15 @@ public partial class RichEditor
                 return DividerHeight;
             case Paragraph p:
                 if (GetParagraphLength(p) == 0)
+                {
+                    if (!double.IsNaN(p.LineSpacing))
+                    {
+                        bool hd = p.HeadingLevel is >= 1 and <= 6;
+                        double basePt = hd ? HeadingFontSize(p.HeadingLevel) : DefaultFontSize;
+                        return Math.Max(p.LineSpacing, 1.0) * PtToPx(basePt) * NaturalLineFactor;
+                    }
                     return !double.IsNaN(p.LineHeight) ? p.LineHeight : 20;
+                }
                 paraLayout = BuildTextLayout(p, Math.Max(10, maxWidth - 20 - ParaLeft(p) - p.MarginRight));
                 return paraLayout.Height;
             default:

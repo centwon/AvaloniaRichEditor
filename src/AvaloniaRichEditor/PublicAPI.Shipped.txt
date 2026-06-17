@@ -312,7 +312,6 @@ AvaloniaRichEditor.Formatters.DocumentSerializer
 AvaloniaRichEditor.Formatters.HtmlDocumentFormatter
 AvaloniaRichEditor.Formatters.RoundTripHarness
 AvaloniaRichEditor.RichEditorLocalization
-const AvaloniaRichEditor.Formatters.DocumentSerializer.CurrentSchemaVersion = 2 -> int
 override AvaloniaRichEditor.Controls.RichEditor.MeasureOverride(Avalonia.Size availableSize) -> Avalonia.Size
 override AvaloniaRichEditor.Controls.RichEditor.OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
 override AvaloniaRichEditor.Controls.RichEditor.OnCreateAutomationPeer() -> Avalonia.Automation.Peers.AutomationPeer!

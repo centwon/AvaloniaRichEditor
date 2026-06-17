@@ -51,7 +51,7 @@ public class DocumentFormatSpecTests
         var run = Assert.IsType<Run>(heading.Inlines[0]);
         Assert.Equal("제목", run.Text);
         Assert.Equal(FontWeight.Bold, run.FontWeight);
-        Assert.Equal(24, run.FontSize);
+        Assert.Equal(20, run.FontSize);
 
         // Image block resolves its ImageRef against the document-level Images pool (schema v2).
         var img = Assert.IsType<ImageBlock>(doc.Blocks[1]);

@@ -48,6 +48,20 @@ internal static class ToolbarIcons
             ("M15 7 H18 V11 H10.5 V13", false),
             ("M8.5 13 H12.5 V20 H8.5 Z", false)),
 
+        RichEditorIcon.BulletList => Build(16,
+            ("M9 7 H20 M9 12 H20 M9 17 H20", false),
+            ("M4.5 7 m-1.4 0 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0 Z M4.5 12 m-1.4 0 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0 Z M4.5 17 m-1.4 0 a1.4 1.4 0 1 0 2.8 0 a1.4 1.4 0 1 0 -2.8 0 Z", true)),
+
+        RichEditorIcon.NumberedList => Build(16,
+            ("M9 7 H20 M9 12 H20 M9 17 H20", false),
+            ("M3 5.6 L4.3 5 V9 M2.6 16 H4.6 M2.6 19 H4.6", false),
+            ("M2.7 11 Q3 10.2 3.9 10.2 Q4.9 10.2 4.9 11.1 Q4.9 12 2.7 13.8 H4.9", false)),
+
+        // Up/down double arrow beside stacked text lines — the universal line-spacing glyph.
+        RichEditorIcon.LineSpacing => Build(16,
+            ("M5 7 V17 M11 6 H21 M11 12 H21 M11 18 H21", false),
+            ("M5 3 L8 7 L2 7 Z M5 21 L8 17 L2 17 Z", true)),
+
         RichEditorIcon.IndentIncrease => Build(16,
             ("M4 6 H20 M4 18 H20 M11 12 H20", false),
             ("M4 9 L8 12 L4 15 Z", true)),

@@ -1020,8 +1020,8 @@ public partial class RichEditor
     private double CaretTextHeight(Paragraph p, int offset)
     {
         var run = RunAtOffset(p, offset > 0 ? offset - 1 : 0);
-        double fs = run != null && run.FontSize > 0 ? run.FontSize : DefaultFontSize;
-        return Math.Ceiling(fs * 1.4);
+        double fs = run != null && run.FontSize > 0 ? run.FontSize : DefaultFontSize; // pt
+        return Math.Ceiling(PtToPx(fs) * 1.4);
     }
 
     private void SetPreedit(string? text)

@@ -57,7 +57,7 @@ public class RichEditorHeadingTests
     {
         // The bigger look must actually take effect at layout time (and ParagraphSig must include the
         // heading level so the cached layout is rebuilt), so a heading paragraph measures taller.
-        var p = TestHelpers.Para(new Run { Text = "Title", FontSize = 14 });
+        var p = TestHelpers.Para(new Run { Text = "Title", FontSize = 10 }); // body default (pt)
         var ed = EditorWithCaretIn(p);
         ed.PageSize = RichEditorPageSize.Continuous;
 
@@ -70,6 +70,29 @@ public class RichEditorHeadingTests
 
         Assert.True(headingHeight > bodyHeight,
             $"H1 should render taller than body ({headingHeight} vs {bodyHeight})");
+    }
+
+    [AvaloniaFact]
+    public void LineSpacing_RendersTallerThanSingle_AndScalesWithFontSize()
+    {
+        // Proportional LineSpacing (2.0 = double) must measurably increase a paragraph's height, and
+        // because it scales with font size, the same multiplier adds more height to bigger text.
+        static double MeasuredHeight(double fontPt, double spacing)
+        {
+            var p = TestHelpers.Para(new Run { Text = "wrap this onto enough lines to matter", FontSize = fontPt });
+            p.LineSpacing = spacing;
+            var ed = EditorWithCaretIn(p);
+            ed.PageSize = RichEditorPageSize.Continuous;
+            ed.Measure(new Size(400, double.PositiveInfinity));
+            return ed.DesiredSize.Height;
+        }
+
+        Assert.True(MeasuredHeight(10, 2.0) > MeasuredHeight(10, double.NaN),
+            "double spacing should render taller than single");
+        // Same multiplier, larger font -> larger absolute gain (proportional, not fixed px).
+        double gainSmall = MeasuredHeight(10, 2.0) - MeasuredHeight(10, double.NaN);
+        double gainBig = MeasuredHeight(24, 2.0) - MeasuredHeight(24, double.NaN);
+        Assert.True(gainBig > gainSmall, $"spacing gain should scale with font size ({gainBig} vs {gainSmall})");
     }
 
     [AvaloniaFact]

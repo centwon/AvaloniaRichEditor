@@ -47,7 +47,8 @@ public class RichEditorToolbar : UserControl
 
     // Controls that reflect caret state (assigned in Build).
     private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _quoteBtn, _undoBtn, _redoBtn;
-    private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo, _spacingCombo;
+    private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo;
+    private static readonly int[] SpacingPercents = { 100, 110, 120, 130, 150, 160, 180, 200, 250, 300 };
     private Control? _tableBtn, _imageBtn, _dividerBtn;
     // Color-picker faces, synced to the caret's run: either a swatch bar under the built-in glyph,
     // or (with a host icon) a wrapper whose Foreground tints the icon's colour-inheriting layers.
@@ -243,7 +244,8 @@ public class RichEditorToolbar : UserControl
         Add(_fontCombo);
 
         _sizeCombo = Combo(Loc("FontSize"), 60);
-        foreach (var s in new[] { 10, 12, 14, 18, 24, 32 })
+        // Font sizes are points (pt). Body default is 10pt; range ~6–72.
+        foreach (var s in new[] { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72 })
             _sizeCombo.Items.Add(new ComboBoxItem { Content = s.ToString() });
         _sizeCombo.SelectionChanged += (_, _) =>
         {
@@ -281,26 +283,28 @@ public class RichEditorToolbar : UserControl
         Add(_alignCombo);
         Add(Div());
 
-        // Lists / indent
+        // Lists / indent. Each list button toggles its default marker; the adjacent ▾ dropdown picks a
+        // specific bullet glyph (•/◦/▪/–) or number format (1./1)/a)/A)/i)).
         _bulletBtn = Btn("•", Loc("BulletList"), () => Target?.ToggleBullet(), RichEditorIcon.BulletList);
         _numberBtn = Btn("1.", Loc("NumberedList"), () => Target?.ToggleNumbering(), RichEditorIcon.NumberedList);
         _quoteBtn = Btn("❝", Loc("Quote"), () => Target?.ToggleQuote());
-        Add(_bulletBtn); Add(_numberBtn); Add(_quoteBtn);
+        Add(_bulletBtn);
+        Add(BuildListStyleDropdown(Loc("BulletList"),
+            (ListMarkerStyle.Disc, "•"), (ListMarkerStyle.Circle, "◦"),
+            (ListMarkerStyle.Square, "▪"), (ListMarkerStyle.Dash, "–")));
+        Add(_numberBtn);
+        Add(BuildListStyleDropdown(Loc("NumberedList"),
+            (ListMarkerStyle.Decimal, "1."), (ListMarkerStyle.DecimalParen, "1)"),
+            (ListMarkerStyle.LowerAlpha, "a)"), (ListMarkerStyle.UpperAlpha, "A)"),
+            (ListMarkerStyle.LowerRoman, "i)")));
+        Add(_quoteBtn);
         Add(Btn("→|", Loc("IndentIncrease"), () => Target?.Indent(20), RichEditorIcon.IndentIncrease));
         Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20), RichEditorIcon.IndentDecrease));
         Add(Div());
 
-        // Line spacing (1.0 = natural, 1.5/2.0 = fixed line heights, matching the demo's presets)
-        _spacingCombo = Combo(Loc("LineSpacing"));
-        foreach (var v in new[] { "1.0", "1.5", "2.0" })
-            _spacingCombo.Items.Add(new ComboBoxItem { Content = string.Format(Loc("LineSpacingFormat"), v) });
-        _spacingCombo.SelectedIndex = 0;
-        _spacingCombo.SelectionChanged += (_, _) =>
-        {
-            if (_suppress) return;
-            Target?.SetLineHeight(_spacingCombo.SelectedIndex switch { 1 => 24, 2 => 32, _ => double.NaN });
-        };
-        Add(_spacingCombo);
+        // Line spacing: an icon dropdown (HWP-style %), where the value maps to Paragraph.LineSpacing
+        // = %/100. 160% is the HWP default; the list spans 100–300%. Scales with font size.
+        Add(BuildLineSpacingButton());
         Add(Div());
 
         // Block inserts (gated by the target's feature flags in ApplyFlags)
@@ -504,6 +508,93 @@ public class RichEditorToolbar : UserControl
         var panel = new StackPanel { Spacing = 4 };
         panel.Children.Add(grid);
         panel.Children.Add(label);
+        btn.Flyout = new Flyout { Content = panel };
+        return btn;
+    }
+
+    // Line-spacing icon dropdown: a glyph + chevron that opens a list of HWP-style percentages; each
+    // applies Paragraph.LineSpacing = %/100 (proportional — scales with font size).
+    private Button BuildLineSpacingButton()
+    {
+        object face = "↕ ▾";
+        var glyph = RichEditorIcons.TryCreate(RichEditorIcon.LineSpacing) ?? ToolbarIcons.Create(RichEditorIcon.LineSpacing);
+        if (glyph != null)
+        {
+            var f = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+            f.Children.Add(glyph);
+            f.Children.Add(ToolbarIcons.ChevronDown());
+            face = f;
+        }
+        var btn = new Button
+        {
+            Content = face,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(5),
+            Padding = new Thickness(9, 5),
+            Margin = new Thickness(1, 0),
+            MinWidth = 30,
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(btn, Loc("LineSpacing"));
+
+        var panel = new StackPanel { MinWidth = 96 };
+        foreach (var pct in SpacingPercents)
+        {
+            int p = pct;
+            var item = new Button
+            {
+                Content = string.Format(Loc("LineSpacingFormat"), p + "%"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+            };
+            item.Click += (_, _) =>
+            {
+                Target?.SetLineSpacing(p / 100.0);
+                (btn.Flyout as FlyoutBase)?.Hide();
+            };
+            panel.Children.Add(item);
+        }
+        btn.Flyout = new Flyout { Content = panel };
+        return btn;
+    }
+
+    // A small ▾ dropdown beside a list button that applies a specific marker style (bullet glyph or
+    // number format) to the selected paragraphs, turning that list kind on.
+    private Button BuildListStyleDropdown(string tip, params (ListMarkerStyle Style, string Glyph)[] options)
+    {
+        var btn = new Button
+        {
+            Content = ToolbarIcons.ChevronDown(),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(5),
+            Padding = new Thickness(3, 5),
+            Margin = new Thickness(0, 0, 1, 0),
+            MinWidth = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(btn, tip);
+
+        var panel = new StackPanel { MinWidth = 64 };
+        foreach (var (style, glyph) in options)
+        {
+            var s = style;
+            var item = new Button
+            {
+                Content = glyph,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                FontSize = 14,
+            };
+            item.Click += (_, _) => { Target?.SetListStyle(s); (btn.Flyout as FlyoutBase)?.Hide(); };
+            panel.Children.Add(item);
+        }
         btn.Flyout = new Flyout { Content = panel };
         return btn;
     }
