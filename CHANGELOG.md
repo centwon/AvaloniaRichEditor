@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the closest `list-style-type` and RTF emits the literal marker (the `)` suffix and dash bullet have no
   equivalent there — lossy by design). The bullet/numbered-list toolbar buttons also get vector icons.
 - **Line-spacing toolbar control is now an icon dropdown** (was a labelled combo): a line-spacing glyph
-  opens a list of HWP-style percentages (100–300%).
+  shows the caret paragraph's current percentage (e.g. `100%`) and opens a list of HWP-style percentages
+  (100–300%). `CaretFormat` gains a `LineSpacing` field so the toolbar reflects the caret.
 - **Proportional line spacing** (`Paragraph.LineSpacing` / `RichEditor.SetLineSpacing(double)`): line
   spacing as a multiple of the natural single-line height (1.0 = single, 1.5 = 1.5 lines, 2.0 = double —
   i.e. HWP's % ÷ 100 or Word's "Multiple"), which **scales with font size**. The toolbar's line-spacing

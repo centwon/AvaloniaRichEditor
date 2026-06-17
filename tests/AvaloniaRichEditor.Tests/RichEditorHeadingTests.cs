@@ -96,6 +96,19 @@ public class RichEditorHeadingTests
     }
 
     [AvaloniaFact]
+    public void CaretFormat_ReflectsLineSpacing()
+    {
+        // The toolbar's line-spacing % label reads CaretFormat.LineSpacing; it must mirror the caret
+        // paragraph (NaN when unset, the multiplier when set).
+        var unset = TestHelpers.Para(new Run { Text = "x" });
+        Assert.True(double.IsNaN(EditorWithCaretIn(unset).GetCaretFormat().LineSpacing));
+
+        var spaced = TestHelpers.Para(new Run { Text = "x" });
+        spaced.LineSpacing = 1.6;
+        Assert.Equal(1.6, EditorWithCaretIn(spaced).GetCaretFormat().LineSpacing, 3);
+    }
+
+    [AvaloniaFact]
     public void SetHeading_Level6_ReflectsInCaretFormat()
     {
         var p = TestHelpers.Para(new Run { Text = "x", FontSize = 14 });

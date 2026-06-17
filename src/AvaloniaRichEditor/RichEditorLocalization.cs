@@ -85,7 +85,6 @@ public static class RichEditorLocalization
             ["MarginLeft"] = "Left Margin",
             ["MarginRight"] = "Right Margin",
             ["LineSpacing"] = "Line Spacing",
-            ["LineSpacingFormat"] = "Spacing {0}",
             // Links
             ["Hyperlink"] = "Hyperlink",
             ["OpenLink"] = "Open Link",
@@ -214,7 +213,6 @@ public static class RichEditorLocalization
             ["MarginLeft"] = "왼쪽 여백",
             ["MarginRight"] = "오른쪽 여백",
             ["LineSpacing"] = "줄 간격",
-            ["LineSpacingFormat"] = "줄간격 {0}",
             // Links
             ["Hyperlink"] = "하이퍼링크",
             ["OpenLink"] = "링크 열기",

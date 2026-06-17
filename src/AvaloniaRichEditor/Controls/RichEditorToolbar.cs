@@ -48,6 +48,7 @@ public class RichEditorToolbar : UserControl
     // Controls that reflect caret state (assigned in Build).
     private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _painterBtn, _bulletBtn, _numberBtn, _quoteBtn, _undoBtn, _redoBtn;
     private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo;
+    private TextBlock? _spacingLabel; // current line-spacing % shown next to the icon
     private static readonly int[] SpacingPercents = { 100, 110, 120, 130, 150, 160, 180, 200, 250, 300 };
     private Control? _tableBtn, _imageBtn, _dividerBtn;
     // Color-picker faces, synced to the caret's run: either a swatch bar under the built-in glyph,
@@ -512,19 +513,18 @@ public class RichEditorToolbar : UserControl
         return btn;
     }
 
-    // Line-spacing icon dropdown: a glyph + chevron that opens a list of HWP-style percentages; each
-    // applies Paragraph.LineSpacing = %/100 (proportional — scales with font size).
+    // Line-spacing icon dropdown: a glyph + the current % + chevron, opening a list of HWP-style
+    // percentages; each applies Paragraph.LineSpacing = %/100 (proportional — scales with font size).
     private Button BuildLineSpacingButton()
     {
-        object face = "↕ ▾";
+        var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
         var glyph = RichEditorIcons.TryCreate(RichEditorIcon.LineSpacing) ?? ToolbarIcons.Create(RichEditorIcon.LineSpacing);
-        if (glyph != null)
-        {
-            var f = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-            f.Children.Add(glyph);
-            f.Children.Add(ToolbarIcons.ChevronDown());
-            face = f;
-        }
+        if (glyph != null) face.Children.Add(glyph);
+        else face.Children.Add(new TextBlock { Text = "↕", FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+        _spacingLabel = new TextBlock { Text = "100%", FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        face.Children.Add(_spacingLabel);
+        face.Children.Add(ToolbarIcons.ChevronDown());
+
         var btn = new Button
         {
             Content = face,
@@ -539,13 +539,13 @@ public class RichEditorToolbar : UserControl
         };
         ToolTip.SetTip(btn, Loc("LineSpacing"));
 
-        var panel = new StackPanel { MinWidth = 96 };
+        var panel = new StackPanel { MinWidth = 64 };
         foreach (var pct in SpacingPercents)
         {
             int p = pct;
             var item = new Button
             {
-                Content = string.Format(Loc("LineSpacingFormat"), p + "%"),
+                Content = p + "%",
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Background = Brushes.Transparent,
@@ -634,6 +634,13 @@ public class RichEditorToolbar : UserControl
         SetActive(_painterBtn, rt.IsFormatPainterActive);
         if (_undoBtn != null) _undoBtn.IsEnabled = rt.CanUndo;
         if (_redoBtn != null) _redoBtn.IsEnabled = rt.CanRedo;
+        // Line-spacing label shows the caret paragraph's current % (unset / ≤1.0 = single = 100%).
+        if (_spacingLabel != null)
+        {
+            double ls = f.LineSpacing;
+            int pct = double.IsNaN(ls) || ls <= 0 ? 100 : (int)System.Math.Round(ls * 100);
+            _spacingLabel.Text = pct + "%";
+        }
 
         // Picker colours follow the caret's run: explicit colours show as-is, defaults fall back to
         // black text / "no highlight" grey (same brush Apply() uses for a cleared highlight).
