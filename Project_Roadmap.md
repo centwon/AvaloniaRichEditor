@@ -122,6 +122,12 @@
 - [x] **인라인 이미지 복사 stale 버그 수정**: 이미지만 선택 시 평문이 비어 시스템 클립보드를 안 set → 이전 복사본이 붙던 것을, text/html 중 하나라도 있으면 set하도록. (in-app 인라인이미지 붙여넣기 자체는 `InsertRuns`/`InsertParsedDocument`가 런만 처리하는 기존 한계로 별개 — 이미지 빠짐, stale은 해소.)
 - [x] **쪽 윤곽 회색 여백 축소(사용자 요청)**: `PageGap` 24→3(≈2pt) — 상/하/페이지 사이. 좌우 데스크는 `RichEditorView.ApplyFitWidth`의 하드코딩 `deskGap=24`가 원인이라 `RichEditor.PageGap` 직접 참조로 연동(주석은 "mirrors PageGap"인데 실제로 안 따라가던 것). 상수 1개로 사방 일괄 조정 가능.
 
+**🔍 2026-06-18 전 소스 정독 리뷰 (0.7.0 후속, 버그 5 + 성능 4 — 테스트 256→260 그린)**
+> 라이브러리 전 파일(`src/AvaloniaRichEditor`) 정독 후 발견 항목을 위험 대비 효용으로 묶어 일괄 처리. 크래시급 없음.
+- [x] **버그**: ① HTML 가져오기 폰트 크기 — `ParseInlines` 기본값이 pt 전환 후에도 옛 px 본문값 `14`에 멈춰 있어 **표 셀·인라인 래핑 텍스트가 14pt로** 들어오던 것을 본문 기본 10pt로(`HtmlDocumentFormatter`). ② RTF 왕복 이모지 소실 — 서로게이트 쌍을 `\u` 둘로 쓰는데 리더가 `ConvertFromUtf32`로 각 반쪽을 디코드하다 예외→소실하던 것을, `\u`를 UTF-16 코드 유닛으로 그대로 누적해 재결합. ③ 인라인 이미지 NaN 직렬화 — 블록 이미지와 달리 `NanToNull` 미적용이라 NaN이 `System.Text.Json`에 닿으면 예외 가능 → 대칭화. ④ 접근성 `SetValue` 줄바꿈 보존(한 줄로 합쳐지던 것을 문단별 `<p>`로). ⑤ `Ctrl+Del`/`Ctrl+Back`이 단락 경계에서 삭제할 게 없어도 빈 undo 체크포인트를 쌓던 것 수정.
+- [x] **성능(유휴/입력 핫패스)**: ① 캐럿 펜 프레임마다 `new Pen` → 캐싱(`CaretBrush` 변경 시만 재생성). ② 선택 하이라이트가 Render마다 `IndexOf` 2회 → 단일 스캔(페이지뷰에선 보이는 페이지 수만큼 반복되던 부담). ③ `GetStatus`가 캐럿 이동마다 문단별 `BuildPlain` 문자열 할당 → 인라인 직접 순회로 할당 제거(대형 문서 방향키). ④ hover의 표 테두리 판정 `GetBlockAtPoint`+`GetTableRect` 두 번 순회 → 단일 순회(`TableLeftOrTopBorderAtPoint`).
+- 회귀 테스트 4건(표 셀/인라인 10pt, RTF 이모지 왕복, NaN 인라인 이미지 직렬화). 성능 4건은 동작 보존이라 기존 스위트가 회귀 방지. README/`DOCUMENT_FORMAT.md`는 영향 없음(문서화된 동작·공개 API 무변경).
+
 - **✅ 사용성(UX) 제안 — 전부 구현 완료** (2026-06-12 점검에서 확인, 항목별 완료 시점은 이전 작업들):
   - ✅ 더블클릭=단어 선택 / 세 번 클릭=문단 선택 (`RichEditor.Input.cs` ClickCount 분기)
   - ✅ 자동 목록: `- `/`* `/`N. ` + 공백 → 리스트 전환 (`TryAutoList`)

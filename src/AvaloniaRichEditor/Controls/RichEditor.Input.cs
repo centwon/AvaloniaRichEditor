@@ -294,19 +294,27 @@ public partial class RichEditor
 
     private void WordDelete(bool forward)
     {
-        if (Document != null) PushUndo();
-        if (_selectionStart != _selectionEnd) { DeleteSelection(); InvalidateVisual(); ResetCaretBlink(); return; }
+        // Push the undo checkpoint only when an edit will actually happen — at a paragraph boundary in
+        // the delete direction (WordDelete never crosses paragraphs) there's nothing to delete, and an
+        // unconditional PushUndo left a stray no-op step on the undo stack.
+        if (_selectionStart != _selectionEnd)
+        {
+            if (Document != null) PushUndo();
+            DeleteSelection(); InvalidateVisual(); ResetCaretBlink(); return;
+        }
         var p = _caretPosition.Paragraph;
         if (p != null)
         {
             int off = _caretPosition.Offset;
             if (forward && off < GetParagraphLength(p))
             {
+                if (Document != null) PushUndo();
                 int no = NextWord(BuildPlain(p), off);
                 new TextRange(new TextPointer(p, off), new TextPointer(p, no)).Delete();
             }
             else if (!forward && off > 0)
             {
+                if (Document != null) PushUndo();
                 int no = PrevWord(BuildPlain(p), off);
                 new TextRange(new TextPointer(p, no), new TextPointer(p, off)).Delete();
                 _caretPosition = new TextPointer(p, no);
@@ -504,8 +512,9 @@ public partial class RichEditor
         try
         {
             // Outer left/top table border selects the whole table on click -> a move cursor signals that
-            // the border is grabbable (vs the I-beam over cell text).
-            if (GetBlockAtPoint(point) is TableBlock ht && IsOnTableLeftOrTopBorder(ht, point))
+            // the border is grabbable (vs the I-beam over cell text). One walk (was GetBlockAtPoint +
+            // IsOnTableLeftOrTopBorder, which re-walked the document).
+            if (TableLeftOrTopBorderAtPoint(point) != null)
             {
                 Cursor = MoveCursor;
                 return;

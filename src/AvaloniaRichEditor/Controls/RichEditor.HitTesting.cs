@@ -238,6 +238,31 @@ public partial class RichEditor
         return (inY && Math.Abs(p.X - left) <= m) || (inX && Math.Abs(p.Y - top) <= m);
     }
 
+    // The table whose outer left/top border the point sits on, else null — in ONE document walk.
+    // The hover path used GetBlockAtPoint + IsOnTableLeftOrTopBorder (which re-walks via GetTableRect),
+    // so this folds two of the per-mouse-move walks into one. Geometry matches IsOnTableLeftOrTopBorder.
+    private TableBlock? TableLeftOrTopBorderAtPoint(Point p)
+    {
+        if (Document == null) return null;
+        double yOffset = 0, maxWidth = ContentLayoutWidth;
+        const double m = 4;
+        foreach (var block in Document.Blocks)
+        {
+            yOffset += block.MarginTop;
+            double top = yOffset;
+            double h = BlockExtent(block, maxWidth, top, out _, out var tl);
+            yOffset += h + block.MarginBottom;
+            if (block is TableBlock tb && tl is { } t)
+            {
+                double left = 10 + tb.Indent, w = t.TableWidth, hh = t.TotalHeight;
+                bool inY = p.Y >= top - m && p.Y <= top + hh + m;
+                bool inX = p.X >= left - m && p.X <= left + w + m;
+                if ((inY && Math.Abs(p.X - left) <= m) || (inX && Math.Abs(p.Y - top) <= m)) return tb;
+            }
+        }
+        return null;
+    }
+
     private static Run? RunAtOffset(Paragraph p, int offset)
     {
         int idx = 0;

@@ -267,6 +267,8 @@ public partial class RichEditor : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == CaretBrushProperty)
+            _caretPen = null; // rebuild the cached caret pen with the new brush
         if (change.Property == DocumentProperty)
         {
             _layoutCache.Clear();
@@ -545,16 +547,25 @@ public partial class RichEditor : Control
             if (!firstPara) Consume('\n'); // the newline that joined consecutive paragraphs
             firstPara = false;
 
-            string plain = BuildPlain(p);
+            // Walk the inlines directly (Run text chars + one ObjChar per inline image) instead of
+            // building a BuildPlain string per paragraph — this runs on every caret move, so the
+            // per-paragraph string allocation added up to hundreds of allocations per arrow key on a
+            // large document. `local` is the logical offset within this paragraph (image = 1).
             int caretOff = ReferenceEquals(p, _caretPosition.Paragraph)
-                ? Math.Clamp(_caretPosition.Offset, 0, plain.Length) : -1;
-
-            for (int i = 0; i < plain.Length; i++)
+                ? Math.Clamp(_caretPosition.Offset, 0, GetParagraphLength(p)) : -1;
+            int local = 0;
+            void Step(char ch)
             {
-                if (!captured && i == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
-                Consume(plain[i]);
+                if (!captured && local == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
+                Consume(ch);
+                local++;
             }
-            if (!captured && caretOff == plain.Length) { capLine = curLine; capCol = curCol; captured = true; }
+            foreach (var inline in p.Inlines)
+            {
+                if (inline is Run r && r.Text is { } t) { foreach (char ch in t) Step(ch); }
+                else if (inline is InlineImage) Step(ObjChar);
+            }
+            if (!captured && local == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
         }
 
         return (chars, words, captured ? capLine : 1, captured ? capCol : 1);

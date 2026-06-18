@@ -36,7 +36,13 @@ internal sealed class RichEditorAutomationPeer : ControlAutomationPeer, IValuePr
     public void SetValue(string? value)
     {
         if (_owner.IsReadOnly) return;
-        _owner.LoadHtml(System.Net.WebUtility.HtmlEncode(value ?? string.Empty));
+        // One <p> per line so a multi-line value keeps its breaks (HtmlEncode alone collapses '\n' into
+        // a single paragraph); each line is encoded so '<'/'&' stay literal. Mirrors GetPlainText, which
+        // joins paragraphs with '\n', so the value round-trips.
+        var sb = new System.Text.StringBuilder();
+        foreach (var line in (value ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            sb.Append("<p>").Append(System.Net.WebUtility.HtmlEncode(line)).Append("</p>");
+        _owner.LoadHtml(sb.ToString());
     }
 
     // Raised by the owner when IsReadOnly toggles, so assistive tech learns the control's editability

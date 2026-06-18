@@ -202,8 +202,8 @@ public static class DocumentSerializer
                 {
                     Type = "Image",
                     ImageRef = PoolImage(pool, im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null),
-                    Width = im.Width,
-                    Height = im.Height
+                    Width = NanToNull(im.Width),
+                    Height = NanToNull(im.Height)
                 });
         }
         return d;

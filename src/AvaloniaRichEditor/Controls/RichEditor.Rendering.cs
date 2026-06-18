@@ -27,6 +27,9 @@ public partial class RichEditor
     private static readonly Avalonia.Media.Immutable.ImmutablePen AccentPen15 = new(AccentBrush, 1.5);
     private static readonly Avalonia.Media.Immutable.ImmutablePen AccentBorderPen = new(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(120, 0, 120, 215)), 1);
     private static readonly Avalonia.Media.Immutable.ImmutablePen BlockCaretPen = new(Brushes.Black, 2);
+    // Text-caret pen, cached so the 2 Hz blink / scroll / hover repaints don't allocate a Pen each frame
+    // (unlike the static pens above it depends on the CaretBrush property). Reset when CaretBrush changes.
+    private Pen? _caretPen;
     // Faint dashed marker at page boundaries when a paper size is set but page chrome is off.
     private static readonly Avalonia.Media.Immutable.ImmutablePen PageBreakPen =
         new(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(110, 0x9E, 0x9E, 0x9E)), 1,
@@ -266,8 +269,15 @@ public partial class RichEditor
             if (selCmp < 0) { selStart = _selectionStart; selEnd = _selectionEnd; }
             else { selStart = _selectionEnd; selEnd = _selectionStart; }
             var allParas = GetAllParagraphsInOrder();
-            int si = allParas.IndexOf(selStart.Paragraph);
-            int ei = allParas.IndexOf(selEnd.Paragraph);
+            // One scan for both endpoints instead of two IndexOf passes (this runs every render frame a
+            // selection exists — once per visible page in page view — so the linear walks add up on drag).
+            int si = -1, ei = -1;
+            for (int idx = 0; idx < allParas.Count; idx++)
+            {
+                var pp = allParas[idx];
+                if (si < 0 && ReferenceEquals(pp, selStart.Paragraph)) si = idx;
+                if (ReferenceEquals(pp, selEnd.Paragraph)) ei = idx;
+            }
             if (si >= 0 && ei >= 0)
             {
                 selectedParagraphs = new HashSet<Paragraph>();
@@ -571,7 +581,7 @@ public partial class RichEditor
             if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
                 var cv = MapDocToView(caretPoint.Value);
-                context.DrawLine(new Pen(CaretBrush, 1.5), cv, new Point(cv.X, cv.Y + caretHeight));
+                context.DrawLine(_caretPen ??= new Pen(CaretBrush, 1.5), cv, new Point(cv.X, cv.Y + caretHeight));
             }
         }
 

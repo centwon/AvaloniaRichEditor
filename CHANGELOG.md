@@ -6,6 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **HTML import font size**: text without an explicit `font-size` (notably every table cell, and
+  inline-wrapped top-level text like a bare `<span>`) was imported at a stale **14pt** — a leftover from
+  the px-era default before the points migration — instead of the **10pt** body default, so a pasted
+  table read larger than the surrounding text. It now matches the rest of the document at 10pt.
+- **RTF round-trip dropped astral characters** (emoji and other non-BMP text): the writer emits a
+  surrogate pair as two `\u` units, but the reader decoded each via `ConvertFromUtf32`, which throws on a
+  lone surrogate and silently dropped the character. The reader now appends each `\u` as a raw UTF-16
+  code unit so the halves recombine.
+- **Inline-image serialization** no longer risks a `NaN` width/height reaching `System.Text.Json` (which
+  rejects raw `NaN`): inline images now go through the same `NaN → null` guard as block images and read
+  back at the default size.
+- **Accessibility `IValueProvider.SetValue`** preserved no line breaks — a multi-line value collapsed
+  into one paragraph. Each line is now its own paragraph, round-tripping with `GetPlainText`.
+- **`Ctrl+Delete`/`Ctrl+Backspace` (delete word)** no longer pushes an empty undo checkpoint when there
+  is nothing to delete at a paragraph boundary.
+
+### Performance
+- The blinking text caret no longer allocates a `Pen` every repaint (cached, rebuilt only when
+  `CaretBrush` changes), matching the other render pens.
+- Drawing the selection highlight finds both selection endpoints in a single pass instead of two
+  `IndexOf` scans of the paragraph list (runs every render frame a selection exists — once per visible
+  page in page view).
+- `GetStatus` (status-bar char/word/line/column, recomputed on every caret move) walks the inlines
+  directly instead of building a per-paragraph string, removing the per-keystroke string allocations on
+  large documents.
+- Cursor hover detects the table-select border in one document walk instead of two (it previously called
+  `GetBlockAtPoint` and then re-walked via `GetTableRect`).
+
 ## [0.7.0] - 2026-06-18
 
 The first release to **drop the pre-release suffix** (alpha/beta) — on the 0.x line the API may still

@@ -26,6 +26,17 @@ public class RtfRoundTripTests
         Assert.True(RtfDocumentFormatter.LooksLikeRtf(rtf));
     }
 
+    // Regression: an astral character (emoji) is written as two \u surrogate halves; the reader must
+    // recombine them. ConvertFromUtf32 threw on each lone surrogate and dropped the character before.
+    [Fact]
+    public void RoundTrip_PreservesAstralUnicode()
+    {
+        string emoji = "A\U0001F600B"; // grinning face (surrogate pair)
+        var doc = TestHelpers.Doc(TestHelpers.Para(new Run { Text = emoji }));
+        var p = RoundTrip(doc).Blocks.OfType<Paragraph>().First();
+        Assert.Equal(emoji, Text(p));
+    }
+
     [Fact]
     public void RoundTrip_PreservesTextAndCharacterFormatting()
     {

@@ -48,6 +48,26 @@ public class HtmlFormatterTests
         Assert.Equal(FontWeight.Bold, bold.FontWeight);
     }
 
+    // Regression: HTML-imported text without an explicit font-size must use the 10pt body default, not
+    // the stale 14 (px-era) that ParseInlines defaulted to — a table cell is the common trigger.
+    [Fact]
+    public void ParseHtml_TableCellText_UsesBodyFontSize()
+    {
+        var doc = HtmlDocumentFormatter.ParseHtml("<table><tr><td>cell</td></tr></table>");
+        var tb = doc.Blocks.OfType<TableBlock>().Single();
+        var run = tb.Cells[0][0].Inlines.OfType<Run>().Single(r => r.Text == "cell");
+        Assert.Equal(10, run.FontSize);
+    }
+
+    [Fact]
+    public void ParseHtml_InlineWrappedText_UsesBodyFontSize()
+    {
+        var doc = HtmlDocumentFormatter.ParseHtml("<span>hi</span>");
+        var run = doc.Blocks.OfType<Paragraph>()
+            .SelectMany(p => p.Inlines.OfType<Run>()).Single(r => r.Text == "hi");
+        Assert.Equal(10, run.FontSize);
+    }
+
     [Fact]
     public void ToHtml_EmitsBoldTag()
     {

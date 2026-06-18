@@ -438,7 +438,7 @@ namespace AvaloniaRichEditor.Formatters
             return double.NaN;
         }
 
-        private static void ParseInlines(HtmlNode node, Paragraph p, FontWeight weight = FontWeight.Normal, FontStyle style = FontStyle.Normal, IBrush? color = null, string? uri = null, double baseSize = 14, bool inLink = false, IBrush? background = null, string? family = null, bool underline = false, bool strike = false)
+        private static void ParseInlines(HtmlNode node, Paragraph p, FontWeight weight = FontWeight.Normal, FontStyle style = FontStyle.Normal, IBrush? color = null, string? uri = null, double baseSize = 10, bool inLink = false, IBrush? background = null, string? family = null, bool underline = false, bool strike = false)
         {
             foreach (var child in node.ChildNodes)
             {

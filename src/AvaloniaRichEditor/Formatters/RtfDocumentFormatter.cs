@@ -266,7 +266,10 @@ internal sealed class RtfParser
         if (_st.Dest == Dest.Normal)
         {
             if (code < 0) code += 65536; // RTF \u is signed 16-bit
-            try { _run.Append(char.ConvertFromUtf32(code)); } catch { }
+            // \u carries one UTF-16 code UNIT (not a scalar): astral chars arrive as two \u (a surrogate
+            // pair), so append the raw unit — consecutive halves recombine in the buffer. ConvertFromUtf32
+            // would throw on a lone surrogate and drop emoji etc.
+            if (code >= 0 && code <= 0xFFFF) _run.Append((char)code);
         }
         // Skip the spell-out fallback that follows a \uN (a plain char or a \'hh each count as one).
         for (int k = 0; k < _st.UnicodeSkip && _i < _s.Length; k++)
