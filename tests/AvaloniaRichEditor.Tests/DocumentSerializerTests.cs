@@ -21,8 +21,8 @@ public class DocumentSerializerTests
             Inlines = { new Run { Text = "Title" } }
         });
         var tb = new TableBlock(2, 2);
-        tb.Cells[0][0].Inlines.Clear();
-        tb.Cells[0][0].Inlines.Add(new Run { Text = "cell" });
+        tb.Cells[0][0].Para.Inlines.Clear();
+        tb.Cells[0][0].Para.Inlines.Add(new Run { Text = "cell" });
         tb.MergeCells(0, 0, 0, 1);
         doc.Blocks.Add(tb);
         return doc;

@@ -91,7 +91,7 @@ public class ImagePoolTests
         doc.Blocks.Add(ib);
         var tb = new TableBlock(1, 1);
         var im = new InlineImage(); im.SetImageData(FakeJpeg(), "image/jpeg");
-        tb.Cells[0][0].Inlines.Add(im);
+        tb.Cells[0][0].Para.Inlines.Add(im);
         doc.Blocks.Add(tb);
 
         string json = DocumentSerializer.Serialize(doc);
@@ -100,7 +100,7 @@ public class ImagePoolTests
 
         var doc2 = DocumentSerializer.Deserialize(json);
         // Cell paragraphs are seeded with an empty Run, so pick the image by type.
-        var im2 = Assert.Single(Assert.IsType<TableBlock>(doc2.Blocks[1]).Cells[0][0].Inlines.OfType<InlineImage>());
+        var im2 = Assert.Single(Assert.IsType<TableBlock>(doc2.Blocks[1]).Cells[0][0].Para.Inlines.OfType<InlineImage>());
         Assert.Equal(FakeJpeg(), im2.RawBytes);
     }
 }

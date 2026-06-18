@@ -395,7 +395,7 @@ public class TextRange
             {
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c] == p)
+                        if (tb.Cells[r][c].Para == p)
                         {
                             p.Inlines.Clear();
                             p.Inlines.Add(new Run { Text = "", Parent = p });
@@ -415,7 +415,7 @@ public class TextRange
             if (block is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c] == p) return tb;
+                        if (tb.Cells[r][c].Para == p) return tb;
         }
         return null;
     }
@@ -509,7 +509,7 @@ public class TextRange
                 // Logical (anchor) cells only — matching the control's own paragraph order, so the
                 // index-based range loops here agree with it on merged tables (covered cells are
                 // never caret/selection endpoints).
-                foreach (var (_, _, cell) in tb.LogicalCells()) result.Add(cell);
+                foreach (var (_, _, cell) in tb.LogicalCells()) result.Add(cell.Para);
             }
         }
         return result;

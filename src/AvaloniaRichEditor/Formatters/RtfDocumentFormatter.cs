@@ -384,8 +384,8 @@ internal sealed class RtfParser
         tb.Cells.Clear();
         foreach (var r in rows)
         {
-            var cells = new List<Paragraph>(cols);
-            for (int c = 0; c < cols; c++) cells.Add(c < r.Count ? r[c] : new Paragraph());
+            var cells = new List<TableCell>(cols);
+            for (int c = 0; c < cols; c++) cells.Add(c < r.Count ? new TableCell(r[c]) : new TableCell());
             tb.Cells.Add(cells);
         }
         tb.Rows = rows.Count;
@@ -592,7 +592,7 @@ internal sealed class RtfWriter
             {
                 _body.Append(@"\pard\intbl ");
                 var cell = tb.Cells[row][col];
-                foreach (var inline in cell.Inlines)
+                foreach (var inline in cell.Para.Inlines)
                     if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
                 _body.Append(@"\cell");
             }

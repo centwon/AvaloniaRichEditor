@@ -98,7 +98,7 @@ internal class UndoManager
                     {
                         for (int c = 0; c < tb.Columns; c++)
                         {
-                            lastPara = tb.Cells[r][c];
+                            lastPara = tb.Cells[r][c].Para;
                             if (currentIndex == index) return;
                             currentIndex++;
                         }
@@ -138,7 +138,7 @@ internal class UndoManager
                     {
                         for (int c = 0; c < tb.Columns; c++)
                         {
-                            var cell = tb.Cells[r][c];
+                            var cell = tb.Cells[r][c].Para;
                             if (cell == pointer.Paragraph) { found = true; return; }
                             index++;
                         }

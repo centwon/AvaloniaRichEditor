@@ -30,7 +30,7 @@ public class FlowPackageTests
         b1.SetImageData(FakeJpeg(), "image/jpeg"); // same bytes as the icon -> one pool entry
         doc.Blocks.Add(b1);
         var tb = new TableBlock(2, 2);
-        tb.Cells[0][0].Inlines.Add(new Run { Text = "cell" });
+        tb.Cells[0][0].Para.Inlines.Add(new Run { Text = "cell" });
         doc.Blocks.Add(tb);
         return doc;
     }

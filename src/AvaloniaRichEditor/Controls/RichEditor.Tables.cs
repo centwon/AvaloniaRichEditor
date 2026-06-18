@@ -15,7 +15,7 @@ public partial class RichEditor
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c] == p) return (tb, r, c);
+                        if (tb.Cells[r][c].Para == p) return (tb, r, c);
         return null;
     }
 
@@ -70,9 +70,9 @@ public partial class RichEditor
 
         var (tb, r, c) = loc.Value;
         // Navigate over logical (anchor) cells so merged areas count once and covered cells are skipped.
-        var anchors = tb.LogicalCells().Select(x => x.cell).ToList();
+        var anchors = tb.LogicalCells().Select(x => x.cell.Para).ToList();
         int idx = anchors.IndexOf(_caretPosition.Paragraph!);
-        if (idx < 0) { var (ar, ac) = tb.AnchorOf(r, c); idx = anchors.IndexOf(tb.Cells[ar][ac]); }
+        if (idx < 0) { var (ar, ac) = tb.AnchorOf(r, c); idx = anchors.IndexOf(tb.Cells[ar][ac].Para); }
         if (shift)
         {
             if (idx > 0) FocusCell(anchors[idx - 1]);
@@ -86,7 +86,7 @@ public partial class RichEditor
             if (Document != null) PushUndo();
             tb.InsertRow(tb.Rows);
             if (Document != null) UpdateParents(Document);
-            FocusCell(tb.Cells[tb.Rows - 1][0]);
+            FocusCell(tb.Cells[tb.Rows - 1][0].Para);
         }
     }
 
@@ -96,7 +96,7 @@ public partial class RichEditor
         if (FindCell(cell) is { } loc && loc.tb.IsCovered(loc.r, loc.c))
         {
             var (ar, ac) = loc.tb.AnchorOf(loc.r, loc.c);
-            cell = loc.tb.Cells[ar][ac];
+            cell = loc.tb.Cells[ar][ac].Para;
         }
         int len = GetParagraphLength(cell);
         _caretPosition = new TextPointer(cell, len);
@@ -113,7 +113,7 @@ public partial class RichEditor
         tb.InsertRow(at);
         UpdateParents(Document);
         int ar = Math.Clamp(at, 0, tb.Rows - 1);
-        _caretPosition = new TextPointer(tb.Cells[ar][0], 0);
+        _caretPosition = new TextPointer(tb.Cells[ar][0].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }
@@ -125,7 +125,7 @@ public partial class RichEditor
         tb.DeleteRow(at);
         UpdateParents(Document);
         int nr = Math.Clamp(at, 0, tb.Rows - 1);
-        _caretPosition = new TextPointer(tb.Cells[nr][0], 0);
+        _caretPosition = new TextPointer(tb.Cells[nr][0].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }
@@ -137,7 +137,7 @@ public partial class RichEditor
         tb.InsertColumn(at);
         UpdateParents(Document);
         int ac = Math.Clamp(at, 0, tb.Columns - 1);
-        _caretPosition = new TextPointer(tb.Cells[0][ac], 0);
+        _caretPosition = new TextPointer(tb.Cells[0][ac].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }
@@ -149,7 +149,7 @@ public partial class RichEditor
         tb.DeleteColumn(at);
         UpdateParents(Document);
         int nc = Math.Clamp(at, 0, tb.Columns - 1);
-        _caretPosition = new TextPointer(tb.Cells[0][nc], 0);
+        _caretPosition = new TextPointer(tb.Cells[0][nc].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }

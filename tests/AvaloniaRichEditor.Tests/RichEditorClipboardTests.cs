@@ -120,7 +120,7 @@ public class RichEditorClipboardTests
 
         var tb = Assert.Single(ed.Document!.Blocks.OfType<TableBlock>());
         Assert.Equal(2, tb.Columns);
-        Assert.Equal("a", tb.Cells[0][0].Text());
+        Assert.Equal("a", tb.Cells[0][0].Para.Text());
     }
 
     [AvaloniaFact]

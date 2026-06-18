@@ -43,7 +43,7 @@ public class BlockCaretTests
     public void Down_FromLastCell_EntersAfterTableCaret()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[1][1], 1); // inside "w" (last row, last column)
+        PlaceCaret(ed, tb.Cells[1][1].Para, 1); // inside "w" (last row, last column)
 
         Press(ed, Key.Down);
 
@@ -55,7 +55,7 @@ public class BlockCaretTests
     public void Down_FromAfterTableCaret_MovesToNextParagraph()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[1][1], 1);
+        PlaceCaret(ed, tb.Cells[1][1].Para, 1);
 
         Press(ed, Key.Down); // -> after-table block caret
         Press(ed, Key.Down); // -> paragraph after the table
@@ -71,7 +71,7 @@ public class BlockCaretTests
     {
         var (ed, tb) = EditorWithTable();
         tb.MergeCells(0, 1, 1, 1); // vertical merge in the last column: anchor (0,1) spans both rows
-        PlaceCaret(ed, tb.Cells[0][1], 0);
+        PlaceCaret(ed, tb.Cells[0][1].Para, 0);
 
         Press(ed, Key.Down);
 
@@ -83,7 +83,7 @@ public class BlockCaretTests
     public void Right_FromLastCellEnd_EntersAfterTableCaret()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[1][1], 1); // end of "w" (last logical cell)
+        PlaceCaret(ed, tb.Cells[1][1].Para, 1); // end of "w" (last logical cell)
 
         Press(ed, Key.Right);
 
@@ -100,7 +100,7 @@ public class BlockCaretTests
     public void Left_FromFirstCellStart_EntersBeforeTableCaret()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[0][0], 0); // start of "x" (first logical cell)
+        PlaceCaret(ed, tb.Cells[0][0].Para, 0); // start of "x" (first logical cell)
 
         Press(ed, Key.Left);
 
@@ -117,20 +117,20 @@ public class BlockCaretTests
     public void Right_FromNonLastCellEnd_MovesToNextCell()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[0][0], 1); // end of "x" — not the last cell
+        PlaceCaret(ed, tb.Cells[0][0].Para, 1); // end of "x" — not the last cell
 
         Press(ed, Key.Right);
 
         Assert.Null(CaretBlockField.GetValue(ed)); // no block caret: plain move into the next cell
         var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
-        Assert.Same(tb.Cells[0][1], caret.Paragraph);
+        Assert.Same(tb.Cells[0][1].Para, caret.Paragraph);
     }
 
     [AvaloniaFact]
     public void Down_FromBeforeTableCaret_SkipsCells_ToFollowingParagraph()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[0][0], 0);
+        PlaceCaret(ed, tb.Cells[0][0].Para, 0);
         Press(ed, Key.Up);   // -> before-table caret
 
         Press(ed, Key.Down); // vertical: skip the table as one unit
@@ -144,7 +144,7 @@ public class BlockCaretTests
     public void Up_FromAfterTableCaret_SkipsCells_ToPrecedingParagraph()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[1][1], 1);
+        PlaceCaret(ed, tb.Cells[1][1].Para, 1);
         Press(ed, Key.Down); // -> after-table caret
 
         Press(ed, Key.Up);   // vertical: skip the table as one unit
@@ -158,14 +158,14 @@ public class BlockCaretTests
     public void Right_FromBeforeTableCaret_EntersFirstCell()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[0][0], 0);
+        PlaceCaret(ed, tb.Cells[0][0].Para, 0);
         Press(ed, Key.Up);    // -> before-table caret
 
         Press(ed, Key.Right); // horizontal: walk into the cells
 
         Assert.Null(CaretBlockField.GetValue(ed));
         var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
-        Assert.Same(tb.Cells[0][0], caret.Paragraph);
+        Assert.Same(tb.Cells[0][0].Para, caret.Paragraph);
         Assert.Equal(0, caret.Offset);
     }
 
@@ -173,7 +173,7 @@ public class BlockCaretTests
     public void Up_FromFirstCell_EntersBeforeTableCaret()
     {
         var (ed, tb) = EditorWithTable();
-        PlaceCaret(ed, tb.Cells[0][0], 0);
+        PlaceCaret(ed, tb.Cells[0][0].Para, 0);
 
         Press(ed, Key.Up);
 

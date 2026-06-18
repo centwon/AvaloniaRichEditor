@@ -137,7 +137,7 @@ public partial class RichEditor
                 case ImageBlock: n++; break;
                 case Paragraph p: n += CountInlineImages(p); break;
                 case TableBlock t:
-                    foreach (var (_, _, cell) in t.LogicalCells()) n += CountInlineImages(cell);
+                    foreach (var (_, _, cell) in t.LogicalCells()) n += CountInlineImages(cell.Para);
                     break;
             }
         }

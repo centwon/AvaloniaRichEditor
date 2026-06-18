@@ -360,10 +360,11 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     if (cs > 1 || rs > 1) tb.SetSpan(r, col, cs, rs);
                     var cell = tb.Cells[r][col];
-                    cell.Inlines.Clear();
-                    ParseInlines(td, cell);
-                    cell.Background = ReadBackground(td);
-                    if (cell.Inlines.Count == 0) cell.Inlines.Add(new Run { Text = "" });
+                    var para = cell.Para;
+                    para.Inlines.Clear();
+                    ParseInlines(td, para);
+                    cell.Background = ReadBackground(td); // cell-level background lives on the cell
+                    if (para.Inlines.Count == 0) para.Inlines.Add(new Run { Text = "" });
                 }
             return tb;
         }
@@ -710,7 +711,7 @@ namespace AvaloniaRichEditor.Formatters
                                 sb.Append($"<td{span} style=\"background-color:{CssColor(cbg.Color)}\">");
                             else
                                 sb.Append($"<td{span}>");
-                            foreach (var inline in cell.Inlines) EmitInline(sb, inline);
+                            foreach (var inline in cell.Para.Inlines) EmitInline(sb, inline);
                             sb.Append("</td>\n");
                         }
                         sb.Append("</tr>\n");

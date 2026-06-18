@@ -121,7 +121,7 @@ public class RichEditorCaretNavigationTests
         var ed = new RichEditor();
         var doc = new FlowDocument();
         var tb = new TableBlock(2, 2);
-        ((Run)tb.Cells[0][0].Inlines[0]).Text = "AAA\nBBB"; // two visual lines via a soft break
+        ((Run)tb.Cells[0][0].Para.Inlines[0]).Text = "AAA\nBBB"; // two visual lines via a soft break
         doc.Blocks.Add(tb);
         ed.Document = doc;
 
@@ -133,8 +133,8 @@ public class RichEditorCaretNavigationTests
         Type(ed, "X");
 
         var table = (TableBlock)ed.Document!.Blocks.First(b => b is TableBlock);
-        Assert.Equal("AAA\nXBBB", table.Cells[0][0].Text()); // moved within the cell to line 2
-        Assert.Equal("", table.Cells[1][0].Text());          // did NOT jump to the cell below
+        Assert.Equal("AAA\nXBBB", table.Cells[0][0].Para.Text()); // moved within the cell to line 2
+        Assert.Equal("", table.Cells[1][0].Para.Text());          // did NOT jump to the cell below
     }
 
     [AvaloniaFact]
@@ -146,7 +146,7 @@ public class RichEditorCaretNavigationTests
         var ed = new RichEditor();
         var doc = new FlowDocument();
         var tb = new TableBlock(2, 2);
-        ((Run)tb.Cells[0][0].Inlines[0]).Text = "L1\nL2\nL3"; // makes row 0 tall; cell[0][1] stays empty
+        ((Run)tb.Cells[0][0].Para.Inlines[0]).Text = "L1\nL2\nL3"; // makes row 0 tall; cell[0][1] stays empty
         doc.Blocks.Add(tb);
         ed.Document = doc;
 
@@ -159,8 +159,8 @@ public class RichEditorCaretNavigationTests
         Type(ed, "X");
 
         var t = (TableBlock)ed.Document!.Blocks.First(b => b is TableBlock);
-        Assert.Equal("", t.Cells[0][1].Text());  // did NOT stay stuck in the empty cell
-        Assert.Equal("X", t.Cells[1][1].Text());  // crossed to the cell directly below
+        Assert.Equal("", t.Cells[0][1].Para.Text());  // did NOT stay stuck in the empty cell
+        Assert.Equal("X", t.Cells[1][1].Para.Text());  // crossed to the cell directly below
     }
 
     [AvaloniaFact]

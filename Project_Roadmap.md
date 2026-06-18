@@ -355,6 +355,23 @@
 >
 > **베타 게이트 마무리(2026-06-16)**: [x] **A2** — 이미지 디코드 실패 시 `RawBytes` 보존(소실→저장 시 그림 누락 수정). 실패 분기는 `[Fact]`(플랫폼 없음→`new Bitmap` 실제 예외)로만 재현 가능(헤드리스 로더는 1×1 더미). [x] **G1 P5** 렌더 통합(위 G1 절). [x] **표/셀 리사이즈 끊김 수정** — `_tableLayoutCache`가 `ColumnWidths`/`RowHeights`를 키로 안 잡아 drag 중 옛 치수 반환하던 것을, 리사이즈 이동마다 캐시 무효화로 라이브 반영. → **`0.6.0-beta` 게시**(alpha 0.1~0.5 이후 첫 beta; API 안정화 신호 + `GetRichInlines` Shipped 승격). **남은 1.0 게이트는 기능이 아니라 검증**: 렌더 픽셀 테스트(헤드리스 no-op 한계), mac/Linux 기능 실검증, 대형 문서 성능 실측.
 
+### 🟡 [진행 중] 마일스톤 A: 셀 안에 블록 (착수 2026-06-18)
+> **목표(2중)**: ① 표 셀이 단일 `Paragraph`가 아니라 **블록 리스트**(여러 문단·블록이미지·구분선·중첩 표)를 담는다. ② 이를 **"경계 박스 안에서 블록 리스트를 레이아웃/렌더/히트테스트하는 재귀 프리미티브"**로 구현해 문서 워크와 셀 워크를 통합 → 후속 **B(인라인 표=HWP식 글자처럼 취급)**가 그대로 재사용.
+>
+> **핵심 통찰**: 표는 *이미* 중첩 편집 컨텍스트다(각 셀이 자기 `BuildTextLayout`로 히트테스트/캐럿 하강 — [HitTesting.cs:102](src/AvaloniaRichEditor/Controls/RichEditor.HitTesting.cs:102)). A는 셀 *안쪽* 깊이를, B는 부모 문단 줄의 *바깥 경계* 라우팅을 다루므로 **A→B는 난이도를 가중하지 않는다**(다른 축). 캐럿 모델 불변(`TextPointer(Paragraph,Offset)` 유지). A는 B의 전제조건이 아니라, 재귀 프리미티브를 챙기는 디딤돌.
+>
+> **확정 결정(사용자 2026-06-18)**: ① 셀 타입 = **`TableCell` 클래스 신설**(`Blocks`+`Background`; `Paragraph.Background` 셀 해킹 승격). ② 셀 안 Enter = **진짜 문단 분할**(기존 `\n` 폐기, 불변식 3 셀 한정 해제). ③ v1 범위 = **중첩 표까지 전부**(재귀 프리미티브 완전 구현 필수, RTF `\nesttbl` 출력/병합도 v1).
+>
+> **단계(각 출하·테스트 그린)**:
+> - [x] **P0 안전망(2026-06-18)**: `TableCellBehaviorTests` 4건 — JSON 왕복이 2×2 셀 그리드 텍스트 + 셀 배경(P1에서 `Paragraph.Background`→`TableCell.Background` 이전 예정) 보존, Tab/Shift+Tab 셀 간 캐럿 이동 + 마지막 셀 Tab=행 추가(Parent 사슬 의존), 셀 콘텐츠가 표 높이 구동(래핑 셀이 단일문자 셀보다 큼). 260→**264 그린**. (셀 참조 `Cells[r][c]`를 쓰는 사이트라 P1에서 함께 마이그레이션됨.)
+> - [x] **P1 모델 전환(2026-06-19)**: `TableCell` 도입(`Blocks`+`Background`+`Para` 편의 게터), `Cells: List<List<TableCell>>`, 셀은 블록 1개 유지(동작 100% 동일). 13파일 `Cells[r][c]`→`.Para`, Parent 사슬(`Run→Paragraph→TableCell→TableBlock`, `UpdateParents`가 셀 블록 순회), `LogicalCells()` 반환 타입 `TableCell`로. **셀 배경 = `TableCell.Background`로 승격하되 JSON 스키마 불변**(셀의 단일 블록 DTO에 배경을 싣고 읽을 때 `TableCell.Background`로 복원 → 레거시 문서 무료 호환). `TextPointer.CompareTo`/HTML/RTF 직렬화도 `.Para` 경유. **잠복 버그 클래스 확인**: `ReferenceEquals(cell, paragraph)`·`==` 비교가 `TableCell` vs `Paragraph`로 *컴파일은 통과하나 항상 false* → `BlockCaretTests`(←/→ 표 경계)가 정확히 잡아냄(`.cell.Para`로 수정), Rendering 컬링의 `Parent==tb`도 `as TableCell)?.Parent==tb`로. PublicAPI: `TableBlock.Cells.get`/`LogicalCells()` 시그니처 변경 `*REMOVED*`+신규, `TableCell` 9멤버 Unshipped 등재. **264 그린(P0 포함), 라이브러리 0 경고.** (동작 무변경이라 기존 스위트가 회귀 가드 — GUI 육안검증은 P3/P4에서.)
+> - [x] **P2 측정 프리미티브(2026-06-19)**: `MeasureCellContentHeight(cell, innerWidth)` 도입 — 셀 높이 = 셀 블록 리스트의 높이 합(문서 측정 워크와 같은 형태, 셀 콘텐츠 박스로 스코프). `LayoutTable`의 셀 측정 2곳(base/rowspan)을 이걸 통하도록. 단일 문단이라 `BuildTextLayout(cell.Para,w).Height`와 동일 → **264 그린, 동작 무변경, 공개 API 무변경**. 셀은 자체 폭 규약(innerWidth 직접)이라 문서 `BlockExtent`(ParaLeft/MarginRight) 경유 안 함 — 셀 전용 유지. **렌더 쪽 `DrawBlockList` 일반화는 P3로 이관**(캐럿/선택/preedit/인라인이미지가 단일 문단에 얽혀 있어, 단일 블록만으로는 동작 동일성을 GUI로 검증할 수단이 없음 → 다중 블록 콘텐츠+GUI 검증이 함께 있는 P3에서). `_tableLayoutCache` 부모 전파는 중첩표가 생기는 P4로(현재 무의미).
+> - **P3 다중 블록 편집**: 셀 Enter=문단 분할, 셀 내 ↑↓/Home/End 횡단, Backspace/Delete 셀 블록 병합. GUI 검증.
+> - **P4 풍부한 셀**: 셀에 블록이미지·구분선·**중첩 표** 삽입 + 직렬화 왕복. 무한 중첩 UI 깊이 상한(3~4단). GUI 검증.
+> - **P5 정리**: 셀 `\n` 특례 제거, `DOCUMENT_FORMAT.md`·CHANGELOG 갱신.
+>
+> **위험**: 새 아키텍처 없음(캐럿·표=블록 유지, 기존 워크 일반화). 폭은 넓음(13파일+Parent 스윕, P1에서 가장 조심). 헤드리스 약점으로 P3·P4는 RenderTargetBitmap 강제 패스+GUI 검증.
+
 ### 🔵 N6: 이미지 저장 모델 전환 및 성능 최적화 (미착수)
 
 > **배경**: 현재 이미지는 `Bitmap` 객체가 데이터 주체이며, 저장 시 매번 PNG로 재인코딩된다. 원본이 JPEG(~80KB)여도 PNG(~500KB)로 부풀고, 직렬화마다 인코딩 비용이 발생한다. 외부 의존성 추가 없이(Avalonia 내장 + .NET 내장만) 용량·속도·화질을 동시에 개선한다.

@@ -55,7 +55,7 @@ public class HtmlFormatterTests
     {
         var doc = HtmlDocumentFormatter.ParseHtml("<table><tr><td>cell</td></tr></table>");
         var tb = doc.Blocks.OfType<TableBlock>().Single();
-        var run = tb.Cells[0][0].Inlines.OfType<Run>().Single(r => r.Text == "cell");
+        var run = tb.Cells[0][0].Para.Inlines.OfType<Run>().Single(r => r.Text == "cell");
         Assert.Equal(10, run.FontSize);
     }
 
@@ -105,7 +105,7 @@ public class HtmlFormatterTests
             "<table><tr><td>A</td><td>B</td></tr></table>");
         var tb = doc.Blocks.OfType<TableBlock>().Single();
         Assert.Equal(2, tb.Columns);
-        Assert.Equal("A", tb.Cells[0][0].Text());
+        Assert.Equal("A", tb.Cells[0][0].Para.Text());
     }
 
     [AvaloniaFact] // needs the Avalonia session: the allowed path decodes the image bitmap

@@ -78,18 +78,18 @@ public class RtfRoundTripTests
     public void RoundTrip_PreservesTableGrid()
     {
         var tb = new TableBlock(2, 2);
-        ((Run)tb.Cells[0][0].Inlines[0]).Text = "A1";
-        ((Run)tb.Cells[0][1].Inlines[0]).Text = "B1";
-        ((Run)tb.Cells[1][0].Inlines[0]).Text = "A2";
+        ((Run)tb.Cells[0][0].Para.Inlines[0]).Text = "A1";
+        ((Run)tb.Cells[0][1].Para.Inlines[0]).Text = "B1";
+        ((Run)tb.Cells[1][0].Para.Inlines[0]).Text = "A2";
         var doc = new FlowDocument();
         doc.Blocks.Add(tb);
 
         var t = RoundTrip(doc).Blocks.OfType<TableBlock>().Single();
         Assert.Equal(2, t.Rows);
         Assert.Equal(2, t.Columns);
-        Assert.Equal("A1", Text(t.Cells[0][0]));
-        Assert.Equal("B1", Text(t.Cells[0][1]));
-        Assert.Equal("A2", Text(t.Cells[1][0]));
+        Assert.Equal("A1", Text(t.Cells[0][0].Para));
+        Assert.Equal("B1", Text(t.Cells[0][1].Para));
+        Assert.Equal("A2", Text(t.Cells[1][0].Para));
     }
 
     [Fact]

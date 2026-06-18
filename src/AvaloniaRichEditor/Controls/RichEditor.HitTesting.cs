@@ -28,7 +28,7 @@ public partial class RichEditor
                 foreach (var (r, c, rect) in t.AnchorRects)
                     if (rect.Contains(p))
                     {
-                        var cell = tb.Cells[r][c];
+                        var cell = tb.Cells[r][c].Para;
                         var layout = BuildTextLayout(cell, Math.Max(10, rect.Width - 10));
                         var hit = layout.HitTestPoint(new Point(p.X - (rect.X + 5), p.Y - (rect.Y + 5)));
                         return hit.IsInside ? RunAtOffset(cell, hit.TextPosition) : null;
@@ -48,7 +48,7 @@ public partial class RichEditor
     {
         for (int r = 0; r < tb.Rows; r++)
             for (int c = 0; c < tb.Columns; c++)
-                if (tb.Cells[r][c] == p) return true;
+                if (tb.Cells[r][c].Para == p) return true;
         return false;
     }
 
@@ -63,6 +63,30 @@ public partial class RichEditor
         public readonly List<(int r, int c, Rect rect)> AnchorRects;
         public TableLayout(double[] colX, double[] rowY, double w, double h, List<(int, int, Rect)> anchors)
         { ColX = colX; RowY = rowY; TableWidth = w; TotalHeight = h; AnchorRects = anchors; }
+    }
+
+    // P2 primitive: the content height of a cell's block list laid out in `innerWidth`. A cell is a
+    // mini block container, so its height is the sum of its blocks' heights — the same shape as the
+    // document-level measure walk, scoped to one cell's content box. Through P1/P2 a cell holds exactly
+    // one paragraph, so this equals the previous BuildTextLayout(cell.Para, innerWidth).Height; P3/P4
+    // add real multi-block cells (and the render side iterates the same list). Cells use their own
+    // width convention (innerWidth directly), distinct from the document walk's ParaLeft/MarginRight
+    // math, so this stays cell-specific rather than routing through BlockExtent.
+    private double MeasureCellContentHeight(TableCell cell, double innerWidth)
+    {
+        double h = 0;
+        double w = Math.Max(10, innerWidth);
+        foreach (var b in cell.Blocks)
+        {
+            switch (b)
+            {
+                case Paragraph p:
+                    h += BuildTextLayout(p, w).Height;
+                    break;
+                // P4: nested tables / block images / dividers inside cells extend this branch.
+            }
+        }
+        return h;
     }
 
     // Single source of truth for a table's geometry. Render and all three hit-tests consume this so
@@ -99,8 +123,8 @@ public partial class RichEditor
             var (cs, rs) = tb.SpanOf(r, c);
             if (rs != 1) continue;
             double w = colX[Math.Min(c + cs, cols)] - colX[c];
-            var l = BuildTextLayout(cell, Math.Max(10, w - 10));
-            if (l.Height + 10 > rowH[r]) rowH[r] = l.Height + 10;
+            double ch = MeasureCellContentHeight(cell, w - 10);
+            if (ch + 10 > rowH[r]) rowH[r] = ch + 10;
         }
         for (int r = 0; r < rows; r++)
             if (r < tb.RowHeights.Count && tb.RowHeights[r] > rowH[r]) rowH[r] = tb.RowHeights[r];
@@ -111,8 +135,7 @@ public partial class RichEditor
             var (cs, rs) = tb.SpanOf(r, c);
             if (rs <= 1) continue;
             double w = colX[Math.Min(c + cs, cols)] - colX[c];
-            var l = BuildTextLayout(cell, Math.Max(10, w - 10));
-            double need = l.Height + 10, have = 0;
+            double need = MeasureCellContentHeight(cell, w - 10) + 10, have = 0;
             for (int rr = r; rr < r + rs && rr < rows; rr++) have += rowH[rr];
             int last = Math.Min(r + rs - 1, rows - 1);
             if (need > have) rowH[last] += need - have;
@@ -344,7 +367,7 @@ public partial class RichEditor
             {
                 foreach (var (r, c, rect) in t.AnchorRects)
                 {
-                    var cell = tb.Cells[r][c];
+                    var cell = tb.Cells[r][c].Para;
                     var (cs, _) = tb.SpanOf(r, c);
                     bool lastCol = c + cs >= tb.Columns;
                     bool xInside = (p.X >= rect.X && p.X <= rect.Right) || (lastCol && p.X > rect.Right);
@@ -362,7 +385,7 @@ public partial class RichEditor
                     if (distY < bestDistY)
                     {
                         bestDistY = distY;
-                        bestPara = tb.Cells[r][c];
+                        bestPara = tb.Cells[r][c].Para;
                         bestLocalIndex = GetParagraphLength(bestPara);
                     }
                 }

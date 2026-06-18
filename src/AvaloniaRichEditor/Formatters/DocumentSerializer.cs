@@ -147,7 +147,15 @@ public static class DocumentSerializer
                 foreach (var row in tb.Cells)
                 {
                     var rd = new List<BlockDto>();
-                    foreach (var cell in row) rd.Add(ParagraphToDto(cell, pool));
+                    foreach (var cell in row)
+                    {
+                        // P1 keeps the wire schema unchanged: one block DTO per cell (the cell's paragraph),
+                        // with the cell-level background carried on that DTO's Background. Read back into
+                        // TableCell.Background — so legacy docs (background on the cell paragraph) round-trip.
+                        var dto = ParagraphToDto(cell.Para, pool);
+                        dto.Background = BrushToString(cell.Background);
+                        rd.Add(dto);
+                    }
                     td.Cells.Add(rd);
                 }
                 td.ColSpans = new List<List<int>>();
@@ -245,8 +253,16 @@ public static class DocumentSerializer
                 if (d.Cells != null)
                     foreach (var rowD in d.Cells)
                     {
-                        var row = new List<Paragraph>();
-                        foreach (var cd in rowD) row.Add(DtoToParagraph(cd, pool));
+                        var row = new List<TableCell>();
+                        foreach (var cd in rowD)
+                        {
+                            var para = DtoToParagraph(cd, pool);
+                            // Cell background lives on the cell, not its paragraph (legacy docs stored it on
+                            // the paragraph DTO — same field, so this migrates them transparently).
+                            var cell = new TableCell(para) { Background = para.Background };
+                            para.Background = null;
+                            row.Add(cell);
+                        }
                         tb.Cells.Add(row);
                     }
                 tb.Rows = tb.Cells.Count;
@@ -256,7 +272,7 @@ public static class DocumentSerializer
                 // Pad jagged/short rows so the grid stays rectangular — corrupt or hand-edited JSON
                 // could otherwise make Cells[r][c] throw in render/layout/hit-testing.
                 foreach (var row in tb.Cells)
-                    while (row.Count < tb.Columns) row.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+                    while (row.Count < tb.Columns) row.Add(new TableCell());
                 // Rebuild span grids to match the loaded cell grid. Missing/legacy docs default to 1×1.
                 tb.ColSpans.Clear();
                 tb.RowSpans.Clear();

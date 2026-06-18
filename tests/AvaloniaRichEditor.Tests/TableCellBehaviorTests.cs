@@ -1,0 +1,142 @@
+using System.Linq;
+using System.Reflection;
+using Avalonia;
+using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using AvaloniaRichEditor.Controls;
+using AvaloniaRichEditor.Documents;
+using AvaloniaRichEditor.Formatters;
+using Xunit;
+
+namespace AvaloniaRichEditor.Tests;
+
+// P0 safety net for milestone A ("blocks in cells"). These lock the *observable* behavior of the
+// current single-paragraph-per-cell model so the P1 model swap (Paragraph -> TableCell, still one
+// block per cell) can be proven behavior-preserving: cell grid text + cell background survive
+// serialization, Tab moves between cells (Parent-chain dependent), and cell content drives table
+// height. They assert through stable APIs (JSON/control) so only the cell-reference call sites need
+// updating when P1 lands.
+public class TableCellBehaviorTests
+{
+    private static void Press(RichEditor ed, Key key, KeyModifiers mods = KeyModifiers.None)
+        => ed.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = mods });
+
+    private static readonly FieldInfo CaretPositionField =
+        typeof(RichEditor).GetField("_caretPosition", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static void PlaceCaret(RichEditor ed, Paragraph p, int offset)
+    {
+        CaretPositionField.SetValue(ed, new TextPointer(p, offset));
+        typeof(RichEditor).GetField("_selectionStart", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(ed, new TextPointer(p, offset));
+        typeof(RichEditor).GetField("_selectionEnd", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(ed, new TextPointer(p, offset));
+    }
+
+    private static Paragraph CaretCell(RichEditor ed)
+        => ((TextPointer)CaretPositionField.GetValue(ed)!).Paragraph!;
+
+    private static void Realize(RichEditor ed, double width = 800)
+    {
+        ed.Measure(new Size(width, double.PositiveInfinity));
+        ed.Arrange(new Rect(0, 0, width, ed.DesiredSize.Height));
+        using var rtb = new RenderTargetBitmap(new PixelSize((int)width, (int)System.Math.Max(1, ed.DesiredSize.Height)));
+        rtb.Render(ed);
+    }
+
+    // ---- Serialization: cell grid text + per-cell background ---------------
+
+    [Fact]
+    public void Json_RoundTrip_PreservesCellGridTextAndBackground()
+    {
+        var doc = new FlowDocument();
+        var tb = new TableBlock(2, 2);
+        SetCellText(tb, 0, 0, "TL");
+        SetCellText(tb, 0, 1, "TR");
+        SetCellText(tb, 1, 0, "BL");
+        SetCellText(tb, 1, 1, "BR");
+        tb.Cells[0][1].Background = new SolidColorBrush(Color.FromRgb(0x33, 0x66, 0x99));
+        doc.Blocks.Add(tb);
+
+        var json = DocumentSerializer.Serialize(doc);
+        var doc2 = DocumentSerializer.Deserialize(json);
+
+        var tb2 = doc2.Blocks.OfType<TableBlock>().Single();
+        Assert.Equal("TL", tb2.Cells[0][0].Para.Text());
+        Assert.Equal("TR", tb2.Cells[0][1].Para.Text());
+        Assert.Equal("BL", tb2.Cells[1][0].Para.Text());
+        Assert.Equal("BR", tb2.Cells[1][1].Para.Text());
+
+        // The serializer rebuilds brushes as ImmutableSolidColorBrush (thread-affinity-free), so assert
+        // through ISolidColorBrush rather than the concrete type.
+        var bg = Assert.IsAssignableFrom<ISolidColorBrush>(tb2.Cells[0][1].Background);
+        Assert.Equal(Color.FromRgb(0x33, 0x66, 0x99), bg.Color);
+        Assert.Null(tb2.Cells[0][0].Background);
+    }
+
+    // ---- Tab navigation between cells (Parent-chain dependent) -------------
+
+    [AvaloniaFact]
+    public void Tab_MovesCaretToNextCell_ShiftTabMovesBack()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>a</td><td>b</td></tr></table>");
+        var tb = ed.Document!.Blocks.OfType<TableBlock>().Single();
+
+        PlaceCaret(ed, tb.Cells[0][0].Para, 0);
+        Press(ed, Key.Tab);
+        Assert.Same(tb.Cells[0][1].Para, CaretCell(ed));
+
+        Press(ed, Key.Tab, KeyModifiers.Shift);
+        Assert.Same(tb.Cells[0][0].Para, CaretCell(ed));
+    }
+
+    [AvaloniaFact]
+    public void Tab_InLastCell_AddsRow()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>a</td><td>b</td></tr></table>");
+        var tb = ed.Document!.Blocks.OfType<TableBlock>().Single();
+        Assert.Equal(1, tb.Rows);
+
+        PlaceCaret(ed, tb.Cells[0][1].Para, 1); // last cell
+        Press(ed, Key.Tab);
+
+        Assert.Equal(2, tb.Rows);
+    }
+
+    // ---- Cell content drives table height ----------------------------------
+
+    [AvaloniaFact]
+    public void TableHeight_GrowsWithCellContent()
+    {
+        RichEditor Build(string cellText)
+        {
+            var doc = new FlowDocument();
+            var tb = new TableBlock(1, 1);
+            SetCellText(tb, 0, 0, cellText);
+            doc.Blocks.Add(tb);
+            return new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
+        }
+
+        var shortEd = Build("x");
+        Realize(shortEd);
+        double shortH = shortEd.DesiredSize.Height;
+
+        // Many words at a narrow table width force wrapping -> a taller cell -> a taller table.
+        var tallEd = Build(string.Join(" ", Enumerable.Repeat("word", 60)));
+        Realize(tallEd);
+        double tallH = tallEd.DesiredSize.Height;
+
+        Assert.True(tallH > shortH, $"wrapped cell ({tallH}) should be taller than single-char cell ({shortH})");
+    }
+
+    private static void SetCellText(TableBlock tb, int r, int c, string text)
+    {
+        tb.Cells[r][c].Para.Inlines.Clear();
+        tb.Cells[r][c].Para.Inlines.Add(new Run { Text = text });
+    }
+}

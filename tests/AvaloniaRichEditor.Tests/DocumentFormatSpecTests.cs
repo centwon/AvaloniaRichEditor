@@ -61,6 +61,6 @@ public class DocumentFormatSpecTests
         var table = Assert.IsType<TableBlock>(doc.Blocks[2]);
         Assert.Equal(1, table.Rows);
         Assert.Equal(2, table.Columns);
-        Assert.Equal("셀1", table.Cells[0][0].Text());
+        Assert.Equal("셀1", table.Cells[0][0].Para.Text());
     }
 }

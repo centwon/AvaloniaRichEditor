@@ -15,8 +15,9 @@ public class TableBlock : Block
     public List<double> ColumnWidths { get; set; } = new();
     /// <summary>User-specified minimum row heights in pixels. 0 = auto (content-driven).</summary>
     public List<double> RowHeights { get; set; } = new();
-    /// <summary>The grid of cell paragraphs ([row][column]). The grid is always dense/rectangular.</summary>
-    public List<List<Paragraph>> Cells { get; set; } = new();
+    /// <summary>The grid of cells ([row][column]). The grid is always dense/rectangular. Each
+    /// <see cref="TableCell"/> holds a list of blocks (one paragraph through phases P1/P2).</summary>
+    public List<List<TableCell>> Cells { get; set; } = new();
 
     /// <summary>Column-span values per cell ([row][column]).
     /// Anchor: ≥ 1. Covered by a merge: 0.</summary>
@@ -47,12 +48,12 @@ public class TableBlock : Block
         }
         for (int r = 0; r < rows; r++)
         {
-            var row = new List<Paragraph>();
+            var row = new List<TableCell>();
             var csRow = new List<int>();
             var rsRow = new List<int>();
             for (int c = 0; c < cols; c++)
             {
-                row.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+                row.Add(new TableCell { Parent = this });
                 csRow.Add(1);
                 rsRow.Add(1);
             }
@@ -62,7 +63,7 @@ public class TableBlock : Block
         }
     }
 
-    private Paragraph NewCell() => new Paragraph { Inlines = { new Run { Text = "" } }, Parent = this };
+    private TableCell NewCell() => new TableCell { Parent = this };
 
     // ---- Span helpers ------------------------------------------------------
 
@@ -96,7 +97,7 @@ public class TableBlock : Block
 
     /// Row-major enumeration of logical (anchor) cells only — covered cells are skipped.
     /// Used by navigation, selection, and text extraction.
-    public IEnumerable<(int r, int c, Paragraph cell)> LogicalCells()
+    public IEnumerable<(int r, int c, TableCell cell)> LogicalCells()
     {
         for (int r = 0; r < Rows; r++)
             for (int c = 0; c < Columns; c++)
@@ -139,7 +140,7 @@ public class TableBlock : Block
     public void InsertRow(int at)
     {
         at = System.Math.Clamp(at, 0, Rows);
-        var row = new List<Paragraph>();
+        var row = new List<TableCell>();
         var csRow = new List<int>();
         var rsRow = new List<int>();
         for (int c = 0; c < Columns; c++) { row.Add(NewCell()); csRow.Add(1); rsRow.Add(1); }
@@ -284,13 +285,14 @@ public class TableBlock : Block
     {
         if (!InBounds(r0, c0) || !InBounds(r1, c1)) return;
         if (r1 < r0 || c1 < c0 || (r0 == r1 && c0 == c1)) return;
-        var anchor = Cells[r0][c0];
+        var anchor = Cells[r0][c0].Para;
         for (int r = r0; r <= r1; r++)
             for (int c = c0; c <= c1; c++)
             {
                 if (r == r0 && c == c0) continue;
-                // Append non-empty covered content into the anchor.
-                var src = Cells[r][c];
+                // Append non-empty covered content into the anchor. (P1: single-paragraph cells, so this
+                // stays paragraph-level; P3/P4 generalize to concatenating the covered cells' block lists.)
+                var src = Cells[r][c].Para;
                 bool hasText = false;
                 foreach (var inl in src.Inlines)
                     if (inl is Run run && !string.IsNullOrEmpty(run.Text)) { hasText = true; break; }
@@ -318,7 +320,7 @@ public class TableBlock : Block
                 ColSpans[rr][cc] = 1;
                 RowSpans[rr][cc] = 1;
                 if (!(rr == r && cc == c))
-                    Cells[rr][cc] = new Paragraph { Inlines = { new Run { Text = "" } }, Parent = this };
+                    Cells[rr][cc] = new TableCell { Parent = this };
             }
     }
 
@@ -357,15 +359,12 @@ public class TableBlock : Block
 
         for (int r = 0; r < Rows; r++)
         {
-            var row = new List<Paragraph>();
+            var row = new List<TableCell>();
             for (int c = 0; c < Columns; c++)
             {
-                var pClone = Cells[r][c].Clone() as Paragraph;
-                if (pClone != null)
-                {
-                    pClone.Parent = tb;
-                    row.Add(pClone);
-                }
+                var cClone = Cells[r][c].Clone() as TableCell ?? new TableCell();
+                cClone.Parent = tb;
+                row.Add(cClone);
             }
             tb.Cells.Add(row);
             tb.ColSpans.Add(new List<int>(ColSpans[r]));

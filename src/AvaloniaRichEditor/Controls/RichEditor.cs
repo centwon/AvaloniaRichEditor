@@ -610,7 +610,14 @@ public partial class RichEditor : Control
                     {
                         var cell = tb.Cells[r][c];
                         cell.Parent = tb;
-                        foreach (var inline in cell.Inlines) inline.Parent = cell;
+                        // Wire each block in the cell to the cell, and each paragraph's inlines to it.
+                        // (P1: one paragraph per cell; the loop is already multi-block-ready for P3+.)
+                        foreach (var cb in cell.Blocks)
+                        {
+                            cb.Parent = cell;
+                            if (cb is Paragraph cp)
+                                foreach (var inline in cp.Inlines) inline.Parent = cp;
+                        }
                     }
             }
         }
@@ -1174,7 +1181,7 @@ public partial class RichEditor : Control
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c] == p) return tb;
+                        if (tb.Cells[r][c].Para == p) return tb;
         }
         return null;
     }
@@ -1207,7 +1214,7 @@ public partial class RichEditor : Control
         {
             Document.Blocks.Insert(insertIndex++, b);
             if (b is Paragraph bp) lastPara = bp;
-            else if (b is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
+            else if (b is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell.Para).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1].Para;
         }
         UpdateParents(Document);
 
@@ -1239,7 +1246,7 @@ public partial class RichEditor : Control
         // image). ResetCaretBlink re-measures (the new block grows the scroll extent) and scrolls it
         // into view, instead of leaving only its top edge showing until the next click.
         if (b is TableBlock tbl && tbl.Cells.Count > 0 && tbl.Cells[0].Count > 0)
-            _caretPosition = new TextPointer(tbl.Cells[0][0], 0);
+            _caretPosition = new TextPointer(tbl.Cells[0][0].Para, 0);
         else
             for (int k = insertIndex + 1; k < Document.Blocks.Count; k++)
                 if (Document.Blocks[k] is Paragraph after) { _caretPosition = new TextPointer(after, 0); break; }
@@ -1319,7 +1326,7 @@ public partial class RichEditor : Control
             else if (block is TableBlock tb)
             {
                 foreach (var (_, _, cell) in tb.LogicalCells())
-                    result.Add(cell);
+                    result.Add(cell.Para);
             }
         }
         return result;
@@ -1477,7 +1484,7 @@ public partial class RichEditor : Control
             if (b.Clone() is not Block cl) continue; // clone again so repeated pastes stay independent
             Document.Blocks.Insert(insertIndex++, cl);
             if (cl is Paragraph bp) lastPara = bp;
-            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
+            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell.Para).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1].Para;
         }
         UpdateParents(Document);
 

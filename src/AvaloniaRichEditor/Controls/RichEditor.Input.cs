@@ -789,7 +789,7 @@ public partial class RichEditor
             // caret (symmetric with → entering the first cell from that caret).
             if (!shift && _caretPosition.Offset == 0 && _caretPosition.Paragraph != null
                 && FindCell(_caretPosition.Paragraph) is { } lc
-                && ReferenceEquals(lc.tb.LogicalCells().First().cell, _caretPosition.Paragraph))
+                && ReferenceEquals(lc.tb.LogicalCells().First().cell.Para, _caretPosition.Paragraph))
             {
                 _caretBlock = lc.tb; _caretBlockAfter = false;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
@@ -811,7 +811,7 @@ public partial class RichEditor
             if (!shift && _caretPosition.Paragraph != null
                 && _caretPosition.Offset >= GetParagraphLength(_caretPosition.Paragraph)
                 && FindCell(_caretPosition.Paragraph) is { } rc
-                && ReferenceEquals(rc.tb.LogicalCells().Last().cell, _caretPosition.Paragraph))
+                && ReferenceEquals(rc.tb.LogicalCells().Last().cell.Para, _caretPosition.Paragraph))
             {
                 _caretBlock = rc.tb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
@@ -1107,7 +1107,7 @@ public partial class RichEditor
             if (!_caretBlockAfter && !vertical)
             {
                 if (blk is TableBlock tb && tb.LogicalCells().Any())
-                { _caretBlock = null; var c = tb.LogicalCells().First().cell; SetCaretCollapsed(c, 0); }
+                { _caretBlock = null; var c = tb.LogicalCells().First().cell.Para; SetCaretCollapsed(c, 0); }
                 else _caretBlockAfter = true; // image: before -> after
             }
             else { _caretBlock = null; MoveCaretToBlockNeighbor(blk, before: false); }
@@ -1117,7 +1117,7 @@ public partial class RichEditor
             if (_caretBlockAfter && !vertical)
             {
                 if (blk is TableBlock tb && tb.LogicalCells().Any())
-                { _caretBlock = null; var c = tb.LogicalCells().Last().cell; SetCaretCollapsed(c, GetParagraphLength(c)); }
+                { _caretBlock = null; var c = tb.LogicalCells().Last().cell.Para; SetCaretCollapsed(c, GetParagraphLength(c)); }
                 else _caretBlockAfter = false; // image: after -> before
             }
             else { _caretBlock = null; MoveCaretToBlockNeighbor(blk, before: true); }
@@ -1324,8 +1324,8 @@ public partial class RichEditor
             {
                 foreach (var (_, _, cell) in tb.LogicalCells())
                 {
-                    if (found) return cell;
-                    if (cell == current) found = true;
+                    if (found) return cell.Para;
+                    if (cell.Para == current) found = true;
                 }
             }
         }
@@ -1343,8 +1343,8 @@ public partial class RichEditor
             {
                 foreach (var (_, _, cell) in tb.LogicalCells())
                 {
-                    if (cell == current) return prev;
-                    prev = cell;
+                    if (cell.Para == current) return prev;
+                    prev = cell.Para;
                 }
             }
         }

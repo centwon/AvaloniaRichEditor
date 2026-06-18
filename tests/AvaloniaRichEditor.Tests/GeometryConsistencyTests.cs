@@ -30,8 +30,8 @@ public class GeometryConsistencyTests
         var doc = new FlowDocument();
         doc.Blocks.Add(Para("first paragraph"));
         var tb = new TableBlock(2, 2);
-        ((Run)tb.Cells[0][0].Inlines[0]).Text = "a";
-        ((Run)tb.Cells[0][1].Inlines[0]).Text = "b";
+        ((Run)tb.Cells[0][0].Para.Inlines[0]).Text = "a";
+        ((Run)tb.Cells[0][1].Para.Inlines[0]).Text = "b";
         doc.Blocks.Add(tb);
         doc.Blocks.Add(Para("after the table"));
         doc.Blocks.Add(new DividerBlock());

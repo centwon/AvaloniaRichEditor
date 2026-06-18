@@ -103,7 +103,7 @@ public partial class RichEditor
         {
             if (block is Paragraph p) AddPara(p);
             else if (block is TableBlock tb)
-                foreach (var (_, _, cell) in tb.LogicalCells()) AddPara(cell);
+                foreach (var (_, _, cell) in tb.LogicalCells()) AddPara(cell.Para);
         }
         // LF-only renders as a single line in many Windows consumers; normalize every break (paragraph
         // separators above + soft '\n' from BuildPlain) to the platform newline.
