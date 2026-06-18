@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-18
+
+A patch release: bug fixes (mostly fallout from the 0.7.0 points migration) and idle/input hot-path
+allocation cleanups. No public API or document-format changes.
+
 ### Fixed
 - **HTML import font size**: text without an explicit `font-size` (notably every table cell, and
   inline-wrapped top-level text like a bare `<span>`) was imported at a stale **14pt** — a leftover from
@@ -456,7 +461,9 @@ editing on Windows; the public API may still change before `1.0`.
 - Word images exported as VML (not standard `<img>`) are not imported.
 - Precise pagination / PDF printing is not implemented (browser print fallback only).
 
-[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.6.0-beta...HEAD
+[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.6.0-beta...v0.7.0
 [0.6.0-beta]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.5.0-alpha...v0.6.0-beta
 [0.5.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.4.0-alpha...v0.5.0-alpha
 [0.4.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.3.0-alpha...v0.4.0-alpha
