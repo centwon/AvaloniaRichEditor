@@ -1231,6 +1231,24 @@ public partial class RichEditor : Control
     private void InsertBlockAtCaret(Block b)
     {
         if (Document == null) return;
+        // P4-2a: a block image/divider inserts inside the current cell (after the caret's paragraph) when
+        // the caret is in one. Nested tables (a TableBlock in a cell) are P4-2b, so they still go
+        // top-level (inserted after the whole table) for now.
+        if (b is not TableBlock && _caretPosition.Paragraph?.Parent is TableCell tc)
+        {
+            int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
+            int at = pi >= 0 ? pi + 1 : tc.Blocks.Count;
+            tc.Blocks.Insert(at, b);
+            // Guarantee a paragraph after the block so the caret has somewhere to land and type.
+            if (at + 1 >= tc.Blocks.Count || tc.Blocks[at + 1] is not Paragraph)
+                tc.Blocks.Insert(at + 1, new Paragraph { Inlines = { new Run { Text = "" } } });
+            UpdateParents(Document);
+            if (tc.Blocks[at + 1] is Paragraph np) { _caretPosition = new TextPointer(np, 0); CollapseSelectionToCaret(); }
+            Focus();
+            InvalidateMeasure(); // the cell grew -> table row height reflows
+            ResetCaretBlink();
+            return;
+        }
         int insertIndex = Document.Blocks.Count;
         var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
         if (caretBlock != null)

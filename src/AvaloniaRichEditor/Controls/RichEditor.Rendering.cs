@@ -354,37 +354,54 @@ public partial class RichEditor
                     double ox = rect.X + 5, oy = rect.Y + 5, by = 0;
                     foreach (var cb2 in cell.Blocks)
                     {
-                        if (cb2 is not Paragraph para) continue;
-                        bool blkPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
-                        var layout = blkPreedit
-                            ? BuildTextLayout(para, innerW, _caretPosition!.Offset, _preeditText)
-                            : BuildTextLayout(para, innerW);
                         double blkY = oy + by;
-
-                        if (!inBlock && cellBlock == null && selectedParagraphs?.Contains(para) == true)
+                        if (cb2 is Paragraph para)
                         {
-                            int cellLen = GetParagraphLength(para);
-                            int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
-                            int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                            if (hlEnd > hlStart)
-                                DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
-                        }
+                            bool blkPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
+                            var layout = blkPreedit
+                                ? BuildTextLayout(para, innerW, _caretPosition!.Offset, _preeditText)
+                                : BuildTextLayout(para, innerW);
 
-                        if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
+                            if (!inBlock && cellBlock == null && selectedParagraphs?.Contains(para) == true)
+                            {
+                                int cellLen = GetParagraphLength(para);
+                                int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
+                                int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
+                                if (hlEnd > hlStart)
+                                    DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
+                            }
+
+                            if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
+                            {
+                                int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
+                                var cr = layout.HitTestTextPosition(caretDisp);
+                                cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
+                                double th = CaretTextHeight(para, _caretPosition.Offset);
+                                if (cr.Height > 0 && th > cr.Height) th = cr.Height;
+                                caretPoint = new Point(ox + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
+                                caretHeight = th;
+                                _lastCaretPoint = caretPoint.Value;
+                            }
+
+                            layout.Draw(context, new Point(ox, blkY));
+                            if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
+                            by += layout.Height;
+                        }
+                        else if (cb2 is ImageBlock cimg)
                         {
-                            int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
-                            var cr = layout.HitTestTextPosition(caretDisp);
-                            cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
-                            double th = CaretTextHeight(para, _caretPosition.Offset);
-                            if (cr.Height > 0 && th > cr.Height) th = cr.Height;
-                            caretPoint = new Point(ox + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
-                            caretHeight = th;
-                            _lastCaretPoint = caretPoint.Value;
+                            // P4-2a: a block image inside a cell. Draws scaled to fit the cell width; no
+                            // resize handle / selection chrome in cells yet (interaction is follow-up).
+                            var (iw, ih) = CellImageSize(cimg, innerW);
+                            if (cimg.Image is { } bmp)
+                                context.DrawImage(bmp, new Rect(ox, blkY, iw, ih));
+                            by += ih;
                         }
-
-                        layout.Draw(context, new Point(ox, blkY));
-                        if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
-                        by += layout.Height;
+                        else if (cb2 is DividerBlock)
+                        {
+                            double y = blkY + DividerHeight / 2;
+                            context.DrawLine(GrayBorderPen, new Point(ox, y), new Point(ox + innerW, y));
+                            by += DividerHeight;
+                        }
                     }
                 }
 

@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Reflection;
 using Avalonia;
@@ -106,6 +107,37 @@ public class TableCellBehaviorTests
         Press(ed, Key.Tab);
 
         Assert.Equal(2, tb.Rows);
+    }
+
+    private const string Png1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    // ---- P4-2a: a block image inside a cell --------------------------------
+
+    [AvaloniaFact]
+    public void InsertImage_WithCaretInCell_AddsImageBlockToCell()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>x</td></tr></table>");
+        var cell = ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        PlaceCaret(ed, cell.Para, 1);
+        ed.InsertImageBytes(Convert.FromBase64String(Png1x1));
+        Assert.Contains(cell.Blocks, b => b is ImageBlock); // image landed inside the cell, not as a table sibling
+    }
+
+    [Fact]
+    public void Json_RoundTrip_PreservesBlockImageInCell()
+    {
+        var doc = new FlowDocument();
+        var tb = new TableBlock(1, 1);
+        var cell = tb.Cells[0][0];
+        var img = new ImageBlock { Width = 40, Height = 30 };
+        img.SetImageData(Convert.FromBase64String(Png1x1), "image/png");
+        cell.Blocks.Add(img);
+        doc.Blocks.Add(tb);
+
+        var doc2 = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc));
+        var cell2 = doc2.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        Assert.Contains(cell2.Blocks, b => b is ImageBlock);
     }
 
     // ---- P4: serialization of multi-block cells ----------------------------

@@ -592,8 +592,16 @@ internal sealed class RtfWriter
             {
                 _body.Append(@"\pard\intbl ");
                 var cell = tb.Cells[row][col];
-                foreach (var inline in cell.Para.Inlines)
-                    if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
+                // Every paragraph of the cell, separated by \par (P3/P4 multi-paragraph cells).
+                bool firstCellPara = true;
+                foreach (var cblk in cell.Blocks)
+                {
+                    if (cblk is not Paragraph cpara) continue;
+                    if (!firstCellPara) _body.Append(@"\par ");
+                    firstCellPara = false;
+                    foreach (var inline in cpara.Inlines)
+                        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
+                }
                 _body.Append(@"\cell");
             }
             _body.Append(@"\row").Append('\n');

@@ -711,7 +711,16 @@ namespace AvaloniaRichEditor.Formatters
                                 sb.Append($"<td{span} style=\"background-color:{CssColor(cbg.Color)}\">");
                             else
                                 sb.Append($"<td{span}>");
-                            foreach (var inline in cell.Para.Inlines) EmitInline(sb, inline);
+                            // Emit every paragraph of the cell (P3/P4), separated by <br>. (Block images
+                            // / nested tables in cells aren't exported to HTML yet — known gap.)
+                            bool firstCellPara = true;
+                            foreach (var cblk in cell.Blocks)
+                            {
+                                if (cblk is not Paragraph cpara) continue;
+                                if (!firstCellPara) sb.Append("<br>");
+                                firstCellPara = false;
+                                foreach (var inline in cpara.Inlines) EmitInline(sb, inline);
+                            }
                             sb.Append("</td>\n");
                         }
                         sb.Append("</tr>\n");

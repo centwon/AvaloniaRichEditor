@@ -83,10 +83,26 @@ public partial class RichEditor
                 case Paragraph p:
                     h += BuildTextLayout(p, w).Height;
                     break;
-                // P4: nested tables / block images / dividers inside cells extend this branch.
+                case ImageBlock im:
+                    h += CellImageSize(im, w).h;
+                    break;
+                case DividerBlock:
+                    h += DividerHeight;
+                    break;
+                // P4-2b: nested tables inside cells extend this branch.
             }
         }
         return h;
+    }
+
+    // A block image's drawn size inside a cell of content width `innerWidth`: the declared size, scaled
+    // down to fit the cell width (preserving aspect ratio). Shared by the cell measure, render and
+    // hit-test walks so they advance by identical per-block heights.
+    private static (double w, double h) CellImageSize(ImageBlock im, double innerWidth)
+    {
+        double w = im.Width > 0 ? im.Width : 200, h = im.Height > 0 ? im.Height : 200;
+        if (w > innerWidth && w > 0) { h *= innerWidth / w; w = innerWidth; }
+        return (w, h);
     }
 
     // Single source of truth for a table's geometry. Render and all three hit-tests consume this so
@@ -381,11 +397,16 @@ public partial class RichEditor
                         double hitTop = 0;
                         foreach (var cb in tcell.Blocks)
                         {
-                            if (cb is not Paragraph bp) continue;
-                            var bl = BuildTextLayout(bp, innerW);
-                            hitP = bp; hitL = bl; hitTop = oy + by;
-                            if (p.Y <= hitTop + bl.Height) break;
-                            by += bl.Height;
+                            double blkTop = oy + by;
+                            if (cb is Paragraph bp)
+                            {
+                                var bl = BuildTextLayout(bp, innerW);
+                                hitP = bp; hitL = bl; hitTop = blkTop;
+                                if (p.Y <= blkTop + bl.Height) break;
+                                by += bl.Height;
+                            }
+                            else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
+                            else if (cb is DividerBlock) { by += DividerHeight; }
                         }
                         if (hitP != null && hitL != null)
                         {
