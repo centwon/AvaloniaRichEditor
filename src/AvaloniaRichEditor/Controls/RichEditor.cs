@@ -1200,30 +1200,126 @@ public partial class RichEditor : Control
             if (inlines.Count > 0) { InsertInlines(inlines); return; }
         }
 
-        // Otherwise splice the parsed blocks in after the caret's top-level block.
-        int insertIndex = Document.Blocks.Count;
-        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
-        if (caretBlock != null)
+        // Otherwise splice the parsed blocks in at the caret (splitting the caret paragraph).
+        InsertBlocksAtCaret(parsed.Blocks);
+    }
+
+    // Inserts a list of blocks at the caret, splitting the caret paragraph so the paste lands AT the
+    // caret (Word/HWP behaviour): the first pasted paragraph continues the caret line, the last merges
+    // with the text after the caret, and any blocks between become siblings. Works whether the caret is
+    // in a top-level paragraph or a table cell. Falls back to a plain after-block splice when the caret
+    // isn't in a normal paragraph, or when the paste carries a table that can't nest in a cell yet (P4-2b).
+    private void InsertBlocksAtCaret(System.Collections.Generic.IReadOnlyList<Block> blocks)
+    {
+        if (Document == null || blocks.Count == 0) return;
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+
+        var p = _caretPosition.Paragraph;
+        System.Collections.Generic.IList<Block>? container = p?.Parent switch
         {
-            int i = Document.Blocks.IndexOf(caretBlock);
-            if (i >= 0) insertIndex = i + 1;
+            FlowDocument d => d.Blocks,
+            TableCell tc => tc.Blocks,
+            _ => null
+        };
+        bool inCell = p?.Parent is TableCell;
+        int pi = container != null && p != null ? container.IndexOf(p) : -1;
+        if (container == null || p == null || pi < 0 || (inCell && blocks.Any(b => b is TableBlock)))
+        {
+            InsertBlocksAfterCaretBlock(blocks);
+            return;
         }
 
-        Paragraph? lastPara = null;
-        foreach (var b in parsed.Blocks.ToList())
+        // Clone the sources so callers' lists (e.g. the internal clipboard) stay reusable.
+        var src = new List<Block>(blocks.Count);
+        foreach (var b in blocks) if (b.Clone() is Block cl) src.Add(cl);
+        if (src.Count == 0) return;
+
+        // Split the caret paragraph: p keeps the head; tail takes the inlines after the caret (same props).
+        int splitAt = SplitInlinesAt(p, _caretPosition.Offset);
+        var tail = new Paragraph
         {
-            Document.Blocks.Insert(insertIndex++, b);
-            if (b is Paragraph bp) lastPara = bp;
-            else if (b is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell.Para).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1].Para;
+            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
+            TextAlignment = p.TextAlignment, Background = p.Background, HeadingLevel = p.HeadingLevel
+        };
+        while (p.Inlines.Count > splitAt)
+        {
+            var inl = p.Inlines[splitAt];
+            p.Inlines.RemoveAt(splitAt);
+            inl.Parent = tail;
+            tail.Inlines.Add(inl);
+        }
+
+        // Merge the first pasted paragraph into the head line.
+        if (src[0] is Paragraph fp)
+        {
+            foreach (var inl in fp.Inlines.ToList()) { fp.Inlines.Remove(inl); inl.Parent = p; p.Inlines.Add(inl); }
+            src.RemoveAt(0);
+        }
+        // Merge the last pasted paragraph into the tail (prepended before the original tail text). The
+        // caret lands right after that pasted text; otherwise at the start of the tail.
+        int caretOff = 0;
+        if (src.Count > 0 && src[^1] is Paragraph lp)
+        {
+            var moved = lp.Inlines.ToList();
+            int pos = 0;
+            foreach (var inl in moved) { lp.Inlines.Remove(inl); inl.Parent = tail; tail.Inlines.Insert(pos++, inl); }
+            caretOff = moved.Sum(InlineLen);
+            src.RemoveAt(src.Count - 1);
+        }
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
+        if (tail.Inlines.Count == 0) tail.Inlines.Add(new Run { Text = "" });
+
+        int at = pi + 1;
+        foreach (var b in src) container.Insert(at++, b);
+        tail.Parent = p.Parent;
+        container.Insert(at, tail);
+        UpdateParents(Document);
+        if (inCell) InvalidateMeasure(); // the cell grew -> table row height reflows
+
+        _caretPosition = new TextPointer(tail, caretOff);
+        _selectionStart = new TextPointer(tail, caretOff);
+        _selectionEnd = new TextPointer(tail, caretOff);
+    }
+
+    // Plain after-block splice (the fallback): inserts cloned blocks after the caret's block — into the
+    // enclosing cell when the caret is in one, else the document top level. Used when the caret isn't in
+    // a normal paragraph or the paste carries a table that can't nest in a cell.
+    private void InsertBlocksAfterCaretBlock(System.Collections.Generic.IReadOnlyList<Block> blocks)
+    {
+        if (Document == null) return;
+        var (container, at) = BlockInsertTarget(blocks);
+        Paragraph? lastPara = null;
+        foreach (var b in blocks)
+        {
+            if (b.Clone() is not Block cl) continue;
+            container.Insert(at++, cl);
+            if (cl is Paragraph bp) lastPara = bp;
+            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell.Para).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1].Para;
         }
         UpdateParents(Document);
-
+        if (!ReferenceEquals(container, Document.Blocks)) InvalidateMeasure(); // cell grew -> table reflows
         if (lastPara != null)
         {
             _caretPosition = new TextPointer(lastPara, GetParagraphLength(lastPara));
             _selectionStart = new TextPointer(lastPara, _caretPosition.Offset);
             _selectionEnd = new TextPointer(lastPara, _caretPosition.Offset);
         }
+    }
+
+    // The container + index for the after-block splice fallback: the enclosing cell's block list (after
+    // the caret's paragraph) when the caret is in a cell, otherwise the document's top-level list (after
+    // the caret's top-level block). A paste containing a TableBlock can't nest in a cell yet (P4-2b), so
+    // it falls back to top level.
+    private (System.Collections.Generic.IList<Block> container, int at) BlockInsertTarget(System.Collections.Generic.IEnumerable<Block> blocks)
+    {
+        if (Document != null && _caretPosition.Paragraph?.Parent is TableCell tc && !blocks.Any(b => b is TableBlock))
+        {
+            int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
+            return (tc.Blocks, pi >= 0 ? pi + 1 : tc.Blocks.Count);
+        }
+        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
+        int ti = caretBlock != null && Document != null ? Document.Blocks.IndexOf(caretBlock) : -1;
+        return (Document!.Blocks, ti >= 0 ? ti + 1 : Document.Blocks.Count);
     }
 
     // Inserts a top-level block immediately after the caret's current block (or at the end
@@ -1475,6 +1571,14 @@ public partial class RichEditor : Control
         var endTop = range.End.Paragraph != null ? FindTopLevelBlock(range.End.Paragraph) : null;
         if (startTop == null || endTop == null) return null;
 
+        // A selection entirely within a single table cell is intra-cell text, not a table copy. Both
+        // endpoints resolve to the same enclosing TableBlock (hasNonParagraph below would otherwise clone
+        // the WHOLE table), so fall to the run/inline clipboard and capture only the cell content.
+        if (ReferenceEquals(startTop, endTop) && startTop is TableBlock
+            && FindCell(range.Start.Paragraph!) is { } sc && FindCell(range.End.Paragraph!) is { } ec
+            && sc.tb == ec.tb && sc.r == ec.r && sc.c == ec.c)
+            return null;
+
         int si = Document.Blocks.IndexOf(startTop);
         int ei = Document.Blocks.IndexOf(endTop);
         if (si < 0 || ei < 0 || si > ei) return null;
@@ -1492,37 +1596,9 @@ public partial class RichEditor : Control
         return blocks.Count > 0 ? blocks : null;
     }
 
-    // Inserts cloned blocks (e.g. tables) after the caret's block, preserving structure.
-    private void InsertBlocks(List<Block> blocks)
-    {
-        if (Document == null || blocks.Count == 0) return;
-        if (_selectionStart != _selectionEnd) DeleteSelection();
-
-        int insertIndex = Document.Blocks.Count;
-        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
-        if (caretBlock != null)
-        {
-            int i = Document.Blocks.IndexOf(caretBlock);
-            if (i >= 0) insertIndex = i + 1;
-        }
-
-        Paragraph? lastPara = null;
-        foreach (var b in blocks)
-        {
-            if (b.Clone() is not Block cl) continue; // clone again so repeated pastes stay independent
-            Document.Blocks.Insert(insertIndex++, cl);
-            if (cl is Paragraph bp) lastPara = bp;
-            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell.Para).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1].Para;
-        }
-        UpdateParents(Document);
-
-        if (lastPara != null)
-        {
-            _caretPosition = new TextPointer(lastPara, GetParagraphLength(lastPara));
-            _selectionStart = new TextPointer(lastPara, _caretPosition.Offset);
-            _selectionEnd = new TextPointer(lastPara, _caretPosition.Offset);
-        }
-    }
+    // Inserts cloned blocks (e.g. tables) at the caret, splitting the caret paragraph so the paste lands
+    // at the caret rather than after the current block (shares InsertBlocksAtCaret with HTML/RTF paste).
+    private void InsertBlocks(List<Block> blocks) => InsertBlocksAtCaret(blocks);
 
     // Inserts a list of formatted Runs at the current caret, splitting the run under the caret.
     // Inserts a list of inlines (formatted Runs and/or InlineImages) at the caret, splitting the run

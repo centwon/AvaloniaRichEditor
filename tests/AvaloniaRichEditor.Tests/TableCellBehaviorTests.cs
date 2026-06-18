@@ -266,4 +266,73 @@ public class TableCellBehaviorTests
         tb.Cells[r][c].Para.Inlines.Clear();
         tb.Cells[r][c].Para.Inlines.Add(new Run { Text = text });
     }
+
+    // ---- Copy: a selection inside one cell must not capture the whole table -----
+    // CaptureBlockStructure resolves a cell paragraph to its enclosing TableBlock, so an intra-cell
+    // selection used to clone the WHOLE table (start/end top-level block both == the table) -> paste
+    // reproduced the entire table. It must return null so copy falls to the inline/run clipboard.
+    private static object? CaptureBlockStructure(RichEditor ed, TextRange range) =>
+        typeof(RichEditor).GetMethod("CaptureBlockStructure", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(ed, new object[] { range });
+
+    [AvaloniaFact]
+    public void Copy_TextWithinSingleCell_DoesNotCaptureWholeTable()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>hello</td><td>world</td></tr></table>");
+        var cell = ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0].Para;
+
+        var range = new TextRange(new TextPointer(cell, 0), new TextPointer(cell, 5));
+        Assert.Null(CaptureBlockStructure(ed, range));
+    }
+
+    [AvaloniaFact]
+    public void Copy_SelectionAcrossCells_CapturesTableStructure()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>hello</td><td>world</td></tr></table>");
+        var tb = ed.Document!.Blocks.OfType<TableBlock>().Single();
+
+        var range = new TextRange(new TextPointer(tb.Cells[0][0].Para, 0), new TextPointer(tb.Cells[0][1].Para, 5));
+        Assert.NotNull(CaptureBlockStructure(ed, range));
+    }
+
+    // ---- Paste: multi-block content lands inside the cell, not after the table -----
+    // InsertParsedDocument/InsertBlocks used to splice multi-block content into Document.Blocks after the
+    // caret's top-level block; with the caret in a cell that top-level block is the table, so the paste
+    // landed *outside* the table. It must splice into the cell's block list instead.
+
+    [AvaloniaFact]
+    public void Paste_MultiBlockHtml_WithCaretInCell_SplitsAtCaretInsideCell()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>x</td></tr></table>");
+        var tb = ed.Document!.Blocks.OfType<TableBlock>().Single();
+        var cell = tb.Cells[0][0];
+        int topLevelBefore = ed.Document!.Blocks.Count;
+        PlaceCaret(ed, cell.Para, 1); // end of "x"
+
+        ed.InsertHtml("<p>one</p><p>two</p>");
+
+        // Split at the caret: first pasted paragraph continues the caret line ("x"+"one"), the last
+        // becomes a new sibling ("two"). Nothing leaked out as new top-level blocks.
+        Assert.Equal(topLevelBefore, ed.Document!.Blocks.Count);
+        Assert.Equal(2, cell.Blocks.Count);
+        Assert.Equal("xone", ((Paragraph)cell.Blocks[0]).Text());
+        Assert.Equal("two", ((Paragraph)cell.Blocks[1]).Text());
+    }
+
+    [AvaloniaFact]
+    public void Paste_TableHtml_WithCaretInCell_StaysTopLevel()
+    {
+        // Nested tables aren't rendered in cells yet (P4-2b): a paste containing a table falls back to a
+        // top-level insert rather than dropping an invisible nested table into the cell.
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>x</td></tr></table>");
+        PlaceCaret(ed, ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0].Para, 1);
+
+        ed.InsertHtml("<table><tr><td>nested</td></tr></table>");
+
+        Assert.Equal(2, ed.Document!.Blocks.OfType<TableBlock>().Count());
+    }
 }

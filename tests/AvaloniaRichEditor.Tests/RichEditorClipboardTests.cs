@@ -148,7 +148,11 @@ public class RichEditorClipboardTests
         int before = ed.Document!.Blocks.Count;
 
         ed.InsertHtml("<p>one</p><p>two</p>");
-        Assert.Equal(before + 2, ed.Document!.Blocks.Count);
+        // Split at the caret (end of "start"): the first pasted paragraph continues the caret line
+        // ("startone"), the last becomes a new sibling ("two") -> one net new block.
+        Assert.Equal(before + 1, ed.Document!.Blocks.Count);
+        Assert.Contains("startone", ed.GetPlainText());
+        Assert.Contains("two", ed.GetPlainText());
 
         ed.Undo();
         Assert.Equal(before, ed.Document!.Blocks.Count);

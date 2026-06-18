@@ -184,38 +184,24 @@ public partial class RichEditor
             var tp = GetPositionFromPoint(point);
             _caretPosition = tp;
             if (!hasSelection) CollapseSelectionToCaret();
-            // Text selected within a single cell -> text-formatting menu; a cell-block selection (or a bare
-            // caret) -> table-structure menu.
-            if (hasSelection && SelectedCellRange(tbk) == null)
-                BuildCellTextMenu(items, hasSelection);
-            else
+            // The table is "selected as a structure" when in cell-selection mode, when the whole table
+            // carries the block caret, or when the drag selection spans cells. In those cases show the
+            // table-structure menu. Otherwise the user is editing inside a cell (bare caret or text within
+            // one cell) -> text-formatting menu with the table ops tucked into a "Table" submenu.
+            bool tableStructureMode = (_cellSelMode && _cellSelTable == tbk)
+                || ReferenceEquals(_caretBlock, tbk)
+                || (hasSelection && SelectedCellRange(tbk) != null);
+            if (tableStructureMode)
                 BuildTableMenu(items, tbk, tp.Paragraph, hasSelection);
+            else
+                // Editing inside a cell: same caret menu as a top-level paragraph, only with table ops
+                // moved into a submenu (and the table-insert picker dropped — no nested tables yet).
+                BuildCaretMenu(items, point, hasSelection, tbk);
         }
         else
         {
             _selectedBlock = null;
-            var tp = GetPositionFromPoint(point);
-            // Right-clicking exactly on an inline image (and not over a selection) gets its own menu.
-            var inlineImg = !hasSelection && tp.Paragraph != null ? InlineImageAt(tp.Paragraph, tp.Offset) : null;
-            if (!hasSelection)
-            {
-                _caretPosition = tp;
-                CollapseSelectionToCaret();
-            }
-            if (inlineImg != null && tp.Paragraph != null)
-            {
-                _selectedInline = (tp.Paragraph, inlineImg); // show selection chrome for the menu target
-                BuildInlineImageMenu(items, tp.Paragraph, inlineImg);
-            }
-            else
-            {
-                _selectedInline = null;
-                var link = GetLinkRunAtPoint(point);
-                if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
-                    BuildLinkMenu(items, hasSelection, link);
-                else
-                    BuildTextMenu(items, hasSelection, link);
-            }
+            BuildCaretMenu(items, point, hasSelection, null);
         }
 
         ResetCaretBlink();
@@ -226,6 +212,35 @@ public partial class RichEditor
         menu.ItemsSource = items;
         _openContextMenu = menu;
         menu.Open(this);
+    }
+
+    // The caret-position menu (inline-image / hyperlink / text), shared by top-level paragraphs and
+    // table cells so the two stay identical. `cellTable` non-null means the caret is inside that table's
+    // cell: BuildTextMenu then drops the table-insert picker and appends a "Table" submenu.
+    private void BuildCaretMenu(List<Control> items, Point point, bool hasSelection, TableBlock? cellTable)
+    {
+        var tp = GetPositionFromPoint(point);
+        // Right-clicking exactly on an inline image (and not over a selection) gets its own menu.
+        var inlineImg = !hasSelection && tp.Paragraph != null ? InlineImageAt(tp.Paragraph, tp.Offset) : null;
+        if (!hasSelection)
+        {
+            _caretPosition = tp;
+            CollapseSelectionToCaret();
+        }
+        if (inlineImg != null && tp.Paragraph != null)
+        {
+            _selectedInline = (tp.Paragraph, inlineImg); // show selection chrome for the menu target
+            BuildInlineImageMenu(items, tp.Paragraph, inlineImg);
+        }
+        else
+        {
+            _selectedInline = null;
+            var link = GetLinkRunAtPoint(point);
+            if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
+                BuildLinkMenu(items, hasSelection, link);
+            else
+                BuildTextMenu(items, hasSelection, link, cellTable);
+        }
     }
 
     private void AddClipboardItems(List<Control> items, bool hasSelection)
@@ -311,15 +326,6 @@ public partial class RichEditor
                 Mi(Loc("IndentDecrease"), () => Indent(-20), icon: RichEditorIcon.IndentDecrease))));
     }
 
-    // Menu shown when text is selected inside a table cell: clipboard + grouped formatting only — no
-    // table-structure or block-insert items.
-    private void BuildCellTextMenu(List<Control> items, bool hasSelection)
-    {
-        AddClipboardItems(items, hasSelection);
-        items.Add(new Separator());
-        AddFormatItems(items, hasSelection);
-    }
-
     /// <summary>Inserts a horizontal rule (<see cref="DividerBlock"/>) at the caret position.</summary>
     public void InsertDivider()
     {
@@ -329,13 +335,16 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    private void BuildTextMenu(List<Control> items, bool hasSelection, Run? link)
+    // The caret-position text menu. `cellTable` non-null means the caret is inside that table's cell:
+    // the menu is identical to a top-level paragraph's, except the table-insert picker is dropped (no
+    // nested tables yet) and the table-structure operations are appended as a "Table" submenu.
+    private void BuildTextMenu(List<Control> items, bool hasSelection, Run? link, TableBlock? cellTable = null)
     {
         AddClipboardItems(items, hasSelection);
         items.Add(new Separator());
         AddFormatItems(items, hasSelection);
-        // Top-level paragraphs only — cell paragraphs (BuildCellTextMenu) lay out inside the cell,
-        // where block margins don't apply.
+        // Top-level paragraphs only — cell paragraphs lay out inside the cell, where block margins
+        // don't apply (the IndexOf check is false for them).
         if (_caretPosition.Paragraph is { } mp && Document != null && Document.Blocks.IndexOf(mp) >= 0)
             items.Add(MarginMenu(mp));
         items.Add(new Separator());
@@ -353,11 +362,22 @@ public partial class RichEditor
         items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll));
         items.Add(Mi(Loc("Undo"), DoUndo, icon: RichEditorIcon.Undo));
         items.Add(Mi(Loc("Redo"), DoRedo, icon: RichEditorIcon.Redo));
-        // Block-insert items appear only when the corresponding feature flag is enabled (N3.5).
+        // Block-insert items appear only when the corresponding feature flag is enabled (N3.5). Inside a
+        // cell the table-insert picker is omitted (nested tables aren't supported yet); image/divider do
+        // insert into the cell (P4-2a).
+        bool allowTableInsert = AllowTables && cellTable == null;
         if (AllowTables || AllowImages) items.Add(new Separator());
-        if (AllowTables) items.Add(BuildInsertTableMenu());
+        if (allowTableInsert) items.Add(BuildInsertTableMenu());
         if (AllowImages) items.Add(Mi(Loc("InsertImage"), () => { _ = InsertImageFromFileAsync(); }, icon: RichEditorIcon.InsertImage));
         if (AllowTables || AllowImages) items.Add(Mi(Loc("InsertDivider"), InsertDivider, icon: RichEditorIcon.InsertDivider));
+        // Inside a cell: row/column/merge/delete-table operations live in a "Table" submenu.
+        if (cellTable != null)
+        {
+            var tableItems = new List<Control>();
+            AddTableStructureItems(tableItems, cellTable, _caretPosition.Paragraph, hasSelection);
+            items.Add(new Separator());
+            items.Add(Sub(Loc("TableOps"), tableItems.ToArray()));
+        }
     }
 
     private void BuildImageMenu(List<Control> items, ImageBlock img)
@@ -423,6 +443,14 @@ public partial class RichEditor
     {
         AddClipboardItems(items, hasSelection);
         items.Add(new Separator());
+        AddTableStructureItems(items, tb, cell, hasSelection);
+    }
+
+    // The table-structure operations (row/column insert-delete, cell merge, margin, delete table).
+    // Used both as the body of the table-selection menu and as a "Table" submenu inside the cell-text
+    // menu (right-clicking while editing inside a cell).
+    private void AddTableStructureItems(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
+    {
         var loc = cell != null ? FindCell(cell) : null;
         int r = loc?.r ?? -1;
         int c = loc?.c ?? -1;

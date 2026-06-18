@@ -28,10 +28,26 @@ public partial class RichEditor
                 foreach (var (r, c, rect) in t.AnchorRects)
                     if (rect.Contains(p))
                     {
-                        var cell = tb.Cells[r][c].Para;
-                        var layout = BuildTextLayout(cell, Math.Max(10, rect.Width - 10));
-                        var hit = layout.HitTestPoint(new Point(p.X - (rect.X + 5), p.Y - (rect.Y + 5)));
-                        return hit.IsInside ? RunAtOffset(cell, hit.TextPosition) : null;
+                        // Descend into the cell's stacked block list (P3): find the paragraph whose
+                        // vertical band contains the point, mirroring GetPositionFromPoint.
+                        double innerW = Math.Max(10, rect.Width - 10), ox = rect.X + 5, oy = rect.Y + 5, by = 0;
+                        foreach (var cb in tb.Cells[r][c].Blocks)
+                        {
+                            double blkTop = oy + by;
+                            if (cb is Paragraph bp)
+                            {
+                                var bl = BuildTextLayout(bp, innerW);
+                                if (p.Y <= blkTop + bl.Height)
+                                {
+                                    var hit = bl.HitTestPoint(new Point(p.X - ox, p.Y - blkTop));
+                                    return hit.IsInside ? RunAtOffset(bp, hit.TextPosition) : null;
+                                }
+                                by += bl.Height;
+                            }
+                            else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
+                            else if (cb is DividerBlock) { by += DividerHeight; }
+                        }
+                        return null;
                     }
             }
             else if (block is Paragraph paragraph && ft != null && p.Y >= top && p.Y <= top + h)
