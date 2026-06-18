@@ -4,7 +4,7 @@
 
 | 형식 | 용도 | 진입점 API |
 |---|---|---|
-| **JSON 문자열** (스키마 v2) | 임베드·DB TEXT 컬럼·diff·이식 | `RichEditor.ToJson()` / `LoadJson()`, `DocumentSerializer.Serialize()` / `Deserialize()` |
+| **JSON 문자열** (포맷 v1.0) | 임베드·DB TEXT 컬럼·diff·이식 | `RichEditor.ToJson()` / `LoadJson()`, `DocumentSerializer.Serialize()` / `Deserialize()` |
 | **`.flow` 패키지** (ZIP 컨테이너) | 파일로 주고받기 (base64 오버헤드 제거) | `RichEditor.SavePackageAsync()` / `LoadPackageAsync()`, `DocumentPackage.Save()` / `Load()` |
 
 HTML 입출력(`ToHtml`/`LoadHtml`)은 **교환용**이며 손실이 있을 수 있다(예: 행 높이, 일부 여백). 무손실 보존이 필요하면 JSON/`.flow`를 사용한다.
@@ -38,7 +38,7 @@ FlowDocument
 
 ---
 
-## 2. JSON 형식 (스키마 v2)
+## 2. JSON 형식 (포맷 v1.0)
 
 ### 2.1 직렬화 일반 규칙
 
@@ -53,7 +53,7 @@ FlowDocument
 {
   "Version": "1.0",              // 포맷 버전(SemVer 문자열). 레거시 정수(1·2)도 읽음, 없으면 "1"
   "Blocks": [ /* BlockDto[] */ ],
-  "Images": {                    // v2 이미지 풀 (이미지가 없으면 생략)
+  "Images": {                    // 이미지 풀 (이미지가 없으면 생략)
     "<SHA256 hex(대문자)>": { "Data": "<base64>", "MimeType": "image/jpeg" }
   }
 }
@@ -107,7 +107,7 @@ FlowDocument
 
 | 필드 | 타입 | 의미 / 읽기 규칙 |
 |---|---|---|
-| `ImageRef` | string? | **v2**: `Images` 풀 키 |
+| `ImageRef` | string? | `Images` 풀 키 (현행 작성 방식) |
 | `ImageBase64` | string? | **v1 레거시 읽기 폴백**: 인라인 base64. `ImageRef`가 풀에서 해석되면 무시 |
 | `MimeType` | string? | `ImageBase64` 바이트의 MIME. 없으면 `image/png`(레거시는 항상 PNG였음) |
 | `Width`, `Height` | number? | 표시 크기 px. NaN이면 생략하고, 없으면 NaN(자연 크기, 렌더 폴백 200) |
@@ -224,15 +224,15 @@ FlowDocument
 
 **판독기(reader) 의무**
 - 모르는 JSON 필드는 무시한다.
-- `Version`이 없으면 1로 간주하고 v1 폴백(`ImageBase64`, `IsListItem`)을 적용한다.
+- `Version`이 없으면 레거시(`"1"`)로 간주하고 폴백(`ImageBase64`, `IsListItem`)을 적용한다. 레거시 정수(`1`·`2`)와 SemVer 문자열(`"1.0"`)을 모두 읽는다.
 - `Version`이 현재 지원 버전보다 커도 가능한 만큼 읽는다(현재 구현은 버전 검사로 거부하지 않음).
 
 **작성기(writer) 의무**
-- 항상 현재 스키마 버전(`DocumentSerializer.CurrentSchemaVersion` = 2)을 기록한다.
+- 항상 현재 포맷 버전(`DocumentSerializer.CurrentSchemaVersion` = `"1.0"`)을 기록한다.
 - 이미지 바이트를 재인코딩하지 않는다(원본 보존). 풀 키는 반드시 바이트의 SHA-256 hex.
 - 레거시 쓰기 필드(`ImageBase64`, `IsListItem`)는 **쓰지 않는다** (읽기 폴백 전용).
 
 **스키마를 바꿀 때**
-1. 기존 문서를 깨뜨리는 변경(필드 의미 변경·제거)이면 `CurrentSchemaVersion`을 올리고 읽기 폴백을 추가한다. 필드 *추가*는 버전 증가 없이 가능하다(생략=기본값 규칙 유지).
+1. 기존 문서를 깨뜨리는 변경(필드 의미 변경·제거)이면 `CurrentSchemaVersion`을 올리고(SemVer 문자열 — 호환 깨짐은 메이저, 하위호환 추가는 마이너) 읽기 폴백을 추가한다. 필드 *추가*는 버전 증가 없이 가능하다(생략=기본값 규칙 유지).
 2. 이 문서의 버전 이력 표(§2.2)와 필드 표를 갱신한다.
 3. 왕복 테스트(`tests/`의 JSON/flow 라운드트립)와 레거시 로드 테스트를 추가한다.
