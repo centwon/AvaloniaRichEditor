@@ -108,6 +108,39 @@ public class TableCellBehaviorTests
         Assert.Equal(2, tb.Rows);
     }
 
+    // ---- P4: serialization of multi-block cells ----------------------------
+
+    [Fact]
+    public void Json_RoundTrip_PreservesMultiParagraphCell()
+    {
+        var doc = new FlowDocument();
+        var tb = new TableBlock(1, 1);
+        var cell = tb.Cells[0][0];
+        cell.Blocks.Clear();
+        cell.Blocks.Add(Para(new Run { Text = "line1" }));
+        cell.Blocks.Add(Para(new Run { Text = "line2" }));
+        doc.Blocks.Add(tb);
+
+        var doc2 = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc));
+        var cell2 = doc2.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        Assert.Equal(2, cell2.Blocks.Count);
+        Assert.Equal("line1", ((Paragraph)cell2.Blocks[0]).Text());
+        Assert.Equal("line2", ((Paragraph)cell2.Blocks[1]).Text());
+    }
+
+    [Fact]
+    public void Json_PlainOneParagraphCell_StaysLegacyFormat()
+    {
+        // A plain cell must NOT be wrapped in a "Cell" DTO, so pre-P4 readers still load it.
+        var doc = new FlowDocument();
+        var tb = new TableBlock(1, 1);
+        SetCellText(tb, 0, 0, "x");
+        doc.Blocks.Add(tb);
+        Assert.DoesNotContain("\"Cell\"", DocumentSerializer.Serialize(doc));
+    }
+
+    private static Paragraph Para(Run run) => new Paragraph { Inlines = { run } };
+
     // ---- P3: Enter in a cell splits into a sibling paragraph within the cell ----
 
     [AvaloniaFact]

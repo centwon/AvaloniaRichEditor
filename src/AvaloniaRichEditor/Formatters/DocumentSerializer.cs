@@ -149,12 +149,23 @@ public static class DocumentSerializer
                     var rd = new List<BlockDto>();
                     foreach (var cell in row)
                     {
-                        // P1 keeps the wire schema unchanged: one block DTO per cell (the cell's paragraph),
-                        // with the cell-level background carried on that DTO's Background. Read back into
-                        // TableCell.Background — so legacy docs (background on the cell paragraph) round-trip.
-                        var dto = ParagraphToDto(cell.Para, pool);
-                        dto.Background = BrushToString(cell.Background);
-                        rd.Add(dto);
+                        // Backward-compatible cell encoding: a plain one-paragraph cell stays the legacy
+                        // single block DTO (the cell's paragraph) with the cell background on it, so old
+                        // readers still load it. A cell with multiple blocks or non-paragraph content (P4:
+                        // several paragraphs, a block image, a nested table) is wrapped in a "Cell" DTO
+                        // whose Blocks carry the full list (recursively).
+                        BlockDto cdto;
+                        if (cell.Blocks.Count == 1 && cell.Blocks[0] is Paragraph cpara)
+                        {
+                            cdto = ParagraphToDto(cpara, pool);
+                        }
+                        else
+                        {
+                            cdto = new BlockDto { Type = "Cell", Blocks = new List<BlockDto>() };
+                            foreach (var b in cell.Blocks) cdto.Blocks.Add(BlockToDto(b, pool));
+                        }
+                        cdto.Background = BrushToString(cell.Background);
+                        rd.Add(cdto);
                     }
                     td.Cells.Add(rd);
                 }
@@ -256,11 +267,25 @@ public static class DocumentSerializer
                         var row = new List<TableCell>();
                         foreach (var cd in rowD)
                         {
-                            var para = DtoToParagraph(cd, pool);
-                            // Cell background lives on the cell, not its paragraph (legacy docs stored it on
-                            // the paragraph DTO — same field, so this migrates them transparently).
-                            var cell = new TableCell(para) { Background = para.Background };
-                            para.Background = null;
+                            TableCell cell;
+                            if (cd.Type == "Cell")
+                            {
+                                // Multi-block cell (P4): rebuild every block, recursing for nested tables.
+                                cell = new TableCell { Background = StringToBrush(cd.Background) };
+                                cell.Blocks.Clear();
+                                if (cd.Blocks != null)
+                                    foreach (var bd in cd.Blocks)
+                                        if (DtoToBlock(bd, pool) is { } bb) { bb.Parent = cell; cell.Blocks.Add(bb); }
+                                if (cell.Blocks.Count == 0) cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+                            }
+                            else
+                            {
+                                // Legacy/plain one-paragraph cell. Background lived on the paragraph DTO —
+                                // same field, so this migrates it to the cell transparently.
+                                var para = DtoToParagraph(cd, pool);
+                                cell = new TableCell(para) { Background = para.Background };
+                                para.Background = null;
+                            }
                             row.Add(cell);
                         }
                         tb.Cells.Add(row);
@@ -473,6 +498,11 @@ internal class BlockDto
     public List<List<BlockDto>>? Cells { get; set; }
     public List<List<int>>? ColSpans { get; set; }
     public List<List<int>>? RowSpans { get; set; }
+
+    // Table cell (Type == "Cell"): the cell's block list (paragraphs / images / nested tables).
+    // Only emitted for multi-block or non-paragraph cells; plain one-paragraph cells use the legacy
+    // single-paragraph DTO form for backward compatibility.
+    public List<BlockDto>? Blocks { get; set; }
 }
 
 internal class InlineDto
