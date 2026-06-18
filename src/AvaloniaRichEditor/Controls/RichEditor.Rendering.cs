@@ -332,17 +332,11 @@ public partial class RichEditor
                 foreach (var (r, c, rect) in tl.AnchorRects)
                 {
                     var cell = tb.Cells[r][c];
-                    var para = cell.Para; // P1: one paragraph per cell
-                    double cellWidth = rect.Width;
+                    double innerW = Math.Max(10, rect.Width - 10);
 
                     if (cell.Background != null)
                         context.FillRectangle(cell.Background, rect);
                     context.DrawRectangle(null, GrayBorderPen, rect);
-
-                    bool cellHasPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
-                    var layout = cellHasPreedit
-                        ? BuildTextLayout(para, Math.Max(10, cellWidth - 10), _caretPosition!.Offset, _preeditText)
-                        : BuildTextLayout(para, Math.Max(10, cellWidth - 10));
 
                     // A cell is in "cell-selection mode" when it's part of a multi-cell drag block, or its
                     // whole content is selected (Tab focus / triple-click). Such cells show a fill and NO
@@ -350,35 +344,48 @@ public partial class RichEditor
                     // so the caret's presence vs. the fill cleanly distinguishes the two modes.
                     bool inBlock = cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1;
                     if (inBlock)
-                    {
                         context.FillRectangle(SelectionBrush, rect);
-                    }
-                    else if (cellBlock == null && selectedParagraphs?.Contains(para) == true)
-                    {
-                        // Selecting text within a single cell shows the usual text-run highlight (not a full
-                        // cell fill) so it reads as "editing text", visibly distinct from a selected cell.
-                        int cellLen = GetParagraphLength(para);
-                        int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
-                        int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                        if (hlEnd > hlStart)
-                            DrawSelectionHighlight(context, layout, hlStart, hlEnd, rect.X + 5, rect.Y + 5);
-                    }
-
                     bool cellSelected = inBlock;
-                    if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || cellHasPreedit))
-                    {
-                        int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
-                        var cr = layout.HitTestTextPosition(caretDisp);
-                        cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
-                        double th = CaretTextHeight(para, _caretPosition.Offset);
-                        if (cr.Height > 0 && th > cr.Height) th = cr.Height;
-                        caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y + CaretYInLine(para, cr.Height, th));
-                        caretHeight = th;
-                        _lastCaretPoint = caretPoint.Value;
-                    }
 
-                    layout.Draw(context, new Point(rect.X + 5, rect.Y + 5));
-                    if (chrome) RegisterInlineImages(context, para, layout, rect.X + 5, rect.Y + 5);
+                    // Draw the cell's block list top-to-bottom (one paragraph per cell through P1/P2; P3
+                    // splits cells into multiple paragraphs). Each block's chrome — text highlight, caret,
+                    // preedit, inline images — is keyed to the paragraph that actually holds the caret.
+                    // (P4: nested tables / block images / dividers in cells extend this loop.)
+                    double ox = rect.X + 5, oy = rect.Y + 5, by = 0;
+                    foreach (var cb2 in cell.Blocks)
+                    {
+                        if (cb2 is not Paragraph para) continue;
+                        bool blkPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
+                        var layout = blkPreedit
+                            ? BuildTextLayout(para, innerW, _caretPosition!.Offset, _preeditText)
+                            : BuildTextLayout(para, innerW);
+                        double blkY = oy + by;
+
+                        if (!inBlock && cellBlock == null && selectedParagraphs?.Contains(para) == true)
+                        {
+                            int cellLen = GetParagraphLength(para);
+                            int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
+                            int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
+                            if (hlEnd > hlStart)
+                                DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
+                        }
+
+                        if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
+                        {
+                            int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
+                            var cr = layout.HitTestTextPosition(caretDisp);
+                            cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
+                            double th = CaretTextHeight(para, _caretPosition.Offset);
+                            if (cr.Height > 0 && th > cr.Height) th = cr.Height;
+                            caretPoint = new Point(ox + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
+                            caretHeight = th;
+                            _lastCaretPoint = caretPoint.Value;
+                        }
+
+                        layout.Draw(context, new Point(ox, blkY));
+                        if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
+                        by += layout.Height;
+                    }
                 }
 
                 // Resize handles live on the physical grid lines (independent of merges). Internal column

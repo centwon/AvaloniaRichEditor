@@ -1181,7 +1181,7 @@ public partial class RichEditor : Control
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c].Para == p) return tb;
+                        if (tb.Cells[r][c].Blocks.Contains(p)) return tb;
         }
         return null;
     }
@@ -1289,7 +1289,16 @@ public partial class RichEditor : Control
     {
         var p = _caretPosition.Paragraph;
         if (Document == null || p == null) return;
-        int idx = Document.Blocks.IndexOf(p);
+        // The paragraph lives either as a top-level block or inside a table cell's block list (P3).
+        // Split within whichever container holds it, so the new paragraph becomes a sibling there.
+        System.Collections.Generic.IList<Block>? container = p.Parent switch
+        {
+            FlowDocument d => d.Blocks,
+            TableCell tc => tc.Blocks,
+            _ => null
+        };
+        if (container == null) return;
+        int idx = container.IndexOf(p);
         if (idx < 0) return;
         int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
         var np = new Paragraph
@@ -1309,8 +1318,8 @@ public partial class RichEditor : Control
         }
         if (np.Inlines.Count == 0) np.Inlines.Add(new Run { Text = "" });
         if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
-        np.Parent = Document;
-        Document.Blocks.Insert(idx + 1, np);
+        np.Parent = p.Parent;
+        container.Insert(idx + 1, np);
         _caretPosition = new TextPointer(np, 0);
         _selectionStart = new TextPointer(np, 0);
         _selectionEnd = new TextPointer(np, 0);
@@ -1326,7 +1335,8 @@ public partial class RichEditor : Control
             else if (block is TableBlock tb)
             {
                 foreach (var (_, _, cell) in tb.LogicalCells())
-                    result.Add(cell.Para);
+                    foreach (var cb in cell.Blocks)
+                        if (cb is Paragraph cp) result.Add(cp);
             }
         }
         return result;

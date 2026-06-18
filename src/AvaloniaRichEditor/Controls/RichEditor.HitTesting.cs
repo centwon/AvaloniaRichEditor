@@ -48,7 +48,7 @@ public partial class RichEditor
     {
         for (int r = 0; r < tb.Rows; r++)
             for (int c = 0; c < tb.Columns; c++)
-                if (tb.Cells[r][c].Para == p) return true;
+                if (tb.Cells[r][c].Blocks.Contains(p)) return true;
         return false;
     }
 
@@ -367,15 +367,31 @@ public partial class RichEditor
             {
                 foreach (var (r, c, rect) in t.AnchorRects)
                 {
-                    var cell = tb.Cells[r][c].Para;
+                    var tcell = tb.Cells[r][c];
                     var (cs, _) = tb.SpanOf(r, c);
                     bool lastCol = c + cs >= tb.Columns;
                     bool xInside = (p.X >= rect.X && p.X <= rect.Right) || (lastCol && p.X > rect.Right);
                     if (xInside && p.Y >= rect.Y && p.Y <= rect.Bottom)
                     {
-                        var cft = BuildTextLayout(cell, Math.Max(10, rect.Width - 10));
-                        int idx = HitTestIndex(cft, new Point(p.X - (rect.X + 5), p.Y - (rect.Y + 5)));
-                        return new TextPointer(cell, idx);
+                        // Descend into the cell's stacked block list (P3): find the paragraph whose
+                        // vertical band contains the point; a point below them all falls to the last.
+                        double innerW = Math.Max(10, rect.Width - 10), ox = rect.X + 5, oy = rect.Y + 5, by = 0;
+                        Paragraph? hitP = null;
+                        Avalonia.Media.TextFormatting.TextLayout? hitL = null;
+                        double hitTop = 0;
+                        foreach (var cb in tcell.Blocks)
+                        {
+                            if (cb is not Paragraph bp) continue;
+                            var bl = BuildTextLayout(bp, innerW);
+                            hitP = bp; hitL = bl; hitTop = oy + by;
+                            if (p.Y <= hitTop + bl.Height) break;
+                            by += bl.Height;
+                        }
+                        if (hitP != null && hitL != null)
+                        {
+                            int idx = HitTestIndex(hitL, new Point(p.X - ox, p.Y - hitTop));
+                            return new TextPointer(hitP, idx);
+                        }
                     }
                 }
                 // Outside any cell: remember the nearest anchor (by vertical distance) as a fallback.

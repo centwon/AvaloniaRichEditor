@@ -15,7 +15,7 @@ public partial class RichEditor
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c].Para == p) return (tb, r, c);
+                        if (tb.Cells[r][c].Blocks.Contains(p)) return (tb, r, c);
         return null;
     }
 

@@ -811,7 +811,7 @@ public partial class RichEditor
             if (!shift && _caretPosition.Paragraph != null
                 && _caretPosition.Offset >= GetParagraphLength(_caretPosition.Paragraph)
                 && FindCell(_caretPosition.Paragraph) is { } rc
-                && ReferenceEquals(rc.tb.LogicalCells().Last().cell.Para, _caretPosition.Paragraph))
+                && ReferenceEquals(LastParaOf(rc.tb.LogicalCells().Last().cell), _caretPosition.Paragraph))
             {
                 _caretBlock = rc.tb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
@@ -827,6 +827,14 @@ public partial class RichEditor
             // on its top line.
             if (TryMoveCaretByLineWithinParagraph(down: false))
             {
+                ApplyCaretSelection(shift); e.Handled = true; return;
+            }
+            // P3: in a multi-paragraph cell, ↑ from a non-first paragraph steps into the paragraph above
+            // within the same cell (block-aware hit-test lands there) before any "leave the cell" logic.
+            if (_caretPosition.Paragraph?.Parent is TableCell ucell && !ReferenceEquals(ucell.Para, _caretPosition.Paragraph))
+            {
+                double tyc = Math.Max(0, _lastCaretPoint.Y - Math.Max(8, _lastCaretHeight) - 2);
+                _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
             // Leaving a table cell upward from its first row -> the table's "before" caret.
@@ -854,6 +862,14 @@ public partial class RichEditor
             // on its bottom line.
             if (TryMoveCaretByLineWithinParagraph(down: true))
             {
+                ApplyCaretSelection(shift); e.Handled = true; return;
+            }
+            // P3: in a multi-paragraph cell, ↓ from a non-last paragraph steps into the paragraph below
+            // within the same cell before any "leave the cell" logic.
+            if (_caretPosition.Paragraph?.Parent is TableCell dcell && !ReferenceEquals(LastParaOf(dcell), _caretPosition.Paragraph))
+            {
+                double tyc = _lastCaretPoint.Y + Math.Max(8, _lastCaretHeight) + 2;
+                _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
             // Leaving a table cell downward from its last row -> the table's "after" caret.
@@ -925,6 +941,23 @@ public partial class RichEditor
                     TextRange.CoalesceRuns(prev); // the joined boundary runs may share formatting
                 }
             }
+            else if (_caretPosition.Paragraph?.Parent is TableCell btc && Document != null)
+            {
+                // P3: Backspace at the start of a cell's non-first paragraph merges it into the previous
+                // paragraph within the same cell (cells host sibling paragraphs now). The first paragraph
+                // of a cell has nothing above it inside the cell — left as a no-op (← leaves the cell).
+                int bi = btc.Blocks.IndexOf(_caretPosition.Paragraph);
+                if (bi > 0 && btc.Blocks[bi - 1] is Paragraph cprev)
+                {
+                    int prevLen = GetParagraphLength(cprev);
+                    foreach (var inline in _caretPosition.Paragraph.Inlines) { inline.Parent = cprev; cprev.Inlines.Add(inline); }
+                    btc.Blocks.Remove(_caretPosition.Paragraph);
+                    _caretPosition.Paragraph = cprev;
+                    _caretPosition.Offset = prevLen;
+                    TextRange.CoalesceRuns(cprev);
+                    InvalidateMeasure(); // the cell shrank a paragraph -> row height reflows
+                }
+            }
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink(); e.Handled = true;
@@ -953,6 +986,19 @@ public partial class RichEditor
                     }
                     Document.Blocks.Remove(next);
                     TextRange.CoalesceRuns(_caretPosition.Paragraph); // joined boundary runs may share formatting
+                }
+            }
+            else if (_caretPosition.Paragraph?.Parent is TableCell dtc && Document != null)
+            {
+                // P3: Delete at the end of a cell's non-last paragraph merges the next paragraph (within
+                // the same cell) into it. The last paragraph of a cell has nothing below it inside the cell.
+                int di = dtc.Blocks.IndexOf(_caretPosition.Paragraph);
+                if (di >= 0 && di + 1 < dtc.Blocks.Count && dtc.Blocks[di + 1] is Paragraph cnext)
+                {
+                    foreach (var inline in cnext.Inlines) { inline.Parent = _caretPosition.Paragraph; _caretPosition.Paragraph.Inlines.Add(inline); }
+                    dtc.Blocks.Remove(cnext);
+                    TextRange.CoalesceRuns(_caretPosition.Paragraph);
+                    InvalidateMeasure();
                 }
             }
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -987,9 +1033,11 @@ public partial class RichEditor
                 }
                 var p = _caretPosition.Paragraph;
                 // Enter splits the paragraph at the caret into a new paragraph. On an empty list item it
-                // exits the list instead. Inside a table cell (not a top-level block) it keeps "\n in the
-                // run" since a cell can't host sibling paragraphs.
-                if (Document != null && Document.Blocks.Contains(p))
+                // exits the list instead. A table cell now hosts sibling paragraphs (P3), so a cell
+                // paragraph splits within the cell's block list — the table grows to fit (InvalidateMeasure).
+                bool topLevel = Document != null && Document.Blocks.Contains(p);
+                bool inCell = p?.Parent is TableCell;
+                if (Document != null && (topLevel || inCell))
                 {
                     PushUndo();
                     if (_selectionStart != _selectionEnd) DeleteSelection();
@@ -999,6 +1047,7 @@ public partial class RichEditor
                     else
                         SplitParagraphAtCaret();
                     UpdateParents(Document);
+                    if (inCell) InvalidateMeasure(); // a taller cell reflows the table's row height
                     ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
                 }
                 TryInsertTextCore(_caretPosition.Paragraph, "\n", _caretPosition.Offset);
@@ -1117,7 +1166,7 @@ public partial class RichEditor
             if (_caretBlockAfter && !vertical)
             {
                 if (blk is TableBlock tb && tb.LogicalCells().Any())
-                { _caretBlock = null; var c = tb.LogicalCells().Last().cell.Para; SetCaretCollapsed(c, GetParagraphLength(c)); }
+                { _caretBlock = null; var c = LastParaOf(tb.LogicalCells().Last().cell); SetCaretCollapsed(c, GetParagraphLength(c)); }
                 else _caretBlockAfter = false; // image: after -> before
             }
             else { _caretBlock = null; MoveCaretToBlockNeighbor(blk, before: true); }
@@ -1313,40 +1362,44 @@ public partial class RichEditor
         }
     }
 
-    private Paragraph? GetNextParagraph(Paragraph current)
+    // A cell's last paragraph (P3: the "end" of a multi-paragraph cell, where the after-table caret
+    // and ← from the following paragraph land). Falls back to .Para if the last block isn't a paragraph.
+    private static Paragraph LastParaOf(TableCell cell)
+        => cell.Blocks.OfType<Paragraph>().LastOrDefault() ?? cell.Para;
+
+    // Document paragraph order: top-level paragraphs and, for each table, every paragraph of every
+    // logical cell (P3: cells can hold multiple paragraphs). Drives ←/→ across paragraph boundaries.
+    private System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInOrder()
     {
-        if (Document == null) return null;
-        bool found = false;
+        if (Document == null) yield break;
         foreach (var block in Document.Blocks)
         {
-            if (block is Paragraph p) { if (found) return p; if (p == current) found = true; }
+            if (block is Paragraph p) yield return p;
             else if (block is TableBlock tb)
-            {
                 foreach (var (_, _, cell) in tb.LogicalCells())
-                {
-                    if (found) return cell.Para;
-                    if (cell.Para == current) found = true;
-                }
-            }
+                    foreach (var b in cell.Blocks)
+                        if (b is Paragraph cp) yield return cp;
+        }
+    }
+
+    private Paragraph? GetNextParagraph(Paragraph current)
+    {
+        bool found = false;
+        foreach (var p in ParagraphsInOrder())
+        {
+            if (found) return p;
+            if (p == current) found = true;
         }
         return null;
     }
 
     private Paragraph? GetPreviousParagraph(Paragraph current)
     {
-        if (Document == null) return null;
         Paragraph? prev = null;
-        foreach (var block in Document.Blocks)
+        foreach (var p in ParagraphsInOrder())
         {
-            if (block is Paragraph p) { if (p == current) return prev; prev = p; }
-            else if (block is TableBlock tb)
-            {
-                foreach (var (_, _, cell) in tb.LogicalCells())
-                {
-                    if (cell.Para == current) return prev;
-                    prev = cell.Para;
-                }
-            }
+            if (p == current) return prev;
+            prev = p;
         }
         return null;
     }

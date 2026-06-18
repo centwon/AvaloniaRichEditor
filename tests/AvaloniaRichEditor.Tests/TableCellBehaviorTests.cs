@@ -108,6 +108,68 @@ public class TableCellBehaviorTests
         Assert.Equal(2, tb.Rows);
     }
 
+    // ---- P3: Enter in a cell splits into a sibling paragraph within the cell ----
+
+    [AvaloniaFact]
+    public void Enter_InCell_SplitsIntoSiblingParagraphWithinCell()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>ab</td><td>c</td></tr></table>");
+        var tb = ed.Document!.Blocks.OfType<TableBlock>().Single();
+        var cell = tb.Cells[0][0];
+        Assert.Single(cell.Blocks); // starts as one paragraph
+
+        PlaceCaret(ed, cell.Para, 1); // between 'a' and 'b'
+        Press(ed, Key.Enter);
+
+        // The cell now holds two paragraphs ("a" / "b"); the table is unchanged structurally.
+        Assert.Equal(2, cell.Blocks.Count);
+        Assert.Equal("a", ((Paragraph)cell.Blocks[0]).Text());
+        Assert.Equal("b", ((Paragraph)cell.Blocks[1]).Text());
+        Assert.Equal(1, tb.Rows);
+        Assert.Equal(2, tb.Columns);
+        // Caret landed at the start of the new (second) paragraph.
+        Assert.Same(cell.Blocks[1], CaretCell(ed));
+    }
+
+    // A cell split into two paragraphs ("a" / "b"), caret at the start of the second.
+    private static (RichEditor ed, TableCell cell) CellWithTwoParagraphs()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>ab</td><td>c</td></tr></table>");
+        var cell = ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        PlaceCaret(ed, cell.Para, 1);
+        Press(ed, Key.Enter); // -> "a" / "b", caret at start of "b"
+        return (ed, cell);
+    }
+
+    [AvaloniaFact]
+    public void Left_AtCellParagraphStart_CrossesToPreviousParagraphInCell()
+    {
+        var (ed, cell) = CellWithTwoParagraphs();
+        Press(ed, Key.Left); // from start of "b" -> end of "a"
+        Assert.Same(cell.Blocks[0], CaretCell(ed));
+    }
+
+    [AvaloniaFact]
+    public void Backspace_AtCellParagraphStart_MergesIntoPreviousParagraphInCell()
+    {
+        var (ed, cell) = CellWithTwoParagraphs();
+        Press(ed, Key.Back); // merge "b" into "a"
+        Assert.Single(cell.Blocks);
+        Assert.Equal("ab", ((Paragraph)cell.Blocks[0]).Text());
+    }
+
+    [AvaloniaFact]
+    public void Delete_AtCellParagraphEnd_MergesNextParagraphInCell()
+    {
+        var (ed, cell) = CellWithTwoParagraphs();
+        Press(ed, Key.Left);   // end of "a"
+        Press(ed, Key.Delete); // pull "b" up into "a"
+        Assert.Single(cell.Blocks);
+        Assert.Equal("ab", ((Paragraph)cell.Blocks[0]).Text());
+    }
+
     // ---- Cell content drives table height ----------------------------------
 
     [AvaloniaFact]
