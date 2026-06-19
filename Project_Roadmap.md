@@ -372,7 +372,8 @@
 > - [x] **셀 이미지 chrome(2026-06-19, GUI 검증 완료)**: 셀 안 블록 이미지에 top-level과 동일한 선택 오버레이+테두리+우하단 리사이즈 핸들(`DrawCellBlockList`가 문서 좌표로 그려 `_imageHandles` 공유 — 리사이즈/호버 커서 무변경 재사용). 클릭 선택용 `_cellImageRects` 레지스트리(인라인 이미지 패턴), 삭제는 컨테이너 인식 `RemoveBlockAnywhere`(Delete/Backspace·Ctrl+X·우클릭 삭제 3경로, 재귀 셀 탐색)로 셀에서 제거 후 `InvalidateMeasure`. 테스트 1건(셀 이미지 선택→Delete) → **283 그린.**
 > - [x] **셀 블록 정규화 + 인접 삭제(2026-06-19)**: `NormalizeBlocks`를 셀 블록 리스트까지 재귀(`NormalizeBlockList`)해 셀 안 표/이미지 앞뒤에도 캐럿 문단 보장(top-level 규칙). Backspace/Delete 셀 분기가 인접 비문단 블록(표/이미지/구분선) 삭제하도록 top-level과 일치 → 셀 안 표 위 Delete/아래 Backspace로 삭제(중첩 표 삭제 수단 확보). 테스트 +3 → 286.
 > - [x] **중첩 표 리사이즈 핸들(2026-06-19, GUI 검증 완료)**: `DrawNestedTable`이 행·열 경계 핸들을 문서 좌표로 등록(top-level 리사이즈 경로 공유 — 핸들러가 TableBlock 기준이라 무변경 재사용). 바깥-오른쪽 열 드래그는 `EnclosingCellInnerWidth`로 전체 폭을 **셀 내부 폭에 클램프**(넘침 방지, 축소 자유). 행 높이는 셀이 따라 늘어 부모 표 reflow.
-> - **후속(선택)**: 중첩 경계 Tab 이동, P4-3 삽입 UI 다듬기.
+> - [x] **중첩 경계 Tab(2026-06-19, GUI 검증 완료)**: `AllCellsInOrder`(문서 순서 앵커 셀, 셀 뒤에 그 안 중첩 표 셀이 오도록 재귀)로 Tab/Shift+Tab가 전 구조를 순회 — host 셀에서 Tab=중첩 표 진입, 중첩 마지막 셀 Tab=바깥 다음 셀로 탈출, 중첩 첫 셀 Shift+Tab=host로 복귀. 문서 마지막 셀 Tab=최상위 표(부모 사슬 위로)만 행 추가(중첩 표는 Tab으로 행 추가 안 함 — 우클릭). 테스트 +3 → 289.
+> - **후속(선택)**: P4-3 삽입 UI 다듬기.
 >
 > **위험**: 새 아키텍처 없음(캐럿·표=블록 유지, 기존 워크 일반화). 폭은 넓음(13파일+Parent 스윕, P1에서 가장 조심). 헤드리스 약점으로 P3·P4는 RenderTargetBitmap 강제 패스+GUI 검증.
 

@@ -407,6 +407,46 @@ public class TableCellBehaviorTests
         Assert.Contains(outer.Cells[0][0].Blocks, b => b is TableBlock nt && nt.Rows == 2 && nt.Columns == 2);
     }
 
+    // Outer 1x2 table whose first cell holds a nested 1x1 table; loaded so parents/normalization wire up.
+    private static (RichEditor ed, TableBlock outer, TableBlock inner) OuterWithNestedInFirstCell()
+    {
+        var doc = new FlowDocument();
+        var outer = new TableBlock(1, 2);
+        var inner = new TableBlock(1, 1);
+        SetCellText(inner, 0, 0, "deep");
+        outer.Cells[0][0].Blocks.Clear();
+        outer.Cells[0][0].Blocks.Add(inner);
+        doc.Blocks.Add(outer);
+        return (new RichEditor { Document = doc }, outer, inner);
+    }
+
+    [AvaloniaFact]
+    public void Tab_FromHostCell_EntersNestedTable()
+    {
+        var (ed, outer, inner) = OuterWithNestedInFirstCell();
+        PlaceCaret(ed, outer.Cells[0][0].Para, 0);
+        Press(ed, Key.Tab);
+        Assert.Same(inner.Cells[0][0].Para, CaretCell(ed)); // entered the nested table
+    }
+
+    [AvaloniaFact]
+    public void Tab_FromNestedLastCell_ExitsToHostsNextCell()
+    {
+        var (ed, outer, inner) = OuterWithNestedInFirstCell();
+        PlaceCaret(ed, inner.Cells[0][0].Para, 0);
+        Press(ed, Key.Tab);
+        Assert.Same(outer.Cells[0][1].Para, CaretCell(ed)); // stepped out to the outer table's next cell
+    }
+
+    [AvaloniaFact]
+    public void ShiftTab_FromNestedFirstCell_ReturnsToHostCell()
+    {
+        var (ed, outer, inner) = OuterWithNestedInFirstCell();
+        PlaceCaret(ed, inner.Cells[0][0].Para, 0);
+        Press(ed, Key.Tab, KeyModifiers.Shift);
+        Assert.Same(outer.Cells[0][0].Para, CaretCell(ed)); // back out to the host cell
+    }
+
     [AvaloniaFact]
     public void InsertTable_InCell_SizesColumnsToFitCell()
     {

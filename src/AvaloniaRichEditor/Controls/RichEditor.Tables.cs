@@ -95,25 +95,55 @@ public partial class RichEditor
         }
 
         var (tb, r, c) = loc.Value;
-        // Navigate over logical (anchor) cells so merged areas count once and covered cells are skipped.
-        var anchors = tb.LogicalCells().Select(x => x.cell.Para).ToList();
-        int idx = anchors.IndexOf(_caretPosition.Paragraph!);
-        if (idx < 0) { var (ar, ac) = tb.AnchorOf(r, c); idx = anchors.IndexOf(tb.Cells[ar][ac].Para); }
+        var (ar, ac) = tb.AnchorOf(r, c);
+        var current = tb.Cells[ar][ac];
+        // Document-order anchor cells across ALL tables, descending into nested tables (P4-2b) so Tab/
+        // Shift+Tab traverse the whole structure — entering a nested table and stepping back out at its
+        // edges. Covered (merged) cells are excluded (LogicalCells yields anchors only).
+        var all = AllCellsInOrder();
+        int idx = all.IndexOf(current);
+        if (idx < 0) return;
+
         if (shift)
         {
-            if (idx > 0) FocusCell(anchors[idx - 1]);
+            if (idx > 0) FocusCell(all[idx - 1].Para); // else: first cell of the document -> no-op
         }
-        else if (idx >= 0 && idx + 1 < anchors.Count)
+        else if (idx + 1 < all.Count)
         {
-            FocusCell(anchors[idx + 1]);
+            FocusCell(all[idx + 1].Para);
         }
         else
         {
+            // Past the document's last cell: add a row to the TOP-LEVEL table (nested tables don't grow
+            // via Tab — use the right-click menu), walking up the parent chain if the last cell is nested.
+            var top = tb;
+            while (top.Parent is TableCell pcell && pcell.Parent is TableBlock gp) top = gp;
             if (Document != null) PushUndo();
-            tb.InsertRow(tb.Rows);
+            top.InsertRow(top.Rows);
             if (Document != null) UpdateParents(Document);
-            FocusCell(tb.Cells[tb.Rows - 1][0].Para);
+            FocusCell(top.Cells[top.Rows - 1][0].Para);
         }
+    }
+
+    // All anchor cells in document order, descending into nested tables: each cell is followed by the
+    // cells of any tables nested inside it, so Tab traversal enters a nested table right after its host
+    // cell and resumes at the host's sibling once the nested cells are exhausted.
+    private System.Collections.Generic.List<TableCell> AllCellsInOrder()
+    {
+        var result = new System.Collections.Generic.List<TableCell>();
+        if (Document != null) CollectCells(Document.Blocks, result);
+        return result;
+    }
+
+    private static void CollectCells(System.Collections.Generic.IEnumerable<Block> blocks, System.Collections.Generic.List<TableCell> outList)
+    {
+        foreach (var b in blocks)
+            if (b is TableBlock tb)
+                foreach (var (_, _, cell) in tb.LogicalCells())
+                {
+                    outList.Add(cell);
+                    CollectCells(cell.Blocks, outList);
+                }
     }
 
     private void FocusCell(Paragraph cell)
