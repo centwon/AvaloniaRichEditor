@@ -24,7 +24,7 @@ FlowDocument
    │  └─ Inlines: Inline[]
    │     ├─ Run               ← 단일 서식의 연속 텍스트
    │     └─ InlineImage       ← 글자처럼 취급되는 작은 이미지 (논리적으로 1글자)
-   ├─ TableBlock              ← 표. 각 셀의 내용은 Paragraph 1개
+   ├─ TableBlock              ← 표. 각 셀(TableCell.Blocks)은 블록 리스트(문단·이미지·구분선·중첩 표)
    ├─ ImageBlock              ← 독립 블록 이미지
    └─ DividerBlock            ← 수평 구분선 (<hr>)
 ```
@@ -32,8 +32,8 @@ FlowDocument
 핵심 불변식:
 
 - **인라인 이미지 = 1글자.** 오프셋·길이 계산에서 `InlineImage`는 항상 1문자(개념상 U+FFFC)로 센다.
-- **하나의 Paragraph가 여러 줄을 가질 수 있다.** `Run.Text` 안의 `\n`은 하드 줄바꿈이다(주로 표 셀 안 Enter, 붙여넣기로 유입). 리스트 문단에서는 줄마다 별도의 마커가 그려진다.
-- **표 셀 내용은 Paragraph 1개다.** 셀은 형제 문단을 가질 수 없다.
+- **하나의 Paragraph가 여러 줄을 가질 수 있다.** `Run.Text` 안의 `\n`은 하드 줄바꿈이다(Shift+Enter 소프트 줄바꿈, 붙여넣기·로드로 유입). 리스트 문단에서는 줄마다 별도의 마커가 그려진다.
+- **표 셀은 블록 리스트다(`TableCell.Blocks`).** 셀은 여러 문단·블록이미지·구분선·중첩 표를 담을 수 있다(마일스톤 A). 셀 안 Enter는 문단을 분할한다(하드 `\n` 아님). 호환을 위해 평범한 1문단 셀은 레거시 단일-문단 형식으로 직렬화되고, 다중 블록/비문단 셀만 `Type="Cell"` 래퍼로 인코딩된다(중첩 표는 블록 DTO 재귀).
 - **로드 시 정규화(NormalizeBlocks).** 문서의 처음/끝, 그리고 연속한 비문단 블록 사이에는 문단이 보장되도록 에디터가 빈 Paragraph를 삽입할 수 있다. 따라서 *직렬화 → 역직렬화 → 직렬화*에서 빈 문단이 추가될 수 있다(내용 손실은 없음).
 
 ---
@@ -119,10 +119,20 @@ FlowDocument
 | `Rows`, `Columns` | int | 행/열 수. **로드 시 `Cells` 격자에서 재계산**되므로 참고값 |
 | `ColumnWidths` | number[] | 열 너비 px (열 수만큼) |
 | `RowHeights` | number[] | 행 최소 높이 px. **빈 배열 또는 0 = 자동(내용 높이)** |
-| `Cells` | BlockDto[][] | 행 우선(row-major) **밀집 격자**. 각 셀은 Paragraph형 BlockDto. 병합으로 가려진 칸도 자리는 유지 |
+| `Cells` | BlockDto[][] | 행 우선(row-major) **밀집 격자**. 평범한 1문단 셀은 Paragraph형 BlockDto(레거시 호환), 다중 블록·비문단 셀은 `Type:"Cell"` 래퍼(아래). 병합으로 가려진 칸도 자리는 유지 |
 | `ColSpans`, `RowSpans` | int[][] | 셀 병합 격자(밀집, `Cells`와 같은 크기). 앵커 셀=병합 칸 수(평범한 셀은 1), **가려진(covered) 셀=0**. 없으면 전부 1×1 |
 
 병합 규약: 병합 영역의 왼쪽-위 셀이 **앵커**이며 `ColSpans[r][c]`/`RowSpans[r][c]`에 병합 크기를 갖는다. 영역 내 나머지 칸은 두 배열 모두 0으로 마킹되고, 그 칸의 `Cells` 내용은 무시된다(빈 문단 권장). 격자는 항상 직사각형이어야 한다.
+
+다중 블록 셀(`Type: "Cell"`): 한 셀이 여러 문단·블록이미지·구분선·중첩 표를 담으면 `Cells[r][c]`를 셀 래퍼로 인코딩한다.
+
+| 필드 | 타입 | 의미 |
+|---|---|---|
+| `Type` | string | `"Cell"` |
+| `Blocks` | BlockDto[] | 셀의 블록 리스트(재귀 — 중첩 `Type:"Table"` 포함 가능) |
+| `Background` | string? | 셀 배경색 (§2.5) |
+
+평범한 1문단 셀은 이 래퍼 없이 Paragraph형 BlockDto로 직렬화되어(배경은 그 DTO의 `Background`에) 구 판독기와 호환된다.
 
 #### `Type: "Divider"`
 

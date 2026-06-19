@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Blocks inside table cells (Milestone A).** A table cell is now a block list (`TableCell.Blocks`)
+  instead of a single paragraph, so a cell can hold multiple paragraphs, block images, dividers, and
+  **nested tables** to arbitrary depth. Render, hit-testing and measurement share one recursive
+  primitive (`DrawCellBlockList`/`HitTestBlockList` ↔ `LayoutTable`/`MeasureCellContentHeight`).
+  - **Enter inside a cell** splits into a sibling paragraph (the table grows to fit) instead of inserting
+    a hard `\n`. Shift+Enter still inserts a soft line break.
+  - **Insert table/image/divider** with the caret in a cell now nests the block inside that cell; a
+    nested table's columns are sized to fit the cell width.
+  - Arrow keys, click placement, selection, and hyperlinks all descend into nested cells. Crossing a
+    nested-table boundary uses paragraph-order navigation (block carets remain top-level only).
+
+### Changed
+- **Document format**: multi-block / non-paragraph cells serialize as a `Type:"Cell"` wrapper carrying a
+  recursive `Blocks` list; a plain one-paragraph cell still serializes in the legacy single-paragraph form
+  (with the cell background on it), so older readers keep loading these documents. See
+  [`docs/DOCUMENT_FORMAT.md`](docs/DOCUMENT_FORMAT.md).
+
+### Fixed
+- **Copy inside a table cell** captured the whole table (paste reproduced the entire table); a selection
+  within a single cell now copies just the cell content.
+- **Paste with the caret in a cell** landed after the table instead of in the cell; multi-block paste now
+  splits the caret paragraph and inserts at the caret (in cells and at the top level alike).
+- **Right-click inside a cell** showed only the table-structure menu; it now shows the same text menu as a
+  top-level paragraph, with row/column/merge operations under a "Table" submenu.
+
 ## [0.7.1] - 2026-06-18
 
 A patch release: bug fixes (mostly fallout from the 0.7.0 points migration) and idle/input hot-path
