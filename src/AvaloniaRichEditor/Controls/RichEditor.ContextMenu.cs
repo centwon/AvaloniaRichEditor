@@ -178,6 +178,14 @@ public partial class RichEditor
             CollapseSelectionToCaret();
             BuildImageMenu(items, ib);
         }
+        else if (CellImageAtPoint(point) is { } cellImg)
+        {
+            // A block image inside a table cell (P4-2b): GetBlockAtPoint returns the enclosing table, so
+            // detect the image via its rendered rect and give it the same image menu as a top-level one.
+            _selectedBlock = cellImg;
+            CollapseSelectionToCaret();
+            BuildImageMenu(items, cellImg);
+        }
         else if (block is TableBlock tbk)
         {
             _selectedBlock = null;
@@ -194,9 +202,11 @@ public partial class RichEditor
             if (tableStructureMode)
                 BuildTableMenu(items, tbk, tp.Paragraph, hasSelection);
             else
-                // Editing inside a cell: same caret menu as a top-level paragraph, only with table ops
-                // moved into a submenu (and the table-insert picker dropped — no nested tables yet).
-                BuildCaretMenu(items, point, hasSelection, tbk);
+                // Editing inside a cell: same caret menu as a top-level paragraph, with the table ops in a
+                // submenu. Target the INNERMOST table the caret is in (a nested table — P4-2b), not the
+                // top-level one GetBlockAtPoint returned, so row/column/merge act on the right table.
+                BuildCaretMenu(items, point, hasSelection,
+                    (tp.Paragraph != null ? FindCell(tp.Paragraph)?.tb : null) ?? tbk);
         }
         else
         {
@@ -212,6 +222,15 @@ public partial class RichEditor
         menu.ItemsSource = items;
         _openContextMenu = menu;
         menu.Open(this);
+    }
+
+    // The block image inside a table cell whose rendered rect contains p (P4-2b), or null. Mirrors the
+    // click-selection lookup; populated each render in _cellImageRects.
+    private ImageBlock? CellImageAtPoint(Point p)
+    {
+        foreach (var ci in _cellImageRects)
+            if (ci.rect.Contains(p)) return ci.img;
+        return null;
     }
 
     // The caret-position menu (inline-image / hyperlink / text), shared by top-level paragraphs and
@@ -395,7 +414,15 @@ public partial class RichEditor
         items.Add(MarginMenu(img));
         items.Add(new Separator());
         // HWP-style toggle: unchecked here (block image); checking it demotes to an inline character.
-        var asChar = new MenuItem { Header = Loc("InlineWithText"), ToggleType = MenuItemToggleType.CheckBox, IsChecked = false };
+        // Disabled for a cell image: block<->inline conversion anchors to top-level paragraphs, which a
+        // cell image doesn't have (mirrors the inline-image menu's guard inside cells).
+        var asChar = new MenuItem
+        {
+            Header = Loc("InlineWithText"),
+            ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = false,
+            IsEnabled = img.Parent is FlowDocument,
+        };
         asChar.Click += (_, _) => ConvertImageBlockToInline(img);
         items.Add(asChar);
     }

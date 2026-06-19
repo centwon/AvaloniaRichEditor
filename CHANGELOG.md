@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     nested table's columns are sized to fit the cell width.
   - Arrow keys, click placement, selection, and hyperlinks all descend into nested cells. Crossing a
     nested-table boundary uses paragraph-order navigation (block carets remain top-level only).
+  - **Tab/Shift+Tab** traverse every cell in document order, entering and exiting nested tables; Tab past
+    the document's last cell adds a row to the top-level table.
+  - Block images inside a cell get the same chrome as top-level ones: click to select, drag the corner to
+    resize (clamped to the cell), Delete/Backspace to remove, and a right-click image menu. Nested tables
+    get resize handles (the outer-right edge clamped to the cell) and a right-click menu that targets the
+    innermost table.
 
 ### Changed
 - **Document format**: multi-block / non-paragraph cells serialize as a `Type:"Cell"` wrapper carrying a
