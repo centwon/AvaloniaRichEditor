@@ -103,9 +103,9 @@ public class RtfFormatterTests
         var tb = doc.Blocks.OfType<TableBlock>().First();
         Assert.Equal(2, tb.Rows);
         Assert.Equal(2, tb.Columns);
-        Assert.Equal("A", tb.Cells[0][0].Text());
-        Assert.Equal("B", tb.Cells[0][1].Text());
-        Assert.Equal("D", tb.Cells[1][1].Text());
+        Assert.Equal("A", tb.Cells[0][0].Para.Text());
+        Assert.Equal("B", tb.Cells[0][1].Para.Text());
+        Assert.Equal("D", tb.Cells[1][1].Para.Text());
         Assert.Contains(doc.Blocks.OfType<Paragraph>(), p => p.Text().Contains("after"));
         // \cellx2000 / \cellx4000 → 2000 twips (≈133px) then 2000 more (≈133px), not the uniform default.
         Assert.Equal(2000 / 15.0, tb.ColumnWidths[0], 1);
@@ -130,7 +130,7 @@ public class RtfFormatterTests
         // The nested cells/rows can't nest in the model, so they flatten into the parent cell text.
         var doc = Parse("{\\rtf1\\ansi\\trowd\\cellx2000 outer \\nestcell inner1\\nestcell inner2\\nestrow\\cell\\row\\pard x\\par}");
         var tb = doc.Blocks.OfType<TableBlock>().First();
-        var cell = tb.Cells[0][0].Text();
+        var cell = tb.Cells[0][0].Para.Text();
         Assert.Contains("outer", cell);
         Assert.Contains("inner1", cell);
         Assert.Contains("inner2", cell);

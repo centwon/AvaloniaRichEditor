@@ -27,6 +27,9 @@ public partial class RichEditor
     private static readonly Avalonia.Media.Immutable.ImmutablePen AccentPen15 = new(AccentBrush, 1.5);
     private static readonly Avalonia.Media.Immutable.ImmutablePen AccentBorderPen = new(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(120, 0, 120, 215)), 1);
     private static readonly Avalonia.Media.Immutable.ImmutablePen BlockCaretPen = new(Brushes.Black, 2);
+    // Text-caret pen, cached so the 2 Hz blink / scroll / hover repaints don't allocate a Pen each frame
+    // (unlike the static pens above it depends on the CaretBrush property). Reset when CaretBrush changes.
+    private Pen? _caretPen;
     // Faint dashed marker at page boundaries when a paper size is set but page chrome is off.
     private static readonly Avalonia.Media.Immutable.ImmutablePen PageBreakPen =
         new(new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(110, 0x9E, 0x9E, 0x9E)), 1,
@@ -144,6 +147,7 @@ public partial class RichEditor
         _columnBoundaries.Clear();
         _rowBoundaries.Clear();
         _imageHandles.Clear();
+        _cellImageRects.Clear();
         _inlineImageRects.Clear();
         _inlineHandles.Clear();
 
@@ -266,8 +270,15 @@ public partial class RichEditor
             if (selCmp < 0) { selStart = _selectionStart; selEnd = _selectionEnd; }
             else { selStart = _selectionEnd; selEnd = _selectionStart; }
             var allParas = GetAllParagraphsInOrder();
-            int si = allParas.IndexOf(selStart.Paragraph);
-            int ei = allParas.IndexOf(selEnd.Paragraph);
+            // One scan for both endpoints instead of two IndexOf passes (this runs every render frame a
+            // selection exists — once per visible page in page view — so the linear walks add up on drag).
+            int si = -1, ei = -1;
+            for (int idx = 0; idx < allParas.Count; idx++)
+            {
+                var pp = allParas[idx];
+                if (si < 0 && ReferenceEquals(pp, selStart.Paragraph)) si = idx;
+                if (ReferenceEquals(pp, selEnd.Paragraph)) ei = idx;
+            }
             if (si >= 0 && ei >= 0)
             {
                 selectedParagraphs = new HashSet<Paragraph>();
@@ -307,7 +318,7 @@ public partial class RichEditor
                 // (off-screen handles can't be grabbed). Geometry (tl) is still computed above so
                 // yOffset advances identically. A table being edited (caret in a cell) always draws.
                 bool tbVisible = (tableTop + tl.TotalHeight >= visTop && tableTop <= visBottom)
-                    || _caretPosition?.Paragraph?.Parent == tb
+                    || (_caretPosition?.Paragraph?.Parent as TableCell)?.Parent == tb
                     || ReferenceEquals(tb, _caretBlock) || ReferenceEquals(tb, _selectedBlock);
                 if (!tbVisible)
                 {
@@ -322,16 +333,11 @@ public partial class RichEditor
                 foreach (var (r, c, rect) in tl.AnchorRects)
                 {
                     var cell = tb.Cells[r][c];
-                    double cellWidth = rect.Width;
+                    double innerW = Math.Max(10, rect.Width - 10);
 
                     if (cell.Background != null)
                         context.FillRectangle(cell.Background, rect);
                     context.DrawRectangle(null, GrayBorderPen, rect);
-
-                    bool cellHasPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == cell && !string.IsNullOrEmpty(_preeditText);
-                    var layout = cellHasPreedit
-                        ? BuildTextLayout(cell, Math.Max(10, cellWidth - 10), _caretPosition!.Offset, _preeditText)
-                        : BuildTextLayout(cell, Math.Max(10, cellWidth - 10));
 
                     // A cell is in "cell-selection mode" when it's part of a multi-cell drag block, or its
                     // whole content is selected (Tab focus / triple-click). Such cells show a fill and NO
@@ -339,35 +345,15 @@ public partial class RichEditor
                     // so the caret's presence vs. the fill cleanly distinguishes the two modes.
                     bool inBlock = cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1;
                     if (inBlock)
-                    {
                         context.FillRectangle(SelectionBrush, rect);
-                    }
-                    else if (cellBlock == null && selectedParagraphs?.Contains(cell) == true)
-                    {
-                        // Selecting text within a single cell shows the usual text-run highlight (not a full
-                        // cell fill) so it reads as "editing text", visibly distinct from a selected cell.
-                        int cellLen = GetParagraphLength(cell);
-                        int hlStart = (cell == selStart!.Paragraph) ? selStart.Offset : 0;
-                        int hlEnd = (cell == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                        if (hlEnd > hlStart)
-                            DrawSelectionHighlight(context, layout, hlStart, hlEnd, rect.X + 5, rect.Y + 5);
-                    }
-
                     bool cellSelected = inBlock;
-                    if (chrome && _caretPosition != null && _caretPosition.Paragraph == cell && (!cellSelected || cellHasPreedit))
-                    {
-                        int caretDisp = _caretPosition.Offset + (cellHasPreedit ? _preeditText!.Length : 0);
-                        var cr = layout.HitTestTextPosition(caretDisp);
-                        cr = FixCaretAfterTrailingImage(layout, cell, _caretPosition.Offset, caretDisp, cr);
-                        double th = CaretTextHeight(cell, _caretPosition.Offset);
-                        if (cr.Height > 0 && th > cr.Height) th = cr.Height;
-                        caretPoint = new Point(rect.X + 5 + cr.X, rect.Y + 5 + cr.Y + CaretYInLine(cell, cr.Height, th));
-                        caretHeight = th;
-                        _lastCaretPoint = caretPoint.Value;
-                    }
 
-                    layout.Draw(context, new Point(rect.X + 5, rect.Y + 5));
-                    if (chrome) RegisterInlineImages(context, cell, layout, rect.X + 5, rect.Y + 5);
+                    // Draw the cell's block list top-to-bottom via the recursive primitive (handles
+                    // paragraphs, block images, dividers and nested tables — P4-2b). Chrome (highlight,
+                    // caret, preedit, inline images) is keyed to the paragraph that holds the caret.
+                    DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, innerW, chrome,
+                        cellSelected, cellBlock != null, selectedParagraphs, selStart, selEnd,
+                        ref caretPoint, ref caretHeight);
                 }
 
                 // Resize handles live on the physical grid lines (independent of merges). Internal column
@@ -546,6 +532,127 @@ public partial class RichEditor
         return (caretPoint, caretHeight, blockCaretRect);
     }
 
+    // Recursive primitive: draws a block list top-to-bottom inside the box at (ox,oy) of width innerW
+    // (a table cell's content box). Handles paragraphs, block images, dividers and nested tables (the
+    // last via DrawNestedTable, which calls back here per nested cell — arbitrary nesting depth). Caret/
+    // selection/preedit chrome is keyed to the paragraph that holds the caret; caretPoint/caretHeight are
+    // threaded by ref so a caret in a (possibly deeply nested) cell is reported to the render pass.
+    // cellSelected = the containing cell is filled as a block (Tab/drag select) -> no caret/highlight;
+    // cellRangeActive = a multi-cell drag is in progress on the containing table -> suppress text highlight.
+    private void DrawCellBlockList(
+        DrawingContext context, System.Collections.Generic.IList<Block> blocks,
+        double ox, double oy, double innerW, bool chrome,
+        bool cellSelected, bool cellRangeActive,
+        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        ref Point? caretPoint, ref double caretHeight)
+    {
+        double by = 0;
+        foreach (var cb2 in blocks)
+        {
+            double blkY = oy + by;
+            if (cb2 is Paragraph para)
+            {
+                bool blkPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
+                var layout = blkPreedit
+                    ? BuildTextLayout(para, innerW, _caretPosition!.Offset, _preeditText)
+                    : BuildTextLayout(para, innerW);
+
+                if (!cellSelected && !cellRangeActive && selectedParagraphs?.Contains(para) == true)
+                {
+                    int cellLen = GetParagraphLength(para);
+                    int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
+                    int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
+                    if (hlEnd > hlStart)
+                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
+                }
+
+                if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
+                {
+                    int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
+                    var cr = layout.HitTestTextPosition(caretDisp);
+                    cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
+                    double th = CaretTextHeight(para, _caretPosition.Offset);
+                    if (cr.Height > 0 && th > cr.Height) th = cr.Height;
+                    caretPoint = new Point(ox + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
+                    caretHeight = th;
+                    _lastCaretPoint = caretPoint.Value;
+                }
+
+                layout.Draw(context, new Point(ox, blkY));
+                if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
+                by += layout.Height;
+            }
+            else if (cb2 is ImageBlock cimg)
+            {
+                // A block image inside a cell, scaled to fit the cell width. With chrome on, it gets the
+                // same selection overlay + resize handle as a top-level block image, registered in
+                // document coordinates so the shared resize/hit-test paths work unchanged.
+                var (iw, ih) = CellImageSize(cimg, innerW);
+                if (cimg.Image is { } bmp)
+                {
+                    var ir = new Rect(ox, blkY, iw, ih);
+                    context.DrawImage(bmp, ir);
+                    if (chrome)
+                    {
+                        if (ReferenceEquals(cimg, _selectedBlock))
+                        {
+                            context.FillRectangle(AccentFill60, ir);
+                            context.DrawRectangle(null, AccentPen2, ir);
+                        }
+                        context.DrawRectangle(null, AccentBorderPen, ir);
+                        var handle = new Rect(ox + iw - 6, blkY + ih - 6, 12, 12);
+                        context.FillRectangle(AccentHandleFill, handle);
+                        _imageHandles.Add((new Rect(ox + iw - 9, blkY + ih - 9, 18, 18), cimg));
+                        _cellImageRects.Add((ir, cimg));
+                    }
+                }
+                by += ih;
+            }
+            else if (cb2 is DividerBlock)
+            {
+                double y = blkY + DividerHeight / 2;
+                context.DrawLine(GrayBorderPen, new Point(ox, y), new Point(ox + innerW, y));
+                by += DividerHeight;
+            }
+            else if (cb2 is TableBlock nt)
+            {
+                // P4-2b: a nested table. Draws the grid + recurses into each nested cell, registering
+                // row/column resize handles like a top-level table (no selected-table affordance yet).
+                DrawNestedTable(context, nt, ox, blkY, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
+                by += LayoutTable(nt, ox, blkY).TotalHeight;
+            }
+        }
+    }
+
+    // Draws a nested table's grid at (startX, top) and recurses into each anchor cell via DrawCellBlockList.
+    private void DrawNestedTable(
+        DrawingContext context, TableBlock tb, double startX, double top, bool chrome,
+        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        ref Point? caretPoint, ref double caretHeight)
+    {
+        var tl = LayoutTable(tb, startX, top);
+        foreach (var (r, c, rect) in tl.AnchorRects)
+        {
+            var cell = tb.Cells[r][c];
+            if (cell.Background != null) context.FillRectangle(cell.Background, rect);
+            context.DrawRectangle(null, GrayBorderPen, rect);
+            DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), chrome,
+                cellSelected: false, cellRangeActive: false, selectedParagraphs, selStart, selEnd,
+                ref caretPoint, ref caretHeight);
+        }
+        // Resize handles on the physical grid lines (document coordinates), shared with the top-level
+        // resize path — the handlers key off the TableBlock, so nested tables resize identically. The
+        // outer-right edge adjusts the nested table's total width; the resize handler clamps it to the
+        // enclosing cell's content width so it can't overflow. Row handles grow the cell (parent reflows).
+        if (chrome)
+        {
+            for (int r = 0; r < tb.Rows; r++)
+                _rowBoundaries.Add((new Rect(startX, tl.RowY[r + 1] - 3, tl.TableWidth, 6), tb, r, tl.RowY[r + 1] - tl.RowY[r]));
+            for (int c = 0; c < tb.Columns; c++)
+                _columnBoundaries.Add((new Rect(tl.ColX[c + 1] - 3, top, 6, tl.TotalHeight), tb, c));
+        }
+    }
+
     // Caret bar + deferred BringIntoView. Caret geometry arrives in document space; in page view it
     // is mapped to view space here (the walk and _lastCaretPoint stay document-space throughout).
     private void DrawCaretAndBringIntoView(DrawingContext context, Point? caretPoint, double caretHeight, Rect? blockCaretRect)
@@ -571,7 +678,7 @@ public partial class RichEditor
             if (_isCaretVisible && IsFocused && !IsReadOnly)
             {
                 var cv = MapDocToView(caretPoint.Value);
-                context.DrawLine(new Pen(CaretBrush, 1.5), cv, new Point(cv.X, cv.Y + caretHeight));
+                context.DrawLine(_caretPen ??= new Pen(CaretBrush, 1.5), cv, new Point(cv.X, cv.Y + caretHeight));
             }
         }
 

@@ -1,3 +1,4 @@
+using System.Linq;
 using Avalonia.Media;
 using AvaloniaRichEditor.Documents;
 using AvaloniaRichEditor.Formatters;
@@ -20,11 +21,27 @@ public class DocumentSerializerTests
             Inlines = { new Run { Text = "Title" } }
         });
         var tb = new TableBlock(2, 2);
-        tb.Cells[0][0].Inlines.Clear();
-        tb.Cells[0][0].Inlines.Add(new Run { Text = "cell" });
+        tb.Cells[0][0].Para.Inlines.Clear();
+        tb.Cells[0][0].Para.Inlines.Add(new Run { Text = "cell" });
         tb.MergeCells(0, 0, 0, 1);
         doc.Blocks.Add(tb);
         return doc;
+    }
+
+    // Regression: a NaN-sized inline image must serialize without throwing (System.Text.Json rejects a
+    // raw NaN). NanToNull drops it to null, and read-back falls to the 16px default like the block path.
+    [Fact]
+    public void Serialize_InlineImageWithNaNSize_DoesNotThrow()
+    {
+        var img = new InlineImage { Width = double.NaN, Height = double.NaN };
+        img.SetImageData(new byte[] { 1, 2, 3 }, "image/png");
+        var doc = TestHelpers.Doc(TestHelpers.Para(new Run { Text = "x" }, img));
+
+        var doc2 = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc));
+        var p = Assert.IsType<Paragraph>(doc2.Blocks[0]);
+        var im = p.Inlines.OfType<InlineImage>().Single();
+        Assert.Equal(16, im.Width);
+        Assert.Equal(16, im.Height);
     }
 
     [Fact]

@@ -26,7 +26,7 @@ public class ImageLimitTests
         {
             var t = new TableBlock(1, 1);
             for (int i = 0; i < tableCellImages; i++)
-                t.Cells[0][0].Inlines.Add(new InlineImage());
+                t.Cells[0][0].Para.Inlines.Add(new InlineImage());
             doc.Blocks.Add(t);
         }
         return doc;

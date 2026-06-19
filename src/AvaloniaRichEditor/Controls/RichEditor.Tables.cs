@@ -9,13 +9,39 @@ namespace AvaloniaRichEditor.Controls;
 public partial class RichEditor
 {
     private (TableBlock tb, int r, int c)? FindCell(Paragraph p)
+        => Document == null ? null : FindCellIn(Document.Blocks, p);
+
+    // The content width of the cell that encloses a nested table `t`, or null if `t` is top-level.
+    // Used to clamp a nested table's width on resize so it stays within its cell.
+    private static double? EnclosingCellInnerWidth(TableBlock t)
     {
-        if (Document == null) return null;
-        foreach (var b in Document.Blocks)
+        if (t.Parent is not TableCell cell || cell.Parent is not TableBlock parent) return null;
+        for (int r = 0; r < parent.Rows; r++)
+            for (int c = 0; c < parent.Columns; c++)
+                if (ReferenceEquals(parent.Cells[r][c], cell))
+                {
+                    var (cs, _) = parent.SpanOf(r, c);
+                    double w = 0;
+                    for (int k = c; k < c + cs && k < parent.ColumnWidths.Count; k++) w += parent.ColumnWidths[k];
+                    return System.Math.Max(10, w - 10);
+                }
+        return null;
+    }
+
+    // Finds the innermost table + cell directly holding paragraph p, recursing into nested tables
+    // (P4-2b). Returns the deepest enclosing cell so navigation/menus act on the table the caret is in.
+    private static (TableBlock tb, int r, int c)? FindCellIn(System.Collections.Generic.IEnumerable<Block> blocks, Paragraph p)
+    {
+        foreach (var b in blocks)
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c] == p) return (tb, r, c);
+                    {
+                        var cell = tb.Cells[r][c];
+                        var nested = FindCellIn(cell.Blocks, p);
+                        if (nested != null) return nested;
+                        if (cell.Blocks.Contains(p)) return (tb, r, c);
+                    }
         return null;
     }
 
@@ -69,25 +95,55 @@ public partial class RichEditor
         }
 
         var (tb, r, c) = loc.Value;
-        // Navigate over logical (anchor) cells so merged areas count once and covered cells are skipped.
-        var anchors = tb.LogicalCells().Select(x => x.cell).ToList();
-        int idx = anchors.IndexOf(_caretPosition.Paragraph!);
-        if (idx < 0) { var (ar, ac) = tb.AnchorOf(r, c); idx = anchors.IndexOf(tb.Cells[ar][ac]); }
+        var (ar, ac) = tb.AnchorOf(r, c);
+        var current = tb.Cells[ar][ac];
+        // Document-order anchor cells across ALL tables, descending into nested tables (P4-2b) so Tab/
+        // Shift+Tab traverse the whole structure — entering a nested table and stepping back out at its
+        // edges. Covered (merged) cells are excluded (LogicalCells yields anchors only).
+        var all = AllCellsInOrder();
+        int idx = all.IndexOf(current);
+        if (idx < 0) return;
+
         if (shift)
         {
-            if (idx > 0) FocusCell(anchors[idx - 1]);
+            if (idx > 0) FocusCell(all[idx - 1].Para); // else: first cell of the document -> no-op
         }
-        else if (idx >= 0 && idx + 1 < anchors.Count)
+        else if (idx + 1 < all.Count)
         {
-            FocusCell(anchors[idx + 1]);
+            FocusCell(all[idx + 1].Para);
         }
         else
         {
+            // Past the document's last cell: add a row to the TOP-LEVEL table (nested tables don't grow
+            // via Tab — use the right-click menu), walking up the parent chain if the last cell is nested.
+            var top = tb;
+            while (top.Parent is TableCell pcell && pcell.Parent is TableBlock gp) top = gp;
             if (Document != null) PushUndo();
-            tb.InsertRow(tb.Rows);
+            top.InsertRow(top.Rows);
             if (Document != null) UpdateParents(Document);
-            FocusCell(tb.Cells[tb.Rows - 1][0]);
+            FocusCell(top.Cells[top.Rows - 1][0].Para);
         }
+    }
+
+    // All anchor cells in document order, descending into nested tables: each cell is followed by the
+    // cells of any tables nested inside it, so Tab traversal enters a nested table right after its host
+    // cell and resumes at the host's sibling once the nested cells are exhausted.
+    private System.Collections.Generic.List<TableCell> AllCellsInOrder()
+    {
+        var result = new System.Collections.Generic.List<TableCell>();
+        if (Document != null) CollectCells(Document.Blocks, result);
+        return result;
+    }
+
+    private static void CollectCells(System.Collections.Generic.IEnumerable<Block> blocks, System.Collections.Generic.List<TableCell> outList)
+    {
+        foreach (var b in blocks)
+            if (b is TableBlock tb)
+                foreach (var (_, _, cell) in tb.LogicalCells())
+                {
+                    outList.Add(cell);
+                    CollectCells(cell.Blocks, outList);
+                }
     }
 
     private void FocusCell(Paragraph cell)
@@ -96,7 +152,7 @@ public partial class RichEditor
         if (FindCell(cell) is { } loc && loc.tb.IsCovered(loc.r, loc.c))
         {
             var (ar, ac) = loc.tb.AnchorOf(loc.r, loc.c);
-            cell = loc.tb.Cells[ar][ac];
+            cell = loc.tb.Cells[ar][ac].Para;
         }
         int len = GetParagraphLength(cell);
         _caretPosition = new TextPointer(cell, len);
@@ -113,7 +169,7 @@ public partial class RichEditor
         tb.InsertRow(at);
         UpdateParents(Document);
         int ar = Math.Clamp(at, 0, tb.Rows - 1);
-        _caretPosition = new TextPointer(tb.Cells[ar][0], 0);
+        _caretPosition = new TextPointer(tb.Cells[ar][0].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }
@@ -125,7 +181,7 @@ public partial class RichEditor
         tb.DeleteRow(at);
         UpdateParents(Document);
         int nr = Math.Clamp(at, 0, tb.Rows - 1);
-        _caretPosition = new TextPointer(tb.Cells[nr][0], 0);
+        _caretPosition = new TextPointer(tb.Cells[nr][0].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }
@@ -137,7 +193,7 @@ public partial class RichEditor
         tb.InsertColumn(at);
         UpdateParents(Document);
         int ac = Math.Clamp(at, 0, tb.Columns - 1);
-        _caretPosition = new TextPointer(tb.Cells[0][ac], 0);
+        _caretPosition = new TextPointer(tb.Cells[0][ac].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }
@@ -149,7 +205,7 @@ public partial class RichEditor
         tb.DeleteColumn(at);
         UpdateParents(Document);
         int nc = Math.Clamp(at, 0, tb.Columns - 1);
-        _caretPosition = new TextPointer(tb.Cells[0][nc], 0);
+        _caretPosition = new TextPointer(tb.Cells[0][nc].Para, 0);
         CollapseSelectionToCaret();
         InvalidateVisual();
     }

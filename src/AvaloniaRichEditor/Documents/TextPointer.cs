@@ -59,7 +59,8 @@ public class TextPointer : IComparable<TextPointer>
                 index++; // the table itself occupies one index, matching the historical numbering
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        Locate(tb.Cells[r][c]);
+                        foreach (var b in tb.Cells[r][c].Blocks)
+                            if (b is Paragraph cp) Locate(cp); // every paragraph of every cell (P3)
             }
             else index++;
             if (thisIdx >= 0 && otherIdx >= 0) break; // both located: their order is now fixed

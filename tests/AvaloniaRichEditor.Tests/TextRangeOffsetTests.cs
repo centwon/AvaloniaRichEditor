@@ -156,8 +156,8 @@ public class TextRangeOffsetTests
         // Regression: the end cell's remainder used to be merged into the start cell
         // (and the end cell emptied), corrupting the grid.
         var table = new TableBlock(1, 2);
-        var c0 = table.Cells[0][0];
-        var c1 = table.Cells[0][1];
+        var c0 = table.Cells[0][0].Para;
+        var c1 = table.Cells[0][1].Para;
         c0.Inlines.Add(new Run { Text = "abc", Parent = c0 });
         c1.Inlines.Add(new Run { Text = "def", Parent = c1 });
         var doc = TestHelpers.Doc(table);

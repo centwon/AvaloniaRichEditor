@@ -266,7 +266,7 @@ internal class BenchWindow : Window
                 var tb = new TableBlock(2, 3);
                 for (int r = 0; r < 2; r++)
                     for (int c = 0; c < 3; c++)
-                        ((Run)tb.Cells[r][c].Inlines[0]).Text = $"r{r}c{c} {en}";
+                        ((Run)tb.Cells[r][c].Para.Inlines[0]).Text = $"r{r}c{c} {en}";
                 doc.Blocks.Add(tb);
                 continue;
             }

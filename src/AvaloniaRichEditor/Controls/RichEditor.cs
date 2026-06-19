@@ -72,6 +72,9 @@ public partial class RichEditor : Control
 
     // Image resize state
     private List<(Avalonia.Rect rect, ImageBlock img)> _imageHandles = new();
+    // Rendered rects of block images inside table cells (P4-2b), so a click can select one (top-level
+    // block images are found via GetBlockAtPoint; cell images need this registry, like inline images).
+    private List<(Avalonia.Rect rect, ImageBlock img)> _cellImageRects = new();
     private bool _isResizingImage;
     private ImageBlock? _resizingImage;
     private double _initialImageWidth;
@@ -267,6 +270,8 @@ public partial class RichEditor : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == CaretBrushProperty)
+            _caretPen = null; // rebuild the cached caret pen with the new brush
         if (change.Property == DocumentProperty)
         {
             _layoutCache.Clear();
@@ -545,16 +550,25 @@ public partial class RichEditor : Control
             if (!firstPara) Consume('\n'); // the newline that joined consecutive paragraphs
             firstPara = false;
 
-            string plain = BuildPlain(p);
+            // Walk the inlines directly (Run text chars + one ObjChar per inline image) instead of
+            // building a BuildPlain string per paragraph — this runs on every caret move, so the
+            // per-paragraph string allocation added up to hundreds of allocations per arrow key on a
+            // large document. `local` is the logical offset within this paragraph (image = 1).
             int caretOff = ReferenceEquals(p, _caretPosition.Paragraph)
-                ? Math.Clamp(_caretPosition.Offset, 0, plain.Length) : -1;
-
-            for (int i = 0; i < plain.Length; i++)
+                ? Math.Clamp(_caretPosition.Offset, 0, GetParagraphLength(p)) : -1;
+            int local = 0;
+            void Step(char ch)
             {
-                if (!captured && i == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
-                Consume(plain[i]);
+                if (!captured && local == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
+                Consume(ch);
+                local++;
             }
-            if (!captured && caretOff == plain.Length) { capLine = curLine; capCol = curCol; captured = true; }
+            foreach (var inline in p.Inlines)
+            {
+                if (inline is Run r && r.Text is { } t) { foreach (char ch in t) Step(ch); }
+                else if (inline is InlineImage) Step(ObjChar);
+            }
+            if (!captured && local == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
         }
 
         return (chars, words, captured ? capLine : 1, captured ? capCol : 1);
@@ -564,44 +578,59 @@ public partial class RichEditor : Control
     // with a paragraph, and no two non-paragraph blocks are adjacent without a paragraph between.
     // Without this, an image/table at the very start/end (or two in a row) is impossible to reach
     // or delete with the keyboard.
-    private void NormalizeBlocks(FlowDocument doc)
+    private void NormalizeBlocks(FlowDocument doc) => NormalizeBlockList(doc.Blocks, doc);
+
+    // Keep a paragraph at the very start/end of a block list and between any two adjacent non-paragraph
+    // blocks, so the caret can always reach a position before/after every image/table WITHOUT inserting
+    // extra blank lines around blocks that already sit next to text paragraphs. "Before a table" is then
+    // the end of the preceding text line; "after a table" is the start of the next line. Applied to the
+    // document AND, recursively, every table cell (P4-2b: a cell is a block container too, so a nested
+    // table/image at a cell's edge would otherwise be unreachable).
+    private static void NormalizeBlockList(System.Collections.Generic.IList<Block> blocks, object parent)
     {
-        // Keep a paragraph at the very start/end and between any two adjacent non-paragraph blocks,
-        // so the caret can always reach a position before/after every image/table WITHOUT inserting
-        // extra blank lines around blocks that already sit next to text paragraphs. "Before a table"
-        // is then the end of the preceding text line; "after a table" is the start of the next line.
-        var blocks = doc.Blocks;
         if (blocks.Count == 0 || blocks[0] is not Paragraph)
-            blocks.Insert(0, new Paragraph { Parent = doc });
+            blocks.Insert(0, new Paragraph { Parent = parent });
         if (blocks[blocks.Count - 1] is not Paragraph)
-            blocks.Add(new Paragraph { Parent = doc });
+            blocks.Add(new Paragraph { Parent = parent });
         for (int i = 0; i < blocks.Count - 1; i++)
         {
             if (blocks[i] is not Paragraph && blocks[i + 1] is not Paragraph)
-                blocks.Insert(i + 1, new Paragraph { Parent = doc });
+                blocks.Insert(i + 1, new Paragraph { Parent = parent });
         }
+        foreach (var b in blocks)
+            if (b is TableBlock tb)
+                foreach (var row in tb.Cells)
+                    foreach (var cell in row)
+                        NormalizeBlockList(cell.Blocks, cell);
     }
 
     private void UpdateParents(FlowDocument doc)
     {
         NormalizeBlocks(doc);
         foreach (var block in doc.Blocks)
+            WireBlockParents(block, doc);
+    }
+
+    // Recursively wires a block's Parent (and its descendants') so the Run->Paragraph->TableCell->
+    // TableBlock chain is correct at any nesting depth (P4-2b: a TableBlock can live in a cell's blocks).
+    private static void WireBlockParents(Block block, object parent)
+    {
+        block.Parent = parent;
+        switch (block)
         {
-            block.Parent = doc;
-            if (block is Paragraph p)
-            {
+            case Paragraph p:
                 foreach (var inline in p.Inlines) inline.Parent = p;
-            }
-            else if (block is TableBlock tb)
-            {
+                break;
+            case TableBlock tb:
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
                     {
                         var cell = tb.Cells[r][c];
                         cell.Parent = tb;
-                        foreach (var inline in cell.Inlines) inline.Parent = cell;
+                        foreach (var cb in cell.Blocks)
+                            WireBlockParents(cb, cell);
                     }
-            }
+                break;
         }
     }
 
@@ -1163,7 +1192,7 @@ public partial class RichEditor : Control
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c] == p) return tb;
+                        if (tb.Cells[r][c].Blocks.Contains(p)) return tb;
         }
         return null;
     }
@@ -1182,24 +1211,104 @@ public partial class RichEditor : Control
             if (inlines.Count > 0) { InsertInlines(inlines); return; }
         }
 
-        // Otherwise splice the parsed blocks in after the caret's top-level block.
-        int insertIndex = Document.Blocks.Count;
-        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
-        if (caretBlock != null)
+        // Otherwise splice the parsed blocks in at the caret (splitting the caret paragraph).
+        InsertBlocksAtCaret(parsed.Blocks);
+    }
+
+    // Inserts a list of blocks at the caret, splitting the caret paragraph so the paste lands AT the
+    // caret (Word/HWP behaviour): the first pasted paragraph continues the caret line, the last merges
+    // with the text after the caret, and any blocks between become siblings. Works whether the caret is
+    // in a top-level paragraph or a table cell. Falls back to a plain after-block splice when the caret
+    // isn't in a normal paragraph, or when the paste carries a table that can't nest in a cell yet (P4-2b).
+    private void InsertBlocksAtCaret(System.Collections.Generic.IReadOnlyList<Block> blocks)
+    {
+        if (Document == null || blocks.Count == 0) return;
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+
+        var p = _caretPosition.Paragraph;
+        System.Collections.Generic.IList<Block>? container = p?.Parent switch
         {
-            int i = Document.Blocks.IndexOf(caretBlock);
-            if (i >= 0) insertIndex = i + 1;
+            FlowDocument d => d.Blocks,
+            TableCell tc => tc.Blocks,
+            _ => null
+        };
+        bool inCell = p?.Parent is TableCell;
+        int pi = container != null && p != null ? container.IndexOf(p) : -1;
+        if (container == null || p == null || pi < 0 || (inCell && blocks.Any(b => b is TableBlock)))
+        {
+            InsertBlocksAfterCaretBlock(blocks);
+            return;
         }
 
-        Paragraph? lastPara = null;
-        foreach (var b in parsed.Blocks.ToList())
+        // Clone the sources so callers' lists (e.g. the internal clipboard) stay reusable.
+        var src = new List<Block>(blocks.Count);
+        foreach (var b in blocks) if (b.Clone() is Block cl) src.Add(cl);
+        if (src.Count == 0) return;
+
+        // Split the caret paragraph: p keeps the head; tail takes the inlines after the caret (same props).
+        int splitAt = SplitInlinesAt(p, _caretPosition.Offset);
+        var tail = new Paragraph
         {
-            Document.Blocks.Insert(insertIndex++, b);
-            if (b is Paragraph bp) lastPara = bp;
-            else if (b is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
+            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
+            TextAlignment = p.TextAlignment, Background = p.Background, HeadingLevel = p.HeadingLevel
+        };
+        while (p.Inlines.Count > splitAt)
+        {
+            var inl = p.Inlines[splitAt];
+            p.Inlines.RemoveAt(splitAt);
+            inl.Parent = tail;
+            tail.Inlines.Add(inl);
+        }
+
+        // Merge the first pasted paragraph into the head line.
+        if (src[0] is Paragraph fp)
+        {
+            foreach (var inl in fp.Inlines.ToList()) { fp.Inlines.Remove(inl); inl.Parent = p; p.Inlines.Add(inl); }
+            src.RemoveAt(0);
+        }
+        // Merge the last pasted paragraph into the tail (prepended before the original tail text). The
+        // caret lands right after that pasted text; otherwise at the start of the tail.
+        int caretOff = 0;
+        if (src.Count > 0 && src[^1] is Paragraph lp)
+        {
+            var moved = lp.Inlines.ToList();
+            int pos = 0;
+            foreach (var inl in moved) { lp.Inlines.Remove(inl); inl.Parent = tail; tail.Inlines.Insert(pos++, inl); }
+            caretOff = moved.Sum(InlineLen);
+            src.RemoveAt(src.Count - 1);
+        }
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
+        if (tail.Inlines.Count == 0) tail.Inlines.Add(new Run { Text = "" });
+
+        int at = pi + 1;
+        foreach (var b in src) container.Insert(at++, b);
+        tail.Parent = p.Parent;
+        container.Insert(at, tail);
+        UpdateParents(Document);
+        if (inCell) InvalidateMeasure(); // the cell grew -> table row height reflows
+
+        _caretPosition = new TextPointer(tail, caretOff);
+        _selectionStart = new TextPointer(tail, caretOff);
+        _selectionEnd = new TextPointer(tail, caretOff);
+    }
+
+    // Plain after-block splice (the fallback): inserts cloned blocks after the caret's block — into the
+    // enclosing cell when the caret is in one, else the document top level. Used when the caret isn't in
+    // a normal paragraph or the paste carries a table that can't nest in a cell.
+    private void InsertBlocksAfterCaretBlock(System.Collections.Generic.IReadOnlyList<Block> blocks)
+    {
+        if (Document == null) return;
+        var (container, at) = BlockInsertTarget(blocks);
+        Paragraph? lastPara = null;
+        foreach (var b in blocks)
+        {
+            if (b.Clone() is not Block cl) continue;
+            container.Insert(at++, cl);
+            if (cl is Paragraph bp) lastPara = bp;
+            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell.Para).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1].Para;
         }
         UpdateParents(Document);
-
+        if (!ReferenceEquals(container, Document.Blocks)) InvalidateMeasure(); // cell grew -> table reflows
         if (lastPara != null)
         {
             _caretPosition = new TextPointer(lastPara, GetParagraphLength(lastPara));
@@ -1208,11 +1317,49 @@ public partial class RichEditor : Control
         }
     }
 
+    // The container + index for the after-block splice fallback: the enclosing cell's block list (after
+    // the caret's paragraph) when the caret is in a cell, otherwise the document's top-level list (after
+    // the caret's top-level block). A paste containing a TableBlock can't nest in a cell yet (P4-2b), so
+    // it falls back to top level.
+    private (System.Collections.Generic.IList<Block> container, int at) BlockInsertTarget(System.Collections.Generic.IEnumerable<Block> blocks)
+    {
+        if (Document != null && _caretPosition.Paragraph?.Parent is TableCell tc && !blocks.Any(b => b is TableBlock))
+        {
+            int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
+            return (tc.Blocks, pi >= 0 ? pi + 1 : tc.Blocks.Count);
+        }
+        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
+        int ti = caretBlock != null && Document != null ? Document.Blocks.IndexOf(caretBlock) : -1;
+        return (Document!.Blocks, ti >= 0 ? ti + 1 : Document.Blocks.Count);
+    }
+
     // Inserts a top-level block immediately after the caret's current block (or at the end
     // when the caret isn't in a normal paragraph), instead of always appending to the document.
     private void InsertBlockAtCaret(Block b)
     {
         if (Document == null) return;
+        // A block image / divider / nested table (P4-2b) inserts inside the current cell, after the
+        // caret's paragraph, when the caret is in a cell.
+        if (_caretPosition.Paragraph?.Parent is TableCell tc)
+        {
+            int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
+            int at = pi >= 0 ? pi + 1 : tc.Blocks.Count;
+            tc.Blocks.Insert(at, b);
+            // Guarantee a paragraph after the block so the caret has somewhere to land and type.
+            if (at + 1 >= tc.Blocks.Count || tc.Blocks[at + 1] is not Paragraph)
+                tc.Blocks.Insert(at + 1, new Paragraph { Inlines = { new Run { Text = "" } } });
+            UpdateParents(Document);
+            // Caret into a nested table's first cell (ready to fill), else the paragraph after the block.
+            if (b is TableBlock nt && nt.Cells.Count > 0 && nt.Cells[0].Count > 0)
+                _caretPosition = new TextPointer(nt.Cells[0][0].Para, 0);
+            else if (tc.Blocks[at + 1] is Paragraph np)
+                _caretPosition = new TextPointer(np, 0);
+            CollapseSelectionToCaret();
+            Focus();
+            InvalidateMeasure(); // the cell grew -> table row height reflows
+            ResetCaretBlink();
+            return;
+        }
         int insertIndex = Document.Blocks.Count;
         var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
         if (caretBlock != null)
@@ -1228,7 +1375,7 @@ public partial class RichEditor : Control
         // image). ResetCaretBlink re-measures (the new block grows the scroll extent) and scrolls it
         // into view, instead of leaving only its top edge showing until the next click.
         if (b is TableBlock tbl && tbl.Cells.Count > 0 && tbl.Cells[0].Count > 0)
-            _caretPosition = new TextPointer(tbl.Cells[0][0], 0);
+            _caretPosition = new TextPointer(tbl.Cells[0][0].Para, 0);
         else
             for (int k = insertIndex + 1; k < Document.Blocks.Count; k++)
                 if (Document.Blocks[k] is Paragraph after) { _caretPosition = new TextPointer(after, 0); break; }
@@ -1257,9 +1404,22 @@ public partial class RichEditor : Control
         // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
         // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
         var tb = new TableBlock(rows, cols);
-        // Fill the document width with equal columns (instead of the model's fixed 100px default).
-        double avail = Bounds.Width > 60 ? ContentLayoutWidth - 20 : 600;
-        double w = System.Math.Max(40, avail / cols);
+        // Equal columns spanning the available width. Inside a cell (P4-2b nested table) that's the
+        // enclosing cell's content width (parent column-span widths minus the cell padding), so the nested
+        // table fits the cell instead of the whole document; otherwise it fills the document width.
+        double avail, minCol;
+        if (_caretPosition.Paragraph is { } cp && FindCell(cp) is { } loc)
+        {
+            var (cs, _) = loc.tb.SpanOf(loc.r, loc.c);
+            double cellW = 0;
+            for (int k = loc.c; k < loc.c + cs && k < loc.tb.ColumnWidths.Count; k++) cellW += loc.tb.ColumnWidths[k];
+            // Fit the enclosing cell's content width with a low per-column floor so a deeply nested table
+            // doesn't overflow its cell (the 40px top-level floor would exceed a narrow cell).
+            avail = System.Math.Max(20, cellW - 10);
+            minCol = 15;
+        }
+        else { avail = Bounds.Width > 60 ? ContentLayoutWidth - 20 : 600; minCol = 40; }
+        double w = System.Math.Max(minCol, avail / cols);
         for (int c = 0; c < tb.ColumnWidths.Count; c++) tb.ColumnWidths[c] = w;
         InsertBlockAtCaret(tb);
         InvalidateVisual();
@@ -1271,7 +1431,16 @@ public partial class RichEditor : Control
     {
         var p = _caretPosition.Paragraph;
         if (Document == null || p == null) return;
-        int idx = Document.Blocks.IndexOf(p);
+        // The paragraph lives either as a top-level block or inside a table cell's block list (P3).
+        // Split within whichever container holds it, so the new paragraph becomes a sibling there.
+        System.Collections.Generic.IList<Block>? container = p.Parent switch
+        {
+            FlowDocument d => d.Blocks,
+            TableCell tc => tc.Blocks,
+            _ => null
+        };
+        if (container == null) return;
+        int idx = container.IndexOf(p);
         if (idx < 0) return;
         int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
         var np = new Paragraph
@@ -1291,27 +1460,28 @@ public partial class RichEditor : Control
         }
         if (np.Inlines.Count == 0) np.Inlines.Add(new Run { Text = "" });
         if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
-        np.Parent = Document;
-        Document.Blocks.Insert(idx + 1, np);
+        np.Parent = p.Parent;
+        container.Insert(idx + 1, np);
         _caretPosition = new TextPointer(np, 0);
         _selectionStart = new TextPointer(np, 0);
         _selectionEnd = new TextPointer(np, 0);
     }
 
     private List<Paragraph> GetAllParagraphsInOrder()
+        => Document == null ? new List<Paragraph>() : ParagraphsInBlocks(Document.Blocks).ToList();
+
+    // Document-order enumeration of every paragraph, descending recursively through table cells (and
+    // nested tables — P4-2b) so navigation/find/select-all reach paragraphs at any depth.
+    private static System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInBlocks(System.Collections.Generic.IEnumerable<Block> blocks)
     {
-        var result = new List<Paragraph>();
-        if (Document == null) return result;
-        foreach (var block in Document.Blocks)
+        foreach (var block in blocks)
         {
-            if (block is Paragraph p) result.Add(p);
+            if (block is Paragraph p) yield return p;
             else if (block is TableBlock tb)
-            {
                 foreach (var (_, _, cell) in tb.LogicalCells())
-                    result.Add(cell);
-            }
+                    foreach (var q in ParagraphsInBlocks(cell.Blocks))
+                        yield return q;
         }
-        return result;
     }
 
     private void SelectAll()
@@ -1429,6 +1599,14 @@ public partial class RichEditor : Control
         var endTop = range.End.Paragraph != null ? FindTopLevelBlock(range.End.Paragraph) : null;
         if (startTop == null || endTop == null) return null;
 
+        // A selection entirely within a single table cell is intra-cell text, not a table copy. Both
+        // endpoints resolve to the same enclosing TableBlock (hasNonParagraph below would otherwise clone
+        // the WHOLE table), so fall to the run/inline clipboard and capture only the cell content.
+        if (ReferenceEquals(startTop, endTop) && startTop is TableBlock
+            && FindCell(range.Start.Paragraph!) is { } sc && FindCell(range.End.Paragraph!) is { } ec
+            && sc.tb == ec.tb && sc.r == ec.r && sc.c == ec.c)
+            return null;
+
         int si = Document.Blocks.IndexOf(startTop);
         int ei = Document.Blocks.IndexOf(endTop);
         if (si < 0 || ei < 0 || si > ei) return null;
@@ -1446,37 +1624,9 @@ public partial class RichEditor : Control
         return blocks.Count > 0 ? blocks : null;
     }
 
-    // Inserts cloned blocks (e.g. tables) after the caret's block, preserving structure.
-    private void InsertBlocks(List<Block> blocks)
-    {
-        if (Document == null || blocks.Count == 0) return;
-        if (_selectionStart != _selectionEnd) DeleteSelection();
-
-        int insertIndex = Document.Blocks.Count;
-        var caretBlock = _caretPosition.Paragraph != null ? FindTopLevelBlock(_caretPosition.Paragraph) : null;
-        if (caretBlock != null)
-        {
-            int i = Document.Blocks.IndexOf(caretBlock);
-            if (i >= 0) insertIndex = i + 1;
-        }
-
-        Paragraph? lastPara = null;
-        foreach (var b in blocks)
-        {
-            if (b.Clone() is not Block cl) continue; // clone again so repeated pastes stay independent
-            Document.Blocks.Insert(insertIndex++, cl);
-            if (cl is Paragraph bp) lastPara = bp;
-            else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1];
-        }
-        UpdateParents(Document);
-
-        if (lastPara != null)
-        {
-            _caretPosition = new TextPointer(lastPara, GetParagraphLength(lastPara));
-            _selectionStart = new TextPointer(lastPara, _caretPosition.Offset);
-            _selectionEnd = new TextPointer(lastPara, _caretPosition.Offset);
-        }
-    }
+    // Inserts cloned blocks (e.g. tables) at the caret, splitting the caret paragraph so the paste lands
+    // at the caret rather than after the current block (shares InsertBlocksAtCaret with HTML/RTF paste).
+    private void InsertBlocks(List<Block> blocks) => InsertBlocksAtCaret(blocks);
 
     // Inserts a list of formatted Runs at the current caret, splitting the run under the caret.
     // Inserts a list of inlines (formatted Runs and/or InlineImages) at the caret, splitting the run
@@ -1542,10 +1692,33 @@ public partial class RichEditor : Control
     {
         if (Document == null) return;
         PushUndo();
-        Document.Blocks.Remove(b);
+        RemoveBlockAnywhere(b);
         _selectedBlock = null;
-        NormalizeBlocks(Document);
+        UpdateParents(Document); // NormalizeBlocks (top level) + re-wire; a cell keeps its paragraph invariant
+        InvalidateMeasure();     // a cell shrank -> the table's row height reflows
         InvalidateVisual();
+    }
+
+    // Removes a block from whichever container holds it: the document's top-level list or an enclosing
+    // table cell (searching recursively through nested tables — P4-2b). Returns true if removed.
+    private bool RemoveBlockAnywhere(Block b)
+    {
+        if (Document == null) return false;
+        if (Document.Blocks.Remove(b)) return true;
+        return RemoveBlockFromCells(Document.Blocks, b);
+    }
+
+    private static bool RemoveBlockFromCells(System.Collections.Generic.IEnumerable<Block> blocks, Block target)
+    {
+        foreach (var blk in blocks)
+            if (blk is TableBlock tb)
+                foreach (var row in tb.Cells)
+                    foreach (var cell in row)
+                    {
+                        if (cell.Blocks.Remove(target)) return true;
+                        if (RemoveBlockFromCells(cell.Blocks, target)) return true;
+                    }
+        return false;
     }
 
     /// <summary>Undoes the last edit. No-op when <see cref="CanUndo"/> is <see langword="false"/>.</summary>

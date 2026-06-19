@@ -4,7 +4,7 @@
 
 | 형식 | 용도 | 진입점 API |
 |---|---|---|
-| **JSON 문자열** (스키마 v2) | 임베드·DB TEXT 컬럼·diff·이식 | `RichEditor.ToJson()` / `LoadJson()`, `DocumentSerializer.Serialize()` / `Deserialize()` |
+| **JSON 문자열** (포맷 v1.0) | 임베드·DB TEXT 컬럼·diff·이식 | `RichEditor.ToJson()` / `LoadJson()`, `DocumentSerializer.Serialize()` / `Deserialize()` |
 | **`.flow` 패키지** (ZIP 컨테이너) | 파일로 주고받기 (base64 오버헤드 제거) | `RichEditor.SavePackageAsync()` / `LoadPackageAsync()`, `DocumentPackage.Save()` / `Load()` |
 
 HTML 입출력(`ToHtml`/`LoadHtml`)은 **교환용**이며 손실이 있을 수 있다(예: 행 높이, 일부 여백). 무손실 보존이 필요하면 JSON/`.flow`를 사용한다.
@@ -24,7 +24,7 @@ FlowDocument
    │  └─ Inlines: Inline[]
    │     ├─ Run               ← 단일 서식의 연속 텍스트
    │     └─ InlineImage       ← 글자처럼 취급되는 작은 이미지 (논리적으로 1글자)
-   ├─ TableBlock              ← 표. 각 셀의 내용은 Paragraph 1개
+   ├─ TableBlock              ← 표. 각 셀(TableCell.Blocks)은 블록 리스트(문단·이미지·구분선·중첩 표)
    ├─ ImageBlock              ← 독립 블록 이미지
    └─ DividerBlock            ← 수평 구분선 (<hr>)
 ```
@@ -32,13 +32,13 @@ FlowDocument
 핵심 불변식:
 
 - **인라인 이미지 = 1글자.** 오프셋·길이 계산에서 `InlineImage`는 항상 1문자(개념상 U+FFFC)로 센다.
-- **하나의 Paragraph가 여러 줄을 가질 수 있다.** `Run.Text` 안의 `\n`은 하드 줄바꿈이다(주로 표 셀 안 Enter, 붙여넣기로 유입). 리스트 문단에서는 줄마다 별도의 마커가 그려진다.
-- **표 셀 내용은 Paragraph 1개다.** 셀은 형제 문단을 가질 수 없다.
+- **하나의 Paragraph가 여러 줄을 가질 수 있다.** `Run.Text` 안의 `\n`은 하드 줄바꿈이다(Shift+Enter 소프트 줄바꿈, 붙여넣기·로드로 유입). 리스트 문단에서는 줄마다 별도의 마커가 그려진다.
+- **표 셀은 블록 리스트다(`TableCell.Blocks`).** 셀은 여러 문단·블록이미지·구분선·중첩 표를 담을 수 있다(마일스톤 A). 셀 안 Enter는 문단을 분할한다(하드 `\n` 아님). 호환을 위해 평범한 1문단 셀은 레거시 단일-문단 형식으로 직렬화되고, 다중 블록/비문단 셀만 `Type="Cell"` 래퍼로 인코딩된다(중첩 표는 블록 DTO 재귀).
 - **로드 시 정규화(NormalizeBlocks).** 문서의 처음/끝, 그리고 연속한 비문단 블록 사이에는 문단이 보장되도록 에디터가 빈 Paragraph를 삽입할 수 있다. 따라서 *직렬화 → 역직렬화 → 직렬화*에서 빈 문단이 추가될 수 있다(내용 손실은 없음).
 
 ---
 
-## 2. JSON 형식 (스키마 v2)
+## 2. JSON 형식 (포맷 v1.0)
 
 ### 2.1 직렬화 일반 규칙
 
@@ -53,7 +53,7 @@ FlowDocument
 {
   "Version": "1.0",              // 포맷 버전(SemVer 문자열). 레거시 정수(1·2)도 읽음, 없으면 "1"
   "Blocks": [ /* BlockDto[] */ ],
-  "Images": {                    // v2 이미지 풀 (이미지가 없으면 생략)
+  "Images": {                    // 이미지 풀 (이미지가 없으면 생략)
     "<SHA256 hex(대문자)>": { "Data": "<base64>", "MimeType": "image/jpeg" }
   }
 }
@@ -107,7 +107,7 @@ FlowDocument
 
 | 필드 | 타입 | 의미 / 읽기 규칙 |
 |---|---|---|
-| `ImageRef` | string? | **v2**: `Images` 풀 키 |
+| `ImageRef` | string? | `Images` 풀 키 (현행 작성 방식) |
 | `ImageBase64` | string? | **v1 레거시 읽기 폴백**: 인라인 base64. `ImageRef`가 풀에서 해석되면 무시 |
 | `MimeType` | string? | `ImageBase64` 바이트의 MIME. 없으면 `image/png`(레거시는 항상 PNG였음) |
 | `Width`, `Height` | number? | 표시 크기 px. NaN이면 생략하고, 없으면 NaN(자연 크기, 렌더 폴백 200) |
@@ -119,10 +119,20 @@ FlowDocument
 | `Rows`, `Columns` | int | 행/열 수. **로드 시 `Cells` 격자에서 재계산**되므로 참고값 |
 | `ColumnWidths` | number[] | 열 너비 px (열 수만큼) |
 | `RowHeights` | number[] | 행 최소 높이 px. **빈 배열 또는 0 = 자동(내용 높이)** |
-| `Cells` | BlockDto[][] | 행 우선(row-major) **밀집 격자**. 각 셀은 Paragraph형 BlockDto. 병합으로 가려진 칸도 자리는 유지 |
+| `Cells` | BlockDto[][] | 행 우선(row-major) **밀집 격자**. 평범한 1문단 셀은 Paragraph형 BlockDto(레거시 호환), 다중 블록·비문단 셀은 `Type:"Cell"` 래퍼(아래). 병합으로 가려진 칸도 자리는 유지 |
 | `ColSpans`, `RowSpans` | int[][] | 셀 병합 격자(밀집, `Cells`와 같은 크기). 앵커 셀=병합 칸 수(평범한 셀은 1), **가려진(covered) 셀=0**. 없으면 전부 1×1 |
 
 병합 규약: 병합 영역의 왼쪽-위 셀이 **앵커**이며 `ColSpans[r][c]`/`RowSpans[r][c]`에 병합 크기를 갖는다. 영역 내 나머지 칸은 두 배열 모두 0으로 마킹되고, 그 칸의 `Cells` 내용은 무시된다(빈 문단 권장). 격자는 항상 직사각형이어야 한다.
+
+다중 블록 셀(`Type: "Cell"`): 한 셀이 여러 문단·블록이미지·구분선·중첩 표를 담으면 `Cells[r][c]`를 셀 래퍼로 인코딩한다.
+
+| 필드 | 타입 | 의미 |
+|---|---|---|
+| `Type` | string | `"Cell"` |
+| `Blocks` | BlockDto[] | 셀의 블록 리스트(재귀 — 중첩 `Type:"Table"` 포함 가능) |
+| `Background` | string? | 셀 배경색 (§2.5) |
+
+평범한 1문단 셀은 이 래퍼 없이 Paragraph형 BlockDto로 직렬화되어(배경은 그 DTO의 `Background`에) 구 판독기와 호환된다.
 
 #### `Type: "Divider"`
 
@@ -224,15 +234,15 @@ FlowDocument
 
 **판독기(reader) 의무**
 - 모르는 JSON 필드는 무시한다.
-- `Version`이 없으면 1로 간주하고 v1 폴백(`ImageBase64`, `IsListItem`)을 적용한다.
+- `Version`이 없으면 레거시(`"1"`)로 간주하고 폴백(`ImageBase64`, `IsListItem`)을 적용한다. 레거시 정수(`1`·`2`)와 SemVer 문자열(`"1.0"`)을 모두 읽는다.
 - `Version`이 현재 지원 버전보다 커도 가능한 만큼 읽는다(현재 구현은 버전 검사로 거부하지 않음).
 
 **작성기(writer) 의무**
-- 항상 현재 스키마 버전(`DocumentSerializer.CurrentSchemaVersion` = 2)을 기록한다.
+- 항상 현재 포맷 버전(`DocumentSerializer.CurrentSchemaVersion` = `"1.0"`)을 기록한다.
 - 이미지 바이트를 재인코딩하지 않는다(원본 보존). 풀 키는 반드시 바이트의 SHA-256 hex.
 - 레거시 쓰기 필드(`ImageBase64`, `IsListItem`)는 **쓰지 않는다** (읽기 폴백 전용).
 
 **스키마를 바꿀 때**
-1. 기존 문서를 깨뜨리는 변경(필드 의미 변경·제거)이면 `CurrentSchemaVersion`을 올리고 읽기 폴백을 추가한다. 필드 *추가*는 버전 증가 없이 가능하다(생략=기본값 규칙 유지).
+1. 기존 문서를 깨뜨리는 변경(필드 의미 변경·제거)이면 `CurrentSchemaVersion`을 올리고(SemVer 문자열 — 호환 깨짐은 메이저, 하위호환 추가는 마이너) 읽기 폴백을 추가한다. 필드 *추가*는 버전 증가 없이 가능하다(생략=기본값 규칙 유지).
 2. 이 문서의 버전 이력 표(§2.2)와 필드 표를 갱신한다.
 3. 왕복 테스트(`tests/`의 JSON/flow 라운드트립)와 레거시 로드 테스트를 추가한다.

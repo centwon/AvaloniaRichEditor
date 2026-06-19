@@ -19,13 +19,15 @@ dotnet add package AvaloniaRichEditor --prerelease
 - Rich inline formatting: bold / italic / underline / strikethrough, font family & size, foreground &
   highlight colors, hyperlinks
 - Paragraphs with alignment, line spacing, indentation, headings, and bullet / numbered lists
-- **Tables** with cell merge (colspan/rowspan), column & row resize, and Tab cell navigation
+- **Tables** with cell merge (colspan/rowspan), column & row resize, and Tab cell navigation. Cells are
+  full block containers — multiple paragraphs, block images, dividers, and **nested tables** (to any
+  depth), with recursive layout/hit-testing, per-cell resize, and Tab traversal that enters/exits nesting
 - Inline and block **images** (insert, resize, replace, save)
 - Find / replace, undo / redo, per-object right-click context menus
 - Clipboard: internal rich copy/paste, rich **HTML copy-out** (`CF_HTML`) and external HTML/**RTF** paste
   (Word/HWP), image paste, Excel/TSV → table
 - HTML, JSON, and **RTF** import/export (round-trippable) — see the
-  [document format specification](docs/DOCUMENT_FORMAT.md) (JSON schema v2 and the `.flow` package)
+  [document format specification](docs/DOCUMENT_FORMAT.md) (JSON document format v1.0 and the `.flow` package)
 - Korean/CJK **IME** composition (inline preedit)
 - Word-style **page view** with selectable paper size (`PageSize`: A4/A3/A5/B4/B5/Letter/Legal/Tabloid),
   `PageOrientation`, and `ShowPageBoundaries` — line-boundary page breaks, headers/footers/page numbers

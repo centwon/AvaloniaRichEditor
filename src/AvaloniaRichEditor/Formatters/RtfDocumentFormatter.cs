@@ -266,7 +266,10 @@ internal sealed class RtfParser
         if (_st.Dest == Dest.Normal)
         {
             if (code < 0) code += 65536; // RTF \u is signed 16-bit
-            try { _run.Append(char.ConvertFromUtf32(code)); } catch { }
+            // \u carries one UTF-16 code UNIT (not a scalar): astral chars arrive as two \u (a surrogate
+            // pair), so append the raw unit — consecutive halves recombine in the buffer. ConvertFromUtf32
+            // would throw on a lone surrogate and drop emoji etc.
+            if (code >= 0 && code <= 0xFFFF) _run.Append((char)code);
         }
         // Skip the spell-out fallback that follows a \uN (a plain char or a \'hh each count as one).
         for (int k = 0; k < _st.UnicodeSkip && _i < _s.Length; k++)
@@ -381,8 +384,8 @@ internal sealed class RtfParser
         tb.Cells.Clear();
         foreach (var r in rows)
         {
-            var cells = new List<Paragraph>(cols);
-            for (int c = 0; c < cols; c++) cells.Add(c < r.Count ? r[c] : new Paragraph());
+            var cells = new List<TableCell>(cols);
+            for (int c = 0; c < cols; c++) cells.Add(c < r.Count ? new TableCell(r[c]) : new TableCell());
             tb.Cells.Add(cells);
         }
         tb.Rows = rows.Count;
@@ -589,8 +592,16 @@ internal sealed class RtfWriter
             {
                 _body.Append(@"\pard\intbl ");
                 var cell = tb.Cells[row][col];
-                foreach (var inline in cell.Inlines)
-                    if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
+                // Every paragraph of the cell, separated by \par (P3/P4 multi-paragraph cells).
+                bool firstCellPara = true;
+                foreach (var cblk in cell.Blocks)
+                {
+                    if (cblk is not Paragraph cpara) continue;
+                    if (!firstCellPara) _body.Append(@"\par ");
+                    firstCellPara = false;
+                    foreach (var inline in cpara.Inlines)
+                        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
+                }
                 _body.Append(@"\cell");
             }
             _body.Append(@"\row").Append('\n');

@@ -34,15 +34,15 @@ public class TableBlockTests
     public void Merge_AppendsCoveredCellText_IntoAnchor()
     {
         var tb = new TableBlock(1, 2);
-        tb.Cells[0][0].Inlines.Clear();
-        tb.Cells[0][0].Inlines.Add(new Run { Text = "A" });
-        tb.Cells[0][1].Inlines.Clear();
-        tb.Cells[0][1].Inlines.Add(new Run { Text = "B" });
+        tb.Cells[0][0].Para.Inlines.Clear();
+        tb.Cells[0][0].Para.Inlines.Add(new Run { Text = "A" });
+        tb.Cells[0][1].Para.Inlines.Clear();
+        tb.Cells[0][1].Para.Inlines.Add(new Run { Text = "B" });
 
         tb.MergeCells(0, 0, 0, 1);
 
-        Assert.Contains("A", tb.Cells[0][0].Text());
-        Assert.Contains("B", tb.Cells[0][0].Text());
+        Assert.Contains("A", tb.Cells[0][0].Para.Text());
+        Assert.Contains("B", tb.Cells[0][0].Para.Text());
     }
 
     [Fact]

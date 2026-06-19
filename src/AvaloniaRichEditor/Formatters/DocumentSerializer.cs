@@ -147,7 +147,26 @@ public static class DocumentSerializer
                 foreach (var row in tb.Cells)
                 {
                     var rd = new List<BlockDto>();
-                    foreach (var cell in row) rd.Add(ParagraphToDto(cell, pool));
+                    foreach (var cell in row)
+                    {
+                        // Backward-compatible cell encoding: a plain one-paragraph cell stays the legacy
+                        // single block DTO (the cell's paragraph) with the cell background on it, so old
+                        // readers still load it. A cell with multiple blocks or non-paragraph content (P4:
+                        // several paragraphs, a block image, a nested table) is wrapped in a "Cell" DTO
+                        // whose Blocks carry the full list (recursively).
+                        BlockDto cdto;
+                        if (cell.Blocks.Count == 1 && cell.Blocks[0] is Paragraph cpara)
+                        {
+                            cdto = ParagraphToDto(cpara, pool);
+                        }
+                        else
+                        {
+                            cdto = new BlockDto { Type = "Cell", Blocks = new List<BlockDto>() };
+                            foreach (var b in cell.Blocks) cdto.Blocks.Add(BlockToDto(b, pool));
+                        }
+                        cdto.Background = BrushToString(cell.Background);
+                        rd.Add(cdto);
+                    }
                     td.Cells.Add(rd);
                 }
                 td.ColSpans = new List<List<int>>();
@@ -202,8 +221,8 @@ public static class DocumentSerializer
                 {
                     Type = "Image",
                     ImageRef = PoolImage(pool, im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null),
-                    Width = im.Width,
-                    Height = im.Height
+                    Width = NanToNull(im.Width),
+                    Height = NanToNull(im.Height)
                 });
         }
         return d;
@@ -245,8 +264,30 @@ public static class DocumentSerializer
                 if (d.Cells != null)
                     foreach (var rowD in d.Cells)
                     {
-                        var row = new List<Paragraph>();
-                        foreach (var cd in rowD) row.Add(DtoToParagraph(cd, pool));
+                        var row = new List<TableCell>();
+                        foreach (var cd in rowD)
+                        {
+                            TableCell cell;
+                            if (cd.Type == "Cell")
+                            {
+                                // Multi-block cell (P4): rebuild every block, recursing for nested tables.
+                                cell = new TableCell { Background = StringToBrush(cd.Background) };
+                                cell.Blocks.Clear();
+                                if (cd.Blocks != null)
+                                    foreach (var bd in cd.Blocks)
+                                        if (DtoToBlock(bd, pool) is { } bb) { bb.Parent = cell; cell.Blocks.Add(bb); }
+                                if (cell.Blocks.Count == 0) cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+                            }
+                            else
+                            {
+                                // Legacy/plain one-paragraph cell. Background lived on the paragraph DTO —
+                                // same field, so this migrates it to the cell transparently.
+                                var para = DtoToParagraph(cd, pool);
+                                cell = new TableCell(para) { Background = para.Background };
+                                para.Background = null;
+                            }
+                            row.Add(cell);
+                        }
                         tb.Cells.Add(row);
                     }
                 tb.Rows = tb.Cells.Count;
@@ -256,7 +297,7 @@ public static class DocumentSerializer
                 // Pad jagged/short rows so the grid stays rectangular — corrupt or hand-edited JSON
                 // could otherwise make Cells[r][c] throw in render/layout/hit-testing.
                 foreach (var row in tb.Cells)
-                    while (row.Count < tb.Columns) row.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+                    while (row.Count < tb.Columns) row.Add(new TableCell());
                 // Rebuild span grids to match the loaded cell grid. Missing/legacy docs default to 1×1.
                 tb.ColSpans.Clear();
                 tb.RowSpans.Clear();
@@ -457,6 +498,11 @@ internal class BlockDto
     public List<List<BlockDto>>? Cells { get; set; }
     public List<List<int>>? ColSpans { get; set; }
     public List<List<int>>? RowSpans { get; set; }
+
+    // Table cell (Type == "Cell"): the cell's block list (paragraphs / images / nested tables).
+    // Only emitted for multi-block or non-paragraph cells; plain one-paragraph cells use the legacy
+    // single-paragraph DTO form for backward compatibility.
+    public List<BlockDto>? Blocks { get; set; }
 }
 
 internal class InlineDto

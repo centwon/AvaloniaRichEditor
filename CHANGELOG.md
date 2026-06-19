@@ -6,6 +6,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Blocks inside table cells (Milestone A).** A table cell is now a block list (`TableCell.Blocks`)
+  instead of a single paragraph, so a cell can hold multiple paragraphs, block images, dividers, and
+  **nested tables** to arbitrary depth. Render, hit-testing and measurement share one recursive
+  primitive (`DrawCellBlockList`/`HitTestBlockList` ↔ `LayoutTable`/`MeasureCellContentHeight`).
+  - **Enter inside a cell** splits into a sibling paragraph (the table grows to fit) instead of inserting
+    a hard `\n`. Shift+Enter still inserts a soft line break.
+  - **Insert table/image/divider** with the caret in a cell now nests the block inside that cell; a
+    nested table's columns are sized to fit the cell width.
+  - Arrow keys, click placement, selection, and hyperlinks all descend into nested cells. Crossing a
+    nested-table boundary uses paragraph-order navigation (block carets remain top-level only).
+  - **Tab/Shift+Tab** traverse every cell in document order, entering and exiting nested tables; Tab past
+    the document's last cell adds a row to the top-level table.
+  - Block images inside a cell get the same chrome as top-level ones: click to select, drag the corner to
+    resize (clamped to the cell), Delete/Backspace to remove, and a right-click image menu. Nested tables
+    get resize handles (the outer-right edge clamped to the cell) and a right-click menu that targets the
+    innermost table.
+
+### Changed
+- **Document format**: multi-block / non-paragraph cells serialize as a `Type:"Cell"` wrapper carrying a
+  recursive `Blocks` list; a plain one-paragraph cell still serializes in the legacy single-paragraph form
+  (with the cell background on it), so older readers keep loading these documents. See
+  [`docs/DOCUMENT_FORMAT.md`](docs/DOCUMENT_FORMAT.md).
+
+### Fixed
+- **Copy inside a table cell** captured the whole table (paste reproduced the entire table); a selection
+  within a single cell now copies just the cell content.
+- **Paste with the caret in a cell** landed after the table instead of in the cell; multi-block paste now
+  splits the caret paragraph and inserts at the caret (in cells and at the top level alike).
+- **Right-click inside a cell** showed only the table-structure menu; it now shows the same text menu as a
+  top-level paragraph, with row/column/merge operations under a "Table" submenu.
+
+## [0.7.1] - 2026-06-18
+
+A patch release: bug fixes (mostly fallout from the 0.7.0 points migration) and idle/input hot-path
+allocation cleanups. No public API or document-format changes.
+
+### Fixed
+- **HTML import font size**: text without an explicit `font-size` (notably every table cell, and
+  inline-wrapped top-level text like a bare `<span>`) was imported at a stale **14pt** — a leftover from
+  the px-era default before the points migration — instead of the **10pt** body default, so a pasted
+  table read larger than the surrounding text. It now matches the rest of the document at 10pt.
+- **RTF round-trip dropped astral characters** (emoji and other non-BMP text): the writer emits a
+  surrogate pair as two `\u` units, but the reader decoded each via `ConvertFromUtf32`, which throws on a
+  lone surrogate and silently dropped the character. The reader now appends each `\u` as a raw UTF-16
+  code unit so the halves recombine.
+- **Inline-image serialization** no longer risks a `NaN` width/height reaching `System.Text.Json` (which
+  rejects raw `NaN`): inline images now go through the same `NaN → null` guard as block images and read
+  back at the default size.
+- **Accessibility `IValueProvider.SetValue`** preserved no line breaks — a multi-line value collapsed
+  into one paragraph. Each line is now its own paragraph, round-tripping with `GetPlainText`.
+- **`Ctrl+Delete`/`Ctrl+Backspace` (delete word)** no longer pushes an empty undo checkpoint when there
+  is nothing to delete at a paragraph boundary.
+
+### Performance
+- The blinking text caret no longer allocates a `Pen` every repaint (cached, rebuilt only when
+  `CaretBrush` changes), matching the other render pens.
+- Drawing the selection highlight finds both selection endpoints in a single pass instead of two
+  `IndexOf` scans of the paragraph list (runs every render frame a selection exists — once per visible
+  page in page view).
+- `GetStatus` (status-bar char/word/line/column, recomputed on every caret move) walks the inlines
+  directly instead of building a per-paragraph string, removing the per-keystroke string allocations on
+  large documents.
+- Cursor hover detects the table-select border in one document walk instead of two (it previously called
+  `GetBlockAtPoint` and then re-walked via `GetTableRect`).
+
 ## [0.7.0] - 2026-06-18
 
 The first release to **drop the pre-release suffix** (alpha/beta) — on the 0.x line the API may still
@@ -427,7 +493,9 @@ editing on Windows; the public API may still change before `1.0`.
 - Word images exported as VML (not standard `<img>`) are not imported.
 - Precise pagination / PDF printing is not implemented (browser print fallback only).
 
-[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.6.0-beta...HEAD
+[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.6.0-beta...v0.7.0
 [0.6.0-beta]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.5.0-alpha...v0.6.0-beta
 [0.5.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.4.0-alpha...v0.5.0-alpha
 [0.4.0-alpha]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.3.0-alpha...v0.4.0-alpha

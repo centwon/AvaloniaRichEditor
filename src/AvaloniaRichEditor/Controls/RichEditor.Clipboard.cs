@@ -169,7 +169,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         {
             var parts = lines[r].Split('\t');
             for (int c = 0; c < cols; c++)
-                ((Run)tb.Cells[r][c].Inlines[0]).Text = c < parts.Length ? parts[c] : "";
+                ((Run)tb.Cells[r][c].Para.Inlines[0]).Text = c < parts.Length ? parts[c] : "";
         }
         InsertBlockAtCaret(tb);
     }

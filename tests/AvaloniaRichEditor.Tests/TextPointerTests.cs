@@ -10,8 +10,8 @@ public class TextPointerTests
     private static TableBlock Table2x2(out Paragraph c00, out Paragraph c01, out Paragraph c10, out Paragraph c11)
     {
         var tb = new TableBlock(2, 2);
-        c00 = tb.Cells[0][0]; c01 = tb.Cells[0][1];
-        c10 = tb.Cells[1][0]; c11 = tb.Cells[1][1];
+        c00 = tb.Cells[0][0].Para; c01 = tb.Cells[0][1].Para;
+        c10 = tb.Cells[1][0].Para; c11 = tb.Cells[1][1].Para;
         return tb;
     }
 
@@ -25,7 +25,7 @@ public class TextPointerTests
             else if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        tb.Cells[r][c].Parent = tb;
+                        tb.Cells[r][c].Para.Parent = tb;
         }
     }
 

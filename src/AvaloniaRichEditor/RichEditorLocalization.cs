@@ -118,6 +118,7 @@ public static class RichEditorLocalization
             ["MergeCells"] = "Merge Cells",
             ["UnmergeCells"] = "Unmerge Cells",
             ["DeleteTable"] = "Delete Table",
+            ["TableOps"] = "Table",
             // Dialogs
             ["OK"] = "OK",
             ["Cancel"] = "Cancel",
@@ -246,6 +247,7 @@ public static class RichEditorLocalization
             ["MergeCells"] = "셀 병합",
             ["UnmergeCells"] = "셀 병합 해제",
             ["DeleteTable"] = "표 삭제",
+            ["TableOps"] = "표",
             // Dialogs
             ["OK"] = "확인",
             ["Cancel"] = "취소",

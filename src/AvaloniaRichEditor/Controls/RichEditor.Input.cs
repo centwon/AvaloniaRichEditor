@@ -127,6 +127,19 @@ public partial class RichEditor
                 }
             }
 
+        // Clicking a block image inside a table cell (P4-2b) selects it (blue border + resize handle),
+        // mirroring top-level block images — which GetBlockAtPoint can't reach inside a cell.
+        foreach (var ci in _cellImageRects)
+            if (ci.rect.Contains(point))
+            {
+                _selectedBlock = ci.img;
+                _caretBlock = null;
+                CollapseSelectionToCaret();
+                ResetCaretBlink();
+                InvalidateVisual();
+                return;
+            }
+
         // Click on a hyperlink opens it in the default browser instead of placing the caret.
         var linkRun = GetLinkRunAtPoint(point);
         if (linkRun != null && !string.IsNullOrEmpty(linkRun.NavigateUri))
@@ -294,19 +307,27 @@ public partial class RichEditor
 
     private void WordDelete(bool forward)
     {
-        if (Document != null) PushUndo();
-        if (_selectionStart != _selectionEnd) { DeleteSelection(); InvalidateVisual(); ResetCaretBlink(); return; }
+        // Push the undo checkpoint only when an edit will actually happen — at a paragraph boundary in
+        // the delete direction (WordDelete never crosses paragraphs) there's nothing to delete, and an
+        // unconditional PushUndo left a stray no-op step on the undo stack.
+        if (_selectionStart != _selectionEnd)
+        {
+            if (Document != null) PushUndo();
+            DeleteSelection(); InvalidateVisual(); ResetCaretBlink(); return;
+        }
         var p = _caretPosition.Paragraph;
         if (p != null)
         {
             int off = _caretPosition.Offset;
             if (forward && off < GetParagraphLength(p))
             {
+                if (Document != null) PushUndo();
                 int no = NextWord(BuildPlain(p), off);
                 new TextRange(new TextPointer(p, off), new TextPointer(p, no)).Delete();
             }
             else if (!forward && off > 0)
             {
+                if (Document != null) PushUndo();
                 int no = PrevWord(BuildPlain(p), off);
                 new TextRange(new TextPointer(p, no), new TextPointer(p, off)).Delete();
                 _caretPosition = new TextPointer(p, no);
@@ -403,7 +424,17 @@ public partial class RichEditor
                 // Outer-right edge: grow/shrink this column, changing the table's total width.
                 while (_resizingTable.ColumnWidths.Count <= _resizingColumnIndex)
                     _resizingTable.ColumnWidths.Add(100);
-                _resizingTable.ColumnWidths[_resizingColumnIndex] = Math.Max(minW, _initialColumnWidth + diff);
+                double newLast = Math.Max(minW, _initialColumnWidth + diff);
+                // A nested table is bound to its cell: cap the total width at the cell's content width so
+                // growing the last column can't overflow (shrinking stays free, down to minW).
+                if (EnclosingCellInnerWidth(_resizingTable) is { } innerW)
+                {
+                    double otherSum = 0;
+                    for (int k = 0; k < _resizingTable.ColumnWidths.Count; k++)
+                        if (k != _resizingColumnIndex) otherSum += _resizingTable.ColumnWidths[k];
+                    newLast = Math.Min(newLast, Math.Max(minW, innerW - otherSum));
+                }
+                _resizingTable.ColumnWidths[_resizingColumnIndex] = newLast;
             }
             else
             {
@@ -504,8 +535,9 @@ public partial class RichEditor
         try
         {
             // Outer left/top table border selects the whole table on click -> a move cursor signals that
-            // the border is grabbable (vs the I-beam over cell text).
-            if (GetBlockAtPoint(point) is TableBlock ht && IsOnTableLeftOrTopBorder(ht, point))
+            // the border is grabbable (vs the I-beam over cell text). One walk (was GetBlockAtPoint +
+            // IsOnTableLeftOrTopBorder, which re-walked the document).
+            if (TableLeftOrTopBorderAtPoint(point) != null)
             {
                 Cursor = MoveCursor;
                 return;
@@ -691,8 +723,9 @@ public partial class RichEditor
                     _ = CopyImageToClipboardAsync(xb.RawBytes, xb.Image, inline: false, xb.Width, xb.Height);
                     PushUndo();
                     _selectedBlock = null; _caretBlock = null;
-                    Document.Blocks.Remove(xb);
-                    NormalizeBlocks(Document);
+                    RemoveBlockAnywhere(xb);
+                    UpdateParents(Document);
+                    InvalidateMeasure();
                     ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
                 }
                 if (_selectedInline is { } xi)
@@ -776,11 +809,13 @@ public partial class RichEditor
                 _caretBlock = lb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            // Inside a table: ← at the very start of the first cell steps onto the table's "before"
-            // caret (symmetric with → entering the first cell from that caret).
+            // Inside a top-level table: ← at the very start of the first cell steps onto the table's
+            // "before" caret (symmetric with → entering the first cell from that caret). For a nested
+            // table (Parent is a cell, not the document) the block caret doesn't apply, so fall through
+            // to MoveCaretLeft, which crosses out via the recursive paragraph order.
             if (!shift && _caretPosition.Offset == 0 && _caretPosition.Paragraph != null
-                && FindCell(_caretPosition.Paragraph) is { } lc
-                && ReferenceEquals(lc.tb.LogicalCells().First().cell, _caretPosition.Paragraph))
+                && FindCell(_caretPosition.Paragraph) is { } lc && lc.tb.Parent is FlowDocument
+                && ReferenceEquals(lc.tb.LogicalCells().First().cell.Para, _caretPosition.Paragraph))
             {
                 _caretBlock = lc.tb; _caretBlockAfter = false;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
@@ -797,12 +832,12 @@ public partial class RichEditor
                 _caretBlock = rb; _caretBlockAfter = false;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            // Inside a table: → at the very end of the last cell steps onto the table's "after"
-            // caret (mirrors ← from the following paragraph; it used to skip straight past it).
+            // Inside a top-level table: → at the very end of the last cell steps onto the table's "after"
+            // caret. A nested table falls through to MoveCaretRight (crosses out via paragraph order).
             if (!shift && _caretPosition.Paragraph != null
                 && _caretPosition.Offset >= GetParagraphLength(_caretPosition.Paragraph)
-                && FindCell(_caretPosition.Paragraph) is { } rc
-                && ReferenceEquals(rc.tb.LogicalCells().Last().cell, _caretPosition.Paragraph))
+                && FindCell(_caretPosition.Paragraph) is { } rc && rc.tb.Parent is FlowDocument
+                && ReferenceEquals(LastParaOf(rc.tb.LogicalCells().Last().cell), _caretPosition.Paragraph))
             {
                 _caretBlock = rc.tb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
@@ -820,8 +855,18 @@ public partial class RichEditor
             {
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a table cell upward from its first row -> the table's "before" caret.
-            if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0)
+            // P3: in a multi-paragraph cell, ↑ from a non-first paragraph steps into the paragraph above
+            // within the same cell (block-aware hit-test lands there) before any "leave the cell" logic.
+            if (_caretPosition.Paragraph?.Parent is TableCell ucell && !ReferenceEquals(ucell.Para, _caretPosition.Paragraph))
+            {
+                double tyc = Math.Max(0, _lastCaretPoint.Y - Math.Max(8, _lastCaretHeight) - 2);
+                _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
+                ApplyCaretSelection(shift); e.Handled = true; return;
+            }
+            // Leaving a top-level table cell upward from its first row -> the table's "before" caret. A
+            // nested table's first row falls through to a geometric step into the row/cell above.
+            if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0
+                && fc.tb.Parent is FlowDocument)
             {
                 _caretBlock = fc.tb; _caretBlockAfter = false;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
@@ -847,8 +892,18 @@ public partial class RichEditor
             {
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a table cell downward from its last row -> the table's "after" caret.
+            // P3: in a multi-paragraph cell, ↓ from a non-last paragraph steps into the paragraph below
+            // within the same cell before any "leave the cell" logic.
+            if (_caretPosition.Paragraph?.Parent is TableCell dcell && !ReferenceEquals(LastParaOf(dcell), _caretPosition.Paragraph))
+            {
+                double tyc = _lastCaretPoint.Y + Math.Max(8, _lastCaretHeight) + 2;
+                _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
+                ApplyCaretSelection(shift); e.Handled = true; return;
+            }
+            // Leaving a top-level table cell downward from its last row -> the table's "after" caret. A
+            // nested table's last row falls through to a geometric step into the row/cell below.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc
+                && fc.tb.Parent is FlowDocument
                 && fc.r + fc.tb.SpanOf(fc.r, fc.c).rs - 1 >= fc.tb.Rows - 1)
             {
                 _caretBlock = fc.tb; _caretBlockAfter = true;
@@ -877,10 +932,11 @@ public partial class RichEditor
         }
         else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedBlock != null && Document != null)
         {
-            // A block image is selected -> delete it.
-            Document.Blocks.Remove(_selectedBlock);
+            // A block image/table is selected -> delete it (from the document or its enclosing cell).
+            RemoveBlockAnywhere(_selectedBlock);
             _selectedBlock = null;
-            NormalizeBlocks(Document);
+            UpdateParents(Document);
+            InvalidateMeasure();
             ResetCaretBlink(); e.Handled = true;
             return;
         }
@@ -916,6 +972,30 @@ public partial class RichEditor
                     TextRange.CoalesceRuns(prev); // the joined boundary runs may share formatting
                 }
             }
+            else if (_caretPosition.Paragraph?.Parent is TableCell btc && Document != null)
+            {
+                // P3: Backspace at the start of a cell's non-first paragraph merges it into the previous
+                // paragraph within the same cell (cells host sibling paragraphs now). If the block above is
+                // an image/table/divider, delete that block instead (mirrors the top-level branch — and is
+                // the way to remove a nested table). The first paragraph of a cell is a no-op (← leaves it).
+                int bi = btc.Blocks.IndexOf(_caretPosition.Paragraph);
+                if (bi > 0 && btc.Blocks[bi - 1] is Paragraph cprev)
+                {
+                    int prevLen = GetParagraphLength(cprev);
+                    foreach (var inline in _caretPosition.Paragraph.Inlines) { inline.Parent = cprev; cprev.Inlines.Add(inline); }
+                    btc.Blocks.Remove(_caretPosition.Paragraph);
+                    _caretPosition.Paragraph = cprev;
+                    _caretPosition.Offset = prevLen;
+                    TextRange.CoalesceRuns(cprev);
+                    InvalidateMeasure(); // the cell shrank a paragraph -> row height reflows
+                }
+                else if (bi > 0 && btc.Blocks[bi - 1] is ImageBlock or TableBlock or DividerBlock)
+                {
+                    btc.Blocks.RemoveAt(bi - 1);
+                    UpdateParents(Document);
+                    InvalidateMeasure();
+                }
+            }
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
             ResetCaretBlink(); e.Handled = true;
@@ -944,6 +1024,26 @@ public partial class RichEditor
                     }
                     Document.Blocks.Remove(next);
                     TextRange.CoalesceRuns(_caretPosition.Paragraph); // joined boundary runs may share formatting
+                }
+            }
+            else if (_caretPosition.Paragraph?.Parent is TableCell dtc && Document != null)
+            {
+                // P3: Delete at the end of a cell's non-last paragraph merges the next paragraph (within
+                // the same cell) into it. If the block below is an image/table/divider, delete that block
+                // instead (mirrors the top-level branch). The last paragraph of a cell is a no-op.
+                int di = dtc.Blocks.IndexOf(_caretPosition.Paragraph);
+                if (di >= 0 && di + 1 < dtc.Blocks.Count && dtc.Blocks[di + 1] is Paragraph cnext)
+                {
+                    foreach (var inline in cnext.Inlines) { inline.Parent = _caretPosition.Paragraph; _caretPosition.Paragraph.Inlines.Add(inline); }
+                    dtc.Blocks.Remove(cnext);
+                    TextRange.CoalesceRuns(_caretPosition.Paragraph);
+                    InvalidateMeasure();
+                }
+                else if (di >= 0 && di + 1 < dtc.Blocks.Count && dtc.Blocks[di + 1] is ImageBlock or TableBlock or DividerBlock)
+                {
+                    dtc.Blocks.RemoveAt(di + 1);
+                    UpdateParents(Document);
+                    InvalidateMeasure();
                 }
             }
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -978,9 +1078,11 @@ public partial class RichEditor
                 }
                 var p = _caretPosition.Paragraph;
                 // Enter splits the paragraph at the caret into a new paragraph. On an empty list item it
-                // exits the list instead. Inside a table cell (not a top-level block) it keeps "\n in the
-                // run" since a cell can't host sibling paragraphs.
-                if (Document != null && Document.Blocks.Contains(p))
+                // exits the list instead. A table cell now hosts sibling paragraphs (P3), so a cell
+                // paragraph splits within the cell's block list — the table grows to fit (InvalidateMeasure).
+                bool topLevel = Document != null && Document.Blocks.Contains(p);
+                bool inCell = p?.Parent is TableCell;
+                if (Document != null && (topLevel || inCell))
                 {
                     PushUndo();
                     if (_selectionStart != _selectionEnd) DeleteSelection();
@@ -990,6 +1092,7 @@ public partial class RichEditor
                     else
                         SplitParagraphAtCaret();
                     UpdateParents(Document);
+                    if (inCell) InvalidateMeasure(); // a taller cell reflows the table's row height
                     ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
                 }
                 TryInsertTextCore(_caretPosition.Paragraph, "\n", _caretPosition.Offset);
@@ -1098,7 +1201,7 @@ public partial class RichEditor
             if (!_caretBlockAfter && !vertical)
             {
                 if (blk is TableBlock tb && tb.LogicalCells().Any())
-                { _caretBlock = null; var c = tb.LogicalCells().First().cell; SetCaretCollapsed(c, 0); }
+                { _caretBlock = null; var c = tb.LogicalCells().First().cell.Para; SetCaretCollapsed(c, 0); }
                 else _caretBlockAfter = true; // image: before -> after
             }
             else { _caretBlock = null; MoveCaretToBlockNeighbor(blk, before: false); }
@@ -1108,7 +1211,7 @@ public partial class RichEditor
             if (_caretBlockAfter && !vertical)
             {
                 if (blk is TableBlock tb && tb.LogicalCells().Any())
-                { _caretBlock = null; var c = tb.LogicalCells().Last().cell; SetCaretCollapsed(c, GetParagraphLength(c)); }
+                { _caretBlock = null; var c = LastParaOf(tb.LogicalCells().Last().cell); SetCaretCollapsed(c, GetParagraphLength(c)); }
                 else _caretBlockAfter = false; // image: after -> before
             }
             else { _caretBlock = null; MoveCaretToBlockNeighbor(blk, before: true); }
@@ -1304,40 +1407,34 @@ public partial class RichEditor
         }
     }
 
+    // A cell's last paragraph (P3: the "end" of a multi-paragraph cell, where the after-table caret
+    // and ← from the following paragraph land). Falls back to .Para if the last block isn't a paragraph.
+    private static Paragraph LastParaOf(TableCell cell)
+        => cell.Blocks.OfType<Paragraph>().LastOrDefault() ?? cell.Para;
+
+    // Document paragraph order: top-level paragraphs and, for each table, every paragraph of every
+    // logical cell (P3: cells can hold multiple paragraphs). Drives ←/→ across paragraph boundaries.
+    private System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInOrder()
+        => Document == null ? System.Linq.Enumerable.Empty<Paragraph>() : ParagraphsInBlocks(Document.Blocks);
+
     private Paragraph? GetNextParagraph(Paragraph current)
     {
-        if (Document == null) return null;
         bool found = false;
-        foreach (var block in Document.Blocks)
+        foreach (var p in ParagraphsInOrder())
         {
-            if (block is Paragraph p) { if (found) return p; if (p == current) found = true; }
-            else if (block is TableBlock tb)
-            {
-                foreach (var (_, _, cell) in tb.LogicalCells())
-                {
-                    if (found) return cell;
-                    if (cell == current) found = true;
-                }
-            }
+            if (found) return p;
+            if (p == current) found = true;
         }
         return null;
     }
 
     private Paragraph? GetPreviousParagraph(Paragraph current)
     {
-        if (Document == null) return null;
         Paragraph? prev = null;
-        foreach (var block in Document.Blocks)
+        foreach (var p in ParagraphsInOrder())
         {
-            if (block is Paragraph p) { if (p == current) return prev; prev = p; }
-            else if (block is TableBlock tb)
-            {
-                foreach (var (_, _, cell) in tb.LogicalCells())
-                {
-                    if (cell == current) return prev;
-                    prev = cell;
-                }
-            }
+            if (p == current) return prev;
+            prev = p;
         }
         return null;
     }
