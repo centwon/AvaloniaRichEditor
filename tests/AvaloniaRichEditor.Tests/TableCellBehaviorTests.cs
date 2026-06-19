@@ -261,6 +261,124 @@ public class TableCellBehaviorTests
         Assert.True(tallH > shortH, $"wrapped cell ({tallH}) should be taller than single-char cell ({shortH})");
     }
 
+    // ---- P4-2b: nested tables (a TableBlock inside a cell) -----------------
+
+    // Outer 1x1 table whose only cell holds a nested 1x1 table containing `text`.
+    private static FlowDocument NestedTableDoc(string text)
+    {
+        var doc = new FlowDocument();
+        var outer = new TableBlock(1, 1);
+        var inner = new TableBlock(1, 1);
+        SetCellText(inner, 0, 0, text);
+        outer.Cells[0][0].Blocks.Clear();
+        outer.Cells[0][0].Blocks.Add(inner);
+        doc.Blocks.Add(outer);
+        return doc;
+    }
+
+    [Fact]
+    public void Json_RoundTrip_PreservesNestedTable()
+    {
+        var doc2 = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(NestedTableDoc("deep")));
+        var outer = doc2.Blocks.OfType<TableBlock>().Single();
+        var inner = Assert.IsType<TableBlock>(outer.Cells[0][0].Blocks.Single());
+        Assert.Equal("deep", inner.Cells[0][0].Para.Text());
+    }
+
+    [AvaloniaFact]
+    public void NestedTable_WiresParentChainToInnerCell()
+    {
+        var doc = NestedTableDoc("deep");
+        var ed = new RichEditor { Document = doc };
+        var outer = doc.Blocks.OfType<TableBlock>().Single();
+        var inner = (TableBlock)outer.Cells[0][0].Blocks.Single();
+        var deepPara = inner.Cells[0][0].Para;
+
+        // Run -> Paragraph -> inner TableCell -> inner TableBlock -> outer TableCell -> outer TableBlock.
+        Assert.Same(inner.Cells[0][0], deepPara.Parent);
+        Assert.Same(inner, ((TableCell)deepPara.Parent!).Parent);
+    }
+
+    [AvaloniaFact]
+    public void NestedTable_ContributesToOuterTableHeight()
+    {
+        RichEditor BuildNested(int innerRows)
+        {
+            var doc = new FlowDocument();
+            var outer = new TableBlock(1, 1);
+            var inner = new TableBlock(innerRows, 1);
+            for (int r = 0; r < innerRows; r++) SetCellText(inner, r, 0, "row");
+            outer.Cells[0][0].Blocks.Clear();
+            outer.Cells[0][0].Blocks.Add(inner);
+            doc.Blocks.Add(outer);
+            return new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
+        }
+
+        var smallEd = BuildNested(1);
+        Realize(smallEd);
+        var bigEd = BuildNested(5);
+        Realize(bigEd);
+
+        Assert.True(bigEd.DesiredSize.Height > smallEd.DesiredSize.Height,
+            $"outer table with a 5-row nested table ({bigEd.DesiredSize.Height}) should be taller than a 1-row one ({smallEd.DesiredSize.Height})");
+    }
+
+    [AvaloniaFact]
+    public void InsertTable_WithCaretInCell_NestsTableInsideCell()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>x</td></tr></table>");
+        var outer = ed.Document!.Blocks.OfType<TableBlock>().Single();
+        PlaceCaret(ed, outer.Cells[0][0].Para, 1);
+
+        ed.InsertTable(2, 2);
+
+        // The new table nested inside the cell (not as a top-level sibling).
+        Assert.Single(ed.Document!.Blocks.OfType<TableBlock>()); // still one top-level table
+        Assert.Contains(outer.Cells[0][0].Blocks, b => b is TableBlock nt && nt.Rows == 2 && nt.Columns == 2);
+    }
+
+    [AvaloniaFact]
+    public void InsertTable_InCell_SizesColumnsToFitCell()
+    {
+        var doc = new FlowDocument();
+        var outer = new TableBlock(1, 1);
+        outer.ColumnWidths[0] = 200;
+        doc.Blocks.Add(outer);
+        var ed = new RichEditor { Document = doc };
+        PlaceCaret(ed, outer.Cells[0][0].Para, 0);
+
+        ed.InsertTable(1, 2); // a 2-column table nested in the 200px cell
+
+        var nested = outer.Cells[0][0].Blocks.OfType<TableBlock>().Single();
+        double total = nested.ColumnWidths.Sum();
+        Assert.True(total <= 200 - 10 + 0.01, $"nested table width {total} should fit the cell content width (190)");
+    }
+
+    [AvaloniaFact]
+    public void Left_FromNestedTableStart_CrossesOutOfNestedTable()
+    {
+        // Outer cell holds a leading paragraph then a nested table; ← from the nested table's first cell
+        // start must leave the nested table (no block caret trap), landing in the leading paragraph.
+        var doc = new FlowDocument();
+        var outer = new TableBlock(1, 1);
+        var lead = Para(new Run { Text = "lead" });
+        var inner = new TableBlock(1, 1);
+        SetCellText(inner, 0, 0, "deep");
+        outer.Cells[0][0].Blocks.Clear();
+        outer.Cells[0][0].Blocks.Add(lead);
+        outer.Cells[0][0].Blocks.Add(inner);
+        doc.Blocks.Add(outer);
+        var ed = new RichEditor { Document = doc };
+
+        var deep = inner.Cells[0][0].Para;
+        PlaceCaret(ed, deep, 0);
+        Press(ed, Key.Left);
+
+        Assert.NotSame(deep, CaretCell(ed));        // moved off the nested paragraph
+        Assert.Same(lead, CaretCell(ed));           // into the leading paragraph of the outer cell
+    }
+
     private static void SetCellText(TableBlock tb, int r, int c, string text)
     {
         tb.Cells[r][c].Para.Inlines.Clear();

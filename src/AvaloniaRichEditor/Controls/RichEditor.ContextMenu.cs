@@ -363,11 +363,9 @@ public partial class RichEditor
         items.Add(Mi(Loc("Undo"), DoUndo, icon: RichEditorIcon.Undo));
         items.Add(Mi(Loc("Redo"), DoRedo, icon: RichEditorIcon.Redo));
         // Block-insert items appear only when the corresponding feature flag is enabled (N3.5). Inside a
-        // cell the table-insert picker is omitted (nested tables aren't supported yet); image/divider do
-        // insert into the cell (P4-2a).
-        bool allowTableInsert = AllowTables && cellTable == null;
+        // cell, image/divider/table all insert into the cell (P4-2a/P4-2b nested tables).
         if (AllowTables || AllowImages) items.Add(new Separator());
-        if (allowTableInsert) items.Add(BuildInsertTableMenu());
+        if (AllowTables) items.Add(BuildInsertTableMenu());
         if (AllowImages) items.Add(Mi(Loc("InsertImage"), () => { _ = InsertImageFromFileAsync(); }, icon: RichEditorIcon.InsertImage));
         if (AllowTables || AllowImages) items.Add(Mi(Loc("InsertDivider"), InsertDivider, icon: RichEditorIcon.InsertDivider));
         // Inside a cell: row/column/merge/delete-table operations live in a "Table" submenu.

@@ -13,6 +13,42 @@ public partial class RichEditor
 {
     // Returns the Run directly under the point if the point lands on rendered text, else null.
     // Used for hyperlink hover/click detection.
+    // Recursive link hit-test inside a cell's block list (mirror of HitTestBlockList), descending into
+    // nested tables (P4-2b). Returns the hyperlink Run under the point, or null.
+    private Run? LinkRunInBlockList(System.Collections.Generic.IList<Block> blocks, double ox, double oy, double innerW, Point p)
+    {
+        double by = 0;
+        foreach (var cb in blocks)
+        {
+            double blkTop = oy + by;
+            if (cb is Paragraph bp)
+            {
+                var bl = BuildTextLayout(bp, innerW);
+                if (p.Y <= blkTop + bl.Height)
+                {
+                    var hit = bl.HitTestPoint(new Point(p.X - ox, p.Y - blkTop));
+                    return hit.IsInside ? RunAtOffset(bp, hit.TextPosition) : null;
+                }
+                by += bl.Height;
+            }
+            else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
+            else if (cb is DividerBlock) { by += DividerHeight; }
+            else if (cb is TableBlock nt)
+            {
+                var tl = LayoutTable(nt, ox, blkTop);
+                if (p.Y <= blkTop + tl.TotalHeight)
+                {
+                    foreach (var (r, c, rect) in tl.AnchorRects)
+                        if (rect.Contains(p))
+                            return LinkRunInBlockList(nt.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p);
+                    return null;
+                }
+                by += tl.TotalHeight;
+            }
+        }
+        return null;
+    }
+
     private Run? GetLinkRunAtPoint(Point p)
     {
         if (Document == null) return null;
@@ -27,28 +63,7 @@ public partial class RichEditor
             {
                 foreach (var (r, c, rect) in t.AnchorRects)
                     if (rect.Contains(p))
-                    {
-                        // Descend into the cell's stacked block list (P3): find the paragraph whose
-                        // vertical band contains the point, mirroring GetPositionFromPoint.
-                        double innerW = Math.Max(10, rect.Width - 10), ox = rect.X + 5, oy = rect.Y + 5, by = 0;
-                        foreach (var cb in tb.Cells[r][c].Blocks)
-                        {
-                            double blkTop = oy + by;
-                            if (cb is Paragraph bp)
-                            {
-                                var bl = BuildTextLayout(bp, innerW);
-                                if (p.Y <= blkTop + bl.Height)
-                                {
-                                    var hit = bl.HitTestPoint(new Point(p.X - ox, p.Y - blkTop));
-                                    return hit.IsInside ? RunAtOffset(bp, hit.TextPosition) : null;
-                                }
-                                by += bl.Height;
-                            }
-                            else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
-                            else if (cb is DividerBlock) { by += DividerHeight; }
-                        }
-                        return null;
-                    }
+                        return LinkRunInBlockList(tb.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p);
             }
             else if (block is Paragraph paragraph && ft != null && p.Y >= top && p.Y <= top + h)
             {
@@ -60,11 +75,16 @@ public partial class RichEditor
         return null;
     }
 
+    // True when paragraph p lives anywhere inside table tb, including inside a nested table (P4-2b).
     private static bool IsCellOf(TableBlock tb, Paragraph p)
     {
         for (int r = 0; r < tb.Rows; r++)
             for (int c = 0; c < tb.Columns; c++)
-                if (tb.Cells[r][c].Blocks.Contains(p)) return true;
+                foreach (var b in tb.Cells[r][c].Blocks)
+                {
+                    if (ReferenceEquals(b, p)) return true;
+                    if (b is TableBlock nt && IsCellOf(nt, p)) return true;
+                }
         return false;
     }
 
@@ -105,7 +125,13 @@ public partial class RichEditor
                 case DividerBlock:
                     h += DividerHeight;
                     break;
-                // P4-2b: nested tables inside cells extend this branch.
+                case TableBlock nt:
+                    // P4-2b: a nested table. Its total height is independent of the absolute startX/top
+                    // (row heights depend only on column widths, which telescope), so measure at (0,0).
+                    // LayoutTable -> MeasureCellContentHeight is already mutually recursive, so this
+                    // closes the recursion for arbitrarily deep nesting.
+                    h += LayoutTable(nt, 0, 0).TotalHeight;
+                    break;
             }
         }
         return h;
@@ -378,6 +404,46 @@ public partial class RichEditor
         return hit.TextPosition + (hit.IsTrailing ? 1 : 0);
     }
 
+    // Recursive hit-test of a block list laid out at (ox,oy) of width innerW (a cell content box, mirror
+    // of DrawCellBlockList's advance). Returns the caret position the point lands in; a point below all
+    // blocks snaps to the last paragraph. Descends into nested tables (P4-2b). Null only when the list
+    // holds no paragraph anywhere (caller falls back).
+    private TextPointer? HitTestBlockList(System.Collections.Generic.IList<Block> blocks, double ox, double oy, double innerW, Point p)
+    {
+        double by = 0;
+        Paragraph? lastPara = null;
+        Avalonia.Media.TextFormatting.TextLayout? lastLayout = null;
+        double lastTop = 0;
+        foreach (var cb in blocks)
+        {
+            double blkTop = oy + by;
+            if (cb is Paragraph bp)
+            {
+                var bl = BuildTextLayout(bp, innerW);
+                lastPara = bp; lastLayout = bl; lastTop = blkTop;
+                if (p.Y <= blkTop + bl.Height)
+                    return new TextPointer(bp, HitTestIndex(bl, new Point(p.X - ox, p.Y - blkTop)));
+                by += bl.Height;
+            }
+            else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
+            else if (cb is DividerBlock) { by += DividerHeight; }
+            else if (cb is TableBlock nt)
+            {
+                var tl = LayoutTable(nt, ox, blkTop);
+                if (p.Y <= blkTop + tl.TotalHeight)
+                    foreach (var (r, c, rect) in tl.AnchorRects)
+                        if (rect.Contains(p) &&
+                            HitTestBlockList(nt.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p) is { } nh)
+                            return nh;
+                by += tl.TotalHeight;
+            }
+        }
+        // Below all blocks (or in a nested table's border gap): snap to the last paragraph seen.
+        return lastPara != null && lastLayout != null
+            ? new TextPointer(lastPara, HitTestIndex(lastLayout, new Point(p.X - ox, p.Y - lastTop)))
+            : null;
+    }
+
     private TextPointer GetPositionFromPoint(Point p)
     {
         if (Document == null || Document.Blocks.Count == 0)
@@ -405,30 +471,11 @@ public partial class RichEditor
                     bool xInside = (p.X >= rect.X && p.X <= rect.Right) || (lastCol && p.X > rect.Right);
                     if (xInside && p.Y >= rect.Y && p.Y <= rect.Bottom)
                     {
-                        // Descend into the cell's stacked block list (P3): find the paragraph whose
-                        // vertical band contains the point; a point below them all falls to the last.
-                        double innerW = Math.Max(10, rect.Width - 10), ox = rect.X + 5, oy = rect.Y + 5, by = 0;
-                        Paragraph? hitP = null;
-                        Avalonia.Media.TextFormatting.TextLayout? hitL = null;
-                        double hitTop = 0;
-                        foreach (var cb in tcell.Blocks)
-                        {
-                            double blkTop = oy + by;
-                            if (cb is Paragraph bp)
-                            {
-                                var bl = BuildTextLayout(bp, innerW);
-                                hitP = bp; hitL = bl; hitTop = blkTop;
-                                if (p.Y <= blkTop + bl.Height) break;
-                                by += bl.Height;
-                            }
-                            else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
-                            else if (cb is DividerBlock) { by += DividerHeight; }
-                        }
-                        if (hitP != null && hitL != null)
-                        {
-                            int idx = HitTestIndex(hitL, new Point(p.X - ox, p.Y - hitTop));
-                            return new TextPointer(hitP, idx);
-                        }
+                        // Descend into the cell's stacked block list (P3), recursing through nested tables
+                        // (P4-2b), to the paragraph the point lands in (or the nearest one).
+                        double innerW = Math.Max(10, rect.Width - 10);
+                        if (HitTestBlockList(tcell.Blocks, rect.X + 5, rect.Y + 5, innerW, p) is { } hit)
+                            return hit;
                     }
                 }
                 // Outside any cell: remember the nearest anchor (by vertical distance) as a fallback.

@@ -347,62 +347,12 @@ public partial class RichEditor
                         context.FillRectangle(SelectionBrush, rect);
                     bool cellSelected = inBlock;
 
-                    // Draw the cell's block list top-to-bottom (one paragraph per cell through P1/P2; P3
-                    // splits cells into multiple paragraphs). Each block's chrome — text highlight, caret,
-                    // preedit, inline images — is keyed to the paragraph that actually holds the caret.
-                    // (P4: nested tables / block images / dividers in cells extend this loop.)
-                    double ox = rect.X + 5, oy = rect.Y + 5, by = 0;
-                    foreach (var cb2 in cell.Blocks)
-                    {
-                        double blkY = oy + by;
-                        if (cb2 is Paragraph para)
-                        {
-                            bool blkPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
-                            var layout = blkPreedit
-                                ? BuildTextLayout(para, innerW, _caretPosition!.Offset, _preeditText)
-                                : BuildTextLayout(para, innerW);
-
-                            if (!inBlock && cellBlock == null && selectedParagraphs?.Contains(para) == true)
-                            {
-                                int cellLen = GetParagraphLength(para);
-                                int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
-                                int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                                if (hlEnd > hlStart)
-                                    DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
-                            }
-
-                            if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
-                            {
-                                int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
-                                var cr = layout.HitTestTextPosition(caretDisp);
-                                cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
-                                double th = CaretTextHeight(para, _caretPosition.Offset);
-                                if (cr.Height > 0 && th > cr.Height) th = cr.Height;
-                                caretPoint = new Point(ox + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
-                                caretHeight = th;
-                                _lastCaretPoint = caretPoint.Value;
-                            }
-
-                            layout.Draw(context, new Point(ox, blkY));
-                            if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
-                            by += layout.Height;
-                        }
-                        else if (cb2 is ImageBlock cimg)
-                        {
-                            // P4-2a: a block image inside a cell. Draws scaled to fit the cell width; no
-                            // resize handle / selection chrome in cells yet (interaction is follow-up).
-                            var (iw, ih) = CellImageSize(cimg, innerW);
-                            if (cimg.Image is { } bmp)
-                                context.DrawImage(bmp, new Rect(ox, blkY, iw, ih));
-                            by += ih;
-                        }
-                        else if (cb2 is DividerBlock)
-                        {
-                            double y = blkY + DividerHeight / 2;
-                            context.DrawLine(GrayBorderPen, new Point(ox, y), new Point(ox + innerW, y));
-                            by += DividerHeight;
-                        }
-                    }
+                    // Draw the cell's block list top-to-bottom via the recursive primitive (handles
+                    // paragraphs, block images, dividers and nested tables — P4-2b). Chrome (highlight,
+                    // caret, preedit, inline images) is keyed to the paragraph that holds the caret.
+                    DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, innerW, chrome,
+                        cellSelected, cellBlock != null, selectedParagraphs, selStart, selEnd,
+                        ref caretPoint, ref caretHeight);
                 }
 
                 // Resize handles live on the physical grid lines (independent of merges). Internal column
@@ -579,6 +529,98 @@ public partial class RichEditor
         }
 
         return (caretPoint, caretHeight, blockCaretRect);
+    }
+
+    // Recursive primitive: draws a block list top-to-bottom inside the box at (ox,oy) of width innerW
+    // (a table cell's content box). Handles paragraphs, block images, dividers and nested tables (the
+    // last via DrawNestedTable, which calls back here per nested cell — arbitrary nesting depth). Caret/
+    // selection/preedit chrome is keyed to the paragraph that holds the caret; caretPoint/caretHeight are
+    // threaded by ref so a caret in a (possibly deeply nested) cell is reported to the render pass.
+    // cellSelected = the containing cell is filled as a block (Tab/drag select) -> no caret/highlight;
+    // cellRangeActive = a multi-cell drag is in progress on the containing table -> suppress text highlight.
+    private void DrawCellBlockList(
+        DrawingContext context, System.Collections.Generic.IList<Block> blocks,
+        double ox, double oy, double innerW, bool chrome,
+        bool cellSelected, bool cellRangeActive,
+        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        ref Point? caretPoint, ref double caretHeight)
+    {
+        double by = 0;
+        foreach (var cb2 in blocks)
+        {
+            double blkY = oy + by;
+            if (cb2 is Paragraph para)
+            {
+                bool blkPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
+                var layout = blkPreedit
+                    ? BuildTextLayout(para, innerW, _caretPosition!.Offset, _preeditText)
+                    : BuildTextLayout(para, innerW);
+
+                if (!cellSelected && !cellRangeActive && selectedParagraphs?.Contains(para) == true)
+                {
+                    int cellLen = GetParagraphLength(para);
+                    int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
+                    int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
+                    if (hlEnd > hlStart)
+                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
+                }
+
+                if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
+                {
+                    int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
+                    var cr = layout.HitTestTextPosition(caretDisp);
+                    cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
+                    double th = CaretTextHeight(para, _caretPosition.Offset);
+                    if (cr.Height > 0 && th > cr.Height) th = cr.Height;
+                    caretPoint = new Point(ox + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
+                    caretHeight = th;
+                    _lastCaretPoint = caretPoint.Value;
+                }
+
+                layout.Draw(context, new Point(ox, blkY));
+                if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
+                by += layout.Height;
+            }
+            else if (cb2 is ImageBlock cimg)
+            {
+                // P4-2a: a block image inside a cell. Scaled to fit the cell width; no resize/select chrome.
+                var (iw, ih) = CellImageSize(cimg, innerW);
+                if (cimg.Image is { } bmp)
+                    context.DrawImage(bmp, new Rect(ox, blkY, iw, ih));
+                by += ih;
+            }
+            else if (cb2 is DividerBlock)
+            {
+                double y = blkY + DividerHeight / 2;
+                context.DrawLine(GrayBorderPen, new Point(ox, y), new Point(ox + innerW, y));
+                by += DividerHeight;
+            }
+            else if (cb2 is TableBlock nt)
+            {
+                // P4-2b: a nested table. Draws the grid + recurses into each nested cell. No resize
+                // handles / selected-table affordance for nested tables yet (follow-up).
+                DrawNestedTable(context, nt, ox, blkY, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
+                by += LayoutTable(nt, ox, blkY).TotalHeight;
+            }
+        }
+    }
+
+    // Draws a nested table's grid at (startX, top) and recurses into each anchor cell via DrawCellBlockList.
+    private void DrawNestedTable(
+        DrawingContext context, TableBlock tb, double startX, double top, bool chrome,
+        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        ref Point? caretPoint, ref double caretHeight)
+    {
+        var tl = LayoutTable(tb, startX, top);
+        foreach (var (r, c, rect) in tl.AnchorRects)
+        {
+            var cell = tb.Cells[r][c];
+            if (cell.Background != null) context.FillRectangle(cell.Background, rect);
+            context.DrawRectangle(null, GrayBorderPen, rect);
+            DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), chrome,
+                cellSelected: false, cellRangeActive: false, selectedParagraphs, selStart, selEnd,
+                ref caretPoint, ref caretHeight);
+        }
     }
 
     // Caret bar + deferred BringIntoView. Caret geometry arrives in document space; in page view it

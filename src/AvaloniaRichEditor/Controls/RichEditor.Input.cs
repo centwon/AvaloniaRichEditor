@@ -785,10 +785,12 @@ public partial class RichEditor
                 _caretBlock = lb; _caretBlockAfter = true;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            // Inside a table: ← at the very start of the first cell steps onto the table's "before"
-            // caret (symmetric with → entering the first cell from that caret).
+            // Inside a top-level table: ← at the very start of the first cell steps onto the table's
+            // "before" caret (symmetric with → entering the first cell from that caret). For a nested
+            // table (Parent is a cell, not the document) the block caret doesn't apply, so fall through
+            // to MoveCaretLeft, which crosses out via the recursive paragraph order.
             if (!shift && _caretPosition.Offset == 0 && _caretPosition.Paragraph != null
-                && FindCell(_caretPosition.Paragraph) is { } lc
+                && FindCell(_caretPosition.Paragraph) is { } lc && lc.tb.Parent is FlowDocument
                 && ReferenceEquals(lc.tb.LogicalCells().First().cell.Para, _caretPosition.Paragraph))
             {
                 _caretBlock = lc.tb; _caretBlockAfter = false;
@@ -806,11 +808,11 @@ public partial class RichEditor
                 _caretBlock = rb; _caretBlockAfter = false;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            // Inside a table: → at the very end of the last cell steps onto the table's "after"
-            // caret (mirrors ← from the following paragraph; it used to skip straight past it).
+            // Inside a top-level table: → at the very end of the last cell steps onto the table's "after"
+            // caret. A nested table falls through to MoveCaretRight (crosses out via paragraph order).
             if (!shift && _caretPosition.Paragraph != null
                 && _caretPosition.Offset >= GetParagraphLength(_caretPosition.Paragraph)
-                && FindCell(_caretPosition.Paragraph) is { } rc
+                && FindCell(_caretPosition.Paragraph) is { } rc && rc.tb.Parent is FlowDocument
                 && ReferenceEquals(LastParaOf(rc.tb.LogicalCells().Last().cell), _caretPosition.Paragraph))
             {
                 _caretBlock = rc.tb; _caretBlockAfter = true;
@@ -837,8 +839,10 @@ public partial class RichEditor
                 _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a table cell upward from its first row -> the table's "before" caret.
-            if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0)
+            // Leaving a top-level table cell upward from its first row -> the table's "before" caret. A
+            // nested table's first row falls through to a geometric step into the row/cell above.
+            if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0
+                && fc.tb.Parent is FlowDocument)
             {
                 _caretBlock = fc.tb; _caretBlockAfter = false;
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
@@ -872,8 +876,10 @@ public partial class RichEditor
                 _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a table cell downward from its last row -> the table's "after" caret.
+            // Leaving a top-level table cell downward from its last row -> the table's "after" caret. A
+            // nested table's last row falls through to a geometric step into the row/cell below.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc
+                && fc.tb.Parent is FlowDocument
                 && fc.r + fc.tb.SpanOf(fc.r, fc.c).rs - 1 >= fc.tb.Rows - 1)
             {
                 _caretBlock = fc.tb; _caretBlockAfter = true;
@@ -1370,17 +1376,7 @@ public partial class RichEditor
     // Document paragraph order: top-level paragraphs and, for each table, every paragraph of every
     // logical cell (P3: cells can hold multiple paragraphs). Drives ←/→ across paragraph boundaries.
     private System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInOrder()
-    {
-        if (Document == null) yield break;
-        foreach (var block in Document.Blocks)
-        {
-            if (block is Paragraph p) yield return p;
-            else if (block is TableBlock tb)
-                foreach (var (_, _, cell) in tb.LogicalCells())
-                    foreach (var b in cell.Blocks)
-                        if (b is Paragraph cp) yield return cp;
-        }
-    }
+        => Document == null ? System.Linq.Enumerable.Empty<Paragraph>() : ParagraphsInBlocks(Document.Blocks);
 
     private Paragraph? GetNextParagraph(Paragraph current)
     {

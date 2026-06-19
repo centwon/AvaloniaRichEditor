@@ -597,29 +597,29 @@ public partial class RichEditor : Control
     {
         NormalizeBlocks(doc);
         foreach (var block in doc.Blocks)
+            WireBlockParents(block, doc);
+    }
+
+    // Recursively wires a block's Parent (and its descendants') so the Run->Paragraph->TableCell->
+    // TableBlock chain is correct at any nesting depth (P4-2b: a TableBlock can live in a cell's blocks).
+    private static void WireBlockParents(Block block, object parent)
+    {
+        block.Parent = parent;
+        switch (block)
         {
-            block.Parent = doc;
-            if (block is Paragraph p)
-            {
+            case Paragraph p:
                 foreach (var inline in p.Inlines) inline.Parent = p;
-            }
-            else if (block is TableBlock tb)
-            {
+                break;
+            case TableBlock tb:
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
                     {
                         var cell = tb.Cells[r][c];
                         cell.Parent = tb;
-                        // Wire each block in the cell to the cell, and each paragraph's inlines to it.
-                        // (P1: one paragraph per cell; the loop is already multi-block-ready for P3+.)
                         foreach (var cb in cell.Blocks)
-                        {
-                            cb.Parent = cell;
-                            if (cb is Paragraph cp)
-                                foreach (var inline in cp.Inlines) inline.Parent = cp;
-                        }
+                            WireBlockParents(cb, cell);
                     }
-            }
+                break;
         }
     }
 
@@ -1327,10 +1327,9 @@ public partial class RichEditor : Control
     private void InsertBlockAtCaret(Block b)
     {
         if (Document == null) return;
-        // P4-2a: a block image/divider inserts inside the current cell (after the caret's paragraph) when
-        // the caret is in one. Nested tables (a TableBlock in a cell) are P4-2b, so they still go
-        // top-level (inserted after the whole table) for now.
-        if (b is not TableBlock && _caretPosition.Paragraph?.Parent is TableCell tc)
+        // A block image / divider / nested table (P4-2b) inserts inside the current cell, after the
+        // caret's paragraph, when the caret is in a cell.
+        if (_caretPosition.Paragraph?.Parent is TableCell tc)
         {
             int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
             int at = pi >= 0 ? pi + 1 : tc.Blocks.Count;
@@ -1339,7 +1338,12 @@ public partial class RichEditor : Control
             if (at + 1 >= tc.Blocks.Count || tc.Blocks[at + 1] is not Paragraph)
                 tc.Blocks.Insert(at + 1, new Paragraph { Inlines = { new Run { Text = "" } } });
             UpdateParents(Document);
-            if (tc.Blocks[at + 1] is Paragraph np) { _caretPosition = new TextPointer(np, 0); CollapseSelectionToCaret(); }
+            // Caret into a nested table's first cell (ready to fill), else the paragraph after the block.
+            if (b is TableBlock nt && nt.Cells.Count > 0 && nt.Cells[0].Count > 0)
+                _caretPosition = new TextPointer(nt.Cells[0][0].Para, 0);
+            else if (tc.Blocks[at + 1] is Paragraph np)
+                _caretPosition = new TextPointer(np, 0);
+            CollapseSelectionToCaret();
             Focus();
             InvalidateMeasure(); // the cell grew -> table row height reflows
             ResetCaretBlink();
@@ -1389,9 +1393,22 @@ public partial class RichEditor : Control
         // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
         // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
         var tb = new TableBlock(rows, cols);
-        // Fill the document width with equal columns (instead of the model's fixed 100px default).
-        double avail = Bounds.Width > 60 ? ContentLayoutWidth - 20 : 600;
-        double w = System.Math.Max(40, avail / cols);
+        // Equal columns spanning the available width. Inside a cell (P4-2b nested table) that's the
+        // enclosing cell's content width (parent column-span widths minus the cell padding), so the nested
+        // table fits the cell instead of the whole document; otherwise it fills the document width.
+        double avail, minCol;
+        if (_caretPosition.Paragraph is { } cp && FindCell(cp) is { } loc)
+        {
+            var (cs, _) = loc.tb.SpanOf(loc.r, loc.c);
+            double cellW = 0;
+            for (int k = loc.c; k < loc.c + cs && k < loc.tb.ColumnWidths.Count; k++) cellW += loc.tb.ColumnWidths[k];
+            // Fit the enclosing cell's content width with a low per-column floor so a deeply nested table
+            // doesn't overflow its cell (the 40px top-level floor would exceed a narrow cell).
+            avail = System.Math.Max(20, cellW - 10);
+            minCol = 15;
+        }
+        else { avail = Bounds.Width > 60 ? ContentLayoutWidth - 20 : 600; minCol = 40; }
+        double w = System.Math.Max(minCol, avail / cols);
         for (int c = 0; c < tb.ColumnWidths.Count; c++) tb.ColumnWidths[c] = w;
         InsertBlockAtCaret(tb);
         InvalidateVisual();
@@ -1440,20 +1457,20 @@ public partial class RichEditor : Control
     }
 
     private List<Paragraph> GetAllParagraphsInOrder()
+        => Document == null ? new List<Paragraph>() : ParagraphsInBlocks(Document.Blocks).ToList();
+
+    // Document-order enumeration of every paragraph, descending recursively through table cells (and
+    // nested tables — P4-2b) so navigation/find/select-all reach paragraphs at any depth.
+    private static System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInBlocks(System.Collections.Generic.IEnumerable<Block> blocks)
     {
-        var result = new List<Paragraph>();
-        if (Document == null) return result;
-        foreach (var block in Document.Blocks)
+        foreach (var block in blocks)
         {
-            if (block is Paragraph p) result.Add(p);
+            if (block is Paragraph p) yield return p;
             else if (block is TableBlock tb)
-            {
                 foreach (var (_, _, cell) in tb.LogicalCells())
-                    foreach (var cb in cell.Blocks)
-                        if (cb is Paragraph cp) result.Add(cp);
-            }
+                    foreach (var q in ParagraphsInBlocks(cell.Blocks))
+                        yield return q;
         }
-        return result;
     }
 
     private void SelectAll()

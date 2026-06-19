@@ -9,13 +9,22 @@ namespace AvaloniaRichEditor.Controls;
 public partial class RichEditor
 {
     private (TableBlock tb, int r, int c)? FindCell(Paragraph p)
+        => Document == null ? null : FindCellIn(Document.Blocks, p);
+
+    // Finds the innermost table + cell directly holding paragraph p, recursing into nested tables
+    // (P4-2b). Returns the deepest enclosing cell so navigation/menus act on the table the caret is in.
+    private static (TableBlock tb, int r, int c)? FindCellIn(System.Collections.Generic.IEnumerable<Block> blocks, Paragraph p)
     {
-        if (Document == null) return null;
-        foreach (var b in Document.Blocks)
+        foreach (var b in blocks)
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c].Blocks.Contains(p)) return (tb, r, c);
+                    {
+                        var cell = tb.Cells[r][c];
+                        var nested = FindCellIn(cell.Blocks, p);
+                        if (nested != null) return nested;
+                        if (cell.Blocks.Contains(p)) return (tb, r, c);
+                    }
         return null;
     }
 

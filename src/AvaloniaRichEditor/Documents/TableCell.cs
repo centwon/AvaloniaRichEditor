@@ -29,9 +29,39 @@ public class TableCell : TextElement
         Blocks.Add(paragraph);
     }
 
-    /// <summary>The cell's primary (and, through P1/P2, only) paragraph. Convenience for the many call
-    /// sites that still assume one-paragraph cells; replaced by block-list walks in P3+.</summary>
-    public Paragraph Para => (Paragraph)Blocks[0];
+    /// <summary>The cell's primary paragraph — the first paragraph reachable in <see cref="Blocks"/>,
+    /// descending into a leading nested table if the cell starts with one (P4-2b). Convenience for the
+    /// many call sites that treat a cell as having a single editable paragraph; multi-block walks use
+    /// <see cref="Blocks"/> directly. The cell invariant guarantees at least one paragraph exists.</summary>
+    public Paragraph Para
+    {
+        get
+        {
+            if (Blocks.Count > 0 && Blocks[0] is Paragraph p0) return p0; // fast path: the common case
+            foreach (var b in Blocks)
+                if (FirstParagraph(b) is { } p) return p;
+            // Invariant says a paragraph always exists; restore it if somehow not (never expected).
+            var restored = new Paragraph { Inlines = { new Run { Text = "" } } };
+            Blocks.Add(restored);
+            return restored;
+        }
+    }
+
+    // The first paragraph reachable in a block, recursing through nested-table cells.
+    private static Paragraph? FirstParagraph(Block block)
+    {
+        switch (block)
+        {
+            case Paragraph p: return p;
+            case TableBlock tb:
+                foreach (var row in tb.Cells)
+                    foreach (var cell in row)
+                        foreach (var cb in cell.Blocks)
+                            if (FirstParagraph(cb) is { } fp) return fp;
+                return null;
+            default: return null;
+        }
+    }
 
     /// <inheritdoc/>
     public override TextElement Clone()
