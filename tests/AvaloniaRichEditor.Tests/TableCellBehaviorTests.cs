@@ -308,12 +308,64 @@ public class TableCellBehaviorTests
         var doc = NestedTableDoc("deep");
         var ed = new RichEditor { Document = doc };
         var outer = doc.Blocks.OfType<TableBlock>().Single();
-        var inner = (TableBlock)outer.Cells[0][0].Blocks.Single();
+        // NormalizeBlocks (run by the Document setter) adds reachable paragraphs around the nested table,
+        // so the cell now holds [para, innerTable, para] — select the table by type, not by Single().
+        var inner = outer.Cells[0][0].Blocks.OfType<TableBlock>().Single();
         var deepPara = inner.Cells[0][0].Para;
 
         // Run -> Paragraph -> inner TableCell -> inner TableBlock -> outer TableCell -> outer TableBlock.
         Assert.Same(inner.Cells[0][0], deepPara.Parent);
         Assert.Same(inner, ((TableCell)deepPara.Parent!).Parent);
+    }
+
+    // A cell holding [paraA, nestedTable, paraB], loaded so parents/normalization are wired.
+    private static (RichEditor ed, TableCell cell, Paragraph a, Paragraph b) CellWithTableBetweenParagraphs()
+    {
+        var doc = new FlowDocument();
+        var outer = new TableBlock(1, 1);
+        var a = Para(new Run { Text = "A" });
+        var inner = new TableBlock(1, 1);
+        SetCellText(inner, 0, 0, "deep");
+        var b = Para(new Run { Text = "B" });
+        outer.Cells[0][0].Blocks.Clear();
+        outer.Cells[0][0].Blocks.Add(a);
+        outer.Cells[0][0].Blocks.Add(inner);
+        outer.Cells[0][0].Blocks.Add(b);
+        doc.Blocks.Add(outer);
+        var ed = new RichEditor { Document = doc };
+        return (ed, outer.Cells[0][0], a, b);
+    }
+
+    [AvaloniaFact]
+    public void Delete_AtCellParagraphEnd_BeforeNestedTable_RemovesTable()
+    {
+        var (ed, cell, a, _) = CellWithTableBetweenParagraphs();
+        PlaceCaret(ed, a, 1); // end of "A", the table is the next block
+        Press(ed, Key.Delete);
+        Assert.DoesNotContain(cell.Blocks, x => x is TableBlock);
+    }
+
+    [AvaloniaFact]
+    public void Backspace_AtCellParagraphStart_AfterNestedTable_RemovesTable()
+    {
+        var (ed, cell, _, b) = CellWithTableBetweenParagraphs();
+        PlaceCaret(ed, b, 0); // start of "B", the table is the previous block
+        Press(ed, Key.Back);
+        Assert.DoesNotContain(cell.Blocks, x => x is TableBlock);
+    }
+
+    [AvaloniaFact]
+    public void NestedTable_GetsReachableParagraphsAroundIt()
+    {
+        // A cell whose only block is a nested table must, after normalization, gain a paragraph before
+        // and after it so the caret can reach "before/after the table" (same rule as top-level blocks).
+        var doc = NestedTableDoc("deep");
+        var ed = new RichEditor { Document = doc };
+        var cellBlocks = doc.Blocks.OfType<TableBlock>().Single().Cells[0][0].Blocks;
+
+        Assert.IsType<Paragraph>(cellBlocks[0]);                  // a reachable line before the table
+        Assert.IsType<Paragraph>(cellBlocks[cellBlocks.Count - 1]); // and after it
+        Assert.Contains(cellBlocks, b => b is TableBlock);
     }
 
     [AvaloniaFact]

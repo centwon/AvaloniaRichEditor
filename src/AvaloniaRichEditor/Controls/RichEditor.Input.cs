@@ -965,8 +965,9 @@ public partial class RichEditor
             else if (_caretPosition.Paragraph?.Parent is TableCell btc && Document != null)
             {
                 // P3: Backspace at the start of a cell's non-first paragraph merges it into the previous
-                // paragraph within the same cell (cells host sibling paragraphs now). The first paragraph
-                // of a cell has nothing above it inside the cell — left as a no-op (← leaves the cell).
+                // paragraph within the same cell (cells host sibling paragraphs now). If the block above is
+                // an image/table/divider, delete that block instead (mirrors the top-level branch — and is
+                // the way to remove a nested table). The first paragraph of a cell is a no-op (← leaves it).
                 int bi = btc.Blocks.IndexOf(_caretPosition.Paragraph);
                 if (bi > 0 && btc.Blocks[bi - 1] is Paragraph cprev)
                 {
@@ -977,6 +978,12 @@ public partial class RichEditor
                     _caretPosition.Offset = prevLen;
                     TextRange.CoalesceRuns(cprev);
                     InvalidateMeasure(); // the cell shrank a paragraph -> row height reflows
+                }
+                else if (bi > 0 && btc.Blocks[bi - 1] is ImageBlock or TableBlock or DividerBlock)
+                {
+                    btc.Blocks.RemoveAt(bi - 1);
+                    UpdateParents(Document);
+                    InvalidateMeasure();
                 }
             }
             _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -1012,13 +1019,20 @@ public partial class RichEditor
             else if (_caretPosition.Paragraph?.Parent is TableCell dtc && Document != null)
             {
                 // P3: Delete at the end of a cell's non-last paragraph merges the next paragraph (within
-                // the same cell) into it. The last paragraph of a cell has nothing below it inside the cell.
+                // the same cell) into it. If the block below is an image/table/divider, delete that block
+                // instead (mirrors the top-level branch). The last paragraph of a cell is a no-op.
                 int di = dtc.Blocks.IndexOf(_caretPosition.Paragraph);
                 if (di >= 0 && di + 1 < dtc.Blocks.Count && dtc.Blocks[di + 1] is Paragraph cnext)
                 {
                     foreach (var inline in cnext.Inlines) { inline.Parent = _caretPosition.Paragraph; _caretPosition.Paragraph.Inlines.Add(inline); }
                     dtc.Blocks.Remove(cnext);
                     TextRange.CoalesceRuns(_caretPosition.Paragraph);
+                    InvalidateMeasure();
+                }
+                else if (di >= 0 && di + 1 < dtc.Blocks.Count && dtc.Blocks[di + 1] is ImageBlock or TableBlock or DividerBlock)
+                {
+                    dtc.Blocks.RemoveAt(di + 1);
+                    UpdateParents(Document);
                     InvalidateMeasure();
                 }
             }

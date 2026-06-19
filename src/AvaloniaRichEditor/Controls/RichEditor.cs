@@ -578,22 +578,30 @@ public partial class RichEditor : Control
     // with a paragraph, and no two non-paragraph blocks are adjacent without a paragraph between.
     // Without this, an image/table at the very start/end (or two in a row) is impossible to reach
     // or delete with the keyboard.
-    private void NormalizeBlocks(FlowDocument doc)
+    private void NormalizeBlocks(FlowDocument doc) => NormalizeBlockList(doc.Blocks, doc);
+
+    // Keep a paragraph at the very start/end of a block list and between any two adjacent non-paragraph
+    // blocks, so the caret can always reach a position before/after every image/table WITHOUT inserting
+    // extra blank lines around blocks that already sit next to text paragraphs. "Before a table" is then
+    // the end of the preceding text line; "after a table" is the start of the next line. Applied to the
+    // document AND, recursively, every table cell (P4-2b: a cell is a block container too, so a nested
+    // table/image at a cell's edge would otherwise be unreachable).
+    private static void NormalizeBlockList(System.Collections.Generic.IList<Block> blocks, object parent)
     {
-        // Keep a paragraph at the very start/end and between any two adjacent non-paragraph blocks,
-        // so the caret can always reach a position before/after every image/table WITHOUT inserting
-        // extra blank lines around blocks that already sit next to text paragraphs. "Before a table"
-        // is then the end of the preceding text line; "after a table" is the start of the next line.
-        var blocks = doc.Blocks;
         if (blocks.Count == 0 || blocks[0] is not Paragraph)
-            blocks.Insert(0, new Paragraph { Parent = doc });
+            blocks.Insert(0, new Paragraph { Parent = parent });
         if (blocks[blocks.Count - 1] is not Paragraph)
-            blocks.Add(new Paragraph { Parent = doc });
+            blocks.Add(new Paragraph { Parent = parent });
         for (int i = 0; i < blocks.Count - 1; i++)
         {
             if (blocks[i] is not Paragraph && blocks[i + 1] is not Paragraph)
-                blocks.Insert(i + 1, new Paragraph { Parent = doc });
+                blocks.Insert(i + 1, new Paragraph { Parent = parent });
         }
+        foreach (var b in blocks)
+            if (b is TableBlock tb)
+                foreach (var row in tb.Cells)
+                    foreach (var cell in row)
+                        NormalizeBlockList(cell.Blocks, cell);
     }
 
     private void UpdateParents(FlowDocument doc)

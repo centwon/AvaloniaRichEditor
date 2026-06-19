@@ -616,8 +616,8 @@ public partial class RichEditor
             }
             else if (cb2 is TableBlock nt)
             {
-                // P4-2b: a nested table. Draws the grid + recurses into each nested cell. No resize
-                // handles / selected-table affordance for nested tables yet (follow-up).
+                // P4-2b: a nested table. Draws the grid + recurses into each nested cell, registering
+                // row/column resize handles like a top-level table (no selected-table affordance yet).
                 DrawNestedTable(context, nt, ox, blkY, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
                 by += LayoutTable(nt, ox, blkY).TotalHeight;
             }
@@ -639,6 +639,15 @@ public partial class RichEditor
             DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), chrome,
                 cellSelected: false, cellRangeActive: false, selectedParagraphs, selStart, selEnd,
                 ref caretPoint, ref caretHeight);
+        }
+        // Resize handles on the physical grid lines (document coordinates), shared with the top-level
+        // resize path — the handlers key off the TableBlock, so nested tables resize identically.
+        if (chrome)
+        {
+            for (int r = 0; r < tb.Rows; r++)
+                _rowBoundaries.Add((new Rect(startX, tl.RowY[r + 1] - 3, tl.TableWidth, 6), tb, r, tl.RowY[r + 1] - tl.RowY[r]));
+            for (int c = 0; c < tb.Columns; c++)
+                _columnBoundaries.Add((new Rect(tl.ColX[c + 1] - 3, top, 6, tl.TotalHeight), tb, c));
         }
     }
 
