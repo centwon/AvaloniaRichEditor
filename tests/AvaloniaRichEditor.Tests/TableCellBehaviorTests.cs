@@ -124,6 +124,23 @@ public class TableCellBehaviorTests
         Assert.Contains(cell.Blocks, b => b is ImageBlock); // image landed inside the cell, not as a table sibling
     }
 
+    [AvaloniaFact]
+    public void Delete_SelectedCellImage_RemovesItFromCell()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>x</td></tr></table>");
+        var cell = ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        PlaceCaret(ed, cell.Para, 1);
+        ed.InsertImageBytes(Convert.FromBase64String(Png1x1));
+        var img = cell.Blocks.OfType<ImageBlock>().Single();
+
+        // Select the cell image (as a click would) and press Delete.
+        typeof(RichEditor).GetField("_selectedBlock", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ed, img);
+        Press(ed, Key.Delete);
+
+        Assert.DoesNotContain(cell.Blocks, b => b is ImageBlock); // removed from the cell, not just the doc
+    }
+
     [Fact]
     public void Json_RoundTrip_PreservesBlockImageInCell()
     {

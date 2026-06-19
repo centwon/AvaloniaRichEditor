@@ -72,6 +72,9 @@ public partial class RichEditor : Control
 
     // Image resize state
     private List<(Avalonia.Rect rect, ImageBlock img)> _imageHandles = new();
+    // Rendered rects of block images inside table cells (P4-2b), so a click can select one (top-level
+    // block images are found via GetBlockAtPoint; cell images need this registry, like inline images).
+    private List<(Avalonia.Rect rect, ImageBlock img)> _cellImageRects = new();
     private bool _isResizingImage;
     private ImageBlock? _resizingImage;
     private double _initialImageWidth;
@@ -1681,10 +1684,33 @@ public partial class RichEditor : Control
     {
         if (Document == null) return;
         PushUndo();
-        Document.Blocks.Remove(b);
+        RemoveBlockAnywhere(b);
         _selectedBlock = null;
-        NormalizeBlocks(Document);
+        UpdateParents(Document); // NormalizeBlocks (top level) + re-wire; a cell keeps its paragraph invariant
+        InvalidateMeasure();     // a cell shrank -> the table's row height reflows
         InvalidateVisual();
+    }
+
+    // Removes a block from whichever container holds it: the document's top-level list or an enclosing
+    // table cell (searching recursively through nested tables — P4-2b). Returns true if removed.
+    private bool RemoveBlockAnywhere(Block b)
+    {
+        if (Document == null) return false;
+        if (Document.Blocks.Remove(b)) return true;
+        return RemoveBlockFromCells(Document.Blocks, b);
+    }
+
+    private static bool RemoveBlockFromCells(System.Collections.Generic.IEnumerable<Block> blocks, Block target)
+    {
+        foreach (var blk in blocks)
+            if (blk is TableBlock tb)
+                foreach (var row in tb.Cells)
+                    foreach (var cell in row)
+                    {
+                        if (cell.Blocks.Remove(target)) return true;
+                        if (RemoveBlockFromCells(cell.Blocks, target)) return true;
+                    }
+        return false;
     }
 
     /// <summary>Undoes the last edit. No-op when <see cref="CanUndo"/> is <see langword="false"/>.</summary>

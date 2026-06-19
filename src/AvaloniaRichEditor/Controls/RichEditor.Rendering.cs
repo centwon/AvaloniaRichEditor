@@ -147,6 +147,7 @@ public partial class RichEditor
         _columnBoundaries.Clear();
         _rowBoundaries.Clear();
         _imageHandles.Clear();
+        _cellImageRects.Clear();
         _inlineImageRects.Clear();
         _inlineHandles.Clear();
 
@@ -583,10 +584,28 @@ public partial class RichEditor
             }
             else if (cb2 is ImageBlock cimg)
             {
-                // P4-2a: a block image inside a cell. Scaled to fit the cell width; no resize/select chrome.
+                // A block image inside a cell, scaled to fit the cell width. With chrome on, it gets the
+                // same selection overlay + resize handle as a top-level block image, registered in
+                // document coordinates so the shared resize/hit-test paths work unchanged.
                 var (iw, ih) = CellImageSize(cimg, innerW);
                 if (cimg.Image is { } bmp)
-                    context.DrawImage(bmp, new Rect(ox, blkY, iw, ih));
+                {
+                    var ir = new Rect(ox, blkY, iw, ih);
+                    context.DrawImage(bmp, ir);
+                    if (chrome)
+                    {
+                        if (ReferenceEquals(cimg, _selectedBlock))
+                        {
+                            context.FillRectangle(AccentFill60, ir);
+                            context.DrawRectangle(null, AccentPen2, ir);
+                        }
+                        context.DrawRectangle(null, AccentBorderPen, ir);
+                        var handle = new Rect(ox + iw - 6, blkY + ih - 6, 12, 12);
+                        context.FillRectangle(AccentHandleFill, handle);
+                        _imageHandles.Add((new Rect(ox + iw - 9, blkY + ih - 9, 18, 18), cimg));
+                        _cellImageRects.Add((ir, cimg));
+                    }
+                }
                 by += ih;
             }
             else if (cb2 is DividerBlock)

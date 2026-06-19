@@ -127,6 +127,19 @@ public partial class RichEditor
                 }
             }
 
+        // Clicking a block image inside a table cell (P4-2b) selects it (blue border + resize handle),
+        // mirroring top-level block images — which GetBlockAtPoint can't reach inside a cell.
+        foreach (var ci in _cellImageRects)
+            if (ci.rect.Contains(point))
+            {
+                _selectedBlock = ci.img;
+                _caretBlock = null;
+                CollapseSelectionToCaret();
+                ResetCaretBlink();
+                InvalidateVisual();
+                return;
+            }
+
         // Click on a hyperlink opens it in the default browser instead of placing the caret.
         var linkRun = GetLinkRunAtPoint(point);
         if (linkRun != null && !string.IsNullOrEmpty(linkRun.NavigateUri))
@@ -700,8 +713,9 @@ public partial class RichEditor
                     _ = CopyImageToClipboardAsync(xb.RawBytes, xb.Image, inline: false, xb.Width, xb.Height);
                     PushUndo();
                     _selectedBlock = null; _caretBlock = null;
-                    Document.Blocks.Remove(xb);
-                    NormalizeBlocks(Document);
+                    RemoveBlockAnywhere(xb);
+                    UpdateParents(Document);
+                    InvalidateMeasure();
                     ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
                 }
                 if (_selectedInline is { } xi)
@@ -908,10 +922,11 @@ public partial class RichEditor
         }
         else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedBlock != null && Document != null)
         {
-            // A block image is selected -> delete it.
-            Document.Blocks.Remove(_selectedBlock);
+            // A block image/table is selected -> delete it (from the document or its enclosing cell).
+            RemoveBlockAnywhere(_selectedBlock);
             _selectedBlock = null;
-            NormalizeBlocks(Document);
+            UpdateParents(Document);
+            InvalidateMeasure();
             ResetCaretBlink(); e.Handled = true;
             return;
         }
