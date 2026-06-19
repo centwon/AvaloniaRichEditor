@@ -641,7 +641,9 @@ public partial class RichEditor
                 ref caretPoint, ref caretHeight);
         }
         // Resize handles on the physical grid lines (document coordinates), shared with the top-level
-        // resize path — the handlers key off the TableBlock, so nested tables resize identically.
+        // resize path — the handlers key off the TableBlock, so nested tables resize identically. The
+        // outer-right edge adjusts the nested table's total width; the resize handler clamps it to the
+        // enclosing cell's content width so it can't overflow. Row handles grow the cell (parent reflows).
         if (chrome)
         {
             for (int r = 0; r < tb.Rows; r++)

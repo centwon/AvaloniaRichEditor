@@ -11,6 +11,23 @@ public partial class RichEditor
     private (TableBlock tb, int r, int c)? FindCell(Paragraph p)
         => Document == null ? null : FindCellIn(Document.Blocks, p);
 
+    // The content width of the cell that encloses a nested table `t`, or null if `t` is top-level.
+    // Used to clamp a nested table's width on resize so it stays within its cell.
+    private static double? EnclosingCellInnerWidth(TableBlock t)
+    {
+        if (t.Parent is not TableCell cell || cell.Parent is not TableBlock parent) return null;
+        for (int r = 0; r < parent.Rows; r++)
+            for (int c = 0; c < parent.Columns; c++)
+                if (ReferenceEquals(parent.Cells[r][c], cell))
+                {
+                    var (cs, _) = parent.SpanOf(r, c);
+                    double w = 0;
+                    for (int k = c; k < c + cs && k < parent.ColumnWidths.Count; k++) w += parent.ColumnWidths[k];
+                    return System.Math.Max(10, w - 10);
+                }
+        return null;
+    }
+
     // Finds the innermost table + cell directly holding paragraph p, recursing into nested tables
     // (P4-2b). Returns the deepest enclosing cell so navigation/menus act on the table the caret is in.
     private static (TableBlock tb, int r, int c)? FindCellIn(System.Collections.Generic.IEnumerable<Block> blocks, Paragraph p)

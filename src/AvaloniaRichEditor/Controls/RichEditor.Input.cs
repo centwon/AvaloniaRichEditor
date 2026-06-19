@@ -424,7 +424,17 @@ public partial class RichEditor
                 // Outer-right edge: grow/shrink this column, changing the table's total width.
                 while (_resizingTable.ColumnWidths.Count <= _resizingColumnIndex)
                     _resizingTable.ColumnWidths.Add(100);
-                _resizingTable.ColumnWidths[_resizingColumnIndex] = Math.Max(minW, _initialColumnWidth + diff);
+                double newLast = Math.Max(minW, _initialColumnWidth + diff);
+                // A nested table is bound to its cell: cap the total width at the cell's content width so
+                // growing the last column can't overflow (shrinking stays free, down to minW).
+                if (EnclosingCellInnerWidth(_resizingTable) is { } innerW)
+                {
+                    double otherSum = 0;
+                    for (int k = 0; k < _resizingTable.ColumnWidths.Count; k++)
+                        if (k != _resizingColumnIndex) otherSum += _resizingTable.ColumnWidths[k];
+                    newLast = Math.Min(newLast, Math.Max(minW, innerW - otherSum));
+                }
+                _resizingTable.ColumnWidths[_resizingColumnIndex] = newLast;
             }
             else
             {
