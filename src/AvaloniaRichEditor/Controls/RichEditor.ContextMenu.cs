@@ -74,7 +74,7 @@ public partial class RichEditor
                     Background = Brushes.White, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1),
                 };
                 cell.PointerEntered += (_, _) => Highlight(rr, cc);
-                cell.PointerPressed += (_, _) => { InsertTable(rr + 1, cc + 1); _openContextMenu?.Close(); };
+                cell.PointerPressed += (_, _) => { BeginTableDraw(rr + 1, cc + 1); _openContextMenu?.Close(); };
                 cells[r, c] = cell;
                 grid.Children.Add(cell);
             }
@@ -509,6 +509,30 @@ public partial class RichEditor
         }, canUnmerge, RichEditorIcon.UnmergeCells));
         items.Add(new Separator());
         items.Add(MarginMenu(tb));
-        items.Add(Mi(Loc("DeleteTable"), () => DeleteBlock(tb), icon: RichEditorIcon.DeleteTable));
+        // HWP-style "treat as character": a top-level block table can become inline; an inline table can
+        // promote back to a block (only when its host paragraph is top-level).
+        if (tb.Parent is FlowDocument)
+        {
+            var asChar = new MenuItem { Header = Loc("InlineWithText"), ToggleType = MenuItemToggleType.CheckBox, IsChecked = false };
+            asChar.Click += (_, _) => ConvertTableBlockToInline(tb);
+            items.Add(asChar);
+        }
+        else if (tb.Parent is InlineTable itw && itw.Parent is Paragraph itHost)
+        {
+            var asChar = new MenuItem
+            {
+                Header = Loc("InlineWithText"),
+                ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = true,
+                IsEnabled = Document != null && Document.Blocks.IndexOf(itHost) >= 0,
+            };
+            asChar.Click += (_, _) => ConvertInlineTableToBlock(itHost, itw);
+            items.Add(asChar);
+        }
+        items.Add(Mi(Loc("DeleteTable"), () =>
+        {
+            if (tb.Parent is InlineTable it2 && it2.Parent is Paragraph host2) DeleteInlineTable(host2, it2);
+            else DeleteBlock(tb);
+        }, icon: RichEditorIcon.DeleteTable));
     }
 }

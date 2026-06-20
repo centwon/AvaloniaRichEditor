@@ -1,14 +1,1 @@
-#nullable enable
-*REMOVED*AvaloniaRichEditor.Documents.TableBlock.Cells.get -> System.Collections.Generic.List<System.Collections.Generic.List<AvaloniaRichEditor.Documents.Paragraph!>!>!
-AvaloniaRichEditor.Documents.TableBlock.Cells.get -> System.Collections.Generic.List<System.Collections.Generic.List<AvaloniaRichEditor.Documents.TableCell!>!>!
-*REMOVED*AvaloniaRichEditor.Documents.TableBlock.LogicalCells() -> System.Collections.Generic.IEnumerable<(int r, int c, AvaloniaRichEditor.Documents.Paragraph! cell)>!
-AvaloniaRichEditor.Documents.TableBlock.LogicalCells() -> System.Collections.Generic.IEnumerable<(int r, int c, AvaloniaRichEditor.Documents.TableCell! cell)>!
-AvaloniaRichEditor.Documents.TableCell
-AvaloniaRichEditor.Documents.TableCell.Background.get -> Avalonia.Media.IBrush?
-AvaloniaRichEditor.Documents.TableCell.Background.set -> void
-AvaloniaRichEditor.Documents.TableCell.Blocks.get -> System.Collections.Generic.List<AvaloniaRichEditor.Documents.Block!>!
-AvaloniaRichEditor.Documents.TableCell.Blocks.set -> void
-AvaloniaRichEditor.Documents.TableCell.Para.get -> AvaloniaRichEditor.Documents.Paragraph!
-AvaloniaRichEditor.Documents.TableCell.TableCell() -> void
-AvaloniaRichEditor.Documents.TableCell.TableCell(AvaloniaRichEditor.Documents.Paragraph! paragraph) -> void
-override AvaloniaRichEditor.Documents.TableCell.Clone() -> AvaloniaRichEditor.Documents.TextElement!
+﻿#nullable enable

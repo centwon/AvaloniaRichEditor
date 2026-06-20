@@ -502,7 +502,9 @@ public class RichEditorToolbar : UserControl
                 cell.PointerEntered += (_, _) => Highlight(rr, cc);
                 cell.PointerPressed += (_, _) =>
                 {
-                    Target?.InsertTable(rr + 1, cc + 1);
+                    // Arm "draw table" mode: the chosen rows×cols is drawn at the size of the next drag on
+                    // the editor (a plain click falls back to the default size). Same as the context menu.
+                    Target?.BeginTableDraw(rr + 1, cc + 1);
                     (btn.Flyout as FlyoutBase)?.Hide();
                 };
                 cells[r, c] = cell;

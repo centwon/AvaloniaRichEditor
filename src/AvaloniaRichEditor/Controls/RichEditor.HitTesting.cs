@@ -371,16 +371,26 @@ public partial class RichEditor
     }
 
     // Works around an Avalonia hit-test quirk: a DrawableTextRun at the very end of a line is
-    // excluded from caret-distance computation, so the position right after a trailing inline
-    // image collapses to the image's *left* edge (typing there visibly lands "behind" the image
-    // and Right-arrow appears stuck). When the caret sits right after an image and the reported X
-    // didn't advance past the image's start, pin it to the image's right edge.
+    // excluded from caret-distance computation, so the position right after a trailing inline object
+    // (image OR table) collapses to the object's *left* edge (the caret looked stuck in front of it
+    // when there was no text after). When the caret sits right after such an object and the reported X
+    // didn't advance past its start, pin it to the object's right edge. The object's run width comes
+    // from the model (image) or, for a table, from the layout's own range geometry (its padded box).
     internal static Rect FixCaretAfterTrailingImage(Avalonia.Media.TextFormatting.TextLayout layout,
         Paragraph p, int logicalOffset, int displayIndex, Rect cr)
     {
-        if (displayIndex <= 0 || InlineImageEndingAt(p, logicalOffset) is not { } img) return cr;
+        if (displayIndex <= 0) return cr;
+        double w;
+        if (InlineImageEndingAt(p, logicalOffset) is { } img)
+            w = Math.Max(8, img.Width > 0 ? img.Width : 16);
+        else if (InlineTableEndingAt(p, logicalOffset) is not null)
+        {
+            w = 0;
+            foreach (var rr in layout.HitTestTextRange(displayIndex - 1, 1)) { w = rr.Width; break; }
+            if (w <= 0) return cr;
+        }
+        else return cr;
         var ir = layout.HitTestTextPosition(displayIndex - 1);
-        double w = Math.Max(8, img.Width > 0 ? img.Width : 16);
         return cr.X <= ir.X + 0.5 ? cr.WithX(ir.X + w) : cr;
     }
 
@@ -444,6 +454,43 @@ public partial class RichEditor
             : null;
     }
 
+    // Milestone B P3: a point landing on an inline table's drawn box descends into its cells (mirror of
+    // the block-table descent). The table's document-space top-left is bottom-aligned in its line, exactly
+    // as RegisterInlineImages places inline images (and as TableTextRun.Draw receives its origin), so the
+    // geometry agrees with what was painted. Returns null so the caller falls back to the host paragraph's
+    // text hit-test when the point misses every inline table.
+    private TextPointer? InlineTableHitDescent(Paragraph host, Avalonia.Media.TextFormatting.TextLayout ft,
+        double px, double top, Point p)
+    {
+        int off = 0;
+        foreach (var inline in host.Inlines)
+        {
+            if (inline is InlineTable it)
+            {
+                double th = LayoutTable(it.Table, 0, 0).TotalHeight;
+                foreach (var r in ft.HitTestTextRange(off, 1))
+                {
+                    // The table is painted inset by InlineTablePad inside its (padded) run box; match that
+                    // so the clickable cells line up with what was drawn.
+                    double docX = px + r.X + InlineTablePad, docY = top + r.Bottom - th - InlineTablePad;
+                    var box = LayoutTable(it.Table, docX, docY);
+                    if (new Rect(docX, docY, box.TableWidth, box.TotalHeight).Contains(p))
+                    {
+                        foreach (var (rr, cc, rect) in box.AnchorRects)
+                            if (rect.Contains(p) &&
+                                HitTestBlockList(it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p) is { } hit)
+                                return hit;
+                        // Inside the box but in a border gap: snap to the first cell's first paragraph.
+                        return new TextPointer(it.Table.Cells[0][0].Para, 0);
+                    }
+                    break;
+                }
+            }
+            off += InlineLen(inline);
+        }
+        return null;
+    }
+
     private TextPointer GetPositionFromPoint(Point p)
     {
         if (Document == null || Document.Blocks.Count == 0)
@@ -500,6 +547,10 @@ public partial class RichEditor
                 else
                 {
                     double ppos = ParaLeft(paragraph);
+                    // A point on an inline table descends into its cells (returns immediately).
+                    if (p.Y >= top && p.Y <= top + h &&
+                        InlineTableHitDescent(paragraph, ft, ppos, top, p) is { } descended)
+                        return descended;
                     double distY2 = p.Y < top ? top - p.Y : (p.Y > top + h ? p.Y - (top + h) : 0);
                     if (distY2 < bestDistY)
                     {

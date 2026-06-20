@@ -146,6 +146,13 @@ public class RichEditorView : UserControl
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
         UpdateHorizontalScroll();
+        // Make the editor at least as tall as the viewport, so the empty area below short content is part
+        // of the editing surface (click-to-end) and the "draw table" rubber-band can extend into it without
+        // being clipped to the content height. MinHeight is in editor (pre-zoom) px, so divide by the zoom.
+        _scroller.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ScrollViewer.ViewportProperty) UpdateEditorFillHeight();
+        };
         // A concrete paper size fixes the column width, so a narrow viewport (or a zoomed page) can
         // exceed it → allow horizontal scrolling there. The continuous (Free) layout reflows to the
         // viewport, so it must stay disabled (a finite width is what makes the editor reflow instead
@@ -192,6 +199,16 @@ public class RichEditorView : UserControl
         => _scroller.HorizontalScrollBarVisibility = (Editor.IsPaged && !FitToWidth)
             ? ScrollBarVisibility.Auto
             : ScrollBarVisibility.Disabled;
+
+    // Floor the editor's height at the viewport (in pre-zoom px) so short documents still fill the visible
+    // area. Capped at the viewport so this can never push content past the viewport and spawn a scrollbar
+    // (which would shrink the viewport and loop): when content is taller it already exceeds this floor.
+    private void UpdateEditorFillHeight()
+    {
+        double vh = _scroller.Viewport.Height;
+        double zoom = ZoomFactor > 0 ? ZoomFactor : 1.0;
+        if (vh > 0) Editor.MinHeight = vh / zoom;
+    }
 
     // Scales the document so the page (chrome) or fixed content column (no chrome) fills the viewport
     // width. Mirrors the print/desk geometry: a chromed page adds a desk gap each side; a bare column
@@ -512,10 +529,13 @@ public class RichEditorView : UserControl
                 // RTF bytes are ASCII/Latin-1 (the parser decodes \'hh with the document code page itself),
                 // so decode as Latin-1 to keep bytes intact; fall back to UTF-8 JSON otherwise.
                 string latin1 = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+                string utf8 = System.Text.Encoding.UTF8.GetString(ms.ToArray());
                 if (AvaloniaRichEditor.Formatters.RtfDocumentFormatter.LooksLikeRtf(latin1))
                     Editor.LoadRtf(latin1);
+                else if (utf8.TrimStart().StartsWith("<", StringComparison.Ordinal))
+                    Editor.LoadHtml(utf8); // an HTML/.htm export (JSON starts with '{', RTF was handled above)
                 else
-                    await Editor.LoadJsonAsync(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+                    await Editor.LoadJsonAsync(utf8);
             }
         }
         catch (Exception ex)

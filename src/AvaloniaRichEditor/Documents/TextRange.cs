@@ -190,9 +190,9 @@ public class TextRange
         return result;
     }
 
-    /// <summary>Like <see cref="GetRichRuns"/> but also captures <see cref="InlineImage"/>s, so an
-    /// in-app copy/paste preserves inline images (the run-only version drops them). Paragraph breaks are
-    /// <see cref="Run"/>s with <c>Text = "\n"</c>.</summary>
+    /// <summary>Like <see cref="GetRichRuns"/> but also captures atomic object inlines
+    /// (<see cref="InlineImage"/>, <see cref="InlineTable"/>), so an in-app copy/paste preserves them
+    /// (the run-only version drops them). Paragraph breaks are <see cref="Run"/>s with <c>Text = "\n"</c>.</summary>
     public List<Inline> GetRichInlines()
     {
         var result = new List<Inline>();
@@ -239,9 +239,10 @@ public class TextRange
                 int re = Math.Min(endOffset, segEnd) - segStart;
                 if (re > rs) { var c = (Run)run.Clone(); c.Text = run.Text!.Substring(rs, re - rs); result.Add(c); }
             }
-            else if (inline is InlineImage img && segStart >= startOffset && segEnd <= endOffset)
+            else if (inline is not Run && segStart >= startOffset && segEnd <= endOffset)
             {
-                result.Add((InlineImage)img.Clone());
+                // Atomic object inline (image, table): capture it whole when fully inside the range.
+                result.Add((Inline)inline.Clone());
             }
         }
         return result;
@@ -288,7 +289,7 @@ public class TextRange
         foreach (var inline in p.Inlines)
         {
             if (inline is Run r && r.Text != null) sb.Append(r.Text);
-            else if (inline is InlineImage) sb.Append(ObjChar);
+            else if (inline is not Run) sb.Append(ObjChar);
         }
         string fullText = sb.ToString();
 
@@ -486,10 +487,10 @@ public class TextRange
         }
     }
 
-    // One inline image counts as a single character position (U+FFFC), matching the editor's
-    // logical offset model so split/delete/style ranges stay aligned with the rendered layout.
+    // An atomic object inline (image, table) counts as a single character position (U+FFFC), matching
+    // the editor's logical offset model so split/delete/style ranges stay aligned with the rendered layout.
     private const char ObjChar = '￼';
-    private static int InlineLen(Inline i) => i is Run r ? (r.Text?.Length ?? 0) : (i is InlineImage ? 1 : 0);
+    private static int InlineLen(Inline i) => i is Run r ? (r.Text?.Length ?? 0) : 1;
 
     private int GetParagraphLength(Paragraph p)
     {
@@ -501,19 +502,28 @@ public class TextRange
     private List<Paragraph> GetAllParagraphsInOrder(FlowDocument doc)
     {
         var result = new List<Paragraph>();
-        foreach (var block in doc.Blocks)
-        {
-            if (block is Paragraph p) result.Add(p);
-            else if (block is TableBlock tb)
-            {
-                // Logical (anchor) cells only — matching the control's own paragraph order, so the
-                // index-based range loops here agree with it on merged tables (covered cells are
-                // never caret/selection endpoints).
-                foreach (var (_, _, cell) in tb.LogicalCells())
-                    foreach (var cb in cell.Blocks)
-                        if (cb is Paragraph cp) result.Add(cp);
-            }
-        }
+        CollectParagraphs(doc.Blocks, result);
         return result;
+    }
+
+    // Mirror of the control's ParagraphsInBlocks: fully recursive through table cells (nested tables) and
+    // through inline tables hanging off a paragraph's inlines, using logical (anchor) cells only so the
+    // index-based range loops agree with the control's order on merged tables.
+    private static void CollectParagraphs(IEnumerable<Block> blocks, List<Paragraph> result)
+    {
+        foreach (var block in blocks)
+        {
+            if (block is Paragraph p)
+            {
+                result.Add(p);
+                foreach (var inl in p.Inlines)
+                    if (inl is InlineTable it)
+                        foreach (var (_, _, cell) in it.Table.LogicalCells())
+                            CollectParagraphs(cell.Blocks, result);
+            }
+            else if (block is TableBlock tb)
+                foreach (var (_, _, cell) in tb.LogicalCells())
+                    CollectParagraphs(cell.Blocks, result);
+        }
     }
 }

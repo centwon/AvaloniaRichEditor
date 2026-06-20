@@ -22,6 +22,11 @@ dotnet add package AvaloniaRichEditor --prerelease
 - **Tables** with cell merge (colspan/rowspan), column & row resize, and Tab cell navigation. Cells are
   full block containers — multiple paragraphs, block images, dividers, and **nested tables** (to any
   depth), with recursive layout/hit-testing, per-cell resize, and Tab traversal that enters/exits nesting
+  - **Inline tables** (HWP-style "treat as character"): a table flows inside a text line like an image but
+    stays fully editable — click into a cell, type, navigate with arrows/Tab, resize. Toggle a block table
+    to inline and back via the right-click menu
+  - **Draw-to-size insertion**: pick rows × columns from the grid, then drag on the document to set the
+    table's size (or click for the default size)
 - Inline and block **images** (insert, resize, replace, save)
 - Find / replace, undo / redo, per-object right-click context menus
 - Clipboard: internal rich copy/paste, rich **HTML copy-out** (`CF_HTML`) and external HTML/**RTF** paste

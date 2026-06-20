@@ -550,7 +550,7 @@ public partial class RichEditor : Control
             if (!firstPara) Consume('\n'); // the newline that joined consecutive paragraphs
             firstPara = false;
 
-            // Walk the inlines directly (Run text chars + one ObjChar per inline image) instead of
+            // Walk the inlines directly (Run text chars + one ObjChar per atomic object inline) instead of
             // building a BuildPlain string per paragraph — this runs on every caret move, so the
             // per-paragraph string allocation added up to hundreds of allocations per arrow key on a
             // large document. `local` is the logical offset within this paragraph (image = 1).
@@ -566,7 +566,7 @@ public partial class RichEditor : Control
             foreach (var inline in p.Inlines)
             {
                 if (inline is Run r && r.Text is { } t) { foreach (char ch in t) Step(ch); }
-                else if (inline is InlineImage) Step(ObjChar);
+                else if (inline is not Run) Step(ObjChar);
             }
             if (!captured && local == caretOff) { capLine = curLine; capCol = curCol; captured = true; }
         }
@@ -619,7 +619,15 @@ public partial class RichEditor : Control
         switch (block)
         {
             case Paragraph p:
-                foreach (var inline in p.Inlines) inline.Parent = p;
+                foreach (var inline in p.Inlines)
+                {
+                    inline.Parent = p;
+                    // An inline table's grid is wired like a block table but rooted at the InlineTable
+                    // wrapper (whose parent is this paragraph), so a cell paragraph can walk up to its
+                    // host: cellPara -> TableCell -> TableBlock -> InlineTable -> host Paragraph.
+                    if (inline is InlineTable it)
+                        WireBlockParents(it.Table, it);
+                }
                 break;
             case TableBlock tb:
                 for (int r = 0; r < tb.Rows; r++)
@@ -764,12 +772,12 @@ public partial class RichEditor : Control
                 run.Text = run.Text!.Remove(from, to - from);
                 if (run.Text.Length == 0) p.Inlines.RemoveAt(i); else i++;
             }
-            else if (inl is InlineImage)
+            else
             {
-                // The image's single position overlaps the range -> remove it.
+                // An atomic object inline (image, table) whose single position overlaps the range -> remove
+                // it. (len==0 and non-overlap were already handled above, so reaching here means overlap.)
                 p.Inlines.RemoveAt(i);
             }
-            else i++;
             pos = segEnd;
         }
         TextRange.CoalesceRuns(p); // a removed run can leave equal-format neighbours adjacent
@@ -786,8 +794,9 @@ public partial class RichEditor : Control
                 run.Text = (run.Text ?? "").Insert(localIndex - currentIndex, text);
                 return;
             }
-            // Insertion point sits exactly before an inline image -> insert a new run there.
-            if (p.Inlines[i] is InlineImage && localIndex == currentIndex)
+            // Insertion point sits exactly before an atomic object inline (image, table) -> insert a new
+            // run there (so typing right before a leading inline object lands in front of it, not appended).
+            if (p.Inlines[i] is not Run && localIndex == currentIndex)
             {
                 p.Inlines.Insert(i, new Run { Text = text, Parent = p });
                 return;
@@ -803,30 +812,46 @@ public partial class RichEditor : Control
     // The object-replacement character represents one inline image in the logical text stream.
     private const char ObjChar = '￼';
 
-    // Logical length of an inline: a Run's text length, or 1 for an inline image.
-    private static int InlineLen(Inline inline) =>
-        inline is Run r ? (r.Text?.Length ?? 0) : (inline is InlineImage ? 1 : 0);
+    // Breathing room (device-independent px) reserved on every side of an inline table inside a text line,
+    // so surrounding text/adjacent lines don't touch its border. Shared by the layout (run size + draw
+    // inset) and the hit-test descent so the painted box and the clickable box stay aligned.
+    private const double InlineTablePad = 2;
 
-    // The paragraph's logical text, with each inline image collapsed to one ObjChar so that
-    // character offsets line up with the TextLayout produced by BuildTextLayout.
+    // How far (px) an inline table's bottom sits BELOW the line's text baseline. A small drop makes the
+    // table look seated on the line rather than floating exactly on the baseline. Applied via the run's
+    // Baseline (so it shifts both paint and hit-test together); the hit-test formula is independent of it.
+    private const double InlineTableDrop = 2;
+
+    // Logical length of an inline: a Run's text length, or 1 for an atomic object inline
+    // (InlineImage, InlineTable) — each occupies one ObjChar position.
+    private static int InlineLen(Inline inline) =>
+        inline is Run r ? (r.Text?.Length ?? 0) : 1;
+
+    // The paragraph's logical text, with each atomic object inline (image, table) collapsed to one
+    // ObjChar so that character offsets line up with the TextLayout produced by BuildTextLayout.
     private static string BuildPlain(Paragraph p)
     {
         var sb = new System.Text.StringBuilder();
         foreach (var inline in p.Inlines)
         {
             if (inline is Run r && r.Text != null) sb.Append(r.Text);
-            else if (inline is InlineImage) sb.Append(ObjChar);
+            else if (inline is not Run) sb.Append(ObjChar);
         }
         return sb.ToString();
     }
 
-    // A layout segment is either text (Text != null) or an inline image (Image != null, length 1).
+    // A layout segment is either text (Text != null), an inline image (Image != null, length 1), or an
+    // inline table (DrawTable != null, length 1): the two object kinds occupy one ObjChar position each.
     private struct LayoutSeg
     {
         public string? Text;
         public Avalonia.Media.TextFormatting.TextRunProperties Props;
         public Avalonia.Media.Imaging.Bitmap? Image;
         public Size ImageSize;
+        // Inline table: the measured box and a closure that draws the grid + cell contents at a given
+        // document-space origin (delegates to the recursive DrawNestedTable primitive).
+        public Size TableSize;
+        public System.Action<DrawingContext, Point>? DrawTable;
     }
 
     // Draws an inline image inside a text line; occupies one character position (U+FFFC).
@@ -853,6 +878,31 @@ public partial class RichEditor : Control
         }
     }
 
+    // Draws an inline table inside a text line; occupies one character position (U+FFFC). Unlike an
+    // image it has internal structure, so it delegates back to the editor's recursive table-draw
+    // primitive (DrawNestedTable) via a closure, rendering at the run's document-space origin.
+    private sealed class TableTextRun : Avalonia.Media.TextFormatting.DrawableTextRun
+    {
+        private static readonly ReadOnlyMemory<char> _obj = "￼".AsMemory();
+        private readonly Size _size;
+        private readonly Avalonia.Media.TextFormatting.TextRunProperties _props;
+        private readonly System.Action<DrawingContext, Point> _draw;
+
+        public TableTextRun(Size size, Avalonia.Media.TextFormatting.TextRunProperties props, System.Action<DrawingContext, Point> draw)
+        { _size = size; _props = props; _draw = draw; }
+
+        public override ReadOnlyMemory<char> Text => _obj;
+        public override int Length => 1;
+        public override Avalonia.Media.TextFormatting.TextRunProperties Properties => _props;
+        public override Size Size => _size;
+        // Put the baseline above the run bottom by (pad + drop) so the table's bottom lands InlineTableDrop
+        // px below the line's text baseline (seated on the line, not floating on it). The hit-test docY
+        // formula is expressed via the run's full height, so it tracks this shift automatically.
+        public override double Baseline => _size.Height - (InlineTablePad + InlineTableDrop);
+
+        public override void Draw(DrawingContext context, Point origin) => _draw(context, origin);
+    }
+
     // Feeds a paragraph's runs/images to Avalonia's text formatter so a single TextLayout drives
     // rendering, caret geometry, hit-testing and selection rects.
     private sealed class ParagraphTextSource : Avalonia.Media.TextFormatting.ITextSource
@@ -873,6 +923,8 @@ public partial class RichEditor : Control
                         int start = textSourceIndex - pos;
                         return new Avalonia.Media.TextFormatting.TextCharacters(seg.Text.Substring(start).AsMemory(), seg.Props);
                     }
+                    if (seg.DrawTable != null)
+                        return new TableTextRun(seg.TableSize, seg.Props, seg.DrawTable);
                     return new ImageTextRun(seg.Image, seg.ImageSize, seg.Props);
                 }
                 pos += len;
@@ -1029,6 +1081,21 @@ public partial class RichEditor : Control
                     // the signature must stay cheap (and decode-free) on every cache lookup (N6-2).
                     Mix(img.RawBytes?.GetHashCode() ?? img.Image?.GetHashCode() ?? 0);
                 }
+                else if (inl is InlineTable it)
+                {
+                    // The inline table reserves a run-sized box in this paragraph's layout, so its size
+                    // must be part of the signature: a cell edit, a row/column change or a width resize
+                    // has to invalidate the host paragraph's cached layout. Fold in the table's dimensions
+                    // and a recursive signature of every cell paragraph (covers text edits at any depth).
+                    Mix(13);
+                    Mix(it.Table.Rows);
+                    Mix(it.Table.Columns);
+                    foreach (var w in it.Table.ColumnWidths) Mix(BitConverter.DoubleToInt64Bits(w));
+                    foreach (var rh in it.Table.RowHeights) Mix(BitConverter.DoubleToInt64Bits(rh));
+                    foreach (var (_, _, cell) in it.Table.LogicalCells())
+                        foreach (var b in cell.Blocks)
+                            if (b is Paragraph cp) Mix(ParagraphSig(cp));
+                }
             }
             return h;
         }
@@ -1089,6 +1156,26 @@ public partial class RichEditor : Control
                     Image = img.Image,
                     ImageSize = new Size(img.Width > 0 ? img.Width : 16, img.Height > 0 ? img.Height : 16),
                     Props = defaultProps
+                });
+            }
+            else if (inline is InlineTable itbl)
+            {
+                // Measure the wrapped table from its own column widths; the inline run occupies that box
+                // and delegates drawing to the recursive primitive at its document-space origin. P2 draws
+                // with no chrome — caret/selection/handles inside an inline table arrive with P3/P4.
+                var box = LayoutTable(itbl.Table, 0, 0);
+                var tableRef = itbl.Table;
+                segs.Add(new LayoutSeg
+                {
+                    // Reserve InlineTablePad on every side so text doesn't touch the border; the table is
+                    // drawn inset by that pad (record origin + pad).
+                    TableSize = new Size(box.TableWidth + 2 * InlineTablePad, box.TotalHeight + 2 * InlineTablePad),
+                    Props = defaultProps,
+                    // Don't paint here: a DrawableTextRun.Draw can't thread the caret/selection back to the
+                    // render walk. Just record the table's document-space origin; the paragraph render
+                    // flushes the list right after layout.Draw, drawing each via DrawNestedTable with full
+                    // chrome (caret/selection by ref) so a caret inside an inline-table cell renders.
+                    DrawTable = (_, origin) => _inlineTableDraws.Add((tableRef, new Point(origin.X + InlineTablePad, origin.Y + InlineTablePad)))
                 });
             }
         }
@@ -1471,15 +1558,44 @@ public partial class RichEditor : Control
         => Document == null ? new List<Paragraph>() : ParagraphsInBlocks(Document.Blocks).ToList();
 
     // Document-order enumeration of every paragraph, descending recursively through table cells (and
-    // nested tables — P4-2b) so navigation/find/select-all reach paragraphs at any depth.
+    // nested tables — P4-2b) and through inline tables hanging off a paragraph's inlines (milestone B),
+    // so navigation/find/select-all reach paragraphs at any depth.
     private static System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInBlocks(System.Collections.Generic.IEnumerable<Block> blocks)
+    {
+        foreach (var block in blocks)
+        {
+            if (block is Paragraph p)
+            {
+                yield return p;
+                // An inline table's cell paragraphs are reachable too, ordered right after their host
+                // paragraph (they have no block-list home of their own).
+                foreach (var inl in p.Inlines)
+                    if (inl is InlineTable it)
+                        foreach (var (_, _, cell) in it.Table.LogicalCells())
+                            foreach (var q in ParagraphsInBlocks(cell.Blocks))
+                                yield return q;
+            }
+            else if (block is TableBlock tb)
+                foreach (var (_, _, cell) in tb.LogicalCells())
+                    foreach (var q in ParagraphsInBlocks(cell.Blocks))
+                        yield return q;
+        }
+    }
+
+    // Like ParagraphsInBlocks but does NOT descend into inline tables. Linear caret traversal
+    // (GetNext/PreviousParagraph) must treat an inline table's host paragraph as one unit, because the
+    // host's own text continues after the table: enumerating the cells here would make "→ at the host's
+    // end" jump into the first cell instead of the next block. Inline-table cells are reached by the
+    // explicit entry/exit and inter-cell logic in MoveCaretRight/Left. Block tables are still descended
+    // (their cells are spatially sequential between sibling paragraphs).
+    private static System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInBlocksNav(System.Collections.Generic.IEnumerable<Block> blocks)
     {
         foreach (var block in blocks)
         {
             if (block is Paragraph p) yield return p;
             else if (block is TableBlock tb)
                 foreach (var (_, _, cell) in tb.LogicalCells())
-                    foreach (var q in ParagraphsInBlocks(cell.Blocks))
+                    foreach (var q in ParagraphsInBlocksNav(cell.Blocks))
                         yield return q;
         }
     }
