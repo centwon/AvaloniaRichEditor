@@ -23,7 +23,8 @@ FlowDocument
    ├─ Paragraph               ← 텍스트 문단 (리스트 항목·제목·인용 포함)
    │  └─ Inlines: Inline[]
    │     ├─ Run               ← 단일 서식의 연속 텍스트
-   │     └─ InlineImage       ← 글자처럼 취급되는 작은 이미지 (논리적으로 1글자)
+   │     ├─ InlineImage       ← 글자처럼 취급되는 작은 이미지 (논리적으로 1글자)
+   │     └─ InlineTable       ← 글자처럼 취급되는 표 (HWP식, 논리적으로 1글자) — TableBlock 래핑
    ├─ TableBlock              ← 표. 각 셀(TableCell.Blocks)은 블록 리스트(문단·이미지·구분선·중첩 표)
    ├─ ImageBlock              ← 독립 블록 이미지
    └─ DividerBlock            ← 수평 구분선 (<hr>)
@@ -31,7 +32,7 @@ FlowDocument
 
 핵심 불변식:
 
-- **인라인 이미지 = 1글자.** 오프셋·길이 계산에서 `InlineImage`는 항상 1문자(개념상 U+FFFC)로 센다.
+- **비-Run 인라인 = 1글자.** 오프셋·길이 계산에서 `InlineImage`·`InlineTable`은 항상 1문자(개념상 U+FFFC)로 센다(원자 객체). 인라인 표(마일스톤 B)는 `TableBlock`을 래핑해 글자처럼 줄 안에 흐르되 셀 편집·네비·리사이즈가 모두 동작한다.
 - **하나의 Paragraph가 여러 줄을 가질 수 있다.** `Run.Text` 안의 `\n`은 하드 줄바꿈이다(Shift+Enter 소프트 줄바꿈, 붙여넣기·로드로 유입). 리스트 문단에서는 줄마다 별도의 마커가 그려진다.
 - **표 셀은 블록 리스트다(`TableCell.Blocks`).** 셀은 여러 문단·블록이미지·구분선·중첩 표를 담을 수 있다(마일스톤 A). 셀 안 Enter는 문단을 분할한다(하드 `\n` 아님). 호환을 위해 평범한 1문단 셀은 레거시 단일-문단 형식으로 직렬화되고, 다중 블록/비문단 셀만 `Type="Cell"` 래퍼로 인코딩된다(중첩 표는 블록 DTO 재귀).
 - **로드 시 정규화(NormalizeBlocks).** 문서의 처음/끝, 그리고 연속한 비문단 블록 사이에는 문단이 보장되도록 에디터가 빈 Paragraph를 삽입할 수 있다. 따라서 *직렬화 → 역직렬화 → 직렬화*에서 빈 문단이 추가될 수 있다(내용 손실은 없음).
@@ -140,7 +141,7 @@ FlowDocument
 
 ### 2.4 인라인: `InlineDto`
 
-`Type` 판별자: `"Run"`(기본) 또는 `"Image"`.
+`Type` 판별자: `"Run"`(기본), `"Image"`, 또는 `"Table"`.
 
 #### `Type: "Run"`
 
@@ -158,6 +159,14 @@ FlowDocument
 #### `Type: "Image"` (인라인 이미지)
 
 블록 이미지와 동일한 `ImageRef`/`ImageBase64`/`MimeType` 규칙. `Width`/`Height` 없으면 16. 논리 텍스트에서 1글자를 차지한다.
+
+#### `Type: "Table"` (인라인 표, 마일스톤 B)
+
+| 필드 | 타입 | 의미 / 읽기 규칙 |
+|---|---|---|
+| `Table` | BlockDto | 래핑된 표를 블록 표(`Type:"Table"`, §2.3)와 동일한 DTO로 직렬화 — 중첩 표·다중 블록 셀·스팬·열폭이 같은 재귀 규칙으로 왕복한다 |
+
+논리 텍스트에서 1글자(U+FFFC)를 차지한다. HTML 내보내기는 `<table>`로(인라인 개념이 없어 베스트에포트), JSON/`.flow`는 위 `Table` DTO로 무손실 보존한다.
 
 ### 2.5 색상 문자열
 
