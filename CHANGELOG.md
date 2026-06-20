@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-20
+
 ### Added
 - **Inline tables — HWP-style "treat as character" (Milestone B).** A table can now flow inside a text
   line as a single character (`InlineTable`, occupying one `U+FFFC` position like an inline image) while
