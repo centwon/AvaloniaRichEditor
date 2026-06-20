@@ -344,9 +344,11 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 int b = Math.Min(to, segEnd) - segStart;
                 if (b > a) { var c = (Run)r.Clone(); c.Text = r.Text.Substring(a, b - a); c.Parent = np; np.Inlines.Add(c); }
             }
-            else if (inl is InlineImage img && segStart >= from && segEnd <= to)
+            else if (inl is not Run && segStart >= from && segEnd <= to)
             {
-                var c = (InlineImage)img.Clone(); c.Parent = np; np.Inlines.Add(c);
+                // Atomic object inline (image or table) fully inside the range — clone it whole so HTML
+                // export keeps pasted-back pictures and inline tables.
+                var c = (Inline)inl.Clone(); c.Parent = np; np.Inlines.Add(c);
             }
         }
         if (np.Inlines.Count == 0) np.Inlines.Add(new Run { Text = "" });

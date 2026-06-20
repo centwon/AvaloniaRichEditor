@@ -34,6 +34,15 @@ internal static class TestHelpers
     // An inline image occupies one logical character (no bitmap needed to exercise the offset model).
     public static InlineImage Img() => new InlineImage();
 
+    // An inline table occupies one logical character, like an image. Wraps a small table whose first
+    // cell carries `text` so clones can be told apart.
+    public static InlineTable Tbl(string text = "x")
+    {
+        var it = new InlineTable { Table = new TableBlock(1, 1) };
+        it.Table.Cells[0][0].Para.Inlines.Add(new Run { Text = text });
+        return it;
+    }
+
     // Build a FlowDocument from blocks, wiring Parent pointers the way RichEditor does so that
     // TextRange/TextPointer can walk up to the document for multi-paragraph operations.
     public static FlowDocument Doc(params Block[] blocks)

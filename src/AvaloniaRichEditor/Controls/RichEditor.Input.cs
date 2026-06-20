@@ -38,6 +38,56 @@ public partial class RichEditor
     private static Cursor CornerResizeCursor => Cur(StandardCursorType.BottomRightCorner);
     private static Cursor MoveCursor => Cur(StandardCursorType.SizeAll);
 
+    // "Draw table" mode: the grid picker chose rows×cols, and the next drag on the control sets the
+    // table's physical size. _tableDrawStart/_tableDrawCurrent are view-space (the rubber-band follows
+    // the cursor regardless of page-view transforms); the start maps to document space for caret placement.
+    private (int rows, int cols)? _pendingTableDraw;
+    private Point? _tableDrawStart;
+    private Point? _tableDrawCurrent;
+
+    // Arms "draw table" mode: the next press-drag-release draws an rows×cols table at the dragged size.
+    // A press with no real drag falls back to the default-sized insert. Called by the insert-table grid.
+    internal void BeginTableDraw(int rows, int cols)
+    {
+        if (IsReadOnly || !AllowTables) return;
+        _pendingTableDraw = (rows, cols);
+        _tableDrawStart = null;
+        _tableDrawCurrent = null;
+        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Cross);
+    }
+
+    // Clamps a view-space point to the editor's drawable bounds, so the draw-table rubber-band stays
+    // fully visible (the control clips rendering to its bounds) and the table sized from it matches
+    // exactly what was previewed — even when the document is short and the drag strays into empty space.
+    private Point ClampToEditorBounds(Point p)
+        => new(Math.Clamp(p.X, 0, Math.Max(0, Bounds.Width)), Math.Clamp(p.Y, 0, Math.Max(0, Bounds.Height)));
+
+    private void CancelTableDraw()
+    {
+        if (_pendingTableDraw == null) return;
+        _pendingTableDraw = null;
+        _tableDrawStart = null;
+        _tableDrawCurrent = null;
+        Cursor = Avalonia.Input.Cursor.Default;
+        InvalidateVisual();
+    }
+
+    // Inserts a block table sized to a drawn rectangle: equal columns across totalWidth, equal minimum
+    // row heights across totalHeight. Mirrors InsertTable but with explicit dimensions.
+    private void InsertTableDrawn(int rows, int cols, double totalWidth, double totalHeight)
+    {
+        if (Document == null || IsReadOnly || !AllowTables) return;
+        PushUndo();
+        var tb = new TableBlock(rows, cols);
+        double w = Math.Max(20, totalWidth / cols);
+        for (int c = 0; c < tb.ColumnWidths.Count; c++) tb.ColumnWidths[c] = w;
+        double rh = Math.Max(16, totalHeight / rows);
+        tb.RowHeights.Clear();
+        for (int r = 0; r < rows; r++) tb.RowHeights.Add(rh); // user-specified minimum row heights
+        InsertBlockAtCaret(tb);
+        InvalidateVisual();
+    }
+
     /// <inheritdoc/>
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -49,7 +99,20 @@ public partial class RichEditor
 
         if (e.GetCurrentPoint(this).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
+            CancelTableDraw(); // a right-click abandons an armed table-draw
             ShowContextMenu(point);
+            e.Handled = true;
+            return;
+        }
+
+        // "Draw table" mode: start the rubber-band instead of normal caret/selection handling. Clamp to
+        // the editor's bounds so the rubber-band (and the table sized from it) never extend past the
+        // visible content area — otherwise the preview is clipped while the released size isn't (mismatch).
+        if (_pendingTableDraw != null)
+        {
+            _tableDrawStart = ClampToEditorBounds(e.GetPosition(this));
+            _tableDrawCurrent = _tableDrawStart;
+            e.Pointer.Capture(this);
             e.Handled = true;
             return;
         }
@@ -392,6 +455,15 @@ public partial class RichEditor
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+
+        // "Draw table" mode: extend the rubber-band (or keep the cross cursor while armed but not dragging).
+        if (_pendingTableDraw != null)
+        {
+            if (_tableDrawStart != null) { _tableDrawCurrent = ClampToEditorBounds(e.GetPosition(this)); InvalidateVisual(); }
+            else Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Cross);
+            return;
+        }
+
         var point = MapViewToDoc(e.GetPosition(this)); // document space, same as OnPointerPressed
 
         if (_isResizingInline && _resizingInline != null)
@@ -556,6 +628,29 @@ public partial class RichEditor
     {
         base.OnPointerReleased(e);
 
+        // "Draw table" mode: insert the table sized to the drag (or default-sized on a click with no drag).
+        if (_pendingTableDraw is { } pd && _tableDrawStart is { } startView)
+        {
+            var endView = ClampToEditorBounds(e.GetPosition(this));
+            e.Pointer.Capture(null);
+            var rectView = new Rect(startView, endView);
+            // Place the caret where the drag began so the table inserts there.
+            _caretPosition = GetPositionFromPoint(MapViewToDoc(startView));
+            CollapseSelectionToCaret();
+            if (rectView.Width >= 20 && rectView.Height >= 16)
+                InsertTableDrawn(pd.rows, pd.cols, rectView.Width, rectView.Height);
+            else
+                InsertTable(pd.rows, pd.cols); // click without a real drag -> default size
+            _pendingTableDraw = null;
+            _tableDrawStart = null;
+            _tableDrawCurrent = null;
+            Cursor = Avalonia.Input.Cursor.Default;
+            ResetCaretBlink();
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+
         if (_isResizingImage)
         {
             // Pre-resize state already pushed on press; undo restores original size in one step.
@@ -621,6 +716,9 @@ public partial class RichEditor
         base.OnKeyDown(e);
         bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+        // Escape abandons an armed/in-progress "draw table" mode.
+        if (e.Key == Key.Escape && _pendingTableDraw != null) { CancelTableDraw(); e.Handled = true; return; }
 
         if (IsReadOnly)
         {
@@ -1127,14 +1225,15 @@ public partial class RichEditor
         return Math.Ceiling(PtToPx(fs) * 1.4);
     }
 
-    // Vertical offset of the glyph-sized caret within its (possibly taller) line box. Inline images make
-    // the line tall with the smaller text run sitting on the baseline near the bottom, so the caret
-    // bottom-aligns there. Otherwise Avalonia centers the text in a line box expanded by a line-spacing/
-    // height override (extra leading split half above / half below), so the caret centers too.
+    // Vertical offset of the glyph-sized caret within its (possibly taller) line box. An atomic object
+    // inline (inline image or inline table) makes the line tall with the smaller text run sitting on the
+    // baseline near the bottom, so the caret bottom-aligns there. Otherwise Avalonia centers the text in a
+    // line box expanded by a line-spacing/height override (extra leading split half above / half below),
+    // so the caret centers too.
     private static double CaretYInLine(Paragraph p, double lineHeight, double caretHeight)
     {
         double extra = Math.Max(0, lineHeight - caretHeight);
-        foreach (var inl in p.Inlines) if (inl is InlineImage) return extra;
+        foreach (var inl in p.Inlines) if (inl is not Run) return extra;
         return extra / 2;
     }
 
@@ -1376,10 +1475,36 @@ public partial class RichEditor
         int pLen = GetParagraphLength(_caretPosition.Paragraph);
         if (_caretPosition.Offset < pLen)
         {
+            // Entering an inline table: descend into its first cell instead of stepping over the ObjChar.
+            if (InlineTableStartingAt(_caretPosition.Paragraph, _caretPosition.Offset) is { } it)
+            {
+                _caretPosition.Paragraph = FirstLogicalCell(it.Table).Para;
+                _caretPosition.Offset = 0;
+                return;
+            }
             _caretPosition.Offset = NextCharBoundary(BuildPlain(_caretPosition.Paragraph), _caretPosition.Offset);
         }
         else
         {
+            // Inside an inline table: step to the next paragraph/cell within the table; from its last
+            // paragraph, exit to the host just after the table's ObjChar. (GetNextParagraph is NOT used
+            // for the cells — they're not in the linear nav order.)
+            if (ImmediateInlineTable(_caretPosition.Paragraph) is { } enc)
+            {
+                var inTable = ParasInInlineTable(enc.it);
+                int i = inTable.IndexOf(_caretPosition.Paragraph);
+                if (i >= 0 && i + 1 < inTable.Count)
+                {
+                    _caretPosition.Paragraph = inTable[i + 1];
+                    _caretPosition.Offset = 0;
+                }
+                else
+                {
+                    _caretPosition.Paragraph = enc.host;
+                    _caretPosition.Offset = enc.objOffset + 1;
+                }
+                return;
+            }
             Paragraph? next = GetNextParagraph(_caretPosition.Paragraph);
             if (next != null)
             {
@@ -1394,10 +1519,36 @@ public partial class RichEditor
         if (_caretPosition.Paragraph == null) return;
         if (_caretPosition.Offset > 0)
         {
+            // Entering an inline table from its right: descend into its last cell's end.
+            if (InlineTableEndingAt(_caretPosition.Paragraph, _caretPosition.Offset) is { } it)
+            {
+                var lp = LastParaOf(LastLogicalCell(it.Table));
+                _caretPosition.Paragraph = lp;
+                _caretPosition.Offset = GetParagraphLength(lp);
+                return;
+            }
             _caretPosition.Offset = PrevCharBoundary(BuildPlain(_caretPosition.Paragraph), _caretPosition.Offset);
         }
         else
         {
+            // Inside an inline table: step to the previous paragraph/cell within the table; from its
+            // first paragraph, exit to the host just before the table's ObjChar.
+            if (ImmediateInlineTable(_caretPosition.Paragraph) is { } enc)
+            {
+                var inTable = ParasInInlineTable(enc.it);
+                int i = inTable.IndexOf(_caretPosition.Paragraph);
+                if (i > 0)
+                {
+                    _caretPosition.Paragraph = inTable[i - 1];
+                    _caretPosition.Offset = GetParagraphLength(inTable[i - 1]);
+                }
+                else
+                {
+                    _caretPosition.Paragraph = enc.host;
+                    _caretPosition.Offset = enc.objOffset;
+                }
+                return;
+            }
             Paragraph? prev = GetPreviousParagraph(_caretPosition.Paragraph);
             if (prev != null)
             {
@@ -1412,10 +1563,77 @@ public partial class RichEditor
     private static Paragraph LastParaOf(TableCell cell)
         => cell.Blocks.OfType<Paragraph>().LastOrDefault() ?? cell.Para;
 
-    // Document paragraph order: top-level paragraphs and, for each table, every paragraph of every
-    // logical cell (P3: cells can hold multiple paragraphs). Drives ←/→ across paragraph boundaries.
+    // ---- Milestone B P3b: caret routing into/out of inline tables ----------
+    // An inline table sits at one ObjChar offset inside its host paragraph, so ←/→ must descend at that
+    // boundary (the enumeration alone would skip it). These small lookups drive the entry/exit in
+    // MoveCaretRight/Left; exits return to the host at the table's ObjChar offset.
+
+    // The ObjChar offset of an inline within its paragraph (sum of InlineLen before it).
+    private static int OffsetOfInline(Paragraph host, Inline target)
+    {
+        int off = 0;
+        foreach (var inl in host.Inlines)
+        {
+            if (ReferenceEquals(inl, target)) return off;
+            off += InlineLen(inl);
+        }
+        return off;
+    }
+
+    // The inline table whose ObjChar starts exactly at `offset` (the next thing → would cross), or null.
+    private static InlineTable? InlineTableStartingAt(Paragraph p, int offset)
+    {
+        int off = 0;
+        foreach (var inl in p.Inlines)
+        {
+            if (off == offset && inl is InlineTable it) return it;
+            off += InlineLen(inl);
+        }
+        return null;
+    }
+
+    // The inline table whose ObjChar ends exactly at `offset` (the thing ← would cross), or null.
+    private static InlineTable? InlineTableEndingAt(Paragraph p, int offset)
+    {
+        int off = 0;
+        foreach (var inl in p.Inlines)
+        {
+            off += InlineLen(inl);
+            if (off == offset && inl is InlineTable it) return it;
+        }
+        return null;
+    }
+
+    // If cellPara sits directly in an inline table's cell, returns (wrapper, host paragraph, the table's
+    // ObjChar offset in the host). Only the immediate enclosing table is inline-aware here; a block table
+    // (nested or top-level) returns null so the existing cell navigation handles it.
+    private static (InlineTable it, Paragraph host, int objOffset)? ImmediateInlineTable(Paragraph cellPara)
+    {
+        if (cellPara.Parent is TableCell cell && cell.Parent is TableBlock tb
+            && tb.Parent is InlineTable it && it.Parent is Paragraph host)
+            return (it, host, OffsetOfInline(host, it));
+        return null;
+    }
+
+    private static TableCell FirstLogicalCell(TableBlock tb) => tb.LogicalCells().First().cell;
+    private static TableCell LastLogicalCell(TableBlock tb) => tb.LogicalCells().Last().cell;
+
+    // Document paragraph order for linear caret traversal (←/→ across paragraph boundaries): top-level
+    // paragraphs and, for each block table, every cell paragraph — but NOT inline-table cells (those are
+    // inside a host paragraph; MoveCaretRight/Left enter/exit them explicitly so the host's own text
+    // before/after the table isn't skipped).
     private System.Collections.Generic.IEnumerable<Paragraph> ParagraphsInOrder()
-        => Document == null ? System.Linq.Enumerable.Empty<Paragraph>() : ParagraphsInBlocks(Document.Blocks);
+        => Document == null ? System.Linq.Enumerable.Empty<Paragraph>() : ParagraphsInBlocksNav(Document.Blocks);
+
+    // Document-order paragraphs inside one inline table (all cells, descending into nested content),
+    // for inter-cell ←/→ within the table.
+    private static List<Paragraph> ParasInInlineTable(InlineTable it)
+    {
+        var list = new List<Paragraph>();
+        foreach (var (_, _, cell) in it.Table.LogicalCells())
+            list.AddRange(ParagraphsInBlocks(cell.Blocks));
+        return list;
+    }
 
     private Paragraph? GetNextParagraph(Paragraph current)
     {

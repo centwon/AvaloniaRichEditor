@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Inline tables — HWP-style "treat as character" (Milestone B).** A table can now flow inside a text
+  line as a single character (`InlineTable`, occupying one `U+FFFC` position like an inline image) while
+  staying fully editable. Built on Milestone A's recursive primitives.
+  - **Full editing**: click into a cell, type (the host line grows to fit), select, navigate. Arrow keys
+    enter the table at its character boundary, traverse its cells, and exit back to the host text on the
+    far side; Tab/Shift+Tab traverse the cells; resize handles and the cell right-click menu work as for
+    block tables.
+  - **Treat-as-character toggle**: a top-level block table ⇄ inline table via the right-click "treat as
+    character" check item (mirrors the inline-image toggle).
+  - **`InsertInlineTable(rows, cols)`** public API inserts an inline table at the caret.
+  - Serializes through JSON / `.flow` (recursive table DTO) and HTML (`<table>`, best-effort since HTML has
+    no inline-table concept); in-app copy/paste preserves it.
+- **Draw-to-size table insertion.** Picking rows × columns from the insert-table grid (context menu or
+  toolbar) now arms a draw mode: drag on the document to create the table at that size (a plain click
+  falls back to the default size; Esc/right-click cancels).
 - **Blocks inside table cells (Milestone A).** A table cell is now a block list (`TableCell.Blocks`)
   instead of a single paragraph, so a cell can hold multiple paragraphs, block images, dividers, and
   **nested tables** to arbitrary depth. Render, hit-testing and measurement share one recursive
@@ -25,12 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     innermost table.
 
 ### Changed
+- **HTML table export/import fidelity.** Table cells now export their full block content (nested tables,
+  block images, multiple paragraphs) and import it back as blocks (previously cells were parsed as inline
+  text only, so nested tables were dropped on load). Per-column widths round-trip via a `<colgroup>`.
+- The editor surface fills the scroll viewport (`RichEditorView`), so clicking — or drawing a table — in
+  the empty area below short content works.
 - **Document format**: multi-block / non-paragraph cells serialize as a `Type:"Cell"` wrapper carrying a
   recursive `Blocks` list; a plain one-paragraph cell still serializes in the legacy single-paragraph form
   (with the cell background on it), so older readers keep loading these documents. See
   [`docs/DOCUMENT_FORMAT.md`](docs/DOCUMENT_FORMAT.md).
 
 ### Fixed
+- HTML/`.htm` files failed to import (parsed as JSON → empty document); the importer now detects HTML.
 - **Copy inside a table cell** captured the whole table (paste reproduced the entire table); a selection
   within a single cell now copies just the cell content.
 - **Paste with the caret in a cell** landed after the table instead of in the cell; multi-block paste now

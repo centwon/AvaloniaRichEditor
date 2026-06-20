@@ -355,16 +355,34 @@ namespace AvaloniaRichEditor.Formatters
             if (colCount == 0) return null;
 
             var tb = new TableBlock(R, colCount);
+            // Restore per-column widths from <colgroup><col style="width:Npx">, if the export emitted them
+            // (excludes a nested table's own cols). Falls back to the default width when absent.
+            var colNodes = node.Descendants("col")
+                .Where(co => co.Ancestors("table").FirstOrDefault() == node)
+                .ToList();
+            if (colNodes.Count > 0)
+            {
+                tb.ColumnWidths.Clear();
+                for (int c = 0; c < colCount; c++)
+                {
+                    double cw = c < colNodes.Count ? ReadPx(colNodes[c], "width", "width") : 0;
+                    tb.ColumnWidths.Add(cw > 0 ? cw : 100);
+                }
+            }
             for (int r = 0; r < R; r++)
                 foreach (var (col, cs, rs, td) in placements[r])
                 {
                     if (cs > 1 || rs > 1) tb.SetSpan(r, col, cs, rs);
                     var cell = tb.Cells[r][col];
-                    var para = cell.Para;
-                    para.Inlines.Clear();
-                    ParseInlines(td, para);
                     cell.Background = ReadBackground(td); // cell-level background lives on the cell
-                    if (para.Inlines.Count == 0) para.Inlines.Add(new Run { Text = "" });
+                    // Parse the cell as blocks so nested tables / block images / multiple paragraphs survive
+                    // the round-trip (mirrors the export's per-cell block emit). WalkBlocks yields the same
+                    // block types as a top-level walk; a plain inline cell yields a single paragraph.
+                    var cellFlow = new FlowDocument();
+                    WalkBlocks(td, cellFlow);
+                    cell.Blocks.Clear();
+                    foreach (var b in cellFlow.Blocks) cell.Blocks.Add(b);
+                    if (cell.Blocks.Count == 0) cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
                 }
             return tb;
         }
@@ -697,35 +715,7 @@ namespace AvaloniaRichEditor.Formatters
                 else if (block is TableBlock tb)
                 {
                     CloseAll();
-                    sb.Append("<table border=\"1\" style=\"border-collapse:collapse; width:100%;\">\n");
-                    for (int r = 0; r < tb.Rows; r++)
-                    {
-                        sb.Append("<tr>\n");
-                        for (int c = 0; c < tb.Columns; c++)
-                        {
-                            if (tb.IsCovered(r, c)) continue; // covered cells are emitted via their anchor's span
-                            var cell = tb.Cells[r][c];
-                            var (cs, rs) = tb.SpanOf(r, c);
-                            var span = (cs > 1 ? $" colspan=\"{cs}\"" : "") + (rs > 1 ? $" rowspan=\"{rs}\"" : "");
-                            if (cell.Background is ISolidColorBrush cbg)
-                                sb.Append($"<td{span} style=\"background-color:{CssColor(cbg.Color)}\">");
-                            else
-                                sb.Append($"<td{span}>");
-                            // Emit every paragraph of the cell (P3/P4), separated by <br>. (Block images
-                            // / nested tables in cells aren't exported to HTML yet — known gap.)
-                            bool firstCellPara = true;
-                            foreach (var cblk in cell.Blocks)
-                            {
-                                if (cblk is not Paragraph cpara) continue;
-                                if (!firstCellPara) sb.Append("<br>");
-                                firstCellPara = false;
-                                foreach (var inline in cpara.Inlines) EmitInline(sb, inline);
-                            }
-                            sb.Append("</td>\n");
-                        }
-                        sb.Append("</tr>\n");
-                    }
-                    sb.Append("</table>\n");
+                    EmitTable(sb, tb);
                 }
                 else if (block is ImageBlock ib && (ib.RawBytes != null || ib.Image != null))
                 {
@@ -738,12 +728,73 @@ namespace AvaloniaRichEditor.Formatters
             return sb.ToString();
         }
 
-        // Emits a single inline (Run with all its styling, or an inline image) as HTML.
+        // Emits a table as an HTML <table>. Shared by block tables and inline tables (milestone B). Cell
+        // content emits every paragraph (separated by <br>), block images, and nested tables (recursing),
+        // so the structure survives a copy to Word/HWP.
+        private static void EmitTable(StringBuilder sb, TableBlock tb)
+        {
+            sb.Append("<table border=\"1\" style=\"border-collapse:collapse; width:100%;\">\n");
+            // Per-column widths as a <colgroup> so the import restores the exact column proportions
+            // (without it every column came back at the default width — the table looked squished).
+            if (tb.ColumnWidths.Count > 0)
+            {
+                sb.Append("<colgroup>");
+                for (int c = 0; c < tb.Columns; c++)
+                {
+                    double cw = c < tb.ColumnWidths.Count ? tb.ColumnWidths[c] : 100;
+                    sb.Append($"<col style=\"width:{(int)System.Math.Max(1, cw)}px\"/>");
+                }
+                sb.Append("</colgroup>\n");
+            }
+            for (int r = 0; r < tb.Rows; r++)
+            {
+                sb.Append("<tr>\n");
+                for (int c = 0; c < tb.Columns; c++)
+                {
+                    if (tb.IsCovered(r, c)) continue; // covered cells are emitted via their anchor's span
+                    var cell = tb.Cells[r][c];
+                    var (cs, rs) = tb.SpanOf(r, c);
+                    var span = (cs > 1 ? $" colspan=\"{cs}\"" : "") + (rs > 1 ? $" rowspan=\"{rs}\"" : "");
+                    if (cell.Background is ISolidColorBrush cbg)
+                        sb.Append($"<td{span} style=\"background-color:{CssColor(cbg.Color)}\">");
+                    else
+                        sb.Append($"<td{span}>");
+                    bool firstCellPara = true;
+                    foreach (var cblk in cell.Blocks)
+                    {
+                        if (cblk is Paragraph cpara)
+                        {
+                            if (!firstCellPara) sb.Append("<br>");
+                            firstCellPara = false;
+                            foreach (var inline in cpara.Inlines) EmitInline(sb, inline);
+                        }
+                        else if (cblk is ImageBlock cib && (cib.RawBytes != null || cib.Image != null))
+                            sb.Append(ImgTag(cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height));
+                        else if (cblk is TableBlock nt)
+                            EmitTable(sb, nt); // nested table
+                        else if (cblk is DividerBlock)
+                            sb.Append("<hr/>");
+                    }
+                    sb.Append("</td>\n");
+                }
+                sb.Append("</tr>\n");
+            }
+            sb.Append("</table>\n");
+        }
+
+        // Emits a single inline (Run with all its styling, an inline image, or an inline table) as HTML.
         private static void EmitInline(StringBuilder sb, Inline inline)
         {
             if (inline is InlineImage im && (im.RawBytes != null || im.Image != null))
             {
                 sb.Append(ImgTag(im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height));
+                return;
+            }
+            // An inline table has no HTML inline equivalent; emit it as a <table> so its content survives
+            // (it pastes as a block-level table into Word/HWP rather than truly in-line — best effort).
+            if (inline is InlineTable itbl)
+            {
+                EmitTable(sb, itbl.Table);
                 return;
             }
             if (inline is not Run r || r.Text == null) return;

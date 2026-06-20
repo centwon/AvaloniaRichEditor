@@ -246,6 +246,11 @@ public partial class RichEditor
         }
 
         DrawCaretAndBringIntoView(context, caretPoint, caretHeight, blockCaretRect);
+
+        // "Draw table" rubber-band: a dashed rectangle following the cursor (view space, drawn over all
+        // content). Only present while a drag is in progress in draw mode.
+        if (_tableDrawStart is { } ds && _tableDrawCurrent is { } dc)
+            context.DrawRectangle(AccentFill50, AccentPen2, new Rect(ds, dc));
         }
         finally { _trustLayoutCache = false; } // never leak the trusted state past this render pass
     }
@@ -472,6 +477,7 @@ public partial class RichEditor
                 }
 
                 layout.Draw(context, new Point(px, yOffset));
+                FlushInlineTableDraws(context, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
                 if (chrome) RegisterInlineImages(context, paragraph, layout, px, yOffset);
                 yOffset += layout.Height + paragraph.MarginBottom;
             }
@@ -579,6 +585,7 @@ public partial class RichEditor
                 }
 
                 layout.Draw(context, new Point(ox, blkY));
+                FlushInlineTableDraws(context, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
                 if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
                 by += layout.Height;
             }
@@ -622,6 +629,30 @@ public partial class RichEditor
                 by += LayoutTable(nt, ox, blkY).TotalHeight;
             }
         }
+    }
+
+    // Inline tables recorded during a paragraph's layout.Draw (their document-space origins are only
+    // known then). Flushed immediately after, so the list never spans paragraphs. See the BuildTextLayout
+    // inline-table segment and FlushInlineTableDraws.
+    private readonly List<(TableBlock table, Point origin)> _inlineTableDraws = new();
+
+    // Draws the inline tables recorded by the just-drawn paragraph layout, then clears the list. Each is
+    // drawn via DrawNestedTable so cell contents, selection highlight and a caret inside a cell all
+    // render, with the caret threaded back by ref. No-op (and allocation-free) when the list is empty.
+    private void FlushInlineTableDraws(
+        DrawingContext context, bool chrome,
+        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        ref Point? caretPoint, ref double caretHeight)
+    {
+        if (_inlineTableDraws.Count == 0) return;
+        // Snapshot and clear BEFORE drawing: DrawNestedTable -> DrawCellBlockList draws each cell
+        // paragraph, which calls back here. Clearing first means a nested cell's own (possibly empty)
+        // inline-table list is what the re-entrant call sees, not these same entries again (infinite loop).
+        var pending = _inlineTableDraws.ToArray();
+        _inlineTableDraws.Clear();
+        foreach (var (table, origin) in pending)
+            DrawNestedTable(context, table, origin.X, origin.Y, chrome,
+                selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
     }
 
     // Draws a nested table's grid at (startX, top) and recurses into each anchor cell via DrawCellBlockList.

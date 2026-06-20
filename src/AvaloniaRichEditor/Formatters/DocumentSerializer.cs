@@ -224,6 +224,8 @@ public static class DocumentSerializer
                     Width = NanToNull(im.Width),
                     Height = NanToNull(im.Height)
                 });
+            else if (inline is InlineTable it)
+                d.Inlines.Add(new InlineDto { Type = "Table", Table = BlockToDto(it.Table, pool) });
         }
         return d;
     }
@@ -350,6 +352,11 @@ public static class DocumentSerializer
                     if (ResolveImage(id.ImageRef, id.ImageBase64, id.MimeType, pool) is { } img)
                         im.SetImageData(img.Bytes, img.Mime);
                     p.Inlines.Add(im);
+                }
+                else if (id.Type == "Table" && id.Table != null)
+                {
+                    if (DtoToBlock(id.Table, pool) is TableBlock itb)
+                        p.Inlines.Add(new InlineTable { Table = itb });
                 }
                 else
                     p.Inlines.Add(new Run
@@ -527,6 +534,10 @@ internal class InlineDto
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }
+
+    // Inline table (Type == "Table", milestone B): the wrapped grid serialized as a block table DTO, so
+    // nested tables / multi-block cells / spans all round-trip via the same recursive machinery.
+    public BlockDto? Table { get; set; }
 }
 
 // Reads the document-format version as either the legacy integer form (1, 2 — earlier schema versions)

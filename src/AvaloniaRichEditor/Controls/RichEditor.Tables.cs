@@ -33,6 +33,7 @@ public partial class RichEditor
     private static (TableBlock tb, int r, int c)? FindCellIn(System.Collections.Generic.IEnumerable<Block> blocks, Paragraph p)
     {
         foreach (var b in blocks)
+        {
             if (b is TableBlock tb)
                 for (int r = 0; r < tb.Rows; r++)
                     for (int c = 0; c < tb.Columns; c++)
@@ -42,6 +43,13 @@ public partial class RichEditor
                         if (nested != null) return nested;
                         if (cell.Blocks.Contains(p)) return (tb, r, c);
                     }
+            // Inline tables live in a paragraph's inlines (milestone B); descend into them too so Tab/
+            // merge/menus find a cell whose caret sits inside an inline table.
+            else if (b is Paragraph para)
+                foreach (var inl in para.Inlines)
+                    if (inl is InlineTable it && FindCellIn(new[] { it.Table }, p) is { } hit)
+                        return hit;
+        }
         return null;
     }
 
@@ -138,12 +146,117 @@ public partial class RichEditor
     private static void CollectCells(System.Collections.Generic.IEnumerable<Block> blocks, System.Collections.Generic.List<TableCell> outList)
     {
         foreach (var b in blocks)
+        {
             if (b is TableBlock tb)
                 foreach (var (_, _, cell) in tb.LogicalCells())
                 {
                     outList.Add(cell);
                     CollectCells(cell.Blocks, outList);
                 }
+            // Inline-table cells join the Tab order right after their host paragraph (milestone B).
+            else if (b is Paragraph para)
+                foreach (var inl in para.Inlines)
+                    if (inl is InlineTable it)
+                        foreach (var (_, _, cell) in it.Table.LogicalCells())
+                        {
+                            outList.Add(cell);
+                            CollectCells(cell.Blocks, outList);
+                        }
+        }
+    }
+
+    // ---- Milestone B P4: insert / treat-as-character ----------------------
+
+    /// <summary>Inserts a <paramref name="rows"/>×<paramref name="cols"/> table inline at the caret,
+    /// treated as a single character (HWP-style "treat as character"). The caret lands just after it.
+    /// For a block-level grid use <see cref="InsertTable"/> instead.</summary>
+    public void InsertInlineTable(int rows, int cols)
+    {
+        if (Document == null || IsReadOnly || !AllowTables) return;
+        if (_caretPosition.Paragraph is not { } p) return;
+        if (rows < 1) rows = 1;
+        if (cols < 1) cols = 1;
+        PushUndo();
+        var it = new InlineTable { Table = new TableBlock(rows, cols) };
+        int at = SplitInlinesAt(p, _caretPosition.Offset);
+        p.Inlines.Insert(at, it);
+        UpdateParents(Document);
+        _caretPosition = new TextPointer(p, _caretPosition.Offset + 1); // after the table's ObjChar
+        CollapseSelectionToCaret();
+        ResetCaretBlink();
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    // HWP-style toggle: demote a top-level block table to an inline table anchored on an adjacent
+    // paragraph (mirror of ConvertImageBlockToInline). Top-level only — a table inside a cell is already
+    // a block sibling there, so the menu offers this only for FlowDocument-rooted tables.
+    internal void ConvertTableBlockToInline(TableBlock tb)
+    {
+        if (Document == null) return;
+        int idx = Document.Blocks.IndexOf(tb);
+        if (idx < 0) return;
+        Paragraph? anchor = null;
+        bool atEnd = true;
+        if (idx > 0 && Document.Blocks[idx - 1] is Paragraph prev) anchor = prev;
+        else
+            for (int i = idx + 1; i < Document.Blocks.Count && anchor == null; i++)
+                if (Document.Blocks[i] is Paragraph next) { anchor = next; atEnd = false; }
+        if (anchor == null) return;
+
+        PushUndo();
+        var it = new InlineTable { Table = (TableBlock)tb.Clone() };
+        Document.Blocks.Remove(tb);
+        if (atEnd) anchor.Inlines.Add(it);
+        else anchor.Inlines.Insert(0, it);
+        if (ReferenceEquals(_selectedBlock, tb)) _selectedBlock = null;
+        UpdateParents(Document);
+
+        int off = 0;
+        foreach (var inl in anchor.Inlines) { off += InlineLen(inl); if (ReferenceEquals(inl, it)) break; }
+        _caretPosition = new TextPointer(anchor, off);
+        CollapseSelectionToCaret();
+        ResetCaretBlink();
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    // Reverse of ConvertTableBlockToInline: promote an inline table to a sibling block table after its
+    // host paragraph. Top-level paragraphs only — table cells cannot host block siblings (the menu
+    // disables this inside cells, mirroring the inline-image guard).
+    internal void ConvertInlineTableToBlock(Paragraph host, InlineTable it)
+    {
+        if (Document == null) return;
+        int idx = Document.Blocks.IndexOf(host);
+        if (idx < 0) return;
+
+        PushUndo();
+        var tb = (TableBlock)it.Table.Clone();
+        host.Inlines.Remove(it);
+        Document.Blocks.Insert(idx + 1, tb);
+        UpdateParents(Document);
+        _selectedBlock = tb;
+        ResetCaretBlink();
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    // Removes an inline table from its host paragraph (the menu's "Delete table" for an inline table —
+    // RemoveBlockAnywhere only walks block lists, where an inline table never lives). The caret lands
+    // where the table was.
+    internal void DeleteInlineTable(Paragraph host, InlineTable it)
+    {
+        if (Document == null) return;
+        int off = OffsetOfInline(host, it);
+        PushUndo();
+        host.Inlines.Remove(it);
+        if (ReferenceEquals(_selectedBlock, it.Table)) _selectedBlock = null;
+        UpdateParents(Document);
+        _caretPosition = new TextPointer(host, off);
+        CollapseSelectionToCaret();
+        InvalidateMeasure();
+        ResetCaretBlink();
+        InvalidateVisual();
     }
 
     private void FocusCell(Paragraph cell)
