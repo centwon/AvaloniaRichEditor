@@ -4,9 +4,11 @@ All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-07-07
 
-Backported the features the WinUI 3 port (WinUIRichEditor) had pulled ahead on.
+Backported the features the WinUI 3 port (WinUIRichEditor) had pulled ahead on. Includes a breaking
+API removal (`EditorMode`) and a default-behavior change (`PageSize` now `Continuous`), so the minor
+version is bumped (pre-1.0).
 
 ### Added
 - **Per-document page setup.** `FlowDocument.PageSetup` (paper size, orientation, page boundaries,
