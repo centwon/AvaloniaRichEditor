@@ -59,12 +59,6 @@ public class RichEditorView : UserControl
     // (fit-cancelling) zoom from a host.
     private bool _settingZoomInternally;
 
-    // Built-in page/zoom chrome (injected into the toolbar's trailing slot). _suppressChrome guards
-    // their selection events while SyncChrome pushes editor/view state back into them.
-    private ComboBox _zoomCombo = null!, _paperCombo = null!, _orientCombo = null!;
-    private CheckBox _outlineCheck = null!;
-    private bool _suppressChrome;
-
     private static string Loc(string key) => AvaloniaRichEditor.RichEditorLocalization.GetString(key);
 
     /// <inheritdoc cref="ShowStatusBar"/>
@@ -92,22 +86,32 @@ public class RichEditorView : UserControl
         set => SetValue(ShowFileActionsProperty, value);
     }
 
-    // File-action buttons + status-bar widgets (built once in the ctor).
-    private Button _exportBtn = null!, _importBtn = null!, _printBtn = null!;
-    private Control _fileDivider = null!;
+    // Status-bar widgets (built once in the ctor). The page/zoom chrome and Export/Import/Print file
+    // actions now live natively in the toolbar (RichEditorToolbar.PageFile); this view just wires them.
     private TextBlock _statusInfo = null!, _pageInfo = null!, _limitInfo = null!;
     private Border _statusBar = null!;
 
     private EventHandler? _printRequested;
 
-    /// <summary>Raised when the user clicks the built-in Print button. Printing is platform-specific
+    /// <summary>Raised when the user clicks the toolbar's built-in Print button. Printing is platform-specific
     /// (and intentionally not implemented in this cross-platform library), so a host handles this to
     /// drive its own print/preview. The Print button is hidden until at least one handler is attached.</summary>
     public event EventHandler? PrintRequested
     {
-        add { _printRequested += value; UpdateFileActionVisibility(); }
-        remove { _printRequested -= value; UpdateFileActionVisibility(); }
+        add
+        {
+            bool had = _printRequested != null;
+            _printRequested += value;
+            if (!had && _printRequested != null) Toolbar.PrintRequested += ForwardPrint; // reveal the toolbar's Print button
+        }
+        remove
+        {
+            _printRequested -= value;
+            if (_printRequested == null) Toolbar.PrintRequested -= ForwardPrint;
+        }
     }
+
+    private void ForwardPrint(object? sender, EventArgs e) => _printRequested?.Invoke(this, e);
 
     // The editor lives inside this; its LayoutTransform carries the zoom. LayoutTransform (not
     // RenderTransform) so the scroller's extent and the editor's reflow width both follow the zoom.
@@ -119,10 +123,17 @@ public class RichEditorView : UserControl
     /// <summary>Creates the bundled toolbar + scrolling editor view.</summary>
     public RichEditorView()
     {
-        Toolbar = new RichEditorToolbar { Target = Editor };
+        // The View is the full host, so its toolbar carries everything: page/zoom + file actions.
+        Toolbar = new RichEditorToolbar { Target = Editor, ToolbarLevel = ToolbarLevel.Maximum };
+        // Zoom is view-level here (a LayoutTransform around the editor), so the toolbar's zoom combo is
+        // driven through these hooks rather than the editor directly.
+        Toolbar.ZoomGetter = () => ZoomFactor;
+        Toolbar.IsFitWidthGetter = () => FitToWidth;
+        Toolbar.ZoomSetter = ZoomToPercent;
+        Toolbar.FitWidthAction = () => SetCurrentValue(FitToWidthProperty, true);
 
-        // View defaults: A4 paper (the editor's own default) as a bare fit-to-width column — no page
-        // outline/desk chrome. A host can still flip these on Editor / this view.
+        // View defaults: the editor's own default (Continuous, reflow to width) with no page outline/desk
+        // chrome. A host can still switch to a concrete paper size on Editor / via the toolbar.
         Editor.ShowPageBoundaries = false;
 
         // Margin (not ScrollViewer padding) gives the editor its breathing room: the content sits
@@ -165,7 +176,7 @@ public class RichEditorView : UserControl
             {
                 UpdateHorizontalScroll();
                 ApplyFitWidth(); // paper/orientation/outline change the fit target
-                SyncChrome();    // reflect the new paper state in the built-in combos
+                // The toolbar syncs its own paper/orientation combos off the editor's property change.
             }
         };
         // Re-fit whenever the viewport width changes.
@@ -181,8 +192,7 @@ public class RichEditorView : UserControl
         dock.Children.Add(_scroller); // fills the remaining space between toolbar and status bar
         Content = dock;
 
-        BuildChrome();
-        BuildFileActions();
+        Toolbar.ShowFileActions = ShowFileActions;
 
         // Keep the status bar live. Counts follow any caret move; the page count and image-limit
         // warning ride the content-only signal (they need O(blocks) walks).
@@ -245,13 +255,13 @@ public class RichEditorView : UserControl
             _zoomHost.LayoutTransform = new ScaleTransform(ZoomFactor, ZoomFactor);
             // An explicit zoom (not our own fit write) cancels fit-to-width.
             if (!_settingZoomInternally) SetCurrentValue(FitToWidthProperty, false);
-            SyncChrome();
+            Toolbar.RefreshPageControls(); // zoom is view-level, so push it onto the toolbar's zoom combo
         }
         else if (change.Property == FitToWidthProperty)
         {
             UpdateHorizontalScroll();
             if (FitToWidth) ApplyFitWidth();
-            SyncChrome();
+            Toolbar.RefreshPageControls();
         }
         else if (change.Property == ShowStatusBarProperty)
         {
@@ -259,116 +269,8 @@ public class RichEditorView : UserControl
         }
         else if (change.Property == ShowFileActionsProperty)
         {
-            UpdateFileActionVisibility();
+            Toolbar.ShowFileActions = ShowFileActions;
         }
-    }
-
-    // ---------------- Built-in page / zoom chrome ----------------
-
-    // Paper size, orientation, page-outline toggle and a zoom (fit + presets) combo, injected into the
-    // toolbar's trailing slot so the bundled view is self-contained — a host need only drop in the view.
-    private void BuildChrome()
-    {
-        ComboBox Combo(double width, string tip)
-        {
-            var cb = new ComboBox
-            {
-                Width = width, FontSize = 12, MinHeight = 28, VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(6, 0, 0, 0),
-                BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
-            };
-            ToolTip.SetTip(cb, tip);
-            return cb;
-        }
-
-        // Zoom: "Fit" (index 0) + percent presets.
-        _zoomCombo = Combo(84, Loc("ZoomTip"));
-        _zoomCombo.Margin = new Thickness(0);
-        _zoomCombo.Items.Add(new ComboBoxItem { Content = Loc("Fit") });
-        foreach (var p in new[] { "50%", "75%", "100%", "125%", "150%", "200%" })
-            _zoomCombo.Items.Add(new ComboBoxItem { Content = p });
-        _zoomCombo.SelectionChanged += (_, _) =>
-        {
-            if (_suppressChrome) return;
-            if (_zoomCombo.SelectedIndex <= 0) SetCurrentValue(FitToWidthProperty, true);
-            else if (_zoomCombo.SelectedItem is ComboBoxItem it
-                     && int.TryParse(it.Content?.ToString()?.TrimEnd('%'), out int pct))
-                ZoomToPercent(pct / 100.0);
-        };
-
-        // Paper size — "Continuous" reflows to width; a concrete size fixes the column.
-        _paperCombo = Combo(96, Loc("PaperTip"));
-        var sizes = new (RichEditorPageSize size, string label)[]
-        {
-            (RichEditorPageSize.Continuous, Loc("PaperContinuous")),
-            (RichEditorPageSize.A4, "A4"), (RichEditorPageSize.A3, "A3"), (RichEditorPageSize.A5, "A5"),
-            (RichEditorPageSize.B4, "B4"), (RichEditorPageSize.B5, "B5"),
-            (RichEditorPageSize.Letter, "Letter"), (RichEditorPageSize.Legal, "Legal"), (RichEditorPageSize.Tabloid, "Tabloid"),
-        };
-        foreach (var (size, label) in sizes)
-            _paperCombo.Items.Add(new ComboBoxItem { Content = label, Tag = size });
-        _paperCombo.SelectionChanged += (_, _) =>
-        {
-            if (_suppressChrome) return;
-            if (_paperCombo.SelectedItem is ComboBoxItem { Tag: RichEditorPageSize size })
-                Editor.PageSize = size;
-        };
-
-        // Orientation (meaningful only for a concrete paper).
-        _orientCombo = Combo(76, Loc("OrientationTip"));
-        _orientCombo.Items.Add(new ComboBoxItem { Content = Loc("OrientPortrait"), Tag = RichEditorPageOrientation.Portrait });
-        _orientCombo.Items.Add(new ComboBoxItem { Content = Loc("OrientLandscape"), Tag = RichEditorPageOrientation.Landscape });
-        _orientCombo.SelectionChanged += (_, _) =>
-        {
-            if (_suppressChrome) return;
-            if (_orientCombo.SelectedItem is ComboBoxItem { Tag: RichEditorPageOrientation o })
-                Editor.PageOrientation = o;
-        };
-
-        // Page outline (desk + paper chrome).
-        _outlineCheck = new CheckBox { Content = Loc("PageOutline"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
-        _outlineCheck.IsCheckedChanged += (_, _) =>
-        {
-            if (_suppressChrome) return;
-            Editor.ShowPageBoundaries = _outlineCheck.IsChecked == true;
-        };
-
-        Toolbar.TrailingItems.Add(_zoomCombo);
-        Toolbar.TrailingItems.Add(_paperCombo);
-        Toolbar.TrailingItems.Add(_orientCombo);
-        Toolbar.TrailingItems.Add(_outlineCheck);
-
-        SyncChrome();
-    }
-
-    // Reflects the current editor/view state into the chrome controls (idempotent; guarded so its
-    // selection writes don't loop back through the controls' change handlers).
-    private void SyncChrome()
-    {
-        if (_zoomCombo is null) return; // before BuildChrome
-        _suppressChrome = true;
-        try
-        {
-            foreach (var it in _paperCombo.Items)
-                if (it is ComboBoxItem { Tag: RichEditorPageSize s } ci && s == Editor.PageSize) { _paperCombo.SelectedItem = ci; break; }
-            bool paged = Editor.IsPaged;
-            _orientCombo.IsEnabled = paged;
-            _outlineCheck.IsEnabled = paged;
-            foreach (var it in _orientCombo.Items)
-                if (it is ComboBoxItem { Tag: RichEditorPageOrientation o } ci && o == Editor.PageOrientation) { _orientCombo.SelectedItem = ci; break; }
-            _outlineCheck.IsChecked = Editor.ShowPageBoundaries;
-
-            if (FitToWidth) _zoomCombo.SelectedIndex = 0;
-            else
-            {
-                int pct = (int)Math.Round(ZoomFactor * 100);
-                ComboBoxItem? match = null;
-                for (int i = 1; i < _zoomCombo.Items.Count; i++)
-                    if (_zoomCombo.Items[i] is ComboBoxItem ci && ci.Content?.ToString() == pct + "%") { match = ci; break; }
-                _zoomCombo.SelectedItem = match; // null = an off-grid zoom (fit %, Ctrl+wheel step)
-            }
-        }
-        finally { _suppressChrome = false; }
     }
 
     private void ZoomToPercent(double factor)
@@ -399,149 +301,6 @@ public class RichEditorView : UserControl
             if (e.Key is Key.OemMinus or Key.Subtract) { ZoomToPercent(ZoomFactor - 0.1); e.Handled = true; return; }
         }
         base.OnKeyDown(e);
-    }
-
-    // ---------------- Built-in file actions (toolbar tail) ----------------
-
-    // Export / Import / Print, placed at the very end of the toolbar. Export/Import drive the platform
-    // file picker; Print is delegated to the host via PrintRequested (so no platform print dependency
-    // leaks into this cross-platform library).
-    private void BuildFileActions()
-    {
-        _fileDivider = new Border
-        {
-            Width = 1, Height = 22, Margin = new Thickness(6, 4),
-            Background = new SolidColorBrush(Color.Parse("#DCDCDC")),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _exportBtn = FileButton(RichEditorIcon.Export, "Export", () => _ = ExportAsync());
-        _importBtn = FileButton(RichEditorIcon.Import, "Import", () => _ = ImportAsync());
-        _printBtn = FileButton(RichEditorIcon.Print, "Print", () => _printRequested?.Invoke(this, EventArgs.Empty));
-
-        Toolbar.TrailingItems.Add(_fileDivider);
-        Toolbar.TrailingItems.Add(_exportBtn);
-        Toolbar.TrailingItems.Add(_importBtn);
-        Toolbar.TrailingItems.Add(_printBtn);
-        UpdateFileActionVisibility();
-    }
-
-    private Button FileButton(RichEditorIcon icon, string tipKey, Action onClick)
-    {
-        var b = new Button
-        {
-            Content = RichEditorIcons.TryCreate(icon) ?? ToolbarIcons.Create(icon),
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(5),
-            Padding = new Thickness(9, 5),
-            Margin = new Thickness(1, 0),
-            MinWidth = 30,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        ToolTip.SetTip(b, Loc(tipKey));
-        b.Click += (_, _) => onClick();
-        return b;
-    }
-
-    private void UpdateFileActionVisibility()
-    {
-        if (_exportBtn is null) return; // before BuildFileActions
-        bool show = ShowFileActions;
-        _fileDivider.IsVisible = show;
-        _exportBtn.IsVisible = show;
-        _importBtn.IsVisible = show;
-        _printBtn.IsVisible = show && _printRequested != null; // hidden until a host handles printing
-    }
-
-    private async Task ExportAsync()
-    {
-        var top = TopLevel.GetTopLevel(this);
-        if (top == null || Editor.Document == null) return;
-        var file = await top.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
-        {
-            Title = Loc("Export"),
-            DefaultExtension = "json",
-            FileTypeChoices = new[]
-            {
-                new Avalonia.Platform.Storage.FilePickerFileType("JSON document") { Patterns = new[] { "*.json" } },
-                new Avalonia.Platform.Storage.FilePickerFileType("Flow package") { Patterns = new[] { "*.flow" } },
-                new Avalonia.Platform.Storage.FilePickerFileType("HTML document") { Patterns = new[] { "*.html", "*.htm" } },
-                new Avalonia.Platform.Storage.FilePickerFileType("RTF document") { Patterns = new[] { "*.rtf" } },
-            }
-        });
-        if (file == null) return;
-
-        // Format follows the chosen extension: .flow = ZIP package (raw image bytes), .html/.htm = HTML,
-        // .rtf = Rich Text Format, anything else = plain JSON.
-        var name = file.Name;
-        if (name.EndsWith(".flow", StringComparison.OrdinalIgnoreCase))
-        {
-            using var stream = await file.OpenWriteAsync();
-            await Editor.SavePackageAsync(stream);
-        }
-        else if (name.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
-        {
-            string html = Editor.ToHtml();
-            using var stream = await file.OpenWriteAsync();
-            using var writer = new System.IO.StreamWriter(stream);
-            await writer.WriteAsync(html);
-        }
-        else if (name.EndsWith(".rtf", StringComparison.OrdinalIgnoreCase))
-        {
-            string rtf = Editor.ToRtf();
-            using var stream = await file.OpenWriteAsync();
-            // RTF is ASCII (non-ASCII text is \u-escaped), so Latin-1 keeps the bytes exact.
-            using var writer = new System.IO.StreamWriter(stream, System.Text.Encoding.Latin1);
-            await writer.WriteAsync(rtf);
-        }
-        else
-        {
-            string json = await Editor.ToJsonAsync(); // serialize off the UI thread
-            using var stream = await file.OpenWriteAsync();
-            using var writer = new System.IO.StreamWriter(stream);
-            await writer.WriteAsync(json);
-        }
-    }
-
-    private async Task ImportAsync()
-    {
-        var top = TopLevel.GetTopLevel(this);
-        if (top == null) return;
-        var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
-        {
-            Title = Loc("Import"),
-            AllowMultiple = false,
-        });
-        if (files == null || files.Count == 0) return;
-        try
-        {
-            using var stream = await files[0].OpenReadAsync();
-            using var ms = new System.IO.MemoryStream();
-            await stream.CopyToAsync(ms);
-            ms.Position = 0;
-            // Sniff the content: ZIP magic ("PK") = .flow package, "{\rtf" = RTF, anything else = JSON.
-            if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
-            {
-                await Editor.LoadPackageAsync(ms);
-            }
-            else
-            {
-                // RTF bytes are ASCII/Latin-1 (the parser decodes \'hh with the document code page itself),
-                // so decode as Latin-1 to keep bytes intact; fall back to UTF-8 JSON otherwise.
-                string latin1 = System.Text.Encoding.Latin1.GetString(ms.ToArray());
-                string utf8 = System.Text.Encoding.UTF8.GetString(ms.ToArray());
-                if (AvaloniaRichEditor.Formatters.RtfDocumentFormatter.LooksLikeRtf(latin1))
-                    Editor.LoadRtf(latin1);
-                else if (utf8.TrimStart().StartsWith("<", StringComparison.Ordinal))
-                    Editor.LoadHtml(utf8); // an HTML/.htm export (JSON starts with '{', RTF was handled above)
-                else
-                    await Editor.LoadJsonAsync(utf8);
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Import failed: {ex.Message}");
-        }
     }
 
     // ---------------- Built-in status bar ----------------

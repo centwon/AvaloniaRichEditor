@@ -28,18 +28,26 @@ dotnet add package AvaloniaRichEditor
   - **Draw-to-size insertion**: pick rows × columns from the grid, then drag on the document to set the
     table's size (or click for the default size)
 - Inline and block **images** (insert, resize, replace, save)
-- Find / replace, undo / redo, per-object right-click context menus
+- Find / replace, undo / redo, per-object right-click context menus (HWP-style, reflecting the caret's
+  state; a slim `ShowFormattingMenu = false` default keeps rich formatting on the toolbar)
+- **Word-standard keyboard shortcuts** via a single source (`RichEditorShortcuts`) shared by the key
+  handler, menu hints, and toolbar tooltips — B/I/U/S, headings `Ctrl+Alt+1..6`, alignment `Ctrl+L/E/R/J`,
+  lists, line spacing `Ctrl+1/5/2`, indent, font size, and more
 - Clipboard: internal rich copy/paste, rich **HTML copy-out** (`CF_HTML`) and external HTML/**RTF** paste
   (Word/HWP), image paste, Excel/TSV → table
 - HTML, JSON, and **RTF** import/export (round-trippable) — see the
   [document format specification](docs/DOCUMENT_FORMAT.md) (JSON document format v1.0 and the `.flow` package)
 - Korean/CJK **IME** composition (inline preedit)
-- Word-style **page view** with selectable paper size (`PageSize`: A4/A3/A5/B4/B5/Letter/Legal/Tabloid),
-  `PageOrientation`, and `ShowPageBoundaries` — line-boundary page breaks, headers/footers/page numbers
+- Word-style **page view** with selectable paper size (`PageSize`: Continuous (default) / A4/A3/A5/B4/B5/
+  Letter/Legal/Tabloid), `PageOrientation`, and `ShowPageBoundaries` — line-boundary page breaks,
+  headers/footers/page numbers. The page setup is **persisted per document** (`FlowDocument.PageSetup`) and
+  re-applied on load, like a word processor
 - **Print & PDF**: per-page bitmap rendering (`RenderPrintPage`, 300 DPI) and dependency-free raster
   PDF export (`SavePdf`)
-- **Drop-in `RichEditorView`** (editor + formatting toolbar + page/zoom controls + status bar) and a
-  standalone `RichEditorToolbar`; `EditorMode` presets (`ReadOnly`/`Basic`/`Full`) plus feature flags
+- **Drop-in `RichEditorView`** (editor + formatting toolbar with built-in page/zoom controls and
+  Export/Import/Print file actions + status bar) and a standalone `RichEditorToolbar` with a `ToolbarLevel`
+  density knob (Auto/Minimal/Normal/Maximum). Capability is expressed directly through `IsReadOnly`
+  (viewer switch) plus the `Allow*` feature flags
 - Built-in **localization** (Korean & English, host-extensible) for menus, toolbar, and dialogs
 
 ## Quick start

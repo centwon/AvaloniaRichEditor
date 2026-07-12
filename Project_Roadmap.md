@@ -9,16 +9,31 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 
 ## ✅ 현재 상태 (2026-06-20 · `0.8.0` NuGet 정식 게시)
 
+> **2026-07-06 이후 — WinUI 포트(WinUIRichEditor)가 앞서간 기능 백포트 완료** (다음 릴리스는 `EditorMode`
+> 제거로 major-ish):
+> 1. 문서 내 `PageSetup` 영속화(용지·방향·머리글/바닥글·쪽번호, JSON/.flow, 로드 시 적용)
+> 2. `IncreaseFontSize`/`DecreaseFontSize`(표준 크기 사다리)
+> 3. 중앙 단축키 테이블 `RichEditorShortcuts`(Word 표준 — 키핸들러·메뉴 힌트·툴바 툴팁 단일 출처, 신규 단축키 다수)
+> 4. HWP식 컨텍스트 메뉴 재구성 + 슬림 기본 `ShowFormattingMenu`(캐럿 상태 반영·단축키 힌트)
+> 5. 툴바 `ToolbarLevel`(Auto/Minimal/Normal/Maximum 밀도) + 페이지/줌·Export/Import/Print 툴바 내장(줌은
+>    호스트 훅, `RichEditorView`는 자체 크롬 제거하고 위임; read-only=view 툴바)
+> 6. `EditorMode` enum 제거 → `IsReadOnly` + `Allow*`
+> 7. **기본 `PageSize`를 `Continuous`로 통일**(A4→Continuous, WinUI와 일치)
+>
+> 빌드 0/0, 테스트 325(unit)+6(render) 그린. 상세는 [`CHANGELOG.md`](CHANGELOG.md) Unreleased. **인터랙티브
+> GUI 동작(툴바 줌/페이지·read-only view 툴바·컨텍스트 메뉴 상태 반영)은 데모 육안검증 필요.**
+
+
 기능 충실도 **A**, 코드 품질 **B+**, 견고성/검증 **B**, 프로덕션 준비도 **B−(베타)**.
 혼자 만든 from-scratch Avalonia 리치 에디터로는 상위권 — 기능은 상용 근접, 1.0은 *새 기능이 아니라 검증 깊이*로 결정.
 
-**완성된 기능 (전부 동작·테스트 그린, 323+6 테스트):**
+**완성된 기능 (전부 동작·테스트 그린, 325+6 테스트):**
 - 인라인 서식(굵게/기울임/밑줄/취소선·글꼴·크기·색·형광펜·하이퍼링크), 문단(정렬·줄간격·들여쓰기·제목·리스트·인용)
 - **표**: 셀 병합(colspan/rowspan), 열/행 리사이즈, Tab 내비, **셀=블록 컨테이너**(다중 문단·블록이미지·구분선·**중첩 표**), **인라인 표**(HWP식 "글자처럼 취급", 완전 편집), **드래그 크기 지정 삽입**
 - 인라인/블록 **이미지**(삽입·리사이즈·교체·저장), 찾기/바꾸기, undo/redo, 우클릭 메뉴
 - 클립보드(내부 리치·CF_HTML 복사·외부 HTML/RTF 붙여넣기·이미지·Excel/TSV→표), **HTML/JSON/RTF/.flow 입출력**
 - CJK **IME**(인라인 preedit), 워드식 **페이지 보기**, **인쇄·래스터 PDF**
-- 드롭인 **`RichEditorView`**(에디터+툴바+페이지/줌+상태바), `EditorMode` 프리셋, 현지화(ko/en)
+- 드롭인 **`RichEditorView`**(에디터+툴바+상태바; 툴바에 페이지/줌·파일액션 내장), `ToolbarLevel` 밀도, 능력=`IsReadOnly`+`Allow*`(EditorMode 없음), 현지화(ko/en)
 
 **완료된 마일스톤** (상세는 아카이브):
 | 마일스톤 | 내용 |

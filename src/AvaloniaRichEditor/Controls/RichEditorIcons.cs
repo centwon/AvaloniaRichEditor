@@ -109,6 +109,10 @@ public enum RichEditorIcon
     // PublicAPI analyzer tracks each enum member by value, so inserting mid-list renumbers them.
     /// <summary>Line spacing.</summary>
     LineSpacing,
+    /// <summary>Increase font size (글자 크게).</summary>
+    FontSizeIncrease,
+    /// <summary>Decrease font size (글자 작게).</summary>
+    FontSizeDecrease,
 }
 
 /// <summary>

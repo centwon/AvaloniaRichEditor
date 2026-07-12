@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Backported the features the WinUI 3 port (WinUIRichEditor) had pulled ahead on.
+
+### Added
+- **Per-document page setup.** `FlowDocument.PageSetup` (paper size, orientation, page boundaries,
+  header/footer, page numbers) is serialized in JSON/`.flow` and applied to the editor on load; changing a
+  page property captures it back into the document. A default (Continuous) or absent setup is omitted, so
+  plain documents keep their exact bytes.
+- **`IncreaseFontSize()` / `DecreaseFontSize()`** — step the caret's font size along the standard point ladder.
+- **Central shortcut table (`RichEditorShortcuts`, Word-standard).** One source of truth shared by the key
+  handler, the context-menu hints, and (via `Display`) the toolbar. New shortcuts: align `Ctrl+L/E/R/J`,
+  headings `Ctrl+Alt+1..6`, body `Ctrl+Shift+N`, bullet list `Ctrl+Shift+L`, line spacing `Ctrl+1/5/2`,
+  strikethrough `Ctrl+Shift+X`, font size `Ctrl+Shift+.`/`,`, indent `Ctrl+M`/`Ctrl+Shift+M`, redo `Ctrl+Shift+Z`.
+- **`RichEditor.ShowFormattingMenu`** (default false) — a slim right-click menu (clipboard + quick B/I/U
+  toggles + object menus); opt in for the full formatting groups when there's no toolbar.
+- **`ToolbarLevel`** `{ Auto, Minimal, Normal, Maximum }` on `RichEditorToolbar` — a density knob. A read-only
+  target now shows a *view toolbar* (page/zoom + Export/Print) instead of hiding the strip.
+- **Toolbar-native page/zoom + file actions.** `RichEditorToolbar` builds the zoom·paper·orientation controls
+  and Export/Import/Print itself (`ShowPageControls`/`ShowFileActions`/`PrintRequested`), so a standalone
+  toolbar carries them; `RichEditorView` delegates to these instead of injecting its own chrome.
+
+### Changed
+- **Default `PageSize` is now `Continuous`** (was `A4`), unified with the WinUI port — the editor reflows to
+  width out of the box; choose a concrete paper size for page view.
+- **Right-click menu reorganized HWP-style**: character/paragraph/list/heading groups, alignment as a radio
+  group, list/heading promoted to the top level with current-state radios/checks, shortcut hints on items;
+  object menus regrouped edit → shape → file → delete.
+
+### Removed
+- **`EditorMode` enum (breaking).** Capability is expressed directly through `IsReadOnly` + the `Allow*`
+  flags — a "viewer" is `IsReadOnly = true` plus a minimal/no toolbar, not a preset.
+
 ## [0.8.0] - 2026-06-20
 
 ### Added

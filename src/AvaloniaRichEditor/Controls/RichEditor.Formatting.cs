@@ -64,6 +64,32 @@ public partial class RichEditor
     public void ToggleItalic() { ApplyStyleToSelection(r => r.FontStyle = r.FontStyle == FontStyle.Italic ? FontStyle.Normal : FontStyle.Italic); }
     /// <summary>Sets the font size of the current selection (or the caret run).</summary>
     public void SetFontSize(double size) { ApplyStyleToSelection(r => r.FontSize = size); }
+
+    // Standard point-size ladder for the 크게/작게 (larger/smaller) commands.
+    private static readonly double[] FontSizeLadder =
+        { 8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 72, 96 };
+
+    /// <summary>Bumps the font size to the next larger step on the standard ladder (based on the caret size).</summary>
+    public void IncreaseFontSize() => StepFontSize(+1);
+    /// <summary>Drops the font size to the next smaller step on the standard ladder (based on the caret size).</summary>
+    public void DecreaseFontSize() => StepFontSize(-1);
+
+    private void StepFontSize(int dir)
+    {
+        double cur = GetCaretFormat().FontSize;
+        double target;
+        if (dir > 0)
+        {
+            target = FontSizeLadder[^1];
+            foreach (var v in FontSizeLadder) if (v > cur + 0.01) { target = v; break; }
+        }
+        else
+        {
+            target = FontSizeLadder[0];
+            for (int i = FontSizeLadder.Length - 1; i >= 0; i--) if (FontSizeLadder[i] < cur - 0.01) { target = FontSizeLadder[i]; break; }
+        }
+        SetFontSize(target);
+    }
     /// <summary>Sets the foreground brush of the current selection (or the caret run).</summary>
     public void SetForeground(IBrush brush) { ApplyStyleToSelection(r => r.Foreground = brush); }
     /// <summary>Sets the font family of the current selection (or the caret run).</summary>

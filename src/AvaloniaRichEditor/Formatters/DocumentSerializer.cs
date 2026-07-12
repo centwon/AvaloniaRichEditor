@@ -63,6 +63,17 @@ public static class DocumentSerializer
     {
         var dto = new FlowDocumentDto { Version = CurrentSchemaVersion };
         foreach (var block in document.Blocks) dto.Blocks.Add(BlockToDto(block, images));
+        // Only persist a non-default page setup, so plain (Continuous) documents keep their original format.
+        if (document.PageSetup is { IsDefault: false } ps)
+            dto.PageSetup = new PageSetupDto
+            {
+                PageSize = ps.PageSize.ToString(),
+                Orientation = ps.Orientation.ToString(),
+                ShowPageBoundaries = ps.ShowPageBoundaries,
+                Header = string.IsNullOrEmpty(ps.Header) ? null : ps.Header,
+                Footer = string.IsNullOrEmpty(ps.Footer) ? null : ps.Footer,
+                ShowPageNumbers = ps.ShowPageNumbers,
+            };
         return dto;
     }
 
@@ -103,6 +114,16 @@ public static class DocumentSerializer
                 var b = DtoToBlock(bd, pool);
                 if (b != null) doc.Blocks.Add(b);
             }
+        if (dto?.PageSetup is { } psd)
+            doc.PageSetup = new PageSetup
+            {
+                PageSize = Enum.TryParse<Controls.RichEditorPageSize>(psd.PageSize, out var sz) ? sz : Controls.RichEditorPageSize.Continuous,
+                Orientation = Enum.TryParse<Controls.RichEditorPageOrientation>(psd.Orientation, out var or) ? or : Controls.RichEditorPageOrientation.Portrait,
+                ShowPageBoundaries = psd.ShowPageBoundaries,
+                Header = psd.Header,
+                Footer = psd.Footer,
+                ShowPageNumbers = psd.ShowPageNumbers,
+            };
         return doc;
     }
 
@@ -459,6 +480,20 @@ internal class FlowDocumentDto
     public List<BlockDto> Blocks { get; set; } = new();
     // v2: image pool keyed by SHA-256 hex of the encoded bytes; identical images stored once.
     public Dictionary<string, ImagePoolDto>? Images { get; set; }
+    // Optional page setup; absent for plain (Continuous) documents, so the format is unchanged for them.
+    public PageSetupDto? PageSetup { get; set; }
+}
+
+// Enums are serialized as their names (matching the rest of the format), so unknown future values degrade
+// gracefully to defaults on read. Pre-page-setup readers ignore this object (content-only format).
+internal class PageSetupDto
+{
+    public string? PageSize { get; set; }
+    public string? Orientation { get; set; }
+    public bool ShowPageBoundaries { get; set; } = true;
+    public string? Header { get; set; }
+    public string? Footer { get; set; }
+    public bool ShowPageNumbers { get; set; }
 }
 
 internal class ImagePoolDto
