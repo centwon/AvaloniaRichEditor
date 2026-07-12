@@ -76,11 +76,13 @@ public class RichEditorViewTests
     }
 
     [AvaloniaFact]
-    public void ReadOnlyEditor_HidesBundledToolbar()
+    public void ReadOnlyEditor_ShowsViewToolbar()
     {
+        // A read-only editor now shows the view toolbar (page/zoom + Export/Print) rather than hiding the
+        // strip entirely (ToolbarLevel change ported from WinUIRichEditor).
         var view = new RichEditorView();
         view.Editor.IsReadOnly = true;
-        Assert.False(view.Toolbar.IsVisible);
+        Assert.True(view.Toolbar.IsVisible);
         view.Editor.IsReadOnly = false;
         Assert.True(view.Toolbar.IsVisible);
     }

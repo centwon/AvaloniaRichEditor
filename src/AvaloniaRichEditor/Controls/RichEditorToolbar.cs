@@ -22,7 +22,7 @@ namespace AvaloniaRichEditor.Controls;
 /// this control is only the strip itself. App-shell concerns (save/open, zoom, printing) are deliberately
 /// out of scope.
 /// </summary>
-public class RichEditorToolbar : UserControl
+public partial class RichEditorToolbar : UserControl
 {
     /// <inheritdoc cref="Target"/>
     public static readonly StyledProperty<RichEditor?> TargetProperty =
@@ -144,9 +144,12 @@ public class RichEditorToolbar : UserControl
     private void OnTargetPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property == RichEditor.FontFamilyChoicesProperty) { Build(); Sync(); }
+        else if (e.Property == RichEditor.IsReadOnlyProperty) { Build(); Sync(); } // editable vs view toolbar differ structurally
         else if (e.Property == RichEditor.AllowImagesProperty
-              || e.Property == RichEditor.AllowTablesProperty
-              || e.Property == RichEditor.IsReadOnlyProperty) ApplyFlags();
+              || e.Property == RichEditor.AllowTablesProperty) ApplyFlags();
+        else if (e.Property == RichEditor.PageSizeProperty
+              || e.Property == RichEditor.PageOrientationProperty
+              || e.Property == RichEditor.ShowPageBoundariesProperty) SyncPage();
     }
 
     // ---------------- UI construction ----------------
@@ -202,6 +205,28 @@ public class RichEditorToolbar : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        // Reset reflected controls to null so Sync() null-guards whatever subset this level builds.
+        _undoBtn = _redoBtn = _boldBtn = _italicBtn = _underlineBtn = _strikeBtn = _bulletBtn = _numberBtn = null;
+        _fontCombo = _sizeCombo = _headingCombo = _alignCombo = null;
+        _spacingBox = null; _bulletPreview = _numberPreview = null;
+        _tableBtn = _imageBtn = _dividerBtn = null;
+        _zoomCombo = _paperCombo = _orientCombo = null; _exportBtn = _importBtn = _printBtn = null;
+        _colorSwatch = _highlightSwatch = null; _colorIconHost = _highlightIconHost = null;
+
+        bool ro = Target?.IsReadOnly == true;
+        var lvl = EffectiveLevel();
+        bool normal = lvl >= ToolbarLevel.Normal;
+        bool maximum = lvl >= ToolbarLevel.Maximum;
+
+        if (ro)
+        {
+            // Read-only = view toolbar: page/zoom + Export/Print only (no editing controls; Import hidden).
+            if (ShowPageControls) BuildPageControls(items);
+            if (ShowFileActions) { if (items.Count > 0) Add(Div()); BuildFileActions(items); }
+        }
+        else
+        {
+
         // Undo/redo lead the strip (quick-access convention), so they keep a stable spot regardless
         // of how the rest wraps.
         _undoBtn = Btn("↶", Loc("Undo") + " (Ctrl+Z)", () => Target?.Undo(), RichEditorIcon.Undo);
@@ -218,16 +243,21 @@ public class RichEditorToolbar : UserControl
         Add(_boldBtn); Add(_italicBtn); Add(_underlineBtn); Add(_strikeBtn);
         Add(Div());
 
-        // Color pickers
-        Add(BuildColorButton(highlight: false));
-        Add(BuildColorButton(highlight: true));
-        Add(Div());
+        // Color pickers (Normal+)
+        if (normal)
+        {
+            Add(BuildColorButton(highlight: false));
+            Add(BuildColorButton(highlight: true));
+            Add(Div());
+        }
 
-        // Font family (from the target's host-overridable list) + size. Plain string items + an
+        // Font family (Normal+, from the target's host-overridable list) + size (Minimal). Plain string items + an
         // ItemTemplate that renders each name in its own font: Avalonia applies the same template to
         // the closed selection box, so the chosen font shows in its own typeface there too. Crucially
         // the FontFamily lives on each item's TextBlock — scoped to the combo, so it never leaks to the
         // rest of the toolbar (which is what made the whole strip change font with ComboBoxItem faces).
+        if (normal)
+        {
         _fontCombo = Combo(Loc("FontFamily"), 120);
         // The closed selection box drives this template with a null value when nothing is selected,
         // so guard the empty case (new FontFamily(null) throws). Recycling must stay OFF: the template
@@ -247,6 +277,7 @@ public class RichEditorToolbar : UserControl
             Target?.SetFontFamily(fam);
         };
         Add(_fontCombo);
+        }
 
         _sizeCombo = Combo(Loc("FontSize"), 60);
         // Font sizes are points (pt). Body default is 10pt; range ~6–72.
@@ -260,6 +291,8 @@ public class RichEditorToolbar : UserControl
         Add(_sizeCombo);
         Add(Div());
 
+        if (normal)
+        {
         // Paragraph style / alignment
         _headingCombo = Combo(Loc("ParagraphStyle"));
         foreach (var key in new[] { "BodyText", "Heading1", "Heading2", "Heading3", "Heading4", "Heading5", "Heading6" })
@@ -316,6 +349,15 @@ public class RichEditorToolbar : UserControl
         _imageBtn = Btn("🖼", Loc("InsertImage"), () => { _ = Target?.InsertImageFromFileAsync(); }, RichEditorIcon.InsertImage);
         _dividerBtn = Btn("―", Loc("InsertDivider"), () => Target?.InsertDivider(), RichEditorIcon.InsertDivider);
         Add(_tableBtn); Add(_imageBtn); Add(_dividerBtn);
+        }
+
+        // Maximum adds the built-in page/zoom controls and file actions at the end.
+        if (maximum)
+        {
+            if (ShowPageControls) { Add(Div()); BuildPageControls(items); }
+            if (ShowFileActions) { Add(Div()); BuildFileActions(items); }
+        }
+        } // end editable
 
         // When the host is narrower than the strip, items wrap to additional rows instead of
         // clipping or scrolling. WrapPanel never mutates the visual tree during layout, so it is
@@ -707,10 +749,11 @@ public class RichEditorToolbar : UserControl
 
     // ---------------- Target state -> toolbar ----------------
 
-    // Feature flags: insert buttons follow AllowTables/AllowImages; ReadOnly (or no target) hides the strip.
+    // Feature flags: insert buttons follow AllowTables/AllowImages. The strip is hidden only when there is
+    // no target — a read-only target now shows the view toolbar (page/zoom + Export/Print) instead of hiding.
     private void ApplyFlags()
     {
-        IsVisible = Target is { IsReadOnly: false };
+        IsVisible = Target != null;
         if (Target == null) return;
         if (_tableBtn != null) _tableBtn.IsVisible = Target.AllowTables;
         if (_imageBtn != null) _imageBtn.IsVisible = Target.AllowImages;
@@ -800,6 +843,8 @@ public class RichEditorToolbar : UserControl
             TextAlignment.Justify => 3,
             _ => 0,
         };
+        SyncPage();         // reflect paper/orientation/zoom onto the built-in page controls (if present)
+        SyncFileActions();  // hide Import in the read-only view toolbar; Print until a host handles it
         _suppress = false;
     }
 

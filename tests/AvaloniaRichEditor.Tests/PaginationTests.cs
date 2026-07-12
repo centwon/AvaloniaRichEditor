@@ -237,11 +237,13 @@ public class PaginationTests
     // ---- PageSize / ShowPageBoundaries: the three layout states ----
 
     [AvaloniaFact]
-    public void Default_IsA4WithBoundaries()
+    public void Default_IsContinuous()
     {
+        // Default paper is Continuous (reflow to width), unified with the WinUI port. ShowPageBoundaries
+        // stays true by default but is irrelevant until a concrete paper size is chosen.
         var ed = new RichEditor();
-        Assert.Equal(RichEditorPageSize.A4, ed.PageSize);
-        Assert.True(ed.ShowPageBoundaries);
+        Assert.Equal(RichEditorPageSize.Continuous, ed.PageSize);
+        Assert.False(ed.IsPaged);
     }
 
     [AvaloniaFact]

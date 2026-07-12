@@ -710,12 +710,48 @@ public partial class RichEditor
         e.Handled = true;
     }
 
+    // Runs a matched command shortcut from the central table. Copy/Cut/Paste/SelectAll/Undo are
+    // intercepted earlier in OnKeyDown (they inspect object selection / plain-paste), so they don't reach
+    // here; everything routed through this method is editing and is gated by IsReadOnly.
+    private void RunShortcut(ShortcutId id)
+    {
+        if (IsReadOnly) return;
+        switch (id)
+        {
+            case ShortcutId.Redo: DoRedo(); break;
+            case ShortcutId.Bold: ToggleBold(); break;
+            case ShortcutId.Italic: ToggleItalic(); break;
+            case ShortcutId.Underline: ToggleUnderline(); break;
+            case ShortcutId.Strikethrough: ToggleStrikethrough(); break;
+            case ShortcutId.FontLarger: IncreaseFontSize(); break;
+            case ShortcutId.FontSmaller: DecreaseFontSize(); break;
+            case ShortcutId.IndentIncrease: Indent(20); break;
+            case ShortcutId.IndentDecrease: Indent(-20); break;
+            case ShortcutId.AlignLeft: SetTextAlignment(Avalonia.Media.TextAlignment.Left); break;
+            case ShortcutId.AlignCenter: SetTextAlignment(Avalonia.Media.TextAlignment.Center); break;
+            case ShortcutId.AlignRight: SetTextAlignment(Avalonia.Media.TextAlignment.Right); break;
+            case ShortcutId.AlignJustify: SetTextAlignment(Avalonia.Media.TextAlignment.Justify); break;
+            case ShortcutId.Heading1: SetHeading(1); break;
+            case ShortcutId.Heading2: SetHeading(2); break;
+            case ShortcutId.Heading3: SetHeading(3); break;
+            case ShortcutId.Heading4: SetHeading(4); break;
+            case ShortcutId.Heading5: SetHeading(5); break;
+            case ShortcutId.Heading6: SetHeading(6); break;
+            case ShortcutId.BodyText: SetHeading(0); break;
+            case ShortcutId.BulletList: ToggleBullet(); break;
+            case ShortcutId.LineSpacingSingle: SetLineSpacing(1.0); break;
+            case ShortcutId.LineSpacingOneHalf: SetLineSpacing(1.5); break;
+            case ShortcutId.LineSpacingDouble: SetLineSpacing(2.0); break;
+        }
+    }
+
     /// <inheritdoc/>
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
         bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
 
         // Escape abandons an armed/in-progress "draw table" mode.
         if (e.Key == Key.Escape && _pendingTableDraw != null) { CancelTableDraw(); e.Handled = true; return; }
@@ -777,7 +813,7 @@ public partial class RichEditor
             InvalidateVisual();
         }
 
-        if (e.Key == Key.Z && ctrl)
+        if (e.Key == Key.Z && ctrl && !shift)
         {
             DoUndo();
             e.Handled = true;
@@ -851,9 +887,16 @@ public partial class RichEditor
             return;
         }
 
-        if (ctrl && e.Key == Key.B) { ToggleBold(); e.Handled = true; return; }
-        if (ctrl && e.Key == Key.I) { ToggleItalic(); e.Handled = true; return; }
-        if (ctrl && e.Key == Key.U) { ToggleUnderline(); e.Handled = true; return; }
+        // Command shortcuts (Word-standard) via the central table — a single source shared with the
+        // context menu and toolbar hints. Copy/Cut/Paste/SelectAll/Undo are handled above (they need
+        // object-selection / plain-paste nuances); this covers formatting + Redo(Ctrl+Shift+Z/Ctrl+Y).
+        // Ctrl + arrows/Home/End/Back/Delete (word/doc nav) aren't in the table and fall through below.
+        if (ctrl && RichEditorShortcuts.TryMatch(ctrl, shift, alt, e.Key, out var sid))
+        {
+            RunShortcut(sid);
+            e.Handled = true;
+            return;
+        }
 
         // Word-level navigation/deletion and document start/end (Ctrl + arrows/Home/End/Back/Delete).
         if (ctrl && e.Key == Key.Home) { GoToDocEdge(start: true, shift); e.Handled = true; return; }

@@ -58,14 +58,16 @@ public class RichEditorToolbarTests
     }
 
     [AvaloniaFact]
-    public void WithTarget_IsVisible_AndReadOnlyHidesIt()
+    public void WithTarget_IsVisible_ReadOnlyShowsViewToolbar()
     {
+        // A target makes the strip visible; a read-only target now shows the view toolbar (page/zoom +
+        // Export/Print) rather than hiding — the strip stays visible either way (ToolbarLevel port).
         var ed = new RichEditor();
         var tb = new RichEditorToolbar { Target = ed };
         Assert.True(tb.IsVisible);
 
         ed.IsReadOnly = true;
-        Assert.False(tb.IsVisible);
+        Assert.True(tb.IsVisible);
         ed.IsReadOnly = false;
         Assert.True(tb.IsVisible);
     }

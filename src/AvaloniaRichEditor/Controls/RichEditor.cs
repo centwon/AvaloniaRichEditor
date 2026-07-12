@@ -107,9 +107,10 @@ public partial class RichEditor : Control
     public static readonly StyledProperty<bool> IsReadOnlyProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(IsReadOnly));
 
-    /// <summary>When <see langword="true"/>, text input, edits, paste, and resizing are blocked;
-    /// selection and copy still work, and the caret is hidden. Equivalent to
-    /// <c>EditorMode = EditorMode.ReadOnly</c>.</summary>
+    /// <summary>When <see langword="true"/>, the editor is a viewer: text input, edits, paste, and resizing
+    /// are blocked; selection and copy still work, and the caret is hidden (blink, IME, and undo history are
+    /// disabled too). Combine with the <see cref="AllowImages"/>/<see cref="AllowTables"/>/etc. flags to
+    /// express capability — there is no bundled mode preset.</summary>
     public bool IsReadOnly
     {
         get => GetValue(IsReadOnlyProperty);
@@ -207,9 +208,7 @@ public partial class RichEditor : Control
     static RichEditor()
     {
         AffectsRender<RichEditor>(DocumentProperty, SelectionBrushProperty, CaretBrushProperty);
-        // EditorMode preset writes the feature-flag bundle; ReadOnly drives caret/IME/undo optimization
-        // (whether it arrives via the preset or a direct IsReadOnly assignment). See RichEditor.Modes.cs.
-        EditorModeProperty.Changed.AddClassHandler<RichEditor>((x, e) => x.ApplyEditorModePreset(e.GetNewValue<EditorMode>()));
+        // ReadOnly drives the caret/IME/undo optimization. See RichEditor.Modes.cs.
         IsReadOnlyProperty.Changed.AddClassHandler<RichEditor>((x, e) => x.OnReadOnlyChanged(e.GetNewValue<bool>()));
     }
 
@@ -277,6 +276,7 @@ public partial class RichEditor : Control
             _layoutCache.Clear();
             _tableLayoutCache.Clear();
             if (Document != null) UpdateParents(Document);
+            SyncPageSetupOnDocumentChanged(); // apply the loaded doc's page setup to the page properties
             _textChangedPending = true; // wholesale content swap
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             InvalidateMeasure();
@@ -292,6 +292,7 @@ public partial class RichEditor : Control
         if (change.Property == PageSizeProperty || change.Property == ShowPageBoundariesProperty
             || change.Property == PageOrientationProperty)
         {
+            CapturePageSetupToDocument(); // persist the page change into the document model
             _pageBreaks = null;   // wrap width / paper changes between modes -> stale break positions
             _layoutCache.Clear(); // cached layouts were shaped at the other mode's width
             _tableLayoutCache.Clear();
@@ -301,6 +302,7 @@ public partial class RichEditor : Control
         if (change.Property == PageHeaderProperty || change.Property == PageFooterProperty
             || change.Property == ShowPageNumbersProperty)
         {
+            CapturePageSetupToDocument(); // persist the page change into the document model
             InvalidateVisual(); // margin-band chrome only — pagination is unaffected
         }
         if (change.Property == IsFocusedProperty)

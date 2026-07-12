@@ -18,6 +18,20 @@ public partial class RichEditor
 {
     // ---------------- Context menu (right-click) ----------------
 
+    /// <summary>When <see langword="true"/>, the right-click menu includes the full character/paragraph/
+    /// list/heading formatting groups. Default <see langword="false"/> (slim): the menu shows only clipboard,
+    /// quick bold/italic/underline toggles, hyperlink and inserts — the rich formatting lives on the toolbar.
+    /// A standalone host without a toolbar can opt in.</summary>
+    public static readonly StyledProperty<bool> ShowFormattingMenuProperty =
+        AvaloniaProperty.Register<RichEditor, bool>(nameof(ShowFormattingMenu));
+
+    /// <summary>Gets or sets whether the right-click menu carries the full formatting groups. Default false.</summary>
+    public bool ShowFormattingMenu
+    {
+        get => GetValue(ShowFormattingMenuProperty);
+        set => SetValue(ShowFormattingMenuProperty, value);
+    }
+
     // Menu labels come from the shared localization table (ko/en built in, host-extensible).
     // Menus are rebuilt on every right-click, so a runtime language switch needs no extra wiring.
     private static string Loc(string key) => RichEditorLocalization.GetString(key);
@@ -26,12 +40,33 @@ public partial class RichEditor
     // can dismiss it after acting. Set just before Open.
     private ContextMenu? _openContextMenu;
 
-    private static MenuItem Mi(string header, Action action, bool enabled = true, RichEditorIcon? icon = null)
+    private static MenuItem Mi(string header, Action action, bool enabled = true, RichEditorIcon? icon = null, KeyGesture? gesture = null)
     {
         var mi = new MenuItem { Header = header, IsEnabled = enabled };
         // Menus are rebuilt per right-click, so a host-provided icon (RichEditorIcons.Provider)
         // shows up immediately; null keeps the text-only item.
         if (icon is { } k && RichEditorIcons.TryCreate(k) is { } ic) mi.Icon = ic;
+        // Display-only shortcut hint (the editor handles keys itself in OnKeyDown, so InputGesture must not
+        // be bound as a live accelerator — Avalonia's MenuItem shows it without invoking it).
+        if (gesture != null) mi.InputGesture = gesture;
+        mi.Click += (_, _) => action();
+        return mi;
+    }
+
+    // A checkable toggle item (checkbox) reflecting a current on/off state — e.g. a bold toggle or a list state.
+    private static MenuItem CheckItem(string header, bool isChecked, Action action, bool enabled = true, KeyGesture? gesture = null)
+    {
+        var mi = new MenuItem { Header = header, IsEnabled = enabled, ToggleType = MenuItemToggleType.CheckBox, IsChecked = isChecked };
+        if (gesture != null) mi.InputGesture = gesture;
+        mi.Click += (_, _) => action();
+        return mi;
+    }
+
+    // A radio item within a named group, checked when it matches the current value.
+    private static MenuItem RadioItem(string header, string group, bool isChecked, Action action, KeyGesture? gesture = null)
+    {
+        var mi = new MenuItem { Header = header, ToggleType = MenuItemToggleType.Radio, GroupName = group, IsChecked = isChecked };
+        if (gesture != null) mi.InputGesture = gesture;
         mi.Click += (_, _) => action();
         return mi;
     }
@@ -161,7 +196,7 @@ public partial class RichEditor
 
         if (IsReadOnly)
         {
-            var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll) };
+            var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)) };
             var roMenu = NewContextMenu();
             roMenu.ItemsSource = roItems;
             _openContextMenu = roMenu;
@@ -270,9 +305,9 @@ public partial class RichEditor
             CopySelectionToClipboard();
             DeleteSelection();
             InvalidateVisual();
-        }, hasSelection, RichEditorIcon.Cut));
-        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy));
-        items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste));
+        }, hasSelection, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(ShortcutId.Cut)));
+        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste, gesture: RichEditorShortcuts.Gesture(ShortcutId.Paste)));
         items.Add(Mi(Loc("Delete"), () =>
         {
             if (Document != null) PushUndo();
@@ -281,68 +316,74 @@ public partial class RichEditor
         }, hasSelection, RichEditorIcon.Delete));
     }
 
-    private void AddFormatItems(List<Control> items, bool hasSelection)
+    // ── 글자 모양 (character shape) ── quick toggles (checked) + font larger/smaller + clear. The precise
+    // pickers (specific size, text color, highlight, font family) are toolbar-only, HWP-style.
+    private MenuItem CharacterFormatSub(CaretFormat fmt, bool hasSelection) => Sub(Loc("CharacterFormat"),
+        CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Bold)),
+        CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Italic)),
+        CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Underline)),
+        CheckItem(Loc("Strikethrough"), fmt.Strike, ToggleStrikethrough, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Strikethrough)),
+        new Separator(),
+        Mi(Loc("FontSizeIncrease"), IncreaseFontSize, true, RichEditorIcon.FontSizeIncrease, RichEditorShortcuts.Gesture(ShortcutId.FontLarger)),
+        Mi(Loc("FontSizeDecrease"), DecreaseFontSize, true, RichEditorIcon.FontSizeDecrease, RichEditorShortcuts.Gesture(ShortcutId.FontSmaller)),
+        new Separator(),
+        Mi(Loc("ClearFormatting"), ClearFormatting, hasSelection, RichEditorIcon.ClearFormatting));
+
+    // 문단 모양 (paragraph shape): alignment as a radio group (current value checked) + indent + margin,
+    // flattened into one level (HWP-style — no nested 정렬/여백 submenus).
+    private MenuItem BuildParagraphFormatSub(CaretFormat fmt)
     {
-        // Font submenu is built from the (host-overridable) FontFamilyChoices, so no locale is assumed.
-        var fontItems = FontFamilyChoices
-            .Select(f => (Control)Mi(f, () => SetFontFamily(f), hasSelection))
-            .ToArray();
-        // Character-level formatting, grouped under one submenu so the top level stays short.
-        items.Add(Sub(Loc("CharacterFormat"),
-            Mi(Loc("Bold"), ToggleBold, hasSelection, RichEditorIcon.Bold),
-            Mi(Loc("Italic"), ToggleItalic, hasSelection, RichEditorIcon.Italic),
-            Mi(Loc("Underline"), ToggleUnderline, hasSelection, RichEditorIcon.Underline),
-            Mi(Loc("Strikethrough"), ToggleStrikethrough, hasSelection, RichEditorIcon.Strikethrough),
+        var children = new List<Control>
+        {
+            RadioItem(Loc("AlignLeft"), "ctxAlign", fmt.Align == TextAlignment.Left, () => SetTextAlignment(TextAlignment.Left), RichEditorShortcuts.Gesture(ShortcutId.AlignLeft)),
+            RadioItem(Loc("AlignCenter"), "ctxAlign", fmt.Align == TextAlignment.Center, () => SetTextAlignment(TextAlignment.Center), RichEditorShortcuts.Gesture(ShortcutId.AlignCenter)),
+            RadioItem(Loc("AlignRight"), "ctxAlign", fmt.Align == TextAlignment.Right, () => SetTextAlignment(TextAlignment.Right), RichEditorShortcuts.Gesture(ShortcutId.AlignRight)),
+            RadioItem(Loc("AlignJustify"), "ctxAlign", fmt.Align == TextAlignment.Justify, () => SetTextAlignment(TextAlignment.Justify), RichEditorShortcuts.Gesture(ShortcutId.AlignJustify)),
             new Separator(),
-            Sub(Loc("FontSize"),
-                Mi("10", () => SetFontSize(10)), Mi("12", () => SetFontSize(12)), Mi("14", () => SetFontSize(14)),
-                Mi("18", () => SetFontSize(18)), Mi("24", () => SetFontSize(24)), Mi("36", () => SetFontSize(36))),
-            Sub(Loc("TextColor"),
-                Mi(Loc("ColorBlack"), () => SetForeground(Brushes.Black)), Mi(Loc("ColorRed"), () => SetForeground(Brushes.Red)),
-                Mi(Loc("ColorBlue"), () => SetForeground(Brushes.Blue)), Mi(Loc("ColorGreen"), () => SetForeground(Brushes.Green)),
-                Mi(Loc("ColorGray"), () => SetForeground(Brushes.Gray))),
-            Sub(Loc("Highlight"),
-                Mi(Loc("HighlightYellow"), () => SetHighlight(Brushes.Yellow), hasSelection),
-                Mi(Loc("HighlightGreen"), () => SetHighlight(Brushes.LightGreen), hasSelection),
-                Mi(Loc("HighlightPink"), () => SetHighlight(Brushes.Pink), hasSelection),
-                Mi(Loc("HighlightSkyBlue"), () => SetHighlight(Brushes.LightBlue), hasSelection),
-                Mi(Loc("HighlightNone"), () => SetHighlight(null), hasSelection)),
-            Sub(Loc("FontFamily"), fontItems),
-            new Separator(),
-            Mi(Loc("ClearFormatting"), ClearFormatting, hasSelection, RichEditorIcon.ClearFormatting)));
-        // Paragraph-level formatting, also grouped.
-        items.Add(Sub(Loc("Paragraph"),
-            Sub(Loc("Alignment"),
-                Mi(Loc("AlignLeft"), () => SetTextAlignment(TextAlignment.Left), icon: RichEditorIcon.AlignLeft),
-                Mi(Loc("AlignCenter"), () => SetTextAlignment(TextAlignment.Center), icon: RichEditorIcon.AlignCenter),
-                Mi(Loc("AlignRight"), () => SetTextAlignment(TextAlignment.Right), icon: RichEditorIcon.AlignRight),
-                Mi(Loc("AlignJustify"), () => SetTextAlignment(TextAlignment.Justify))),
-            Sub(Loc("List"),
-                Mi(Loc("BulletList"), ToggleBullet, icon: RichEditorIcon.BulletList),
-                Sub(Loc("BulletStyle"),
-                    Mi("•", () => SetListStyle(ListMarkerStyle.Disc)),
-                    Mi("◦", () => SetListStyle(ListMarkerStyle.Circle)),
-                    Mi("▪", () => SetListStyle(ListMarkerStyle.Square)),
-                    Mi("–", () => SetListStyle(ListMarkerStyle.Dash))),
-                Mi(Loc("NumberedList"), ToggleNumbering, icon: RichEditorIcon.NumberedList),
-                Sub(Loc("NumberStyle"),
-                    Mi("1.", () => SetListStyle(ListMarkerStyle.Decimal)),
-                    Mi("1)", () => SetListStyle(ListMarkerStyle.DecimalParen)),
-                    Mi("a)", () => SetListStyle(ListMarkerStyle.LowerAlpha)),
-                    Mi("A)", () => SetListStyle(ListMarkerStyle.UpperAlpha)),
-                    Mi("i)", () => SetListStyle(ListMarkerStyle.LowerRoman))),
-                Mi(Loc("Quote"), ToggleQuote)),
-            Sub(Loc("Heading"),
-                Mi(Loc("Heading1"), () => SetHeading(1)),
-                Mi(Loc("Heading2"), () => SetHeading(2)),
-                Mi(Loc("Heading3"), () => SetHeading(3)),
-                Mi(Loc("Heading4"), () => SetHeading(4)),
-                Mi(Loc("Heading5"), () => SetHeading(5)),
-                Mi(Loc("Heading6"), () => SetHeading(6)),
-                Mi(Loc("BodyText"), () => SetHeading(0))),
-            Sub(Loc("Indent"),
-                Mi(Loc("IndentIncrease"), () => Indent(20), icon: RichEditorIcon.IndentIncrease),
-                Mi(Loc("IndentDecrease"), () => Indent(-20), icon: RichEditorIcon.IndentDecrease))));
+            Mi(Loc("IndentIncrease"), () => Indent(20), true, RichEditorIcon.IndentIncrease, RichEditorShortcuts.Gesture(ShortcutId.IndentIncrease)),
+            Mi(Loc("IndentDecrease"), () => Indent(-20), true, RichEditorIcon.IndentDecrease, RichEditorShortcuts.Gesture(ShortcutId.IndentDecrease)),
+        };
+        // Margin (top-level paragraphs only — cell paragraphs lay out inside the cell).
+        if (_caretPosition.Paragraph is { } mp && Document != null && Document.Blocks.IndexOf(mp) >= 0)
+        {
+            children.Add(new Separator());
+            children.Add(MarginMenu(mp));
+        }
+        return Sub(Loc("ParagraphFormat"), children.ToArray());
+    }
+
+    // ── 목록 (list) — promoted to top level; bullet/number/quote states are checked to reflect the caret.
+    private MenuItem ListSub(CaretFormat fmt) => Sub(Loc("List"),
+        CheckItem(Loc("BulletList"), fmt.List == ListKind.Bullet, ToggleBullet, gesture: RichEditorShortcuts.Gesture(ShortcutId.BulletList)),
+        Sub(Loc("BulletStyle"),
+            Mi("•", () => SetListStyle(ListMarkerStyle.Disc)),
+            Mi("◦", () => SetListStyle(ListMarkerStyle.Circle)),
+            Mi("▪", () => SetListStyle(ListMarkerStyle.Square)),
+            Mi("–", () => SetListStyle(ListMarkerStyle.Dash))),
+        CheckItem(Loc("NumberedList"), fmt.List == ListKind.Ordered, ToggleNumbering),
+        Sub(Loc("NumberStyle"),
+            Mi("1.", () => SetListStyle(ListMarkerStyle.Decimal)),
+            Mi("1)", () => SetListStyle(ListMarkerStyle.DecimalParen)),
+            Mi("a)", () => SetListStyle(ListMarkerStyle.LowerAlpha)),
+            Mi("A)", () => SetListStyle(ListMarkerStyle.UpperAlpha)),
+            Mi("i)", () => SetListStyle(ListMarkerStyle.LowerRoman))),
+        new Separator(),
+        CheckItem(Loc("Quote"), fmt.Quote, ToggleQuote));
+
+    // ── 제목 (heading / style) — promoted to top level, radio-checked at the current level.
+    private MenuItem HeadingSub(CaretFormat fmt) => Sub(Loc("Heading"),
+        HeadingRadio(Loc("Heading1"), 1, fmt.Heading), HeadingRadio(Loc("Heading2"), 2, fmt.Heading),
+        HeadingRadio(Loc("Heading3"), 3, fmt.Heading), HeadingRadio(Loc("Heading4"), 4, fmt.Heading),
+        HeadingRadio(Loc("Heading5"), 5, fmt.Heading), HeadingRadio(Loc("Heading6"), 6, fmt.Heading),
+        new Separator(),
+        HeadingRadio(Loc("BodyText"), 0, fmt.Heading));
+
+    // A heading level as a radio item within the 제목 group (current level checked); carries its Ctrl+Alt+n hint.
+    private MenuItem HeadingRadio(string header, int level, int current)
+    {
+        // Heading1..6 are consecutive enum values; level 0 = body text.
+        var sc = level == 0 ? ShortcutId.BodyText : (ShortcutId)((int)ShortcutId.Heading1 + level - 1);
+        return RadioItem(header, "ctxHeading", current == level, () => SetHeading(level), RichEditorShortcuts.Gesture(sc));
     }
 
     /// <summary>Inserts a horizontal rule (<see cref="DividerBlock"/>) at the caret position.</summary>
@@ -359,13 +400,28 @@ public partial class RichEditor
     // nested tables yet) and the table-structure operations are appended as a "Table" submenu.
     private void BuildTextMenu(List<Control> items, bool hasSelection, Run? link, TableBlock? cellTable = null)
     {
+        var fmt = GetCaretFormat(); // current caret state → radio/check reflection
         AddClipboardItems(items, hasSelection);
         items.Add(new Separator());
-        AddFormatItems(items, hasSelection);
-        // Top-level paragraphs only — cell paragraphs lay out inside the cell, where block margins
-        // don't apply (the IndexOf check is false for them).
-        if (_caretPosition.Paragraph is { } mp && Document != null && Document.Blocks.IndexOf(mp) >= 0)
-            items.Add(MarginMenu(mp));
+
+        if (ShowFormattingMenu)
+        {
+            // HWP-style: 글자 모양 / 문단 모양 / 목록 / 제목 grouping submenus (flattened — alignment and
+            // margin under 문단 모양, list/heading promoted to top level). Full formatting opt-in.
+            items.Add(CharacterFormatSub(fmt, hasSelection));
+            items.Add(BuildParagraphFormatSub(fmt));
+            items.Add(ListSub(fmt));
+            items.Add(HeadingSub(fmt));
+        }
+        else
+        {
+            // Slim (default): just the quick character toggles, checked to reflect the caret. The rich
+            // formatting groups live on the toolbar; opt in with ShowFormattingMenu for a toolbar-less host.
+            items.Add(CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Bold)));
+            items.Add(CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Italic)));
+            items.Add(CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Underline)));
+        }
+
         items.Add(new Separator());
         if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
         {
@@ -378,9 +434,9 @@ public partial class RichEditor
             items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, hasSelection, RichEditorIcon.InsertLink));
         }
         items.Add(new Separator());
-        items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll));
-        items.Add(Mi(Loc("Undo"), DoUndo, icon: RichEditorIcon.Undo));
-        items.Add(Mi(Loc("Redo"), DoRedo, icon: RichEditorIcon.Redo));
+        items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)));
+        items.Add(Mi(Loc("Undo"), DoUndo, CanUndo, RichEditorIcon.Undo, RichEditorShortcuts.Gesture(ShortcutId.Undo)));
+        items.Add(Mi(Loc("Redo"), DoRedo, CanRedo, RichEditorIcon.Redo, RichEditorShortcuts.Gesture(ShortcutId.Redo)));
         // Block-insert items appear only when the corresponding feature flag is enabled (N3.5). Inside a
         // cell, image/divider/table all insert into the cell (P4-2a/P4-2b nested tables).
         if (AllowTables || AllowImages) items.Add(new Separator());
@@ -399,8 +455,9 @@ public partial class RichEditor
 
     private void BuildImageMenu(List<Control> items, ImageBlock img)
     {
-        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: false, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy));
-        items.Add(Mi(Loc("Delete"), () => DeleteBlock(img), icon: RichEditorIcon.Delete));
+        // Edit
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: false, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        // 개체 모양 (object shape): size preset, 글자처럼 취급, margin.
         items.Add(new Separator());
         // Size presets in a submenu. "Original" resets to natural size; the fractions scale the
         // current display size (so they compound). Width/Height only — encoded bytes untouched.
@@ -409,22 +466,18 @@ public partial class RichEditor
             Mi(Loc("HalfSize"), () => ScaleImageSize(img, 1.0 / 2), img.Image != null),
             Mi(Loc("ThirdSize"), () => ScaleImageSize(img, 1.0 / 3), img.Image != null),
             Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), img.Image != null)));
-        items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
-        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveImageAsync(img); }, img.Image != null, RichEditorIcon.SaveImageAs));
-        items.Add(MarginMenu(img));
-        items.Add(new Separator());
         // HWP-style toggle: unchecked here (block image); checking it demotes to an inline character.
         // Disabled for a cell image: block<->inline conversion anchors to top-level paragraphs, which a
         // cell image doesn't have (mirrors the inline-image menu's guard inside cells).
-        var asChar = new MenuItem
-        {
-            Header = Loc("InlineWithText"),
-            ToggleType = MenuItemToggleType.CheckBox,
-            IsChecked = false,
-            IsEnabled = img.Parent is FlowDocument,
-        };
-        asChar.Click += (_, _) => ConvertImageBlockToInline(img);
-        items.Add(asChar);
+        items.Add(CheckItem(Loc("InlineWithText"), false, () => ConvertImageBlockToInline(img), img.Parent is FlowDocument));
+        items.Add(MarginMenu(img));
+        // File ops: replace / save.
+        items.Add(new Separator());
+        items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
+        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveImageAsync(img); }, img.Image != null, RichEditorIcon.SaveImageAs));
+        // Delete
+        items.Add(new Separator());
+        items.Add(Mi(Loc("Delete"), () => DeleteBlock(img), icon: RichEditorIcon.Delete));
     }
 
     // Concise menu shown when right-clicking a hyperlink: link actions + copy, no formatting clutter.
@@ -445,23 +498,26 @@ public partial class RichEditor
     // the InlineImage in place.
     private void BuildInlineImageMenu(List<Control> items, Paragraph p, InlineImage img)
     {
-        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: true, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy));
-        items.Add(Mi(Loc("Delete"), () => DeleteInlineImage(p, img), icon: RichEditorIcon.Delete));
+        // Edit
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: true, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        // 개체 모양 (object shape): size preset + 글자처럼 취급.
         items.Add(new Separator());
         items.Add(Sub(Loc("ImageSize"),
             Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), img.Image != null),
             Mi(Loc("HalfSize"), () => ScaleInlineImageSize(img, 1.0 / 2), img.Image != null),
             Mi(Loc("ThirdSize"), () => ScaleInlineImageSize(img, 1.0 / 3), img.Image != null),
             Mi(Loc("QuarterSize"), () => ScaleInlineImageSize(img, 1.0 / 4), img.Image != null)));
-        items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceInlineImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
-        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveBitmapAsync(img.Image); }, img.Image != null, RichEditorIcon.SaveImageAs));
-        items.Add(new Separator());
         // Checked here (inline = treated as a character). Unchecking promotes back to a block image;
         // disabled inside table cells, which cannot host block siblings.
         bool canBlock = Document != null && Document.Blocks.IndexOf(p) >= 0;
-        var asChar = new MenuItem { Header = Loc("InlineWithText"), ToggleType = MenuItemToggleType.CheckBox, IsChecked = true, IsEnabled = canBlock };
-        asChar.Click += (_, _) => ConvertInlineImageToBlock(p, img);
-        items.Add(asChar);
+        items.Add(CheckItem(Loc("InlineWithText"), true, () => ConvertInlineImageToBlock(p, img), canBlock));
+        // File ops: replace / save.
+        items.Add(new Separator());
+        items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceInlineImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
+        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveBitmapAsync(img.Image); }, img.Image != null, RichEditorIcon.SaveImageAs));
+        // Delete
+        items.Add(new Separator());
+        items.Add(Mi(Loc("Delete"), () => DeleteInlineImage(p, img), icon: RichEditorIcon.Delete));
     }
 
     private void BuildTableMenu(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)

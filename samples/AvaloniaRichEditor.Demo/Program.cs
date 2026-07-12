@@ -38,6 +38,8 @@ sealed class Program
 #if DEBUG
             .WithDeveloperTools()
 #endif
-            .WithInterFont()
+            // Use the system UI font (Segoe UI on Windows) instead of bundling Inter: a Windows-targeted
+            // desktop app doesn't need cross-platform font consistency, and dropping the embedded font
+            // trims its memory/disk footprint. FluentTheme falls back to the system default font.
             .LogToTrace();
 }

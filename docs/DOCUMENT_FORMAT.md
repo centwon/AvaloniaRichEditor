@@ -56,9 +56,19 @@ FlowDocument
   "Blocks": [ /* BlockDto[] */ ],
   "Images": {                    // 이미지 풀 (이미지가 없으면 생략)
     "<SHA256 hex(대문자)>": { "Data": "<base64>", "MimeType": "image/jpeg" }
+  },
+  "PageSetup": {                 // 문서 페이지 설정 (기본값과 같으면 생략 — 아래 참고)
+    "PageSize": "A4",            // enum 이름. 기본 "Continuous"(폭에 맞춰 reflow)
+    "Orientation": "Portrait",   // "Portrait" | "Landscape" (Continuous에서는 무의미)
+    "ShowPageBoundaries": true,
+    "Header": null,              // 머리글 텍스트(없으면 생략)
+    "Footer": null,              // 바닥글 텍스트(없으면 생략)
+    "ShowPageNumbers": false
   }
 }
 ```
+
+- **`PageSetup`(선택)**: 워드프로세서식 페이지 설정. 로드 시 에디터의 용지/방향/머리글·바닥글/쪽번호 속성에 적용되고, 이후 페이지 속성을 바꾸면 문서로 다시 캡처된다. **기본 상태(용지 `Continuous`, 머리글/바닥글/쪽번호 없음)면 통째로 생략**되므로 평범한 문서의 바이트는 이전과 동일하다. 열거값은 이름으로 직렬화되어 미래의 알 수 없는 값은 기본값으로 안전하게 강등된다. 이 필드를 모르는 (구) 판독기는 무시한다 — 추가 필드라 버전 증가 없음.
 
 #### 버전 이력
 

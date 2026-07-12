@@ -6,16 +6,24 @@ using Xunit;
 
 namespace AvaloniaRichEditor.Tests;
 
-// EditorMode presets + feature flags (roadmap N3.5). Verifies the preset->flag bundle, the guard
-// behaviour (block-insert / find / paste path entry points), flag-override precedence, and the
-// ReadOnly optimization (undo history cleared).
-public class EditorModeTests
+// Feature flags (roadmap N3.5). Capability is expressed directly through IsReadOnly + the Allow* flags
+// (the EditorMode preset bundle was removed). Verifies the flag defaults, the guard behaviour (block-insert
+// / find / paste path entry points), and the ReadOnly optimization (undo history cleared).
+public class FeatureFlagTests
 {
+    // Turns off the rich-content flags while staying editable (the former "Basic" preset, set directly).
+    private static void MakeBasic(RichEditor ed)
+    {
+        ed.AllowImages = false;
+        ed.AllowTables = false;
+        ed.AllowRichPaste = false;
+        ed.AllowFindReplace = false;
+    }
+
     [AvaloniaFact]
-    public void Default_IsFull_WithAllFlagsEnabled()
+    public void Default_HasAllFlagsEnabled_AndIsEditable()
     {
         var ed = new RichEditor();
-        Assert.Equal(EditorMode.Full, ed.EditorMode);
         Assert.True(ed.AllowImages);
         Assert.True(ed.AllowTables);
         Assert.True(ed.AllowRichPaste);
@@ -24,10 +32,10 @@ public class EditorModeTests
     }
 
     [AvaloniaFact]
-    public void BasicPreset_DisablesRichFlags_ButStaysEditable()
+    public void ClearingRichFlags_KeepsEditable()
     {
         var ed = new RichEditor();
-        ed.EditorMode = EditorMode.Basic;
+        MakeBasic(ed);
         Assert.False(ed.AllowImages);
         Assert.False(ed.AllowTables);
         Assert.False(ed.AllowRichPaste);
@@ -36,32 +44,24 @@ public class EditorModeTests
     }
 
     [AvaloniaFact]
-    public void ReadOnlyPreset_SetsIsReadOnly()
-    {
-        var ed = new RichEditor();
-        ed.EditorMode = EditorMode.ReadOnly;
-        Assert.True(ed.IsReadOnly);
-    }
-
-    [AvaloniaFact]
-    public void Basic_BlocksTableInsert()
+    public void AllowTablesFalse_BlocksTableInsert()
     {
         var ed = new RichEditor();
         ed.LoadHtml("<p>abc</p>");
         ed.FocusDocumentEnd();
-        ed.EditorMode = EditorMode.Basic;
+        MakeBasic(ed);
 
         ed.InsertTable(2, 2);
         Assert.DoesNotContain(ed.Document!.Blocks, b => b is TableBlock);
     }
 
     [AvaloniaFact]
-    public void Basic_StillAllowsTextInput()
+    public void ClearedFlags_StillAllowTextInput()
     {
         var ed = new RichEditor();
         ed.LoadHtml("<p>abc</p>");
         ed.FocusDocumentEnd();
-        ed.EditorMode = EditorMode.Basic;
+        MakeBasic(ed);
 
         ed.InsertText("XY");
         var p = (Paragraph)ed.Document!.Blocks.First(b => b is Paragraph);
@@ -69,23 +69,23 @@ public class EditorModeTests
     }
 
     [AvaloniaFact]
-    public void Basic_DisablesFindReplace()
+    public void AllowFindReplaceFalse_DisablesFindReplace()
     {
         var ed = new RichEditor();
         ed.LoadHtml("<p>hello hello</p>");
-        ed.EditorMode = EditorMode.Basic;
+        MakeBasic(ed);
         Assert.False(ed.FindNext("hello", matchCase: false));
         Assert.Equal(0, ed.ReplaceAll("hello", "x", matchCase: false));
     }
 
     [AvaloniaFact]
-    public void IndividualFlag_OverridesPreset()
+    public void IndividualFlag_TakesEffect()
     {
         var ed = new RichEditor();
         ed.LoadHtml("<p>abc</p>");
         ed.FocusDocumentEnd();
-        ed.EditorMode = EditorMode.Basic; // turns tables off
-        ed.AllowTables = true;            // ...then re-enables just tables
+        MakeBasic(ed);        // tables off
+        ed.AllowTables = true; // ...then re-enable just tables
 
         ed.InsertTable(2, 2);
         Assert.Contains(ed.Document!.Blocks, b => b is TableBlock);

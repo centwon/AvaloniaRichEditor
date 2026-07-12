@@ -31,6 +31,9 @@ public static class RichEditorLocalization
             ["Redo"] = "Redo",
             // Character formatting
             ["CharacterFormat"] = "Font Style",
+            ["ParagraphFormat"] = "Paragraph",
+            ["FontSizeIncrease"] = "Larger",
+            ["FontSizeDecrease"] = "Smaller",
             ["Bold"] = "Bold",
             ["Italic"] = "Italic",
             ["Underline"] = "Underline",
@@ -160,6 +163,9 @@ public static class RichEditorLocalization
             ["Redo"] = "다시 실행",
             // Character formatting
             ["CharacterFormat"] = "글자 모양",
+            ["ParagraphFormat"] = "문단 모양",
+            ["FontSizeIncrease"] = "글자 크게",
+            ["FontSizeDecrease"] = "글자 작게",
             ["Bold"] = "굵게",
             ["Italic"] = "기울임",
             ["Underline"] = "밑줄",

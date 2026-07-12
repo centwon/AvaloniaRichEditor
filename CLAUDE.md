@@ -48,13 +48,13 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 - `Documents/` — 문서 모델. `FlowDocument.Blocks`(AvaloniaList<Block>)에 `Paragraph`/`TableBlock`/`ImageBlock`이 **형제(sibling)**로 들어감.
   - `Paragraph.Inlines`: `Run`(텍스트) 또는 `InlineImage`(인라인 아이콘).
   - `TextPointer`(Paragraph+Offset), `TextRange`(삭제/복사/서식/구조).
-- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`, 본체 ~1,270줄: 속성/이벤트·undo·편집 코어·`BuildTextLayout` 레이아웃 캐시). 부분 클래스 분리: `Input`(포인터·키보드·IME·블록 횡단 캐럿), `HitTesting`(GetPositionFromPoint 등 + `LayoutTable` 공유 표 기하), `Formatting`(서식 명령·리스트·하이퍼링크·포맷 페인터), `DocumentApi`(HTML/JSON/.flow 입출력), `Tables`(셀 탐색·Tab·행/열 연산), `Images`(크기/교체/블록↔인라인 변환), `FindReplace`, `ContextMenu`(우클릭 메뉴), `Clipboard`(붙여넣기·드래그드롭), `Rendering`(Measure/Render/AutomationPeer), `Modes`(EditorMode·기능 플래그·이미지 소프트 제한). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal). 접근성 `RichEditorAutomationPeer`(IValueProvider). 호스트 교체용 아이콘 훅 `RichEditorIcons`(전역 Provider).
-- `Formatters/` — `DocumentSerializer`(JSON), `HtmlDocumentFormatter`(HTML 입출력 파서), `RoundTripHarness`(`--roundtrip` CLI 검증).
+- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`, 본체 ~1,270줄: 속성/이벤트·undo·편집 코어·`BuildTextLayout` 레이아웃 캐시). 부분 클래스 분리: `Input`(포인터·키보드·IME·블록 횡단 캐럿), `HitTesting`(GetPositionFromPoint 등 + `LayoutTable` 공유 표 기하), `Formatting`(서식 명령·리스트·하이퍼링크·포맷 페인터), `DocumentApi`(HTML/JSON/.flow 입출력), `Tables`(셀 탐색·Tab·행/열 연산), `Images`(크기/교체/블록↔인라인 변환), `FindReplace`, `ContextMenu`(우클릭 메뉴), `Clipboard`(붙여넣기·드래그드롭), `Rendering`(Measure/Render/AutomationPeer), `Modes`(`IsReadOnly`·`Allow*` 기능 플래그·이미지 소프트 제한 — `EditorMode` enum은 제거됨), `Pagination`(페이지 브레이크·용지 DP·`FlowDocument.PageSetup` 동기화, 기본 용지 `Continuous`). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal), `RichEditorShortcuts`(Word 표준 중앙 단축키 테이블: 키핸들러·컨텍스트 메뉴 힌트·툴바 툴팁 단일 출처). 접근성 `RichEditorAutomationPeer`(IValueProvider). 호스트 교체용 아이콘 훅 `RichEditorIcons`(전역 Provider). 툴바 `RichEditorToolbar`(+`.PageFile`: `ToolbarLevel` 밀도·페이지/줌·Export/Import/Print 내장, 줌은 호스트 훅), 드롭인 `RichEditorView`가 위임.
+- `Formatters/` — `DocumentSerializer`(JSON), `HtmlDocumentFormatter`(HTML 입출력 파서), `RtfDocumentFormatter`(RTF), `PdfWriter`(래스터 PDF), `DocumentPackage`(`.flow` zip), `RoundTripHarness`(`--roundtrip` CLI 검증).
 
 **데모/테스트 앱** `samples/AvaloniaRichEditor.Demo/` (네임스페이스 `AvaloniaRichEditor.Demo.*`):
 - `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(웹 에디터 호환 래퍼)는 데모 전용.
 
-**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off). 27개.
+**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off) 325개 + `tests/AvaloniaRichEditor.Tests.Render/`(real Skia 픽셀) 6개.
 
 > NuGet 배포 준비(N0~N5)와 진행 상황은 [`Project_Roadmap.md`](Project_Roadmap.md)의 **"📦 NuGet 배포 계획"** 절 참고.
 

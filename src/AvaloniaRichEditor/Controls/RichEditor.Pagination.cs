@@ -15,6 +15,57 @@ namespace AvaloniaRichEditor.Controls;
 // (the single TextLayout is the source of truth) intact.
 public partial class RichEditor
 {
+    // ---- page setup <-> document model ------------------------------------
+    // Page setup (paper/orientation/header/footer/page numbers) is a DOCUMENT property persisted in
+    // JSON/.flow, but the live source of truth is the control's page properties. These keep the two in
+    // sync, guarded against the apply -> property-change -> capture feedback loop.
+    private bool _syncingPageSetup;
+
+    // On Document change: a document that specifies a PageSetup drives the control's page properties
+    // (model -> control); a document without one adopts the control's current settings (control -> model)
+    // so a later save persists what's shown. Since the default paper is Continuous, adopting a plain
+    // document yields a default (omitted) setup, keeping its bytes unchanged.
+    private void SyncPageSetupOnDocumentChanged()
+    {
+        var doc = Document;
+        if (doc == null) return;
+        if (doc.PageSetup is { } ps)
+        {
+            _syncingPageSetup = true;
+            try
+            {
+                PageSize = ps.PageSize;
+                PageOrientation = ps.Orientation;
+                ShowPageBoundaries = ps.ShowPageBoundaries;
+                PageHeader = ps.Header;
+                PageFooter = ps.Footer;
+                ShowPageNumbers = ps.ShowPageNumbers;
+            }
+            finally { _syncingPageSetup = false; }
+        }
+        else CapturePageSetupToDocument();
+    }
+
+    // Writes the control's current page properties into Document.PageSetup (control -> model) when the
+    // user changes a page setting, so serialization captures it. Stores null when everything is at the
+    // default, keeping plain documents' format unchanged.
+    private void CapturePageSetupToDocument()
+    {
+        if (_syncingPageSetup) return;
+        var doc = Document;
+        if (doc == null) return;
+        var ps = new PageSetup
+        {
+            PageSize = PageSize,
+            Orientation = PageOrientation,
+            ShowPageBoundaries = ShowPageBoundaries,
+            Header = PageHeader,
+            Footer = PageFooter,
+            ShowPageNumbers = ShowPageNumbers,
+        };
+        doc.PageSetup = ps.IsDefault ? null : ps;
+    }
+
     // A4 at 96 DPI — the default paper and the print fallback for the Continuous mode.
     internal const double A4PageWidth = 794;
     internal const double A4PageHeight = 1123;
@@ -31,13 +82,13 @@ public partial class RichEditor
     internal const double A4ContentWidth = A4PageWidth - 2 * PagePadX;    // 698
     internal const double A4ContentHeight = A4PageHeight - 2 * PagePadY;  // 1043
 
-    /// <summary>Paper size for the document. <see cref="RichEditorPageSize.Continuous"/> (no fixed
-    /// paper) reflows the text column to the control width; any concrete size fixes the column to that
-    /// paper's content width. Default <see cref="RichEditorPageSize.A4"/>.</summary>
+    /// <summary>Paper size for the document. <see cref="RichEditorPageSize.Continuous"/> (the default, no
+    /// fixed paper) reflows the text column to the control width; any concrete size fixes the column to that
+    /// paper's content width. Default <see cref="RichEditorPageSize.Continuous"/>.</summary>
     public static readonly StyledProperty<RichEditorPageSize> PageSizeProperty =
-        AvaloniaProperty.Register<RichEditor, RichEditorPageSize>(nameof(PageSize), RichEditorPageSize.A4);
+        AvaloniaProperty.Register<RichEditor, RichEditorPageSize>(nameof(PageSize), RichEditorPageSize.Continuous);
 
-    /// <summary>Gets or sets the paper size. Default <see cref="RichEditorPageSize.A4"/>.</summary>
+    /// <summary>Gets or sets the paper size. Default <see cref="RichEditorPageSize.Continuous"/>.</summary>
     public RichEditorPageSize PageSize
     {
         get => GetValue(PageSizeProperty);

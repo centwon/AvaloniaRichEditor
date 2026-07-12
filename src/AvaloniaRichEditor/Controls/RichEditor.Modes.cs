@@ -4,40 +4,13 @@ using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
 
-/// <summary>
-/// Capability preset for <see cref="RichEditor"/>. Setting <see cref="RichEditor.EditorMode"/>
-/// applies a bundle of feature flags at once; individual flags can still be overridden afterwards.
-/// </summary>
-public enum EditorMode
-{
-    /// <summary>View-only: renders content, allows selection/copy, but blocks all editing.</summary>
-    ReadOnly,
-    /// <summary>Text + basic character/paragraph formatting only — no images, tables, or rich paste.</summary>
-    Basic,
-    /// <summary>Everything: images, tables, rich paste, find/replace.</summary>
-    Full
-}
-
-// Editor modes and feature flags (roadmap N3.5). Default is Full, so existing hosts see no behaviour
-// change. Flags are consulted at the guard sites in the key/paste/drop handlers, the public insert
-// commands, the context menu, and find/replace. ReadOnly additionally disables the caret blink, IME,
-// and undo history (see OnReadOnlyChanged).
+// Feature flags (roadmap N3.5). Capability is expressed directly through IsReadOnly (the core
+// viewer/editor switch) and the individual Allow* flags — there is no bundled preset. Flags are
+// consulted at the guard sites in the key/paste/drop handlers, the public insert commands, the context
+// menu, and find/replace. ReadOnly additionally disables the caret blink, IME, and undo history (see
+// OnReadOnlyChanged).
 public partial class RichEditor
 {
-    /// <inheritdoc cref="EditorMode"/>
-    public static readonly StyledProperty<EditorMode> EditorModeProperty =
-        AvaloniaProperty.Register<RichEditor, EditorMode>(nameof(EditorMode), EditorMode.Full);
-
-    /// <summary>
-    /// Capability preset. Assigning this applies a bundle of feature flags (and toggles
-    /// <see cref="IsReadOnly"/>); individual flags may be overridden afterwards.
-    /// </summary>
-    public EditorMode EditorMode
-    {
-        get => GetValue(EditorModeProperty);
-        set => SetValue(EditorModeProperty, value);
-    }
-
     /// <inheritdoc cref="AllowImages"/>
     public static readonly StyledProperty<bool> AllowImagesProperty =
         AvaloniaProperty.Register<RichEditor, bool>(nameof(AllowImages), true);
@@ -89,7 +62,7 @@ public partial class RichEditor
     /// <summary>When false, <c>file://</c> image sources in ingested HTML (paste, <see cref="LoadHtml"/>,
     /// <see cref="InsertHtml"/>) are skipped instead of being read from disk and embedded — closing the
     /// path by which untrusted HTML can pull local files into the document. Default true (HTML copied
-    /// from local files keeps its images). Not part of the <see cref="EditorMode"/> presets.</summary>
+    /// from local files keeps its images). Independent of <see cref="IsReadOnly"/> and the other flags.</summary>
     public bool AllowLocalFileImages
     {
         get => GetValue(AllowLocalFileImagesProperty);
@@ -175,30 +148,8 @@ public partial class RichEditor
         }
     }
 
-    // Writes the flag bundle for the chosen preset. Setting IsReadOnly here cascades into
-    // OnReadOnlyChanged (caret/IME/undo handling). Hosts may override individual flags afterwards.
-    private void ApplyEditorModePreset(EditorMode mode)
-    {
-        switch (mode)
-        {
-            case EditorMode.ReadOnly:
-                AllowImages = false; AllowTables = false; AllowRichPaste = false; AllowFindReplace = false;
-                IsReadOnly = true;
-                break;
-            case EditorMode.Basic:
-                AllowImages = false; AllowTables = false; AllowRichPaste = false; AllowFindReplace = false;
-                IsReadOnly = false;
-                break;
-            case EditorMode.Full:
-                AllowImages = true; AllowTables = true; AllowRichPaste = true; AllowFindReplace = true;
-                IsReadOnly = false;
-                break;
-        }
-    }
-
     // ReadOnly perf/optimization: a viewer needs no blinking caret (2 Hz repaint), no IME machinery,
-    // and no undo history. Centralized here so it fires whether ReadOnly arrives via EditorMode or a
-    // direct IsReadOnly assignment.
+    // and no undo history. Centralized here so it fires on any IsReadOnly assignment.
     private void OnReadOnlyChanged(bool readOnly)
     {
         if (readOnly)
