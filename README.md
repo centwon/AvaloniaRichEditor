@@ -4,7 +4,7 @@ A from-scratch rich text editor control for [Avalonia](https://avaloniaui.net) �
 ideas behind WPF's `RichTextBox`/`FlowDocument`, built entirely on Avalonia's `TextLayout` engine (no
 PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME are implemented directly.
 
-> **Status: `0.8.0`** — published on [NuGet](https://www.nuget.org/packages/AvaloniaRichEditor).
+> **Status: `0.9.0`** — published on [NuGet](https://www.nuget.org/packages/AvaloniaRichEditor).
 > Feature-complete and usable for general work; on the `0.x` line the public API may still evolve before
 > a frozen `1.0`. See [`CHANGELOG.md`](CHANGELOG.md) and [`Project_Roadmap.md`](Project_Roadmap.md).
 

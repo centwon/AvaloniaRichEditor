@@ -122,6 +122,25 @@ public partial class RichEditor
     /// list on (never a toggle). The style implies the list kind (bullets vs numbers).</summary>
     public void SetListStyle(ListMarkerStyle style) { SetListType(ListMarkerStyleKind(style), style); }
 
+    /// <summary>Removes the list attribute (bullet/number, marker style, and nesting level) from the
+    /// selected paragraphs entirely. Unlike the toggle, this always clears regardless of the current list
+    /// kind, so it's discoverable as a "None" list-style pick.</summary>
+    public void RemoveList()
+    {
+        if (_caretPosition.Paragraph == null || Document == null || IsReadOnly) return;
+        PushUndo();
+        var targets = SelectedTopLevelParagraphs();
+        if (targets.Count == 0) targets = new List<Paragraph> { _caretPosition.Paragraph };
+        foreach (var p in targets)
+        {
+            p.ListType = ListKind.None;
+            p.ListMarker = ListMarkerStyle.Default;
+            p.ListLevel = 0;
+        }
+        UpdateParents(Document);
+        InvalidateVisual();
+    }
+
     // The list kind a marker style belongs to (number formats -> Ordered, everything else -> Bullet).
     private static ListKind ListMarkerStyleKind(ListMarkerStyle s) => s switch
     {
@@ -217,14 +236,15 @@ public partial class RichEditor
     private List<Paragraph> SplitByNewlines(Paragraph p)
     {
         var result = new List<Paragraph>();
-        Paragraph NewPara() => new Paragraph
+        // Each split line is the same paragraph continued, so it carries the source's full format
+        // (heading level, line spacing, marker style, quote bar, margins) — a hand-picked subset
+        // here used to drop everything but list/indent/alignment/background.
+        Paragraph NewPara()
         {
-            ListType = p.ListType,
-            ListLevel = p.ListLevel,
-            Indent = p.Indent,
-            TextAlignment = p.TextAlignment,
-            Background = p.Background
-        };
+            var np = new Paragraph();
+            np.CopyFormatFrom(p);
+            return np;
+        }
         var cur = NewPara();
         foreach (var inl in p.Inlines)
         {

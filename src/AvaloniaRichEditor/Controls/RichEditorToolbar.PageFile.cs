@@ -279,6 +279,7 @@ public partial class RichEditorToolbar
             using var writer = new StreamWriter(stream);
             await writer.WriteAsync(json);
         }
+        Target.MarkSaved(); // persisted → clear the modified flag (all export formats here are reloadable)
     }
 
     private async Task ImportAsync()

@@ -278,6 +278,7 @@ public partial class RichEditor : Control
             if (Document != null) UpdateParents(Document);
             SyncPageSetupOnDocumentChanged(); // apply the loaded doc's page setup to the page properties
             _textChangedPending = true; // wholesale content swap
+            SetModified(true);          // a raw Document assignment is a change; Load*/Clear reset it below
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             InvalidateMeasure();
             InvalidateVisual();
@@ -388,10 +389,28 @@ public partial class RichEditor : Control
     /// <summary>Raised when the <see cref="Document"/> is replaced with a different instance.</summary>
     public event EventHandler? DocumentChanged;
 
+    /// <summary>True when the document has been modified since it was loaded (or since
+    /// <see cref="MarkSaved"/>). Undo/redo count as modifications — the flag is a "needs saving" hint,
+    /// not a content diff against the saved state.</summary>
+    public bool IsModified { get; private set; }
+
+    /// <summary>Raised when <see cref="IsModified"/> changes.</summary>
+    public event EventHandler? IsModifiedChanged;
+
+    /// <summary>Clears the modified flag; call after persisting the document.</summary>
+    public void MarkSaved() => SetModified(false);
+
+    private void SetModified(bool value)
+    {
+        if (IsModified == value) return;
+        IsModified = value;
+        IsModifiedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     // Set by any edit; flushed (as TextChanged) from Render, off the render stack, so handlers see the
-    // already-mutated document and can't re-enter the render pass.
+    // already-mutated document and can't re-enter the render pass. Also flips the IsModified flag.
     private bool _textChangedPending;
-    private void MarkTextChanged() => _textChangedPending = true;
+    private void MarkTextChanged() { _textChangedPending = true; SetModified(true); }
 
     // Kind of edit currently coalescing into one undo checkpoint. A run of same-kind edits shares
     // a single full-document clone (the first-keystroke clone was measured at 162 ms on a
@@ -409,6 +428,7 @@ public partial class RichEditor : Control
     {
         if (Document != null) _undoManager.PushState(Document, _caretPosition);
         _textChangedPending = true;
+        SetModified(true);
         _editRun = EditRunKind.None;
         _editRunRearm = EditRunKind.None;
     }
@@ -424,6 +444,7 @@ public partial class RichEditor : Control
             _editRun = EditRunKind.Typing;
         }
         _textChangedPending = true;
+        SetModified(true);
     }
 
     // Undo checkpoint for a plain single-character Backspace/Delete: consecutive same-direction
@@ -435,6 +456,7 @@ public partial class RichEditor : Control
         if (_editRun != kind && Document != null) _undoManager.PushState(Document, _caretPosition);
         _editRunRearm = kind;
         _textChangedPending = true;
+        SetModified(true);
     }
 
     // Last-seen selection, to fire SelectionChanged only on real movement (not on every repaint/blink).
@@ -682,9 +704,9 @@ public partial class RichEditor : Control
                           new TextPointer(_caretPosition.Paragraph, preCaret + text.Length))
                 .ApplyPropertyValue(r => { foreach (var a in pend) a(r); });
         }
-        // Auto-link: typing a space right after a web URL turns the URL into a hyperlink.
+        // Auto-link: typing whitespace right after a web URL turns the URL into a hyperlink.
         // Runs after the insertion so the space itself stays outside the linked range.
-        if (text == " ") TryAutoLink(preCaret);
+        if (AutoLinkOnType && (text == " " || text == "\t")) TryAutoLink(_caretPosition.Paragraph, preCaret);
         MarkTextChanged();
         InvalidateVisual();
         NotifyStatus();
@@ -719,22 +741,35 @@ public partial class RichEditor : Control
     // If the word ending at `endOffset` is a web URL, set NavigateUri on exactly that range.
     // Called when the user types a space after the URL (the space is already inserted and
     // excluded from the range, so it doesn't inherit the link).
-    private void TryAutoLink(int endOffset)
+    /// <summary>When true (default), typing whitespace/Enter after an <c>http(s)://</c> or <c>www.</c>
+    /// token turns it into a hyperlink. Set false to disable auto-linking.</summary>
+    public bool AutoLinkOnType { get; set; } = true;
+
+    // Called after a whitespace/Enter commit at `boundary` (the offset just past the token). Applies a
+    // NavigateUri to a bare http(s):// or www. URL token, trimming trailing punctuation and validating the
+    // result as an absolute http(s) URI with a dotted host. `www.` is prefixed with https://.
+    private void TryAutoLink(Paragraph p, int boundary)
     {
-        var p = _caretPosition.Paragraph;
-        if (p == null) return;
         string plain = BuildPlain(p);
-        if (endOffset <= 0 || endOffset > plain.Length) return;
-        int start = endOffset;
+        int end = Math.Clamp(boundary, 0, plain.Length);
+        int start = end;
         while (start > 0 && !char.IsWhiteSpace(plain[start - 1]) && plain[start - 1] != ObjChar) start--;
-        string token = plain.Substring(start, endOffset - start);
-        bool https = token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-        bool http = !https && token.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
-        if (!https && !http) return;
-        if (token.Length <= (https ? 8 : 7) || !token.Contains('.')) return; // needs a host part
+        if (end - start < 8) return; // shortest sensible candidate ("http://x", "www.a.bc")
+        string token = plain.Substring(start, end - start).TrimEnd('.', ',', ';', ':', ')', ']', '!', '?', '"', '\'');
+        if (token.Length < 8) return;
+
+        bool www = token.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
+        bool http = token.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                 || token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        if (!www && !http) return;
+        string url = www ? "https://" + token : token;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || !uri.Host.Contains('.')) return;
         if (RunAtOffset(p, start) is { } r0 && !string.IsNullOrEmpty(r0.NavigateUri)) return; // already linked
-        new TextRange(new TextPointer(p, start), new TextPointer(p, endOffset))
-            .ApplyPropertyValue(r => r.NavigateUri = token);
+
+        new TextRange(new TextPointer(p, start), new TextPointer(p, start + token.Length))
+            .ApplyPropertyValue(r => r.NavigateUri = url);
     }
 
     private void DeleteSelection()
@@ -1336,11 +1371,10 @@ public partial class RichEditor : Control
 
         // Split the caret paragraph: p keeps the head; tail takes the inlines after the caret (same props).
         int splitAt = SplitInlinesAt(p, _caretPosition.Offset);
-        var tail = new Paragraph
-        {
-            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
-            TextAlignment = p.TextAlignment, Background = p.Background, HeadingLevel = p.HeadingLevel
-        };
+        // The tail continues the same paragraph, so it keeps the source's full format (heading level
+        // included — unlike Enter, this is a split of one logical paragraph, not a new one).
+        var tail = new Paragraph();
+        tail.CopyFormatFrom(p);
         while (p.Inlines.Count > splitAt)
         {
             var inl = p.Inlines[splitAt];
@@ -1532,14 +1566,12 @@ public partial class RichEditor : Control
         int idx = container.IndexOf(p);
         if (idx < 0) return;
         int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
-        var np = new Paragraph
-        {
-            ListType = p.ListType,
-            ListLevel = p.ListLevel,
-            Indent = p.Indent,
-            TextAlignment = p.TextAlignment,
-            Background = p.Background
-        };
+        // Inherit the whole paragraph format (list, indent, alignment, background, line spacing,
+        // quote bar, margins, marker style) — but drop back to body text: a heading's Enter starts
+        // a normal paragraph (core rule #3).
+        var np = new Paragraph();
+        np.CopyFormatFrom(p);
+        np.HeadingLevel = 0;
         while (p.Inlines.Count > insertAt)
         {
             var inl = p.Inlines[insertAt];
@@ -1804,6 +1836,42 @@ public partial class RichEditor : Control
         var brush = SelectionBrush;
         foreach (var rect in layout.HitTestTextRange(startOffset, endOffset - startOffset))
             context.FillRectangle(brush, new Rect(originX + rect.X, originY + rect.Y, rect.Width, rect.Height));
+    }
+
+    // Amber tint painted under every occurrence of the find-highlight query (screen chrome only, never
+    // printed). Cheap no-op unless a find UI has set FindHighlightQuery.
+    private static readonly IBrush FindMatchBrush = new SolidColorBrush(Color.FromArgb(70, 255, 190, 0));
+
+    private void DrawFindHighlights(DrawingContext context, Paragraph p, Avalonia.Media.TextFormatting.TextLayout layout,
+        double originX, double originY)
+    {
+        if (FindHighlightQuery is not { } q) return;
+        var cmp = FindHighlightMatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        string text = BuildPlain(p);
+
+        // The CURRENT match is already marked by the selection, so it must not be tinted as well:
+        // amber over the translucent selection blue blends into a muddy low-contrast fill, and the
+        // user loses track of which match the caret is on. Highlight-all marks the OTHER matches
+        // (browser / VS Code behaviour). Same "selection is a match" test as GetFindMatchPosition.
+        int selStart = -1;
+        if (_selectionStart.Paragraph != null && ReferenceEquals(_selectionStart.Paragraph, p)
+            && ReferenceEquals(_selectionEnd.Paragraph, p))
+        {
+            int a = Math.Min(_selectionStart.Offset, _selectionEnd.Offset);
+            int b = Math.Max(_selectionStart.Offset, _selectionEnd.Offset);
+            if (b - a == q.Length) selStart = a;
+        }
+
+        int from = 0;
+        while (from <= text.Length)
+        {
+            int idx = text.IndexOf(q, from, cmp);
+            if (idx < 0) break;
+            if (idx != selStart)
+                foreach (var rect in layout.HitTestTextRange(idx, q.Length))
+                    context.FillRectangle(FindMatchBrush, new Rect(originX + rect.X, originY + rect.Y, rect.Width, rect.Height));
+            from = idx + 1;
+        }
     }
 
     private void DeleteBlock(Block b)

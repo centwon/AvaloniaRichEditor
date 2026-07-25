@@ -71,7 +71,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 string fragment = ExtractHtmlFragment(html!);
                 // Async: remote images download off the UI thread so a slow network can't freeze
                 // the paste (model build stays on the UI thread inside ParseHtmlAsync).
-                var parsed = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(fragment, AllowLocalFileImages);
+                var parsed = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(fragment, AllowLocalFileImages, AllowRemoteImagesOnPaste);
                 if (parsed.Blocks.Count > 0)
                 {
                     PushUndo();

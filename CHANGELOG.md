@@ -4,6 +4,53 @@ All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor) pulled ahead on after
+0.9.0, plus the defects a full read-through of every source file turned up. New public API is additive;
+325 → 342 unit + 7 render tests, build 0 warn / 0 err.
+
+### Added
+- **`RichEditor.IsModified` / `MarkSaved()` / `IsModifiedChanged`** — a "needs saving" dirty flag. Any edit
+  (typing, delete, structural, formatting) sets it; loading a document or calling `MarkSaved()` clears it.
+  Undo/redo count as modifications (it is a hint, not a content diff). The built-in toolbar Export clears it.
+- **`RichEditor.RemoveList()`** — removes the list attribute (bullet/number, marker style, nesting level)
+  from the selected paragraphs entirely, so "None" is reachable as an explicit list-style pick (not only the
+  toggle, which required matching the current kind).
+- **`RichEditor.AutoLinkOnType`** (default true) — toggle for typing-time auto-linking, and the linker now
+  also recognizes `www.` tokens (prefixed `https://`), trims trailing punctuation, validates the result as an
+  absolute http(s) URI with a dotted host, and fires on Tab/Enter as well as space.
+- **`RichEditor.AllowRemoteImagesOnPaste`** (default true) — privacy opt-out: when false, remote
+  (`http`/`https`) `<img>` sources in pasted/loaded HTML are not fetched. `HtmlDocumentFormatter.ParseHtml` /
+  `ParseHtmlAsync` gain a matching `allowRemoteImages` parameter. `data:`/`file:` images are unaffected.
+- **Find highlight-all.** `SetFindHighlight(query, matchCase)` / `ClearFindHighlight()` tint every occurrence
+  of the query (amber, screen-only — never printed); `GetFindMatchPosition()` returns the selection's
+  `(current, total)` position among matches for a find bar's "n/m" counter. `FindNext`/`FindPrev` set it.
+- **`Paragraph.CopyFormatFrom(Paragraph)`** — copies every paragraph-level formatting field. One source
+  for the edit paths that derive a new paragraph from an existing one (see the Enter fix below).
+
+### Fixed
+Found by reading every source file end to end; each is covered by a regression test.
+- **`Ctrl+Shift+X` cut the selection instead of striking it through.** The cut branch matched `Ctrl+X`
+  without excluding Shift, so it swallowed the strikethrough shortcut added in 0.9.0 — pressing it made
+  the selected text disappear. (`Ctrl+Z` already guarded the same way for `Ctrl+Shift+Z`.)
+- **Enter, block paste and list conversion dropped paragraph formatting.** Three edit paths built the new
+  paragraph by hand-copying five fields, silently losing line spacing, absolute line height, the right
+  margin, the bullet/number marker style and the quote bar — so pressing Enter in a 1.5-spaced paragraph
+  reverted the next one to single spacing. All three now go through `Paragraph.CopyFormatFrom`; Enter
+  still drops back to body text (core rule #3).
+- **Merging table cells destroyed everything past a covered cell's first paragraph.** `MergeCells` only
+  folded in `.Para`, a leftover from the single-paragraph-cell era; extra paragraphs, block images,
+  dividers and nested tables stayed in the covered cell, which `LogicalCells()` skips — invisible, and
+  wiped outright by a later unmerge. They now move to the anchor cell in document order.
+- **`TextPointer.CompareTo` never descended into nested or inline tables**, so a pointer inside one was
+  reported "not found" (index -1) and always sorted first — selection ordering, range deletion and
+  highlighting came out backwards for milestone A/B content. It now walks the same recursive document
+  order as `ParagraphsInBlocks` / `CollectParagraphs`.
+- **Find highlight-all muddied the current match.** The amber tint painted over the translucent selection
+  blue, blending to a low-contrast fill that hid which match the caret was on. Highlight-all now marks the
+  *other* matches (browser / VS Code behaviour); the current one stays a clean selection.
+
 ## [0.9.0] - 2026-07-07
 
 Backported the features the WinUI 3 port (WinUIRichEditor) had pulled ahead on. Includes a breaking

@@ -126,6 +126,7 @@ public partial class RichEditor
         _caretPosition = new TextPointer(first, 0);
         CollapseSelectionToCaret();
         _undoManager = new UndoManager();
+        MarkSaved(); // freshly loaded content is the baseline, not a pending modification
         InvalidateVisual();
     }
 

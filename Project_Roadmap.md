@@ -7,10 +7,9 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 
 ---
 
-## ✅ 현재 상태 (2026-06-20 · `0.8.0` NuGet 정식 게시)
+## ✅ 현재 상태 (2026-07-12 · `0.9.0` NuGet 정식 게시)
 
-> **2026-07-06 이후 — WinUI 포트(WinUIRichEditor)가 앞서간 기능 백포트 완료** (다음 릴리스는 `EditorMode`
-> 제거로 major-ish):
+> **0.9.0에 들어간 WinUI 포트(WinUIRichEditor) 기능 백포트** (`EditorMode` 제거로 major-ish):
 > 1. 문서 내 `PageSetup` 영속화(용지·방향·머리글/바닥글·쪽번호, JSON/.flow, 로드 시 적용)
 > 2. `IncreaseFontSize`/`DecreaseFontSize`(표준 크기 사다리)
 > 3. 중앙 단축키 테이블 `RichEditorShortcuts`(Word 표준 — 키핸들러·메뉴 힌트·툴바 툴팁 단일 출처, 신규 단축키 다수)
@@ -20,14 +19,17 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 > 6. `EditorMode` enum 제거 → `IsReadOnly` + `Allow*`
 > 7. **기본 `PageSize`를 `Continuous`로 통일**(A4→Continuous, WinUI와 일치)
 >
-> 빌드 0/0, 테스트 325(unit)+6(render) 그린. 상세는 [`CHANGELOG.md`](CHANGELOG.md) Unreleased. **인터랙티브
-> GUI 동작(툴바 줌/페이지·read-only view 툴바·컨텍스트 메뉴 상태 반영)은 데모 육안검증 필요.**
+> **인터랙티브 GUI 동작(툴바 줌/페이지·read-only view 툴바·컨텍스트 메뉴 상태 반영)은 데모 육안검증 필요.**
 
+> 🚧 **라운드2 (진행 중, 미릴리스)** — WinUI 포트가 0.9.0 이후 앞서간 분량. 상세는 [`CHANGELOG.md`](CHANGELOG.md) Unreleased.
+> - 기능 5종: `IsModified`/`MarkSaved`, `RemoveList`, `AutoLinkOnType`, `AllowRemoteImagesOnPaste`, 찾기 highlight-all
+> - **전 소스 정독 감사에서 찾은 결함 5건 수정**(단축키 충돌·문단 서식 유실·셀 병합 데이터 손실·문서순서 비교·찾기 하이라이트가 선택색 덮음), 테스트 9건 추가
+> - **남은 것**: WinUI 버그 백포트 13건(그중 셀 목록 마커 미렌더·리사이즈 클릭이 수정됨 플래그를 뒤집음·`FindCell` O(문서)는 Avalonia에도 적용됨을 확인, 나머지는 재현 미검증), `LoadHtml`/`InsertHtml`에 `AllowRemoteImagesOnPaste` 미전달
 
 기능 충실도 **A**, 코드 품질 **B+**, 견고성/검증 **B**, 프로덕션 준비도 **B−(베타)**.
 혼자 만든 from-scratch Avalonia 리치 에디터로는 상위권 — 기능은 상용 근접, 1.0은 *새 기능이 아니라 검증 깊이*로 결정.
 
-**완성된 기능 (전부 동작·테스트 그린, 325+6 테스트):**
+**완성된 기능 (전부 동작·테스트 그린, 342 unit + 7 render):**
 - 인라인 서식(굵게/기울임/밑줄/취소선·글꼴·크기·색·형광펜·하이퍼링크), 문단(정렬·줄간격·들여쓰기·제목·리스트·인용)
 - **표**: 셀 병합(colspan/rowspan), 열/행 리사이즈, Tab 내비, **셀=블록 컨테이너**(다중 문단·블록이미지·구분선·**중첩 표**), **인라인 표**(HWP식 "글자처럼 취급", 완전 편집), **드래그 크기 지정 삽입**
 - 인라인/블록 **이미지**(삽입·리사이즈·교체·저장), 찾기/바꾸기, undo/redo, 우클릭 메뉴
@@ -40,7 +42,7 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 |---|---|
 | Phase 1~6 | 모델·렌더 엔진 → 편집·선택·서식 → 클립보드·포매터 → 상용 수준 기능 |
 | 🖨️ P-마일스톤 | A4 페이지 보기 + 인쇄/PDF (갭 주입 방식) |
-| 📦 N0~N6 | NuGet 패키징·공개 API·CI·에디터 모드·툴바·이미지 저장 모델 → alpha→beta→0.7.0→**0.8.0** |
+| 📦 N0~N6 | NuGet 패키징·공개 API·CI·에디터 모드·툴바·이미지 저장 모델 → alpha→beta→0.7.0→0.8.0→**0.9.0** |
 | 🟢 마일스톤 A | 셀 안에 블록(재귀 프리미티브·중첩 표) |
 | 🟢 마일스톤 B | 인라인 표(글자처럼 취급) — 본 릴리스 |
 | 🟢 G1 (사실상 완료) | 기하 워커 통합(`BlockExtent` 단일 출처 → 워커 드리프트 버그 클래스 제거). 남은 P2(BlockBox 캐싱 열거자)는 성능 선택, 비병목이라 미착수 |

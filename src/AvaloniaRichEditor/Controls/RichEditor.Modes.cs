@@ -69,6 +69,20 @@ public partial class RichEditor
         set => SetValue(AllowLocalFileImagesProperty, value);
     }
 
+    /// <inheritdoc cref="AllowRemoteImagesOnPaste"/>
+    public static readonly StyledProperty<bool> AllowRemoteImagesOnPasteProperty =
+        AvaloniaProperty.Register<RichEditor, bool>(nameof(AllowRemoteImagesOnPaste), true);
+
+    /// <summary>When false, remote (<c>http</c>/<c>https</c>) <c>&lt;img&gt;</c> sources in pasted HTML are
+    /// not fetched — closing the path by which pasting web content silently issues network requests (e.g.
+    /// to tracking pixels). Default true. <c>data:</c> and <c>file:</c> images are unaffected. Independent
+    /// of <see cref="IsReadOnly"/> and the other flags.</summary>
+    public bool AllowRemoteImagesOnPaste
+    {
+        get => GetValue(AllowRemoteImagesOnPasteProperty);
+        set => SetValue(AllowRemoteImagesOnPasteProperty, value);
+    }
+
     /// <inheritdoc cref="MaxRecommendedImages"/>
     public static readonly StyledProperty<int> MaxRecommendedImagesProperty =
         AvaloniaProperty.Register<RichEditor, int>(nameof(MaxRecommendedImages), 50);

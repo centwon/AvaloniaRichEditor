@@ -847,7 +847,9 @@ public partial class RichEditor
             return;
         }
 
-        if (e.Key == Key.X && ctrl)
+        // !shift so Ctrl+Shift+X reaches the shortcut table (strikethrough) instead of cutting —
+        // the Ctrl+Z branch above guards the same way for Ctrl+Shift+Z.
+        if (e.Key == Key.X && ctrl && !shift)
         {
             if (!hasTextSel && Document != null && !IsReadOnly)
             {
@@ -1228,6 +1230,8 @@ public partial class RichEditor
                     PushUndo();
                     if (_selectionStart != _selectionEnd) DeleteSelection();
                     p = _caretPosition.Paragraph!;
+                    // Auto-link a trailing URL token before the split, so the link lands in the left paragraph.
+                    if (AutoLinkOnType) TryAutoLink(p, _caretPosition.Offset);
                     if (p.ListType != ListKind.None && GetParagraphLength(p) == 0)
                         p.ListType = ListKind.None; // empty list item -> leave the list, stay put
                     else

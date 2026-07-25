@@ -285,24 +285,45 @@ public class TableBlock : Block
     {
         if (!InBounds(r0, c0) || !InBounds(r1, c1)) return;
         if (r1 < r0 || c1 < c0 || (r0 == r1 && c0 == c1)) return;
-        var anchor = Cells[r0][c0].Para;
+        var anchorCell = Cells[r0][c0];
+        var anchor = anchorCell.Para;
         for (int r = r0; r <= r1; r++)
             for (int c = c0; c <= c1; c++)
             {
                 if (r == r0 && c == c0) continue;
-                // Append non-empty covered content into the anchor. (P1: single-paragraph cells, so this
-                // stays paragraph-level; P3/P4 generalize to concatenating the covered cells' block lists.)
-                var src = Cells[r][c].Para;
-                bool hasText = false;
-                foreach (var inl in src.Inlines)
-                    if (inl is Run run && !string.IsNullOrEmpty(run.Text)) { hasText = true; break; }
-                if (hasText)
+                var srcCell = Cells[r][c];
+                // A covered cell's leading paragraph joins the anchor's text inline (space-separated),
+                // so merging two plain cells still reads as one line.
+                var src = srcCell.Blocks.Count > 0 ? srcCell.Blocks[0] as Paragraph : null;
+                if (src != null)
                 {
-                    anchor.Inlines.Add(new Run { Text = " " });
-                    foreach (var inl in src.Inlines) anchor.Inlines.Add(inl);
-                    src.Inlines.Clear();
-                    src.Inlines.Add(new Run { Text = "" });
+                    bool hasText = false;
+                    foreach (var inl in src.Inlines)
+                        if (inl is Run run && !string.IsNullOrEmpty(run.Text)) { hasText = true; break; }
+                    if (hasText)
+                    {
+                        anchor.Inlines.Add(new Run { Text = " " });
+                        foreach (var inl in src.Inlines) { inl.Parent = anchor; anchor.Inlines.Add(inl); }
+                        src.Inlines.Clear();
+                        src.Inlines.Add(new Run { Text = "" });
+                    }
                 }
+                // Everything past that leading paragraph (extra paragraphs, block images, dividers,
+                // nested tables — a cell is a block list since milestone A) MOVES to the anchor cell.
+                // Left behind it would sit in a covered cell, which LogicalCells() skips: invisible to
+                // render/navigation/extraction, and destroyed outright by a later UnmergeCell.
+                var moved = new List<Block>();
+                foreach (var b in srcCell.Blocks)
+                    if (!ReferenceEquals(b, src)) moved.Add(b);
+                foreach (var m in moved)
+                {
+                    srcCell.Blocks.Remove(m);
+                    m.Parent = anchorCell;
+                    anchorCell.Blocks.Add(m); // appended in document order
+                }
+                // A cell whose blocks all moved out must keep the "never empty" invariant.
+                if (srcCell.Blocks.Count == 0)
+                    srcCell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } }, Parent = srcCell });
             }
         ColSpans[r0][c0] = c1 - c0 + 1;
         RowSpans[r0][c0] = r1 - r0 + 1;

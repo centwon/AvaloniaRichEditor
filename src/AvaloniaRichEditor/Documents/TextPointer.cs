@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace AvaloniaRichEditor.Documents;
 
@@ -51,20 +52,34 @@ public class TextPointer : IComparable<TextPointer>
             index++;
         }
 
-        foreach (var block in doc.Blocks)
+        // The walk must reach EVERY paragraph the editor's own document order does — anchor cells of
+        // block tables, recursively through nested tables, and through inline tables hanging off a
+        // paragraph's inlines (milestones A/B). A flat one-level walk left those pointers at index -1,
+        // which sorts before everything, so a selection anchored inside a nested/inline table compared
+        // backwards. Mirrors RichEditor.ParagraphsInBlocks / TextRange.CollectParagraphs.
+        void Walk(IEnumerable<Block> blocks)
         {
-            if (block is Paragraph p) Locate(p);
-            else if (block is TableBlock tb)
+            foreach (var block in blocks)
             {
-                index++; // the table itself occupies one index, matching the historical numbering
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                        foreach (var b in tb.Cells[r][c].Blocks)
-                            if (b is Paragraph cp) Locate(cp); // every paragraph of every cell (P3)
+                if (thisIdx >= 0 && otherIdx >= 0) return; // both located: their order is now fixed
+                if (block is Paragraph p)
+                {
+                    Locate(p);
+                    foreach (var inl in p.Inlines)
+                        if (inl is InlineTable it)
+                            foreach (var (_, _, cell) in it.Table.LogicalCells())
+                                Walk(cell.Blocks);
+                }
+                else if (block is TableBlock tb)
+                {
+                    index++; // the table itself occupies one index, matching the historical numbering
+                    foreach (var (_, _, cell) in tb.LogicalCells())
+                        Walk(cell.Blocks);
+                }
+                else index++;
             }
-            else index++;
-            if (thisIdx >= 0 && otherIdx >= 0) break; // both located: their order is now fixed
         }
+        Walk(doc.Blocks);
 
         return thisIdx.CompareTo(otherIdx);
     }

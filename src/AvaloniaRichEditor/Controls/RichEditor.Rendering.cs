@@ -464,6 +464,8 @@ public partial class RichEditor
                         DrawSelectionHighlight(context, layout, hlStart, hlEnd, px, yOffset);
                 }
 
+                if (chrome) DrawFindHighlights(context, paragraph, layout, px, yOffset);
+
                 if (chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph)
                 {
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
@@ -571,6 +573,8 @@ public partial class RichEditor
                     if (hlEnd > hlStart)
                         DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
                 }
+
+                if (chrome) DrawFindHighlights(context, para, layout, ox, blkY);
 
                 if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
                 {

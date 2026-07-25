@@ -227,4 +227,23 @@ public class RenderPixelTests
         Assert.True(colNone < 10, $"no selection should paint ~no coloured pixels, got {colNone}");
         Assert.True(colSel > 100, $"selection should paint a coloured highlight, got {colSel}");
     }
+
+    [AvaloniaFact]
+    public void FindHighlight_TintsTheOtherMatchesOnly()
+    {
+        // Find highlight-all marks every match EXCEPT the current one — that one is already the
+        // selection, and tinting it too blended amber over the selection blue into a muddy fill.
+        // Counting coloured pixels (not channel order — see ColouredCount) keeps this portable:
+        // a second occurrence must add tint on top of the identical selection of the first.
+        var one = MakeEditor("<p>Hello world</p>");
+        Assert.True(one.FindNext("Hello", matchCase: false));
+        int colOne = ColouredCount(Render(one, 400, 240), 400, 240);
+
+        var two = MakeEditor("<p>Hello world Hello again</p>");
+        Assert.True(two.FindNext("Hello", matchCase: false)); // selects the FIRST occurrence
+        int colTwo = ColouredCount(Render(two, 400, 240), 400, 240);
+
+        Assert.True(colTwo > colOne,
+            $"the second (non-current) match should still be tinted, got {colTwo} vs {colOne}");
+    }
 }

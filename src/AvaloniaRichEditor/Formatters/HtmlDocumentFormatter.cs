@@ -35,6 +35,9 @@ namespace AvaloniaRichEditor.Formatters
         // Per-parse flag (set from the parameter below); LoadImage is deeply nested, so this rides
         // alongside the deadline instead of being threaded through every walker.
         [ThreadStatic] private static bool _blockLocalFileImages;
+        // When set, remote (http) <img> sources are skipped entirely (no fetch) — the privacy opt-out
+        // pasting HTML otherwise issues HTTP requests, e.g. to tracking pixels.
+        [ThreadStatic] private static bool _blockRemoteImages;
         // When set (by ParseHtmlAsync), remote <img> bytes have already been fetched off the UI
         // thread; LoadImage reads them from here instead of blocking on a synchronous download.
         [ThreadStatic] private static System.Collections.Generic.Dictionary<string, byte[]?>? _prefetchedRemoteImages;
@@ -44,10 +47,11 @@ namespace AvaloniaRichEditor.Formatters
         /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).
         /// Remote (<c>http</c>) images are downloaded synchronously on the calling thread (a per-parse
         /// 5 s budget caps the stall); use <see cref="ParseHtmlAsync"/> to fetch them without blocking.</summary>
-        public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true)
+        public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
         {
             _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget;
             _blockLocalFileImages = !allowLocalFileImages;
+            _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = null; // sync path downloads inline
             var doc = LoadHtmlDoc(ref html);
             return BuildDocument(doc, html);
@@ -57,14 +61,18 @@ namespace AvaloniaRichEditor.Formatters
         /// concurrently off the UI thread first, so a slow network can't freeze the UI while pasting
         /// web content. The document model is still built on the calling thread (Avalonia model
         /// objects are thread-affine), so await this from the UI thread.</summary>
-        public static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true)
+        public static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
         {
             var doc = LoadHtmlDoc(ref html);
-            // Off-thread: network only — no model objects created here.
-            var prefetched = await PrefetchRemoteImagesAsync(doc).ConfigureAwait(true);
+            // Off-thread: network only — no model objects created here. Skip the network entirely when
+            // remote images are opted out (privacy).
+            var prefetched = allowRemoteImages
+                ? await PrefetchRemoteImagesAsync(doc).ConfigureAwait(true)
+                : new System.Collections.Generic.Dictionary<string, byte[]?>();
             // Back on the calling (UI) thread: build the model, reading the prefetched image bytes.
             _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget; // data:/file: images still honored
             _blockLocalFileImages = !allowLocalFileImages;
+            _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = prefetched;
             try { return BuildDocument(doc, html); }
             finally { _prefetchedRemoteImages = null; }
@@ -413,6 +421,7 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (src.StartsWith("http"))
                 {
+                    if (_blockRemoteImages) return (null, null, 0, 0); // remote images opted out
                     if (_prefetchedRemoteImages != null)
                     {
                         // ParseHtmlAsync already fetched these off the UI thread; null = failed/timed out.
