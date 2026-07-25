@@ -54,7 +54,7 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 **데모/테스트 앱** `samples/AvaloniaRichEditor.Demo/` (네임스페이스 `AvaloniaRichEditor.Demo.*`):
 - `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(웹 에디터 호환 래퍼)는 데모 전용.
 
-**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off) 354개 + `tests/AvaloniaRichEditor.Tests.Render/`(real Skia 픽셀) 9개.
+**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off) 355개 + `tests/AvaloniaRichEditor.Tests.Render/`(real Skia 픽셀) 9개.
 
 > NuGet 배포 준비(N0~N5)와 진행 상황은 [`Project_Roadmap.md`](Project_Roadmap.md)의 **"📦 NuGet 배포 계획"** 절 참고.
 

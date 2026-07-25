@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor) pulled ahead on after
 0.9.0, plus the defects a full read-through of every source file turned up. New public API is additive;
-325 → 354 unit + 9 render tests, build 0 warn / 0 err.
+325 → 355 unit + 9 render tests, build 0 warn / 0 err.
 
 ### Added
 - **`RichEditor.IsModified` / `MarkSaved()` / `IsModifiedChanged`** — a "needs saving" dirty flag. Any edit
@@ -87,6 +87,13 @@ Found by reading every source file end to end; each is covered by a regression t
   selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
   Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
   top-level table.
+
+### Changed
+- **The synchronous `ParseHtml` / `LoadHtml` / `InsertHtml` no longer load remote images.** They used to
+  download every `http(s)` `<img>` on the calling thread (a 5 s per-parse budget), so loading web content
+  from the UI thread froze the app for up to that long — a hung UI is a worse failure than a missing
+  image. The synchronous path now performs no network I/O at all; `data:` and `file:` images are
+  unaffected. Use `ParseHtmlAsync` / `LoadHtmlAsync` (what paste already uses) to fetch remote images.
 
 ### Performance
 - **`FindCell` no longer scans the document.** It resolved a paragraph's table cell by recursing through

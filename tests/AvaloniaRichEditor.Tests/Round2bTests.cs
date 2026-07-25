@@ -228,6 +228,28 @@ public class Round2bTests
         Assert.Same(ed.Document.Blocks[^1], Field(ed, "_selectionEnd").Paragraph);
     }
 
+    [AvaloniaFact]
+    public void ParseHtml_NeverOpensAConnectionForARemoteImage()
+    {
+        // The synchronous parse used to download remote images on the calling thread (up to a 5 s
+        // budget), freezing the UI. It must now skip them outright — proven by pointing the <img> at a
+        // local socket nobody answers and asserting nothing ever connects to it.
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            var doc = Formatters.HtmlDocumentFormatter.ParseHtml(
+                $"<p>a<img src=\"http://127.0.0.1:{port}/x.png\">b</p>");
+
+            Assert.False(listener.Pending(), "the synchronous parse must not perform network I/O");
+            Assert.Empty(doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines).OfType<InlineImage>());
+            Assert.Empty(doc.Blocks.OfType<ImageBlock>());
+            Assert.Equal("ab", doc.Blocks.OfType<Paragraph>().First().Text()); // the rest is kept
+        }
+        finally { listener.Stop(); }
+    }
+
     // ---- formatter / normalization defects (WinUI backport, verified here) --
     [AvaloniaFact]
     public void HtmlFontWeight_IsReadFromItsOwnValue()

@@ -1,4 +1,4 @@
-using HtmlAgilityPack;
+﻿using HtmlAgilityPack;
 using System.Collections.Generic;
 using System.Linq;
 using AvaloniaRichEditor.Documents;
@@ -31,9 +31,8 @@ namespace AvaloniaRichEditor.Formatters
         // Shared across all parses: a new HttpClient per <img> leaks sockets.
         private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
         private static readonly TimeSpan RemoteImageBudget = TimeSpan.FromSeconds(5);
-        [ThreadStatic] private static DateTime _remoteImageDeadline;
-        // Per-parse flag (set from the parameter below); LoadImage is deeply nested, so this rides
-        // alongside the deadline instead of being threaded through every walker.
+        // Per-parse flags (set from the parameters below); LoadImage is deeply nested, so these ride
+        // on the thread instead of being threaded through every walker.
         [ThreadStatic] private static bool _blockLocalFileImages;
         // When set, remote (http) <img> sources are skipped entirely (no fetch) — the privacy opt-out
         // pasting HTML otherwise issues HTTP requests, e.g. to tracking pixels.
@@ -45,14 +44,13 @@ namespace AvaloniaRichEditor.Formatters
         /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.
         /// When <paramref name="allowLocalFileImages"/> is false, <c>file://</c> image sources are
         /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).
-        /// Remote (<c>http</c>) images are downloaded synchronously on the calling thread (a per-parse
-        /// 5 s budget caps the stall); use <see cref="ParseHtmlAsync"/> to fetch them without blocking.</summary>
+        /// Remote (<c>http</c>) images are <b>not</b> loaded: this overload never performs network I/O,
+        /// so it cannot stall the calling thread. Use <see cref="ParseHtmlAsync"/> to fetch them.</summary>
         public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
         {
-            _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget;
             _blockLocalFileImages = !allowLocalFileImages;
             _blockRemoteImages = !allowRemoteImages;
-            _prefetchedRemoteImages = null; // sync path downloads inline
+            _prefetchedRemoteImages = null; // no prefetch => remote images are skipped, never fetched here
             var doc = LoadHtmlDoc(ref html);
             return BuildDocument(doc, html);
         }
@@ -70,7 +68,6 @@ namespace AvaloniaRichEditor.Formatters
                 ? await PrefetchRemoteImagesAsync(doc).ConfigureAwait(true)
                 : new System.Collections.Generic.Dictionary<string, byte[]?>();
             // Back on the calling (UI) thread: build the model, reading the prefetched image bytes.
-            _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget; // data:/file: images still honored
             _blockLocalFileImages = !allowLocalFileImages;
             _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = prefetched;
@@ -422,19 +419,13 @@ namespace AvaloniaRichEditor.Formatters
                 else if (src.StartsWith("http"))
                 {
                     if (_blockRemoteImages) return (null, null, 0, 0); // remote images opted out
-                    if (_prefetchedRemoteImages != null)
-                    {
-                        // ParseHtmlAsync already fetched these off the UI thread; null = failed/timed out.
-                        _prefetchedRemoteImages.TryGetValue(src, out bytes);
-                        if (bytes == null) return (null, null, 0, 0);
-                    }
-                    else
-                    {
-                        var remaining = _remoteImageDeadline - DateTime.UtcNow;
-                        if (remaining <= TimeSpan.Zero) return (null, null, 0, 0); // budget spent: skip, keep the rest of the paste
-                        using var cts = new System.Threading.CancellationTokenSource(remaining);
-                        bytes = Http.GetByteArrayAsync(src, cts.Token).GetAwaiter().GetResult();
-                    }
+                    // Only the async path fetches. The synchronous parse never touches the network:
+                    // downloading on the calling thread froze the UI for up to the whole budget, and a
+                    // hung UI is a worse failure than a missing image (ParseHtmlAsync loads them).
+                    if (_prefetchedRemoteImages == null) return (null, null, 0, 0);
+                    // ParseHtmlAsync already fetched these off the UI thread; null = failed/timed out.
+                    _prefetchedRemoteImages.TryGetValue(src, out bytes);
+                    if (bytes == null) return (null, null, 0, 0);
                 }
                 else if (src.StartsWith("file:"))
                 {
