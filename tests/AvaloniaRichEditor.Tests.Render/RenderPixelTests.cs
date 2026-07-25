@@ -1,11 +1,13 @@
 using System;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using AvaloniaRichEditor.Controls;
+using AvaloniaRichEditor.Documents;
 using Xunit;
 
 namespace AvaloniaRichEditor.Tests.Render;
@@ -212,6 +214,72 @@ public class RenderPixelTests
         Assert.True(justReach > leftReach, $"justified text should reach further right overall ({justReach} vs {leftReach})");
         Assert.True(RightmostInk(jPx, w, h, FirstInkRow(jPx, w, h), h) > w * 0.8,
             "justified text should fill near the full content width");
+    }
+
+    // A 1×1 table whose single cell paragraph carries the given list kind.
+    private static RichEditor TableCellList(ListKind kind)
+    {
+        var ed = new RichEditor { PageSize = RichEditorPageSize.Continuous, DefaultFontFamily = Inter };
+        var doc = new FlowDocument();
+        var tb = new TableBlock(1, 1);
+        var para = new Paragraph { ListType = kind };
+        para.Inlines.Add(new Run { Text = "Item" });
+        tb.Cells[0][0].Blocks.Clear();
+        tb.Cells[0][0].Blocks.Add(para);
+        doc.Blocks.Add(tb);
+        ed.Document = doc;
+        return ed;
+    }
+
+    [AvaloniaFact]
+    public void CellListParagraph_DrawsItsMarker()
+    {
+        // Round 2b/1: list markers inside a table cell were never drawn — DrawListMarker was only
+        // called from the top-level paragraph path, not from DrawCellBlockList. A bulleted cell
+        // paragraph must therefore leave MORE ink than the same text without a list.
+        const int w = 300, h = 140;
+        int plain = InkCount(Render(TableCellList(ListKind.None), w, h), w, h);
+        int bullet = InkCount(Render(TableCellList(ListKind.Bullet), w, h), w, h);
+        int ordered = InkCount(Render(TableCellList(ListKind.Ordered), w, h), w, h);
+
+        Assert.True(plain > 50, $"test setup: the cell text should raster ({plain} ink pixels)");
+        Assert.True(bullet > plain, $"a cell bullet marker should add ink ({bullet} vs {plain})");
+        Assert.True(ordered > plain, $"a cell number marker should add ink ({ordered} vs {plain})");
+    }
+
+    [AvaloniaFact]
+    public void NestedTable_CellBlockSelection_PaintsItsCells()
+    {
+        // A cell block inside a NESTED table drew no fill: DrawNestedTable never asked for the
+        // selected cell range, so selecting the inner table (drag, or staged Ctrl+A) showed nothing
+        // in near-empty cells. Ctrl+A twice from an inner cell = the whole inner table.
+        const int w = 400, h = 260;
+        var doc = new FlowDocument();
+        var outer = new TableBlock(1, 1);
+        var inner = new TableBlock(1, 2);
+        ((Run)inner.Cells[0][0].Para.Inlines[0]).Text = "i0";
+        ((Run)inner.Cells[0][1].Para.Inlines[0]).Text = "i1";
+        outer.Cells[0][0].Blocks.Add(inner);
+        doc.Blocks.Add(outer);
+        var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous, DefaultFontFamily = Inter };
+
+        int unselected = ColouredCount(Render(ed, w, h), w, h);
+
+        // Place the caret in the inner table's first cell, then stage up: cell -> inner table.
+        foreach (var name in new[] { "_caretPosition", "_selectionStart", "_selectionEnd" })
+            typeof(RichEditor).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
+                .SetValue(ed, new TextPointer(inner.Cells[0][0].Para, 0));
+        for (int i = 0; i < 2; i++)
+            ed.RaiseEvent(new Avalonia.Input.KeyEventArgs
+            {
+                RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent,
+                Key = Avalonia.Input.Key.A,
+                KeyModifiers = Avalonia.Input.KeyModifiers.Control,
+            });
+        int selected = ColouredCount(Render(ed, w, h), w, h);
+
+        Assert.True(unselected < 10, $"nothing should be tinted before selecting, got {unselected}");
+        Assert.True(selected > 300, $"the inner table's cells should be filled, got {selected}");
     }
 
     [AvaloniaFact]

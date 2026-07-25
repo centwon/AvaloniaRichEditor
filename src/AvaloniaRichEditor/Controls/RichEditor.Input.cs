@@ -124,7 +124,7 @@ public partial class RichEditor
             {
                 if (h.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null; // checkpoint on the first real move, not on the click
                     _isResizingImage = true;
                     _resizingImage = h.img;
                     _initialImageWidth = h.img.Width > 0 ? h.img.Width : 200;
@@ -141,7 +141,7 @@ public partial class RichEditor
             {
                 if (h.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null;
                     _isResizingInline = true;
                     _resizingInline = h.img;
                     _selectedInline = (h.p, h.img); // keep the selection chrome through the drag
@@ -161,7 +161,7 @@ public partial class RichEditor
             {
                 if (b.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null;
                     _isResizingColumn = true;
                     _resizingTable = b.tb;
                     _resizingColumnIndex = b.colIndex;
@@ -179,7 +179,7 @@ public partial class RichEditor
             {
                 if (b.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null;
                     _isResizingRow = true;
                     _resizingRowTable = b.tb;
                     _resizingRowIndex = b.rowIndex;
@@ -469,6 +469,7 @@ public partial class RichEditor
         if (_isResizingInline && _resizingInline != null)
         {
             double diff = point.X - _initialImageMouseX;
+            if (diff != 0) PushDragUndoOnce(); // the drag really moved -> now it's an edit
             double newW = Math.Max(8, _initialImageWidth + diff);
             _resizingInline.Width = newW;
             _resizingInline.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingInline.Height; // keep aspect ratio
@@ -479,6 +480,7 @@ public partial class RichEditor
         if (_isResizingImage && _resizingImage != null)
         {
             double diff = point.X - _initialImageMouseX;
+            if (diff != 0) PushDragUndoOnce();
             double newW = Math.Max(20, _initialImageWidth + diff);
             _resizingImage.Width = newW;
             _resizingImage.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingImage.Height; // keep aspect ratio
@@ -490,6 +492,7 @@ public partial class RichEditor
         {
             const double minW = 20;
             double diff = point.X - _initialMouseX;
+            if (diff != 0) PushDragUndoOnce();
 
             if (_resizingLastColumn)
             {
@@ -533,6 +536,7 @@ public partial class RichEditor
         if (_isResizingRow && _resizingRowTable != null)
         {
             double diff = point.Y - _initialMouseY;
+            if (diff != 0) PushDragUndoOnce();
             while (_resizingRowTable.RowHeights.Count <= _resizingRowIndex)
                 _resizingRowTable.RowHeights.Add(0);
             // Renderer clamps up to content height, so 20 is just a hard floor for the stored value.
@@ -653,7 +657,9 @@ public partial class RichEditor
 
         if (_isResizingImage)
         {
-            // Pre-resize state already pushed on press; undo restores original size in one step.
+            // Pre-resize state pushed on the drag's first move; undo restores original size in one
+            // step. A click that never moved leaves the arm pending — drop it (nothing changed).
+            _dragUndoPending = false;
             _isResizingImage = false;
             _resizingImage = null;
             e.Pointer.Capture(null);
@@ -662,7 +668,7 @@ public partial class RichEditor
 
         if (_isResizingInline)
         {
-            // Pre-resize state already pushed on press; undo restores original size in one step.
+            _dragUndoPending = false;
             _isResizingInline = false;
             _resizingInline = null;
             e.Pointer.Capture(null);
@@ -671,8 +677,9 @@ public partial class RichEditor
 
         if (_isResizingColumn)
         {
-            // Pre-resize state was already pushed on pointer-press, so undo restores
-            // the original width in a single step. Don't push the post-resize state here.
+            // Pre-resize state was pushed on the drag's first move, so undo restores the original
+            // width in a single step. Don't push the post-resize state here.
+            _dragUndoPending = false;
             _isResizingColumn = false;
             _resizingTable = null;
             e.Pointer.Capture(null);
@@ -681,7 +688,7 @@ public partial class RichEditor
 
         if (_isResizingRow)
         {
-            // Pre-resize state pushed on press; undo restores the original height in one step.
+            _dragUndoPending = false;
             _isResizingRow = false;
             _resizingRowTable = null;
             e.Pointer.Capture(null);
@@ -1389,7 +1396,8 @@ public partial class RichEditor
             var tl = LayoutTable(tb, 10 + tb.Indent, 0); // width (ColX) is top-independent
             var (cs, _) = tb.SpanOf(loc.r, loc.c);
             double cellWidth = tl.ColX[Math.Min(loc.c + cs, tb.Columns)] - tl.ColX[loc.c];
-            return BuildTextLayout(p, Math.Max(10, cellWidth - 10));
+            // Minus the list/indent gutter too — the cell render/hit-test walks wrap at this width.
+            return BuildTextLayout(p, Math.Max(10, cellWidth - 10 - CellParaLeft(p)));
         }
         return BuildTextLayout(p, Math.Max(10, ContentLayoutWidth - 20 - ParaLeft(p) - p.MarginRight));
     }

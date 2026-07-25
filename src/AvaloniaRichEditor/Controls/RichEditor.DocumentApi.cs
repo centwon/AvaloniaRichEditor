@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Threading.Tasks;
 using AvaloniaRichEditor.Documents;
 
@@ -14,14 +14,14 @@ public partial class RichEditor
 
     /// <summary>Replaces the document with one parsed from HTML (empty document if null/empty).</summary>
     public void LoadHtml(string? html)
-        => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages));
+        => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages, AllowRemoteImagesOnPaste));
 
     /// <summary>Replaces the document with one parsed from HTML, downloading remote (<c>http</c>)
     /// images off the UI thread first so a slow network can't freeze the UI. Await from the UI thread.</summary>
     public async Task LoadHtmlAsync(string? html)
         => LoadDocument(string.IsNullOrEmpty(html)
             ? new FlowDocument()
-            : await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(html, AllowLocalFileImages));
+            : await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(html, AllowLocalFileImages, AllowRemoteImagesOnPaste));
 
     /// <summary>Serializes the document to RTF (Rich Text Format) — readable by Word, WordPad, LibreOffice,
     /// and HWP. Covers paragraphs, runs (bold/italic/underline/strike, size, colour, font), alignment,
@@ -134,7 +134,7 @@ public partial class RichEditor
     public void InsertHtml(string html)
     {
         if (Document == null || IsReadOnly || string.IsNullOrEmpty(html)) return;
-        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages);
+        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages, AllowRemoteImagesOnPaste);
         if (parsed.Blocks.Count == 0) return;
         PushUndo();
         InsertParsedDocument(parsed);

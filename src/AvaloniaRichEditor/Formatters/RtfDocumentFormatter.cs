@@ -439,7 +439,10 @@ internal sealed class RtfParser
         }
         string mime = ImageMime.Detect(bytes) ?? _pictMime;
 
-        if (w < 64 && h < 64)
+        // A picture inside a table row belongs to the cell being built. Splicing it out as a block
+        // would push the cell's half-built paragraph into the document body — a photo in a Word/HWP
+        // table came out beside the table, with the surrounding text reordered. Keep it inline.
+        if ((w < 64 && h < 64) || _curRow != null)
         {
             var img = new InlineImage { Width = w, Height = h };
             img.SetImageData(bytes, mime, bmp);

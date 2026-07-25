@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Linq;
 using Avalonia;
@@ -433,6 +433,18 @@ public partial class RichEditor : Control
         _editRunRearm = EditRunKind.None;
     }
 
+    // A resize drag (image / inline image / column / row handle) arms this on press and checkpoints
+    // only when the pointer actually moves. Checkpointing on press instead made a bare click on a
+    // handle — which changes nothing — push an undo step and flip IsModified, so a freshly loaded
+    // document reported unsaved changes after a single click.
+    private bool _dragUndoPending;
+    private void PushDragUndoOnce()
+    {
+        if (!_dragUndoPending) return;
+        _dragUndoPending = false;
+        PushUndo();
+    }
+
     // Undo checkpoint for typed text: coalesces a run of consecutive keystrokes into a single
     // checkpoint. The run ends on any caret move, selection change, or discrete edit
     // (see ResetCaretBlink / PushUndo).
@@ -622,10 +634,23 @@ public partial class RichEditor : Control
                 blocks.Insert(i + 1, new Paragraph { Parent = parent });
         }
         foreach (var b in blocks)
-            if (b is TableBlock tb)
-                foreach (var row in tb.Cells)
-                    foreach (var cell in row)
-                        NormalizeBlockList(cell.Blocks, cell);
+        {
+            if (b is TableBlock tb) NormalizeTableCells(tb);
+            // An inline table's cells are block containers too (milestone B) but hang off a paragraph's
+            // inlines, so this walk never reached them: a deserialized inline-table cell holding only an
+            // image stayed paragraph-less and the caret could not enter it.
+            else if (b is Paragraph par)
+                foreach (var inl in par.Inlines)
+                    if (inl is InlineTable it)
+                        NormalizeTableCells(it.Table);
+        }
+    }
+
+    private static void NormalizeTableCells(TableBlock tb)
+    {
+        foreach (var row in tb.Cells)
+            foreach (var cell in row)
+                NormalizeBlockList(cell.Blocks, cell);
     }
 
     private void UpdateParents(FlowDocument doc)
@@ -999,6 +1024,12 @@ public partial class RichEditor : Control
     // Single source so render and all hit-tests agree on where text begins.
     private static double ParaLeft(Paragraph p)
         => 10 + p.Indent + p.ListLevel * 20 + (p.ListType != ListKind.None ? ListMarkerWidth : 0);
+
+    // The same gutter for a paragraph inside a table cell, measured from the cell's content box: the
+    // document's own 10px left margin is dropped (the cell supplies its padding). Single source for the
+    // cell walks — render, hit-test, link hit-test, caret and measure must all apply it (rule #1), or
+    // the text and the caret/click positions drift apart.
+    private static double CellParaLeft(Paragraph p) => ParaLeft(p) - 10;
 
     // The marker text for a list item: a bullet glyph or a formatted number, per the paragraph's
     // ListMarker style (Default = • for bullets, "N." for numbers).
@@ -1634,10 +1665,15 @@ public partial class RichEditor : Control
         }
     }
 
+    // Inside a table, Ctrl+A selects in stages (HWP/Excel): the cell's own contents, then the whole
+    // table — climbing one nesting level per press — then the document. Outside a table it selects
+    // the document straight away, as before.
     private void SelectAll()
     {
+        if (TrySelectAllStage()) return;
         var allParas = GetAllParagraphsInOrder();
         if (allParas.Count == 0) return;
+        _cellSelMode = false; _cellSelTable = null;
         _selectionStart = new TextPointer(allParas[0], 0);
         var lastPara = allParas[allParas.Count - 1];
         _selectionEnd = new TextPointer(lastPara, GetParagraphLength(lastPara));

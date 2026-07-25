@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor) pulled ahead on after
 0.9.0, plus the defects a full read-through of every source file turned up. New public API is additive;
-325 → 342 unit + 7 render tests, build 0 warn / 0 err.
+325 → 354 unit + 9 render tests, build 0 warn / 0 err.
 
 ### Added
 - **`RichEditor.IsModified` / `MarkSaved()` / `IsModifiedChanged`** — a "needs saving" dirty flag. Any edit
@@ -26,6 +26,10 @@ Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor
 - **Find highlight-all.** `SetFindHighlight(query, matchCase)` / `ClearFindHighlight()` tint every occurrence
   of the query (amber, screen-only — never printed); `GetFindMatchPosition()` returns the selection's
   `(current, total)` position among matches for a find bar's "n/m" counter. `FindNext`/`FindPrev` set it.
+- **Staged `Ctrl+A` inside a table** (HWP/Excel): the first press selects the cell's own contents, the
+  next the whole table, then one enclosing table per press (a table nested in a cell, or an inline
+  table’s host cell), and finally the document. A single-cell table has no separate table stage. Outside a table it still selects the document straight away. The stage is derived from
+  the current selection, so a click or arrow key in between restarts the sequence.
 - **`Paragraph.CopyFormatFrom(Paragraph)`** — copies every paragraph-level formatting field. One source
   for the edit paths that derive a new paragraph from an existing one (see the Enter fix below).
 
@@ -50,6 +54,44 @@ Found by reading every source file end to end; each is covered by a regression t
 - **Find highlight-all muddied the current match.** The amber tint painted over the translucent selection
   blue, blending to a low-contrast fill that hid which match the caret was on. Highlight-all now marks the
   *other* matches (browser / VS Code behaviour); the current one stays a clean selection.
+- **List markers were never drawn inside table cells.** `DrawListMarker` was called only from the
+  top-level paragraph path, so a bulleted/numbered cell paragraph kept its `ListType` in the model but
+  rendered as plain text. `DrawCellBlockList` now draws one marker per hard line (numbering restarts per
+  cell), and the marker gutter is applied by *every* cell walk through the new `CellParaLeft` — render,
+  hit-test, link hit-test, caret line layout and measure — so the text, the click position and the caret
+  can't drift apart (core rule #1).
+- **List commands only reached the first selected paragraph inside a table cell.** `ToggleBullet` /
+  `ToggleNumbering` / `SetListStyle` / `RemoveList` collected only *top-level* selected paragraphs and
+  otherwise fell back to "just the caret's paragraph", so selecting several paragraphs in one cell listed
+  the first alone. Selection collection is now container-agnostic (`SelectedParagraphsInOrder`); only the
+  hard-line splitting path, which splices `Document.Blocks`, stays top-level — cell paragraphs toggle in
+  place.
+- **Clicking a resize handle marked the document modified.** Image, inline-image, column and row handles
+  pushed an undo checkpoint on pointer-*press*, so a bare click (no drag) left a no-op undo step and
+  flipped `IsModified` — a freshly loaded document reported unsaved changes. The checkpoint is now taken
+  on the drag's first actual movement.
+- **HTML `font-weight` was read from the whole style string.** The check looked for `bold`/`:600`…
+  anywhere in the declaration list, so `font-weight:normal;width:600px` parsed as bold. It now reads the
+  declaration's own value and compares numerically (`>= 600`), which also covers values like 650.
+- **An RTF picture inside a table row escaped its cell.** `\pict` data 64 px or larger was always spliced
+  in as a document-level image block — mid-row that pushed the half-built cell paragraph into the document
+  body, so a photo in a Word/HWP table came out beside the table with the surrounding text reordered.
+  Pictures stay inline while a row is open.
+- **Inline-table cells were never normalized.** Core rule #5 (every cell holds at least one paragraph)
+  recursed into block-table cells only, so an inline-table cell whose only block is an image — as a
+  deserialized `.flow` can contain — stayed paragraph-less and the caret could not enter it.
+- **`LoadHtml` / `LoadHtmlAsync` / `InsertHtml` ignored `AllowRemoteImagesOnPaste`.** The flag reached the
+  paste path only, so the documented privacy opt-out did not apply to loaded or inserted HTML.
+
+- **A nested or inline table never showed cell-block selection.** `DrawNestedTable` didn't ask for the
+  selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
+  Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
+  top-level table.
+
+### Performance
+- **`FindCell` no longer scans the document.** It resolved a paragraph's table cell by recursing through
+  every table and inline table in the document; it now walks the `Paragraph → TableCell → TableBlock`
+  parent chain (wired by `UpdateParents`). It runs per keystroke, per pointer move and per menu build.
 
 ## [0.9.0] - 2026-07-07
 
@@ -162,6 +204,11 @@ allocation cleanups. No public API or document-format changes.
   into one paragraph. Each line is now its own paragraph, round-tripping with `GetPlainText`.
 - **`Ctrl+Delete`/`Ctrl+Backspace` (delete word)** no longer pushes an empty undo checkpoint when there
   is nothing to delete at a paragraph boundary.
+
+- **A nested or inline table never showed cell-block selection.** `DrawNestedTable` didn't ask for the
+  selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
+  Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
+  top-level table.
 
 ### Performance
 - The blinking text caret no longer allocates a `Pen` every repaint (cached, rebuilt only when
@@ -299,6 +346,11 @@ not features.
   quote in a URL or font name can't break the emitted (double-quoted) markup.
 - `TableBlock.InsertColumn` keeps column widths aligned with columns when the width list was shorter
   than the column count; JSON table load pads jagged/short rows so the grid stays rectangular.
+
+- **A nested or inline table never showed cell-block selection.** `DrawNestedTable` didn't ask for the
+  selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
+  Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
+  top-level table.
 
 ### Performance
 - Caret moves no longer re-hash every paragraph: `MeasureOverride` trusts the layout cache when no edit

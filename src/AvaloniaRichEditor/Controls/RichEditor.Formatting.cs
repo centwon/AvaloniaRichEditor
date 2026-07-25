@@ -129,7 +129,8 @@ public partial class RichEditor
     {
         if (_caretPosition.Paragraph == null || Document == null || IsReadOnly) return;
         PushUndo();
-        var targets = SelectedTopLevelParagraphs();
+        // Any depth: clearing a list needs no block splicing, so cell paragraphs are cleared too.
+        var targets = SelectedParagraphsInOrder();
         if (targets.Count == 0) targets = new List<Paragraph> { _caretPosition.Paragraph };
         foreach (var p in targets)
         {
@@ -157,13 +158,18 @@ public partial class RichEditor
         bool turningOff = marker == null && _caretPosition.Paragraph.ListType == kind;
         void ApplyMarker(Paragraph par) { if (marker.HasValue) par.ListMarker = marker.Value; }
 
-        // Apply to every selected top-level paragraph (just the caret's when there's no selection).
-        var targets = SelectedTopLevelParagraphs();
+        // Apply to every selected paragraph (just the caret's when there's no selection). Only
+        // top-level ones can take the hard-line splitting path below — it splices Document.Blocks —
+        // so paragraphs living in a table cell are toggled in place here, however many are selected.
+        var targets = new List<Paragraph>();
+        foreach (var p in SelectedParagraphsInOrder())
+        {
+            if (Document.Blocks.Contains(p)) { targets.Add(p); continue; }
+            p.ListType = turningOff ? ListKind.None : kind;
+            ApplyMarker(p);
+        }
         if (targets.Count == 0)
         {
-            // Caret in a table cell etc. -> just flag that paragraph.
-            _caretPosition.Paragraph.ListType = turningOff ? ListKind.None : kind;
-            ApplyMarker(_caretPosition.Paragraph);
             InvalidateVisual();
             return;
         }
@@ -211,8 +217,11 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // Top-level paragraphs touched by the current selection (or just the caret's when collapsed).
-    private List<Paragraph> SelectedTopLevelParagraphs()
+    // Every paragraph the current selection touches, in document order and at ANY depth — table cells
+    // and nested/inline tables included (or just the caret's paragraph when collapsed). Paragraph-level
+    // commands must reach cell paragraphs too; only the ones that splice Document.Blocks need the
+    // top-level subset below.
+    private List<Paragraph> SelectedParagraphsInOrder()
     {
         var result = new List<Paragraph>();
         if (Document == null) return result;
@@ -221,13 +230,21 @@ public partial class RichEditor
         int ei = _selectionEnd.Paragraph != null ? all.IndexOf(_selectionEnd.Paragraph) : -1;
         if (si < 0 || ei < 0)
         {
-            if (_caretPosition.Paragraph != null && Document.Blocks.Contains(_caretPosition.Paragraph))
-                result.Add(_caretPosition.Paragraph);
+            if (_caretPosition.Paragraph != null) result.Add(_caretPosition.Paragraph);
             return result;
         }
         if (si > ei) (si, ei) = (ei, si);
-        for (int i = si; i <= ei; i++)
-            if (Document.Blocks.Contains(all[i])) result.Add(all[i]);
+        for (int i = si; i <= ei; i++) result.Add(all[i]);
+        return result;
+    }
+
+    // Top-level paragraphs touched by the current selection (or just the caret's when collapsed).
+    private List<Paragraph> SelectedTopLevelParagraphs()
+    {
+        var result = new List<Paragraph>();
+        if (Document == null) return result;
+        foreach (var p in SelectedParagraphsInOrder())
+            if (Document.Blocks.Contains(p)) result.Add(p);
         return result;
     }
 

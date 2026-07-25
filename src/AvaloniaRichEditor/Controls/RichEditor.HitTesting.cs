@@ -23,10 +23,11 @@ public partial class RichEditor
             double blkTop = oy + by;
             if (cb is Paragraph bp)
             {
-                var bl = BuildTextLayout(bp, innerW);
+                double pl = CellParaLeft(bp); // list/indent gutter, as every other cell walk applies
+                var bl = BuildTextLayout(bp, Math.Max(10, innerW - pl));
                 if (p.Y <= blkTop + bl.Height)
                 {
-                    var hit = bl.HitTestPoint(new Point(p.X - ox, p.Y - blkTop));
+                    var hit = bl.HitTestPoint(new Point(p.X - ox - pl, p.Y - blkTop));
                     return hit.IsInside ? RunAtOffset(bp, hit.TextPosition) : null;
                 }
                 by += bl.Height;
@@ -117,7 +118,8 @@ public partial class RichEditor
             switch (b)
             {
                 case Paragraph p:
-                    h += BuildTextLayout(p, w).Height;
+                    // Wraps at the content width minus the list/indent gutter, as the render walk draws it.
+                    h += BuildTextLayout(p, Math.Max(10, w - CellParaLeft(p))).Height;
                     break;
                 case ImageBlock im:
                     h += CellImageSize(im, w).h;
@@ -423,16 +425,17 @@ public partial class RichEditor
         double by = 0;
         Paragraph? lastPara = null;
         Avalonia.Media.TextFormatting.TextLayout? lastLayout = null;
-        double lastTop = 0;
+        double lastTop = 0, lastLeft = ox;
         foreach (var cb in blocks)
         {
             double blkTop = oy + by;
             if (cb is Paragraph bp)
             {
-                var bl = BuildTextLayout(bp, innerW);
-                lastPara = bp; lastLayout = bl; lastTop = blkTop;
+                double pl = CellParaLeft(bp); // list/indent gutter, as every other cell walk applies
+                var bl = BuildTextLayout(bp, Math.Max(10, innerW - pl));
+                lastPara = bp; lastLayout = bl; lastTop = blkTop; lastLeft = ox + pl;
                 if (p.Y <= blkTop + bl.Height)
-                    return new TextPointer(bp, HitTestIndex(bl, new Point(p.X - ox, p.Y - blkTop)));
+                    return new TextPointer(bp, HitTestIndex(bl, new Point(p.X - ox - pl, p.Y - blkTop)));
                 by += bl.Height;
             }
             else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
@@ -450,7 +453,7 @@ public partial class RichEditor
         }
         // Below all blocks (or in a nested table's border gap): snap to the last paragraph seen.
         return lastPara != null && lastLayout != null
-            ? new TextPointer(lastPara, HitTestIndex(lastLayout, new Point(p.X - ox, p.Y - lastTop)))
+            ? new TextPointer(lastPara, HitTestIndex(lastLayout, new Point(p.X - lastLeft, p.Y - lastTop)))
             : null;
     }
 

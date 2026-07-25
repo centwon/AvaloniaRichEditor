@@ -555,15 +555,36 @@ public partial class RichEditor
         ref Point? caretPoint, ref double caretHeight)
     {
         double by = 0;
+        int orderedIndex = 0; // ordered numbering restarts per cell (this block list)
         foreach (var cb2 in blocks)
         {
             double blkY = oy + by;
             if (cb2 is Paragraph para)
             {
+                // Same list/indent gutter the cell hit-test/caret/measure walks apply (rule #1).
+                double pl = CellParaLeft(para);
+                double px = ox + pl;
+                double pw = Math.Max(10, innerW - pl);
                 bool blkPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == para && !string.IsNullOrEmpty(_preeditText);
                 var layout = blkPreedit
-                    ? BuildTextLayout(para, innerW, _caretPosition!.Offset, _preeditText)
-                    : BuildTextLayout(para, innerW);
+                    ? BuildTextLayout(para, pw, _caretPosition!.Offset, _preeditText)
+                    : BuildTextLayout(para, pw);
+
+                if (para.ListType != ListKind.Ordered) orderedIndex = 0;
+                // One marker per hard line, exactly as the top-level walk numbers list items.
+                if (para.ListType != ListKind.None)
+                {
+                    string plain = BuildPlain(para);
+                    int segStart = 0;
+                    for (int i = 0; i <= plain.Length; i++)
+                        if (i == plain.Length || plain[i] == '\n')
+                        {
+                            int marker = para.ListType == ListKind.Ordered ? ++orderedIndex : 0;
+                            var lcr = layout.HitTestTextPosition(Math.Min(segStart, plain.Length));
+                            DrawListMarker(context, para, marker, px, blkY + lcr.Y);
+                            segStart = i + 1;
+                        }
+                }
 
                 if (!cellSelected && !cellRangeActive && selectedParagraphs?.Contains(para) == true)
                 {
@@ -571,10 +592,10 @@ public partial class RichEditor
                     int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
                     int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
                     if (hlEnd > hlStart)
-                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, ox, blkY);
+                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, px, blkY);
                 }
 
-                if (chrome) DrawFindHighlights(context, para, layout, ox, blkY);
+                if (chrome) DrawFindHighlights(context, para, layout, px, blkY);
 
                 if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
                 {
@@ -583,18 +604,19 @@ public partial class RichEditor
                     cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
                     double th = CaretTextHeight(para, _caretPosition.Offset);
                     if (cr.Height > 0 && th > cr.Height) th = cr.Height;
-                    caretPoint = new Point(ox + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
+                    caretPoint = new Point(px + cr.X, blkY + cr.Y + CaretYInLine(para, cr.Height, th));
                     caretHeight = th;
                     _lastCaretPoint = caretPoint.Value;
                 }
 
-                layout.Draw(context, new Point(ox, blkY));
+                layout.Draw(context, new Point(px, blkY));
                 FlushInlineTableDraws(context, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
-                if (chrome) RegisterInlineImages(context, para, layout, ox, blkY);
+                if (chrome) RegisterInlineImages(context, para, layout, px, blkY);
                 by += layout.Height;
             }
             else if (cb2 is ImageBlock cimg)
             {
+                orderedIndex = 0;
                 // A block image inside a cell, scaled to fit the cell width. With chrome on, it gets the
                 // same selection overlay + resize handle as a top-level block image, registered in
                 // document coordinates so the shared resize/hit-test paths work unchanged.
@@ -621,12 +643,14 @@ public partial class RichEditor
             }
             else if (cb2 is DividerBlock)
             {
+                orderedIndex = 0;
                 double y = blkY + DividerHeight / 2;
                 context.DrawLine(GrayBorderPen, new Point(ox, y), new Point(ox + innerW, y));
                 by += DividerHeight;
             }
             else if (cb2 is TableBlock nt)
             {
+                orderedIndex = 0;
                 // P4-2b: a nested table. Draws the grid + recurses into each nested cell, registering
                 // row/column resize handles like a top-level table (no selected-table affordance yet).
                 DrawNestedTable(context, nt, ox, blkY, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
@@ -666,13 +690,19 @@ public partial class RichEditor
         ref Point? caretPoint, ref double caretHeight)
     {
         var tl = LayoutTable(tb, startX, top);
+        // A cell block spanning several of THIS table's cells is filled exactly as at the top level —
+        // without this a nested (or inline) table never showed the cell-block chrome, so selecting one
+        // (by drag, or by staged Ctrl+A) looked like nothing had happened in near-empty cells.
+        var cellBlock = chrome ? SelectedCellRange(tb) : null;
         foreach (var (r, c, rect) in tl.AnchorRects)
         {
             var cell = tb.Cells[r][c];
             if (cell.Background != null) context.FillRectangle(cell.Background, rect);
             context.DrawRectangle(null, GrayBorderPen, rect);
+            bool inBlock = cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1;
+            if (inBlock) context.FillRectangle(SelectionBrush, rect);
             DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), chrome,
-                cellSelected: false, cellRangeActive: false, selectedParagraphs, selStart, selEnd,
+                cellSelected: inBlock, cellRangeActive: cellBlock != null, selectedParagraphs, selStart, selEnd,
                 ref caretPoint, ref caretHeight);
         }
         // Resize handles on the physical grid lines (document coordinates), shared with the top-level

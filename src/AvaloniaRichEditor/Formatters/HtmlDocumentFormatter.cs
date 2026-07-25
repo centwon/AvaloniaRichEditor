@@ -551,9 +551,15 @@ namespace AvaloniaRichEditor.Formatters
             if (string.IsNullOrEmpty(styleAttr)) return;
             string s = styleAttr.ToLowerInvariant();
 
-            if (s.Contains("font-weight"))
+            // Scope to the declaration's own value: searching the whole style string made
+            // "font-weight:normal;width:600px" bold. A number is compared (>= 600), so 650 works too.
+            var fw = System.Text.RegularExpressions.Regex.Match(s, @"(?<![\w-])font-weight\s*:\s*([^;]+)");
+            if (fw.Success)
             {
-                if (s.Contains("bold") || s.Contains(":600") || s.Contains(": 600") || s.Contains(":700") || s.Contains(": 700") || s.Contains(":800") || s.Contains(":900"))
+                string v = fw.Groups[1].Value.Trim();
+                if (v.Contains("bold") // bold / bolder
+                    || (double.TryParse(v, System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double n) && n >= 600))
                     weight = FontWeight.Bold;
             }
             if (s.Contains("font-style:italic") || s.Contains("font-style: italic")) style = FontStyle.Italic;

@@ -8,8 +8,18 @@ namespace AvaloniaRichEditor.Controls;
 // row/column structure commands. Part of RichEditor (split out of the main file for readability).
 public partial class RichEditor
 {
-    private (TableBlock tb, int r, int c)? FindCell(Paragraph p)
-        => Document == null ? null : FindCellIn(Document.Blocks, p);
+    // The innermost table + cell holding paragraph p, resolved through the parent chain
+    // (Paragraph -> TableCell -> TableBlock, wired by UpdateParents at any nesting depth, inline
+    // tables included). Was a full-document scan that recursed into every table and every inline
+    // table on each call — and this runs per keystroke, per pointer move and per menu build.
+    private static (TableBlock tb, int r, int c)? FindCell(Paragraph p)
+    {
+        if (p.Parent is not TableCell cell || cell.Parent is not TableBlock tb) return null;
+        for (int r = 0; r < tb.Rows; r++)
+            for (int c = 0; c < tb.Columns; c++)
+                if (ReferenceEquals(tb.Cells[r][c], cell)) return (tb, r, c);
+        return null;
+    }
 
     // The content width of the cell that encloses a nested table `t`, or null if `t` is top-level.
     // Used to clamp a nested table's width on resize so it stays within its cell.
@@ -28,29 +38,97 @@ public partial class RichEditor
         return null;
     }
 
-    // Finds the innermost table + cell directly holding paragraph p, recursing into nested tables
-    // (P4-2b). Returns the deepest enclosing cell so navigation/menus act on the table the caret is in.
-    private static (TableBlock tb, int r, int c)? FindCellIn(System.Collections.Generic.IEnumerable<Block> blocks, Paragraph p)
+    // ---- staged Ctrl+A (HWP/Excel) ----------------------------------------
+
+    // One stage of Ctrl+A while the caret is inside a table: the cell's contents -> the whole table
+    // -> the enclosing table (one level per press). Returns false when there's no table stage left,
+    // and the caller selects the whole document. The stage is read back off the current selection
+    // rather than counted, so a click or an arrow key in between resets the sequence by itself.
+    private bool TrySelectAllStage()
     {
-        foreach (var b in blocks)
-        {
-            if (b is TableBlock tb)
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                    {
-                        var cell = tb.Cells[r][c];
-                        var nested = FindCellIn(cell.Blocks, p);
-                        if (nested != null) return nested;
-                        if (cell.Blocks.Contains(p)) return (tb, r, c);
-                    }
-            // Inline tables live in a paragraph's inlines (milestone B); descend into them too so Tab/
-            // merge/menus find a cell whose caret sits inside an inline table.
-            else if (b is Paragraph para)
-                foreach (var inl in para.Inlines)
-                    if (inl is InlineTable it && FindCellIn(new[] { it.Table }, p) is { } hit)
-                        return hit;
-        }
+        var p = _caretPosition.Paragraph;
+        if (p == null) return false;
+
+        // A whole table is already selected -> climb to the table that contains it, if any; otherwise
+        // let the caller take the last step and select the document.
+        if (_cellSelTable is { } cur && WholeTableSelected(cur))
+            return EnclosingTableOf(cur) is { } outer && SelectWholeTable(outer);
+
+        if (FindCell(p) is not { } loc) return false;
+        var cell = loc.tb.Cells[loc.r][loc.c];
+        // Cell contents already fully selected -> the whole table. A single-cell table has no distinct
+        // table stage, so climb straight to the table around it (or fall through to the document).
+        if (CellEnds(cell) is { } ends && SelectionSpans(ends.first, ends.last))
+            return SelectWholeTable(loc.tb)
+                || (EnclosingTableOf(loc.tb) is { } up && SelectWholeTable(up));
+        return SelectCellContents(cell);
+    }
+
+    // The table one level further out: a table nested in a cell, or — for an inline table — the table
+    // holding the cell its host paragraph lives in. Null when the table is already top-level, so the
+    // climb ends and the next press selects the document.
+    private static TableBlock? EnclosingTableOf(TableBlock t)
+    {
+        if (t.Parent is TableCell c && c.Parent is TableBlock outer) return outer;
+        if (t.Parent is InlineTable it && it.Parent is Paragraph host
+            && host.Parent is TableCell hc && hc.Parent is TableBlock ht) return ht;
         return null;
+    }
+
+    // First and last paragraph of a cell's contents in document order, descending into anything
+    // nested inside it (a nested or inline table's own cells count as cell content).
+    private static (Paragraph first, Paragraph last)? CellEnds(TableCell cell)
+    {
+        Paragraph? first = null, last = null;
+        foreach (var q in ParagraphsInBlocks(cell.Blocks)) { first ??= q; last = q; }
+        return first != null ? (first, last!) : null;
+    }
+
+    private bool SelectionSpans(Paragraph first, Paragraph last)
+        => ReferenceEquals(_selectionStart.Paragraph, first) && _selectionStart.Offset == 0
+        && ReferenceEquals(_selectionEnd.Paragraph, last) && _selectionEnd.Offset == GetParagraphLength(last);
+
+    private bool WholeTableSelected(TableBlock tb)
+        => TableEnds(tb) is { } e && SelectionSpans(e.first, e.last);
+
+    // First/last paragraph of a whole table, taking the first and last LOGICAL (anchor) cells.
+    private static (Paragraph first, Paragraph last)? TableEnds(TableBlock tb)
+    {
+        TableCell? first = null, last = null;
+        foreach (var (_, _, cell) in tb.LogicalCells()) { first ??= cell; last = cell; }
+        if (first == null || ReferenceEquals(first, last)) return null; // single-cell: same as the cell stage
+        return CellEnds(first) is { } f && CellEnds(last!) is { } l ? (f.first, l.last) : null;
+    }
+
+    private bool SelectCellContents(TableCell cell)
+    {
+        if (CellEnds(cell) is not { } e) return false;
+        _cellSelMode = false; _cellSelTable = null;
+        SetSelection(e.first, e.last);
+        return true;
+    }
+
+    // Selects every cell of `tb`. Cell-selection mode makes the renderer fill the cells as a block
+    // (the same chrome a multi-cell drag produces). False for a single-cell table, where this would
+    // repeat the cell stage — the caller then moves on to the next level out.
+    private bool SelectWholeTable(TableBlock tb)
+    {
+        if (TableEnds(tb) is not { } e) return false;
+        _cellSelMode = true;
+        _cellSelTable = tb;
+        SetSelection(e.first, e.last);
+        return true;
+    }
+
+    private void SetSelection(Paragraph first, Paragraph last)
+    {
+        _selectedBlock = null;
+        _caretBlock = null;
+        _selectionStart = new TextPointer(first, 0);
+        _selectionEnd = new TextPointer(last, GetParagraphLength(last));
+        _caretPosition = new TextPointer(last, GetParagraphLength(last));
+        ResetCaretBlink();
+        InvalidateVisual();
     }
 
     // Rectangular cell block (inclusive, span-aware) defined by the two selection *endpoints* — the
