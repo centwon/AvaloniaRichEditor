@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using AvaloniaRichEditor.Documents;
 
@@ -140,15 +141,88 @@ public partial class RichEditor
         if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null) return null;
         if (FindCell(_selectionStart.Paragraph) is not { } s || s.tb != tb) return null;
         if (FindCell(_selectionEnd.Paragraph) is not { } e || e.tb != tb) return null;
-        // Both endpoints in the same cell = a caret/text selection inside one cell, not a cell block.
-        // (Must compare the cells directly: a merged cell spans rows/cols, so a span-expanded bounding
-        // box would otherwise look multi-cell even for a single merged cell.)
-        if (s.r == e.r && s.c == e.c) return null;
+        // Both endpoints in the same cell = a caret/text selection inside one cell, NOT a cell block —
+        // unless cell-selection mode is on for this table, where a single click selects exactly that one
+        // cell as a block (HWP/Excel). (Must compare the cells directly: a merged cell spans rows/cols,
+        // so a span-expanded bounding box would otherwise look multi-cell even for a single merged cell.)
+        if (s.r == e.r && s.c == e.c)
+        {
+            if (!_cellSelMode || !ReferenceEquals(_cellSelTable, tb)) return null;
+            var (cs1, rs1) = tb.SpanOf(s.r, s.c);
+            return (s.r, s.c, s.r + rs1 - 1, s.c + cs1 - 1);
+        }
         var (scs, srs) = tb.SpanOf(s.r, s.c);
         var (ecs, ers) = tb.SpanOf(e.r, e.c);
         int r0 = Math.Min(s.r, e.r), c0 = Math.Min(s.c, e.c);
         int r1 = Math.Max(s.r + srs - 1, e.r + ers - 1), c1 = Math.Max(s.c + scs - 1, e.c + ecs - 1);
         return (r0, c0, r1, c1);
+    }
+
+    // The cells the active cell block covers (row-major, anchors only, span-aware) — exactly the
+    // rectangle the renderer fills. Null when no cell block is active, so callers fall back to the
+    // linear text selection.
+    //
+    // This is what makes the painted selection and the operated-on range the same thing. The cell block
+    // used to be render-only chrome (SelectedCellRange fed the renderer and the context menu, nothing
+    // else), while every edit/format command walked the linear _selectionStart.._selectionEnd run. The
+    // two disagree in both directions: the linear run starts at the drag's offset inside the first cell
+    // (so the text before it survived a Delete), and document order between two corners sweeps in cells
+    // that lie OUTSIDE the rectangle (a vertical block in a 3-column table also caught the cells to its
+    // right). Every command now consults this first.
+    private List<TableCell>? SelectedCellsBlock()
+    {
+        if (!_cellSelMode || _cellSelTable is not { } tb) return null;
+        if (SelectedCellRange(tb) is not { } rg) return null;
+        var cells = new List<TableCell>();
+        var seen = new HashSet<TableCell>();
+        for (int r = Math.Max(0, rg.r0); r <= rg.r1 && r < tb.Rows; r++)
+            for (int c = Math.Max(0, rg.c0); c <= rg.c1 && c < tb.Columns; c++)
+            {
+                var (ar, ac) = tb.AnchorOf(r, c);
+                var cell = tb.Cells[ar][ac];
+                if (seen.Add(cell)) cells.Add(cell); // a merged cell is reached from each covered slot
+            }
+        return cells.Count > 0 ? cells : null;
+    }
+
+    // Every paragraph inside the active cell block, at any depth (nested and inline tables included).
+    private List<Paragraph> CellBlockParagraphs(List<TableCell> cells)
+    {
+        var result = new List<Paragraph>();
+        foreach (var cell in cells) result.AddRange(ParagraphsInBlocks(cell.Blocks));
+        return result;
+    }
+
+    // Selects exactly one cell as a block and enters cell-selection mode: a further single click picks
+    // another cell, a drag extends the block, a double-click drops back to a caret inside the cell.
+    // SelectCellContents is the text-editing counterpart (staged Ctrl+A) — same range, but out of mode.
+    private bool SelectCellAsBlock(TableBlock tb, TableCell cell)
+    {
+        if (CellEnds(cell) is not { } e) return false;
+        _cellSelMode = true;
+        _cellSelTable = tb;
+        SetSelection(e.first, e.last);
+        return true;
+    }
+
+    // Clears the contents of the selected cells, leaving the grid intact (Excel/HWP: Delete on a cell
+    // block empties the cells; removing rows/columns stays an explicit menu action, never a side effect
+    // of one key press). The caret lands in the first cleared cell and the block selection is consumed,
+    // so typing straight after a Delete goes somewhere predictable.
+    private void ClearSelectedCells(List<TableCell> cells)
+    {
+        foreach (var cell in cells)
+        {
+            cell.Blocks.Clear();
+            cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+        }
+        if (Document != null) UpdateParents(Document);
+        _cellSelMode = false;
+        _cellSelTable = null;
+        _caretPosition = new TextPointer(cells[0].Para, 0);
+        CollapseSelectionToCaret();
+        MarkTextChanged();
+        InvalidateMeasure(); // the rows shrink back to their empty height
     }
 
     // True when the box is a mergeable rectangle: spans more than one cell and no anchor inside it
@@ -345,6 +419,9 @@ public partial class RichEditor
             var (ar, ac) = loc.tb.AnchorOf(loc.r, loc.c);
             cell = loc.tb.Cells[ar][ac].Para;
         }
+        // Tab navigation lands on the cell's own primary paragraph and highlights it. Selecting the cell
+        // as a *unit* is a different operation (SelectCellAsBlock) — routing Tab through it would drag
+        // the caret into whatever a nested table inside the cell ends with.
         int len = GetParagraphLength(cell);
         _caretPosition = new TextPointer(cell, len);
         _selectionStart = new TextPointer(cell, 0);

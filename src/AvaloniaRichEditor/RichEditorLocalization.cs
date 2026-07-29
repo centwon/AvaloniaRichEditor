@@ -112,6 +112,7 @@ public static class RichEditorLocalization
             ["InlineWithText"] = "Inline with Text",
             ["SaveImage"] = "Save Image",
             // Tables
+            ["SelectCell"] = "Select Cell",
             ["InsertRowAbove"] = "Insert Row Above",
             ["InsertRowBelow"] = "Insert Row Below",
             ["DeleteRow"] = "Delete Row",
@@ -244,6 +245,7 @@ public static class RichEditorLocalization
             ["SaveImage"] = "이미지 저장",
             ["InlineWithText"] = "글자처럼 취급",
             // Tables
+            ["SelectCell"] = "셀 선택",
             ["InsertRowAbove"] = "위에 행 삽입",
             ["InsertRowBelow"] = "아래에 행 삽입",
             ["DeleteRow"] = "행 삭제",

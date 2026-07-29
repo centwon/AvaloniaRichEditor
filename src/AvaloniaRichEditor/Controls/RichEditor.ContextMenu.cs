@@ -535,6 +535,15 @@ public partial class RichEditor
         var loc = cell != null ? FindCell(cell) : null;
         int r = loc?.r ?? -1;
         int c = loc?.c ?? -1;
+        // Explicit way into cell-selection mode. Dragging across cells is the other one, but that can
+        // never produce a ONE-cell block, so without this a single cell couldn't be selected as a unit.
+        items.Add(Mi(Loc("SelectCell"), () =>
+        {
+            if (loc is not { } lc) return;
+            var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
+            SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
+        }, loc != null));
+        items.Add(new Separator());
         items.Add(Mi(Loc("InsertRowAbove"), () => TableInsertRow(tb, r), r >= 0, RichEditorIcon.InsertRowAbove));
         items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, r + 1), r >= 0, RichEditorIcon.InsertRowBelow));
         items.Add(Mi(Loc("DeleteRow"), () => TableDeleteRow(tb, r), r >= 0 && tb.Rows > 1, RichEditorIcon.DeleteRow));

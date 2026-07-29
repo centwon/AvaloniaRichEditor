@@ -241,6 +241,10 @@ public partial class RichEditor
     {
         var result = new List<Paragraph>();
         if (Document == null) return result;
+        // An active cell block IS the selection — the rectangle the user sees filled, not the linear
+        // document-order run between its two corners (which misses the part of the first/last cell
+        // outside the drag offsets and sweeps in cells outside the rectangle).
+        if (SelectedCellsBlock() is { } cells) return CellBlockParagraphs(cells);
         var all = GetAllParagraphsInOrder();
         int si = _selectionStart.Paragraph != null ? all.IndexOf(_selectionStart.Paragraph) : -1;
         int ei = _selectionEnd.Paragraph != null ? all.IndexOf(_selectionEnd.Paragraph) : -1;
@@ -354,6 +358,20 @@ public partial class RichEditor
         // Keyboard shortcuts are blocked in OnKeyDown, but the public commands (ToggleBold etc.)
         // must not mutate a ReadOnly document either.
         if (IsReadOnly) return;
+        // A cell block styles every run of every selected cell, whole cells at a time — the linear
+        // range would style only from the drag's offset in the first cell to its offset in the last.
+        if (SelectedCellsBlock() is { } cells)
+        {
+            if (Document != null) PushUndo();
+            foreach (var p in CellBlockParagraphs(cells))
+            {
+                foreach (var inl in p.Inlines) if (inl is Run r) styleAction(r);
+                TextRange.CoalesceRuns(p); // styling a whole paragraph can make its runs identical
+            }
+            InvalidateMeasure();
+            InvalidateVisual();
+            return;
+        }
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
             if (Document != null) PushUndo();

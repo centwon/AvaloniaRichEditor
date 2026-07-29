@@ -799,6 +799,10 @@ public partial class RichEditor : Control
 
     private void DeleteSelection()
     {
+        // A cell block clears the selected cells and leaves the grid standing (Excel/HWP). The linear
+        // range would instead delete from the drag's offset in the first cell through its offset in the
+        // last, leaving head/tail text behind and merging across the grid.
+        if (SelectedCellsBlock() is { } cells) { ClearSelectedCells(cells); return; }
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
             var range = new TextRange(_selectionStart, _selectionEnd);

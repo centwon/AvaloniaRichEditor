@@ -256,10 +256,14 @@ public partial class RichEditor
                     e.Pointer.Capture(this);
                     return;
                 }
-                // Single click selects exactly one cell; a drag (OnPointerMoved) extends to a block.
+                // Single click selects exactly one cell as a block; a drag (OnPointerMoved) extends it.
                 _selectedBlock = null;
                 var tp = GetPositionFromPoint(point);
-                if (tp.Paragraph != null) FocusCell(tp.Paragraph);
+                if (tp.Paragraph != null && FindCell(tp.Paragraph) is { } clickedCell)
+                {
+                    var (ar, ac) = clickedCell.tb.AnchorOf(clickedCell.r, clickedCell.c);
+                    SelectCellAsBlock(clickedCell.tb, clickedCell.tb.Cells[ar][ac]);
+                }
                 e.Pointer.Capture(this);
                 _isSelecting = true;
                 return;
@@ -349,6 +353,12 @@ public partial class RichEditor
 
     private void ApplyCaretSelection(bool shift)
     {
+        // Moving the caret ends any cell block: the selection collapses to a caret, and leaving the mode
+        // on would keep the renderer filling the cell while the edit commands (which now honour the
+        // block) operated on a single character — the very paint/operation mismatch the block selection
+        // is meant to remove. Matches the staged Ctrl+A, which also restarts on a click or an arrow.
+        _cellSelMode = false;
+        _cellSelTable = null;
         if (!shift) _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         ResetCaretBlink();
