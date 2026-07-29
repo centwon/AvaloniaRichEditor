@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia;
 using AvaloniaRichEditor.Documents;
@@ -420,10 +420,19 @@ public partial class RichEditor
         return null;
     }
 
-    private int HitTestIndex(Avalonia.Media.TextFormatting.TextLayout layout, Point localPoint)
+    // The logical caret offset for a point inside a paragraph's layout.
+    //
+    // Past the end of a line Avalonia reports the last position with IsTrailing set, so
+    // TextPosition + IsTrailing comes back ONE PAST the paragraph's length — and clicking the empty
+    // space to the right of a line is an everyday action. The caret then sat at an offset that does not
+    // exist: Backspace deleted nothing (the delete range fell outside every run) and typing appended a
+    // fresh unformatted run instead of continuing the run it was clicked after, so text typed there lost
+    // the line's bold/colour. Clamping here rather than at the call sites keeps the guarantee in one
+    // place — every caret placement, drag selection, link and cell hit-test funnels through this.
+    private int HitTestIndex(Avalonia.Media.TextFormatting.TextLayout layout, Point localPoint, Paragraph p)
     {
         var hit = layout.HitTestPoint(localPoint);
-        return hit.TextPosition + (hit.IsTrailing ? 1 : 0);
+        return Math.Clamp(hit.TextPosition + (hit.IsTrailing ? 1 : 0), 0, GetParagraphLength(p));
     }
 
     // Recursive hit-test of a block list laid out at (ox,oy) of width innerW (a cell content box, mirror
@@ -451,7 +460,7 @@ public partial class RichEditor
                     // click stopped at the host paragraph's ObjChar — the table rendered but its cells
                     // could not be entered or drag-selected.
                     if (InlineTableHitDescent(bp, bl, ox + pl, blkTop, p) is { } descended) return descended;
-                    return new TextPointer(bp, HitTestIndex(bl, new Point(p.X - ox - pl, p.Y - blkTop)));
+                    return new TextPointer(bp, HitTestIndex(bl, new Point(p.X - ox - pl, p.Y - blkTop), bp));
                 }
                 by += bl.Height;
             }
@@ -470,7 +479,7 @@ public partial class RichEditor
         }
         // Below all blocks (or in a nested table's border gap): snap to the last paragraph seen.
         return lastPara != null && lastLayout != null
-            ? new TextPointer(lastPara, HitTestIndex(lastLayout, new Point(p.X - lastLeft, p.Y - lastTop)))
+            ? new TextPointer(lastPara, HitTestIndex(lastLayout, new Point(p.X - lastLeft, p.Y - lastTop), lastPara))
             : null;
     }
 
@@ -595,7 +604,7 @@ public partial class RichEditor
                     {
                         bestDistY = distY2;
                         bestPara = paragraph;
-                        bestLocalIndex = HitTestIndex(ft, new Point(p.X - ppos, p.Y - top));
+                        bestLocalIndex = HitTestIndex(ft, new Point(p.X - ppos, p.Y - top), paragraph);
                     }
                 }
             }

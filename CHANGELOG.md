@@ -165,6 +165,14 @@ Found by reading every source file end to end; each is covered by a regression t
   short and a composition at the end of a document could not be scrolled to. `MeasureContentHeight` now
   applies the composition height there too; `BlockExtent` deliberately keeps handing the hit-tests and
   pagination the plain layout, whose indices are logical offsets rather than display positions.
+- **Clicking the empty space to the right of a line put the caret one past the paragraph's end.**
+  `HitTestIndex` passed Avalonia's `TextPosition + IsTrailing` straight through, and past the end of a
+  line that is the paragraph's length + 1 — an offset that doesn't exist. Two everyday consequences:
+  **Backspace deleted nothing** (the delete range fell outside every run), and **typing there started a
+  new unformatted run**, so text typed after clicking to the right of a bold or coloured line came out
+  unstyled. Reproduced regardless of script or line length. The offset is now clamped to the paragraph's
+  real length in the one place every caret placement, drag selection, link and cell hit-test goes
+  through.
 - **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
   while the collapsed selection meant the edit commands acted on one character — the same paint versus
   operation mismatch, reached by pressing → after selecting a cell.
