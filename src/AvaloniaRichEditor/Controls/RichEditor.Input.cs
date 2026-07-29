@@ -939,15 +939,23 @@ public partial class RichEditor
         {
             if (Document != null)
             {
-                bool plainCharDelete = e.Key != Key.Enter
-                    && _selectionStart == _selectionEnd
-                    && _selectedBlock == null && _selectedInline == null
+                // Structural = a selection delete, a selected block/inline image, or Enter: always one
+                // checkpoint of its own.
+                bool structural = e.Key == Key.Enter
+                    || _selectionStart != _selectionEnd
+                    || _selectedBlock != null || _selectedInline != null;
+                bool plainCharDelete = !structural
                     && _caretPosition.Paragraph != null
                     && (e.Key == Key.Back
                         ? _caretPosition.Offset > 0
                         : _caretPosition.Offset < GetParagraphLength(_caretPosition.Paragraph));
                 if (plainCharDelete) PushUndoDeleting(e.Key == Key.Back);
-                else PushUndo();
+                // Otherwise the caret is at a paragraph edge: only checkpoint when there is actually an
+                // adjacent block to merge or remove. Backspace at the very start of the document (or
+                // Delete at its end) does nothing, and pushing anyway left a no-op step on the undo
+                // stack and flipped IsModified — a freshly loaded document then reported unsaved
+                // changes after one stray key press. (WordDelete already guards the same way.)
+                else if (structural || !DeleteAtEdgeIsNoOp(e.Key == Key.Back)) PushUndo();
             }
         }
 
@@ -1230,11 +1238,13 @@ public partial class RichEditor
                 // Enter splits the paragraph at the caret into a new paragraph. On an empty list item it
                 // exits the list instead. A table cell now hosts sibling paragraphs (P3), so a cell
                 // paragraph splits within the cell's block list — the table grows to fit (InvalidateMeasure).
-                bool topLevel = Document != null && Document.Blocks.Contains(p);
+                bool topLevel = p?.Parent is FlowDocument;
                 bool inCell = p?.Parent is TableCell;
                 if (Document != null && (topLevel || inCell))
                 {
-                    PushUndo();
+                    // The checkpoint was already taken above (Enter is always "structural"). Pushing a
+                    // second one here cloned the same unchanged document twice, so one Enter cost two
+                    // undo steps — the first Ctrl+Z appeared to do nothing.
                     if (_selectionStart != _selectionEnd) DeleteSelection();
                     p = _caretPosition.Paragraph!;
                     // Auto-link a trailing URL token before the split, so the link lands in the left paragraph.
@@ -1373,6 +1383,27 @@ public partial class RichEditor
 
     // True when the text caret currently sits inside a cell of the given block (a table).
     private bool CaretInBlock(Block b) => b is TableBlock tb && _caretPosition.Paragraph != null && IsCellOf(tb, _caretPosition.Paragraph);
+
+    // True when a plain Backspace/Delete at the caret would change nothing: the caret sits at the
+    // paragraph edge (offset 0 for Backspace, end for Delete) and the paragraph is the first/last block
+    // of its own container, so there is no neighbour to merge with or remove. Both edit branches work
+    // within the paragraph's container (the document's blocks, or the enclosing cell's), so the same
+    // test covers a caret in a cell.
+    private bool DeleteAtEdgeIsNoOp(bool backspace)
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null) return true;
+        System.Collections.Generic.IList<Block>? container = p.Parent switch
+        {
+            FlowDocument d => d.Blocks,
+            TableCell tc => tc.Blocks,
+            _ => null
+        };
+        if (container == null) return true;
+        int i = container.IndexOf(p);
+        if (i < 0) return true;
+        return backspace ? i == 0 : i == container.Count - 1;
+    }
 
     // The image/table block immediately before/after the caret's top-level paragraph, or null.
     private Block? AdjacentBlock(bool before)

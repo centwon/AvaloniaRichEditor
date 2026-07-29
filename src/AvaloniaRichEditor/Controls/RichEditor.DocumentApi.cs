@@ -98,14 +98,14 @@ public partial class RichEditor
         // next one — checking the buffer length conflated "first paragraph" with "buffer empty" and
         // dropped leading blank lines.
         bool first = true;
-        void AddPara(Paragraph p) { if (!first) sb.Append('\n'); first = false; sb.Append(BuildPlain(p)); }
-        foreach (var block in Document.Blocks)
+        // Every paragraph in document order at ANY depth. The walk used to descend exactly one level
+        // (top-level paragraphs + a cell's own paragraphs), so text inside a nested table or an inline
+        // table was dropped entirely — including from the accessibility peer, which reads this.
+        foreach (var p in GetAllParagraphsInOrder())
         {
-            if (block is Paragraph p) AddPara(p);
-            else if (block is TableBlock tb)
-                foreach (var (_, _, cell) in tb.LogicalCells())
-                    foreach (var cb in cell.Blocks)
-                        if (cb is Paragraph cp) AddPara(cp);
+            if (!first) sb.Append('\n');
+            first = false;
+            sb.Append(BuildPlain(p));
         }
         // LF-only renders as a single line in many Windows consumers; normalize every break (paragraph
         // separators above + soft '\n' from BuildPlain) to the platform newline.

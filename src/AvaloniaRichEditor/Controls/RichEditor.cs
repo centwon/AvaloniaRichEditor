@@ -1297,10 +1297,34 @@ public partial class RichEditor : Control
         var liveParas = new HashSet<Paragraph>(GetAllParagraphsInOrder());
         foreach (var key in _layoutCache.Keys.ToList())
             if (!liveParas.Contains(key)) _layoutCache.Remove(key);
+        // Nested and inline tables are live too; collecting only the top-level ones evicted their
+        // (still-used) geometry every prune, forcing a full re-measure on the next frame.
         var liveTables = new HashSet<TableBlock>();
-        foreach (var b in Document.Blocks) if (b is TableBlock tb) liveTables.Add(tb);
+        CollectTables(Document.Blocks, liveTables);
         foreach (var key in _tableLayoutCache.Keys.ToList())
             if (!liveTables.Contains(key)) _tableLayoutCache.Remove(key);
+    }
+
+    // Every table in the document at any depth: top level, nested in a cell, or inline in a paragraph.
+    private static void CollectTables(System.Collections.Generic.IEnumerable<Block> blocks, HashSet<TableBlock> into)
+    {
+        foreach (var b in blocks)
+        {
+            if (b is TableBlock tb)
+            {
+                into.Add(tb);
+                foreach (var (_, _, cell) in tb.LogicalCells()) CollectTables(cell.Blocks, into);
+            }
+            else if (b is Paragraph p)
+            {
+                foreach (var inl in p.Inlines)
+                    if (inl is InlineTable it)
+                    {
+                        into.Add(it.Table);
+                        foreach (var (_, _, cell) in it.Table.LogicalCells()) CollectTables(cell.Blocks, into);
+                    }
+            }
+        }
     }
 
     // Inserts the IME preedit text at a character offset, splitting a text segment if needed.
@@ -1338,19 +1362,11 @@ public partial class RichEditor : Control
         segs.Add(new LayoutSeg { Text = preedit, Props = preeditProps });
     }
 
+    // The top-level block containing p, at any nesting depth. Delegates to the single parent-chain
+    // walker (this used to be a second, one-level copy that missed nested/inline tables — so a paste
+    // target or a clipboard block capture anchored inside one silently fell back to the document end).
     private Block? FindTopLevelBlock(Paragraph p)
-    {
-        if (Document == null) return null;
-        foreach (var b in Document.Blocks)
-        {
-            if (b == p) return b;
-            if (b is TableBlock tb)
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c].Blocks.Contains(p)) return tb;
-        }
-        return null;
-    }
+        => Document != null ? TextRange.TopLevelBlockOf(Document, p) : null;
 
     private void InsertParsedDocument(FlowDocument parsed)
     {

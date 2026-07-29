@@ -74,34 +74,47 @@ internal class UndoManager
         return _redoStack.Pop();
     }
 
+    // The caret's index in document-paragraph order, and its inverse. Both walks must number the
+    // SAME positions, and must reach every paragraph the rest of the engine does: a cell's 2nd+ block
+    // (P3), a nested table's cells (P4-2b) and an inline table's cells (milestone B). The old flat walk
+    // stopped at each cell's first paragraph, so a caret anywhere deeper was never numbered — undo then
+    // fell back to index 0 and dropped the caret at the start of the document. Mirrors
+    // TextPointer.CompareTo / RichEditor.ParagraphsInBlocks (anchor cells only; each table and each
+    // non-paragraph block consumes one index of its own).
     public TextPointer GetPointerFromGlobalIndex(FlowDocument doc, int index)
     {
         if (doc.Blocks.Count == 0) return new TextPointer(null, 0);
 
         int currentIndex = 0;
         Paragraph? lastPara = null;
+        Paragraph? hit = null;
 
         void TraverseBlocks(IEnumerable<Block> blocks)
         {
             foreach (var block in blocks)
             {
+                if (hit != null) return;
                 if (block is Paragraph p)
                 {
                     lastPara = p;
-                    if (currentIndex == index) return;
+                    if (currentIndex == index) { hit = p; return; }
                     currentIndex++;
+                    // An inline table's cells are numbered right after their host paragraph.
+                    foreach (var inl in p.Inlines)
+                        if (inl is InlineTable it)
+                            foreach (var (_, _, cell) in it.Table.LogicalCells())
+                            {
+                                TraverseBlocks(cell.Blocks);
+                                if (hit != null) return;
+                            }
                 }
                 else if (block is TableBlock tb)
                 {
-                    currentIndex++;
-                    for (int r = 0; r < tb.Rows; r++)
+                    currentIndex++; // the table itself occupies one index
+                    foreach (var (_, _, cell) in tb.LogicalCells())
                     {
-                        for (int c = 0; c < tb.Columns; c++)
-                        {
-                            lastPara = tb.Cells[r][c].Para;
-                            if (currentIndex == index) return;
-                            currentIndex++;
-                        }
+                        TraverseBlocks(cell.Blocks);
+                        if (hit != null) return;
                     }
                 }
                 else
@@ -112,7 +125,8 @@ internal class UndoManager
         }
 
         TraverseBlocks(doc.Blocks);
-        return new TextPointer(lastPara, 0);
+        // Found: that paragraph. Not found (index past the end): the last one seen, as before.
+        return new TextPointer(hit ?? lastPara, 0);
     }
 
     private int GetGlobalIndex(FlowDocument doc, TextPointer pointer)
@@ -128,20 +142,23 @@ internal class UndoManager
 
                 if (block is Paragraph p)
                 {
-                    if (p == pointer.Paragraph) { found = true; return; }
+                    if (ReferenceEquals(p, pointer.Paragraph)) { found = true; return; }
                     index++;
+                    foreach (var inl in p.Inlines)
+                        if (inl is InlineTable it)
+                            foreach (var (_, _, cell) in it.Table.LogicalCells())
+                            {
+                                TraverseBlocks(cell.Blocks);
+                                if (found) return;
+                            }
                 }
                 else if (block is TableBlock tb)
                 {
                     index++;
-                    for (int r = 0; r < tb.Rows; r++)
+                    foreach (var (_, _, cell) in tb.LogicalCells())
                     {
-                        for (int c = 0; c < tb.Columns; c++)
-                        {
-                            var cell = tb.Cells[r][c].Para;
-                            if (cell == pointer.Paragraph) { found = true; return; }
-                            index++;
-                        }
+                        TraverseBlocks(cell.Blocks);
+                        if (found) return;
                     }
                 }
                 else

@@ -87,6 +87,46 @@ Found by reading every source file end to end; each is covered by a regression t
   selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
   Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
   top-level table.
+- **Undo/redo threw the caret to the start of the document when the edit was made at depth.**
+  `UndoManager` identifies the caret by its index in document paragraph order, and both that walk and its
+  inverse stopped at each cell's *first* paragraph — a leftover from the single-paragraph-cell era. A
+  caret in a cell's 2nd+ paragraph (milestone A/P3), in a nested table (P4-2b) or in an inline table
+  (milestone B) was therefore never numbered, so the lookup fell back to index 0 and undo dropped the
+  caret at the top of the document instead of where the edit happened. Both walks now descend
+  recursively through cells and inline tables, in the same order as `TextPointer.CompareTo` /
+  `ParagraphsInBlocks` (anchor cells only).
+- **Deleting a selection spanning two paragraphs of the SAME table cell left a stray paragraph break.**
+  The merge was gated on "are both endpoints top-level blocks?", so two paragraphs of one cell — which
+  cells have hosted since milestone A/P3 — were classified as "crosses the grid" and never joined; any
+  blocks spanned between them were only blanked, not removed. The test is now "are they siblings in one
+  block list?", which covers a cell exactly as it covers the document's top level. A selection that
+  genuinely crosses cells still preserves the grid structure, as before.
+- **Deleting a selection anchored inside a nested or inline table left the blocks between it and the
+  other endpoint behind.** `TextRange.TopLevelBlockOf` (and its copy `RichEditor.FindTopLevelBlock`)
+  scanned each cell's block list one level deep, so a paragraph in a nested/inline table resolved to
+  "no top-level block" and the between-blocks removal was skipped entirely. Both now share one
+  parent-chain walker, which resolves a paragraph at any depth. This also fixes the paste target and
+  the clipboard block capture, which silently fell back to the document end from such a caret.
+- **`GetPlainText()` dropped all text inside nested and inline tables** — it descended exactly one
+  level (top-level paragraphs plus a cell's own paragraphs). The accessibility peer reads this method,
+  so that content was invisible to assistive technology too. It now uses the recursive document order.
+- **`GetImageCount()` under-counted images in nested and inline tables**, so the
+  `RecommendedImageLimitExceeded` soft-limit warning fired late or not at all.
+- **Paragraph commands ignored the selection and only changed the caret's paragraph.**
+  `SetTextAlignment`, `SetHeading`, `SetLineSpacing`, `SetLineHeight`, `Indent` and `ToggleQuote` each
+  poked `_caretPosition.Paragraph` directly, so selecting several paragraphs and clicking "center"
+  aligned just the one the caret happened to land on — while the list commands on the same toolbar
+  already applied to the whole selection. All six now go through one selection-aware choke point that
+  reaches paragraphs at any depth (table cells and inline tables included). `ToggleQuote` takes its
+  direction from the caret paragraph and applies it uniformly, so a mixed selection ends up consistent
+  rather than inverted item by item (the same rule the list toggle uses).
+- **Backspace at the very start of the document (or Delete at its end) left a no-op undo step** and
+  flipped `IsModified`, so a freshly loaded document reported unsaved changes after one stray key
+  press. The checkpoint is now taken only when there is an adjacent block to merge or remove —
+  the guard `Ctrl+Backspace`/`Ctrl+Delete` already had.
+- **One `Enter` pushed two identical undo checkpoints**, so the first `Ctrl+Z` after it appeared to do
+  nothing (it restored an already-current state) and a second press was needed to undo the split. The
+  redundant inner checkpoint is gone; Enter is one step, like every other structural edit.
 
 ### Changed
 - **The synchronous `ParseHtml` / `LoadHtml` / `InsertHtml` no longer load remote images.** They used to
@@ -99,6 +139,9 @@ Found by reading every source file end to end; each is covered by a regression t
 - **`FindCell` no longer scans the document.** It resolved a paragraph's table cell by recursing through
   every table and inline table in the document; it now walks the `Paragraph → TableCell → TableBlock`
   parent chain (wired by `UpdateParents`). It runs per keystroke, per pointer move and per menu build.
+- **`PruneLayoutCaches` no longer evicts live nested/inline tables' geometry.** It collected only
+  top-level tables as "live", so past the cache cap every prune dropped the still-used entries for
+  tables in cells and inline tables, forcing a full re-measure on the next frame.
 
 ## [0.9.0] - 2026-07-07
 
@@ -211,11 +254,6 @@ allocation cleanups. No public API or document-format changes.
   into one paragraph. Each line is now its own paragraph, round-tripping with `GetPlainText`.
 - **`Ctrl+Delete`/`Ctrl+Backspace` (delete word)** no longer pushes an empty undo checkpoint when there
   is nothing to delete at a paragraph boundary.
-
-- **A nested or inline table never showed cell-block selection.** `DrawNestedTable` didn't ask for the
-  selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
-  Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
-  top-level table.
 
 ### Performance
 - The blinking text caret no longer allocates a `Pen` every repaint (cached, rebuilt only when
@@ -353,11 +391,6 @@ not features.
   quote in a URL or font name can't break the emitted (double-quoted) markup.
 - `TableBlock.InsertColumn` keeps column widths aligned with columns when the width list was shorter
   than the column count; JSON table load pads jagged/short rows so the grid stays rectangular.
-
-- **A nested or inline table never showed cell-block selection.** `DrawNestedTable` didn't ask for the
-  selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
-  Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
-  top-level table.
 
 ### Performance
 - Caret moves no longer re-hash every paragraph: `MeasureOverride` trusts the layout cache when no edit

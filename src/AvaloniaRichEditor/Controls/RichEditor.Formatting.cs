@@ -97,23 +97,39 @@ public partial class RichEditor
     /// <summary>Sets the highlight (background) brush of the current selection; pass <see langword="null"/> to clear.</summary>
     public void SetHighlight(IBrush? brush) { ApplyStyleToSelection(r => r.Background = brush); }
 
-    /// <summary>Adjusts the indent of the caret paragraph by <paramref name="delta"/> pixels (clamped 0–400).</summary>
-    public void Indent(double delta)
+    // Applies a paragraph-level change to EVERY paragraph the selection touches (just the caret's when
+    // the selection is collapsed), at any depth — cell and inline-table paragraphs included. Single
+    // choke point for the paragraph commands, which each used to poke `_caretPosition.Paragraph`
+    // directly: selecting several paragraphs and clicking "center" only aligned the one the caret
+    // happened to land on, while the list commands on the same toolbar already applied to the whole
+    // selection. NotifyStatus because indent/spacing/heading all change block heights.
+    private void ApplyToSelectedParagraphs(Action<Paragraph> action)
     {
         if (_caretPosition.Paragraph == null || IsReadOnly) return;
         if (Document != null) PushUndo();
-        var p = _caretPosition.Paragraph;
-        p.Indent = Math.Clamp(p.Indent + delta, 0, 400);
+        var targets = SelectedParagraphsInOrder();
+        if (targets.Count == 0) targets = new List<Paragraph> { _caretPosition.Paragraph };
+        foreach (var p in targets) action(p);
         InvalidateVisual();
+        NotifyStatus();
     }
-    /// <summary>Sets the text alignment of the caret paragraph.</summary>
-    public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
-    /// <summary>Sets the absolute line-box height (px) of the caret paragraph ("exactly" spacing).
+
+    /// <summary>Adjusts the indent of every selected paragraph by <paramref name="delta"/> pixels
+    /// (each clamped 0–400); the caret paragraph alone when nothing is selected.</summary>
+    public void Indent(double delta)
+        => ApplyToSelectedParagraphs(p => p.Indent = Math.Clamp(p.Indent + delta, 0, 400));
+    /// <summary>Sets the text alignment of every selected paragraph (the caret paragraph when nothing
+    /// is selected).</summary>
+    public void SetTextAlignment(TextAlignment align)
+        => ApplyToSelectedParagraphs(p => p.TextAlignment = align);
+    /// <summary>Sets the absolute line-box height (px) of every selected paragraph ("exactly" spacing).
     /// Prefer <see cref="SetLineSpacing"/> for proportional spacing that scales with font size.</summary>
-    public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
-    /// <summary>Sets proportional line spacing on the caret paragraph as a multiple of the natural
+    public void SetLineHeight(double height)
+        => ApplyToSelectedParagraphs(p => p.LineHeight = height);
+    /// <summary>Sets proportional line spacing on every selected paragraph as a multiple of the natural
     /// single-line height (1.0 = single, 1.5 = 1.5 lines; HWP % ÷ 100). <see cref="double.NaN"/> clears it.</summary>
-    public void SetLineSpacing(double multiplier) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineSpacing = multiplier; InvalidateVisual(); } }
+    public void SetLineSpacing(double multiplier)
+        => ApplyToSelectedParagraphs(p => p.LineSpacing = multiplier);
     /// <summary>Toggles a bullet list on the selected paragraphs.</summary>
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
     /// <summary>Toggles a numbered list on the selected paragraphs.</summary>
@@ -293,27 +309,23 @@ public partial class RichEditor
         return result;
     }
 
-    /// <summary>Sets the heading level of the caret paragraph (1–6 = h1–h6, 0 = body).
+    /// <summary>Sets the heading level of every selected paragraph (1–6 = h1–h6, 0 = body); the caret
+    /// paragraph alone when nothing is selected.
     /// The heading's larger, bold look is applied at layout time (to runs left at the body default),
     /// not baked into the runs — so toggling a heading on and back off never overwrites or loses a
     /// run's manually-set font size.</summary>
     public void SetHeading(int level)
-    {
-        if (_caretPosition.Paragraph == null || IsReadOnly) return;
-        if (Document != null) PushUndo();
-        _caretPosition.Paragraph.HeadingLevel = level;
-        InvalidateVisual();
-        NotifyStatus(); // the heading size changes the paragraph's height -> re-measure the scroll extent
-    }
+        => ApplyToSelectedParagraphs(p => p.HeadingLevel = level);
 
-    /// <summary>Toggles blockquote styling (indented, with a quote bar) on the caret paragraph.</summary>
+    /// <summary>Toggles blockquote styling (indented, with a quote bar) on every selected paragraph
+    /// (the caret paragraph when nothing is selected).</summary>
     public void ToggleQuote()
     {
-        if (_caretPosition.Paragraph == null || IsReadOnly) return;
-        if (Document != null) PushUndo();
-        _caretPosition.Paragraph.IsQuote = !_caretPosition.Paragraph.IsQuote;
-        InvalidateVisual();
-        NotifyStatus();
+        // The caret paragraph decides the direction and every selected paragraph follows it, so a mixed
+        // selection ends up uniform rather than inverted item by item (same rule as the list toggle).
+        if (_caretPosition.Paragraph is not { } cp) return;
+        bool on = !cp.IsQuote;
+        ApplyToSelectedParagraphs(p => p.IsQuote = on);
     }
 
     /// <summary>Toggles strikethrough on the current selection (or the caret run).</summary>
