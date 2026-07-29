@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -195,6 +195,11 @@ Found by reading every source file end to end; each is covered by a regression t
   sitting *after* a table went back into that table's last cell, and one typed *before* a table landed
   in its first cell. The text caret now moves to the position the block caret stood for — the end of
   the paragraph before the block, or the start of the one after it.
+- **A bare modifier press acted as a keystroke.** Pressing Shift on its own — the first half of
+  Shift+Tab — dismissed the block caret, and with the caret-placement fix above that visibly moved the
+  caret out from under the shortcut being typed. The same fall-through cancelled a selected image
+  before its Ctrl+C could arrive. Modifier keys (Shift/Ctrl/Alt/Win, Caps/Num/Scroll Lock) are now
+  ignored by the key handler, which acts on none of them.
 - **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
   while the collapsed selection meant the edit commands acted on one character — the same paint versus
   operation mismatch, reached by pressing → after selecting a cell.

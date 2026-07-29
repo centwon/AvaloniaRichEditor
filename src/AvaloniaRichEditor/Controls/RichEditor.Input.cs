@@ -770,6 +770,15 @@ public partial class RichEditor
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
 
+        // A bare modifier press is the first half of a chord (Shift+Tab, Ctrl+B) — nothing below acts on
+        // one, and letting it fall through counted it as "some other key": it dismissed the block caret
+        // (moving the caret out from under the shortcut still being typed) and cancelled an image
+        // selection before its Ctrl+C arrived. Not marked handled, so the platform still tracks it.
+        if (e.Key is Key.LeftShift or Key.RightShift or Key.LeftCtrl or Key.RightCtrl
+            or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin
+            or Key.CapsLock or Key.NumLock or Key.Scroll)
+            return;
+
         // Escape abandons an armed/in-progress "draw table" mode.
         if (e.Key == Key.Escape && _pendingTableDraw != null) { CancelTableDraw(); e.Handled = true; return; }
 
