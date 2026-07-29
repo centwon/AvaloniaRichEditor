@@ -86,6 +86,54 @@ public class ImePreeditMeasureTests
         Assert.Equal(before, after, 1);
     }
 
+    // The same measure gap at the top level. The symptom differs — the render walk does advance by the
+    // preedit height, so nothing overlaps — but the reported extent stayed a line short of what was
+    // drawn, so a composition at the end of a document could not be scrolled to.
+    [AvaloniaFact]
+    public void ComposingInATopLevelParagraph_GrowsTheScrollExtent()
+    {
+        var p = new Paragraph();
+        p.Inlines.Add(new Run { Text = "짧게" });
+        var doc = new FlowDocument();
+        doc.Blocks.Add(p);
+        var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
+        Realize(ed, 200); // narrow, so the composition has to wrap
+        PlaceCaret(ed, p, 2);
+
+        double before = Measure(ed, 200);
+        SetPreedit(ed, LongPreedit);
+        double composing = Measure(ed, 200);
+
+        Assert.True(composing > before,
+            $"the scroll extent must cover the composition ({composing} vs {before})");
+    }
+
+    // Only the HEIGHT is taken from the composition layout. BlockExtent still hands the hit-tests the
+    // plain layout, whose indices are logical offsets — a preedit layout's indices are display positions
+    // that include the composition, so a click would land shifted by its length. Asserting invariance
+    // rather than an absolute offset: what matters is that composing changes nothing here.
+    [AvaloniaFact]
+    public void ComposingDoesNotShiftWhereAClickLands()
+    {
+        int Hit(bool composing)
+        {
+            var p = new Paragraph();
+            p.Inlines.Add(new Run { Text = "짧게" });
+            var doc = new FlowDocument();
+            doc.Blocks.Add(p);
+            var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
+            Realize(ed, 200);
+            PlaceCaret(ed, p, 2);
+            if (composing) SetPreedit(ed, LongPreedit);
+            Measure(ed, 200);
+            return ((TextPointer)typeof(RichEditor)
+                .GetMethod("GetPositionFromPoint", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .Invoke(ed, new object[] { new Point(150, 8) })!).Offset;
+        }
+
+        Assert.Equal(Hit(composing: false), Hit(composing: true));
+    }
+
     // A cell nested one level deeper must push its host row too.
     [AvaloniaFact]
     public void ComposingInANestedCell_GrowsTheOuterRowToo()

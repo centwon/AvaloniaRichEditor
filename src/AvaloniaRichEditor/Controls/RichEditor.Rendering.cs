@@ -44,7 +44,16 @@ public partial class RichEditor
         foreach (var block in Document.Blocks)
         {
             yOffset += block.MarginTop;
-            yOffset += BlockExtent(block, width, yOffset, out _, out _) + block.MarginBottom;
+            double h = BlockExtent(block, width, yOffset, out _, out _);
+            // While the IME composes, the render walk advances by the caret paragraph's height WITH the
+            // preedit spliced in, so the extent has to as well — otherwise the scrollable range stays a
+            // line short of what is actually drawn and the composition can't be scrolled to at the end
+            // of a document. Only the HEIGHT comes from the composition layout: BlockExtent keeps giving
+            // the hit-tests and pagination the plain layout, whose indices are logical offsets.
+            if (block is Paragraph composing && !string.IsNullOrEmpty(_preeditText)
+                && ReferenceEquals(_caretPosition.Paragraph, composing))
+                h = PreeditAwareLayout(composing, ParagraphWrapWidth(composing, width)).Height;
+            yOffset += h + block.MarginBottom;
         }
         return yOffset + 40; // a little breathing room at the bottom
     }
@@ -410,7 +419,7 @@ public partial class RichEditor
                     continue;
                 }
 
-                double pWidth = Math.Max(10, maxWidth - 20 - px - paragraph.MarginRight);
+                double pWidth = ParagraphWrapWidth(paragraph, maxWidth);
                 // Non-preedit: reuse the cached layout BlockExtent already built (same width). The IME path
                 // rebuilds with the inline composition text, which is transient and never cached.
                 var layout = hasPreedit

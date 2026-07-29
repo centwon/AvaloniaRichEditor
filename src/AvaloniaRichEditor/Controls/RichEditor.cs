@@ -1029,6 +1029,13 @@ public partial class RichEditor : Control
     private static double ParaLeft(Paragraph p)
         => 10 + p.Indent + p.ListLevel * 20 + (p.ListType != ListKind.None ? ListMarkerWidth : 0);
 
+    // Wrap width of a top-level paragraph: the content width less the document's own margin, the
+    // paragraph's left gutter (indent + list marker) and its right margin. Single source so the measure
+    // walk, BlockExtent and the render walk can never disagree on where a line breaks — the formula was
+    // spelled out separately in each.
+    private static double ParagraphWrapWidth(Paragraph p, double maxWidth)
+        => Math.Max(10, maxWidth - 20 - ParaLeft(p) - p.MarginRight);
+
     // The same gutter for a paragraph inside a table cell, measured from the cell's content box: the
     // document's own 10px left margin is dropped (the cell supplies its padding). Single source for the
     // cell walks — render, hit-test, link hit-test, caret and measure must all apply it (rule #1), or

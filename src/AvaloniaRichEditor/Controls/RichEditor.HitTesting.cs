@@ -269,7 +269,10 @@ public partial class RichEditor
                     }
                     return !double.IsNaN(p.LineHeight) ? p.LineHeight : 20;
                 }
-                paraLayout = BuildTextLayout(p, Math.Max(10, maxWidth - 20 - ParaLeft(p) - p.MarginRight));
+                // Deliberately the PLAIN layout even while the IME composes: `paraLayout` is handed to the
+                // caret and link hit-tests, whose indices must stay logical offsets, and to pagination.
+                // The measure walk applies the composition height on top (MeasureContentHeight).
+                paraLayout = BuildTextLayout(p, ParagraphWrapWidth(p, maxWidth));
                 return paraLayout.Height;
             default:
                 return 0;

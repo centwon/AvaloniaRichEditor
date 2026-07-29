@@ -160,7 +160,11 @@ Found by reading every source file end to end; each is covered by a regression t
   measure now uses the same layout the renderer draws, and starting or ending a composition evicts the
   cached table geometry up the enclosing chain (a nested cell pushes its host row; an inline table
   re-shapes the paragraph line it sits in), since composition changes no model content and nothing else
-  would invalidate it.
+  would invalidate it. Top-level paragraphs had the same measure gap with a milder symptom — the render
+  walk does advance by the preedit height, so nothing overlapped, but the reported extent stayed a line
+  short and a composition at the end of a document could not be scrolled to. `MeasureContentHeight` now
+  applies the composition height there too; `BlockExtent` deliberately keeps handing the hit-tests and
+  pagination the plain layout, whose indices are logical offsets rather than display positions.
 - **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
   while the collapsed selection meant the edit commands acted on one character — the same paint versus
   operation mismatch, reached by pressing → after selecting a cell.
