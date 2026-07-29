@@ -27,6 +27,7 @@ public partial class RichEditor
                 var bl = BuildTextLayout(bp, Math.Max(10, innerW - pl));
                 if (p.Y <= blkTop + bl.Height)
                 {
+                    if (InlineTableLinkDescent(bp, bl, ox + pl, blkTop, p) is { } inlineLink) return inlineLink;
                     var hit = bl.HitTestPoint(new Point(p.X - ox - pl, p.Y - blkTop));
                     return hit.IsInside ? RunAtOffset(bp, hit.TextPosition) : null;
                 }
@@ -69,6 +70,9 @@ public partial class RichEditor
             else if (block is Paragraph paragraph && ft != null && p.Y >= top && p.Y <= top + h)
             {
                 double plink = ParaLeft(paragraph);
+                // Mirrors the caret walk's inline-table descent, so a link inside an inline table is
+                // hoverable and clickable rather than reading as plain text.
+                if (InlineTableLinkDescent(paragraph, ft, plink, top, p) is { } inlineLink) return inlineLink;
                 var hit = ft.HitTestPoint(new Point(p.X - plink, p.Y - top));
                 return hit.IsInside ? RunAtOffset(paragraph, hit.TextPosition) : null;
             }
@@ -435,7 +439,14 @@ public partial class RichEditor
                 var bl = BuildTextLayout(bp, Math.Max(10, innerW - pl));
                 lastPara = bp; lastLayout = bl; lastTop = blkTop; lastLeft = ox + pl;
                 if (p.Y <= blkTop + bl.Height)
+                {
+                    // A cell paragraph can host an inline table too (paste a paragraph containing one into
+                    // a cell). The top-level paragraph walk descended into it; this one didn't, so the
+                    // click stopped at the host paragraph's ObjChar — the table rendered but its cells
+                    // could not be entered or drag-selected.
+                    if (InlineTableHitDescent(bp, bl, ox + pl, blkTop, p) is { } descended) return descended;
                     return new TextPointer(bp, HitTestIndex(bl, new Point(p.X - ox - pl, p.Y - blkTop)));
+                }
                 by += bl.Height;
             }
             else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
@@ -465,6 +476,33 @@ public partial class RichEditor
     private TextPointer? InlineTableHitDescent(Paragraph host, Avalonia.Media.TextFormatting.TextLayout ft,
         double px, double top, Point p)
     {
+        if (InlineTableBoxAtPoint(host, ft, px, top, p) is not { } found) return null;
+        foreach (var (rr, cc, rect) in found.box.AnchorRects)
+            if (rect.Contains(p) &&
+                HitTestBlockList(found.it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p) is { } hit)
+                return hit;
+        // Inside the box but in a border gap: snap to the first cell's first paragraph.
+        return new TextPointer(found.it.Table.Cells[0][0].Para, 0);
+    }
+
+    // The hyperlink Run inside an inline table under the point — the link walk's counterpart to
+    // InlineTableHitDescent, sharing the same box geometry so hover/click agree with the caret.
+    private Run? InlineTableLinkDescent(Paragraph host, Avalonia.Media.TextFormatting.TextLayout ft,
+        double px, double top, Point p)
+    {
+        if (InlineTableBoxAtPoint(host, ft, px, top, p) is not { } found) return null;
+        foreach (var (rr, cc, rect) in found.box.AnchorRects)
+            if (rect.Contains(p))
+                return LinkRunInBlockList(found.it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p);
+        return null;
+    }
+
+    // The inline table in `host` whose painted box contains `p`, with that box laid out at its
+    // document-space origin. Single source for the inline-table geometry (rule #1) so every walk
+    // descends into exactly the box that was drawn.
+    private (InlineTable it, TableLayout box)? InlineTableBoxAtPoint(Paragraph host,
+        Avalonia.Media.TextFormatting.TextLayout ft, double px, double top, Point p)
+    {
         int off = 0;
         foreach (var inline in host.Inlines)
         {
@@ -477,15 +515,7 @@ public partial class RichEditor
                     // so the clickable cells line up with what was drawn.
                     double docX = px + r.X + InlineTablePad, docY = top + r.Bottom - th - InlineTablePad;
                     var box = LayoutTable(it.Table, docX, docY);
-                    if (new Rect(docX, docY, box.TableWidth, box.TotalHeight).Contains(p))
-                    {
-                        foreach (var (rr, cc, rect) in box.AnchorRects)
-                            if (rect.Contains(p) &&
-                                HitTestBlockList(it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p) is { } hit)
-                                return hit;
-                        // Inside the box but in a border gap: snap to the first cell's first paragraph.
-                        return new TextPointer(it.Table.Cells[0][0].Para, 0);
-                    }
+                    if (new Rect(docX, docY, box.TableWidth, box.TotalHeight).Contains(p)) return (it, box);
                     break;
                 }
             }

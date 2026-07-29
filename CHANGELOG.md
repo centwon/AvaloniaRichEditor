@@ -30,6 +30,10 @@ Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor
   next the whole table, then one enclosing table per press (a table nested in a cell, or an inline
   table’s host cell), and finally the document. A single-cell table has no separate table stage. Outside a table it still selects the document straight away. The stage is derived from
   the current selection, so a click or arrow key in between restarts the sequence.
+- **`Select Cell` context-menu command** (ko: 셀 선택) — enters cell-selection mode with the clicked cell
+  selected as a block, the only way to select exactly ONE cell (dragging needs two). Once in the mode a
+  single click picks another cell, a drag extends the block, and a double-click drops back to a caret
+  inside the cell.
 - **`Paragraph.CopyFormatFrom(Paragraph)`** — copies every paragraph-level formatting field. One source
   for the edit paths that derive a new paragraph from an existing one (see the Enter fix below).
 
@@ -127,6 +131,31 @@ Found by reading every source file end to end; each is covered by a regression t
 - **One `Enter` pushed two identical undo checkpoints**, so the first `Ctrl+Z` after it appeared to do
   nothing (it restored an already-current state) and a second press was needed to undo the split. The
   redundant inner checkpoint is gone; Enter is one step, like every other structural edit.
+
+- **The table cell block was painted but never operated on.** `SelectedCellRange` fed the renderer and
+  the context menu and nothing else, so every edit/format command walked the linear text run between the
+  drag's two endpoints instead. The two disagree in both directions: the linear run starts at the drag's
+  *offset* inside the first cell (so a Delete left the text before it standing, and character formatting
+  covered only part of the corner cells), and document order between two corners sweeps in cells that
+  lie **outside** the painted rectangle (a vertical block in a 3-column table also caught the cells to
+  its right). Delete, character formatting, paragraph formatting and the list commands now all consult
+  the cell block first. Per Excel/HWP, `Delete` on a cell block clears the selected cells and leaves the
+  grid standing — removing rows or columns stays an explicit menu action.
+- **A single cell could not be selected as a unit.** `SelectedCellRange` returned null outright when both
+  endpoints were in one cell, so the only way into cell-selection mode was a drag across two or more
+  cells. A one-cell block is now a first-class selection, reachable from the new **Select Cell** context
+  menu command (and by a single click once in cell-selection mode, which already worked).
+- **An inline table inside a table cell could not be entered or drag-selected with the mouse.** The
+  top-level paragraph hit-test descended into an inline table's cells, but `HitTestBlockList` — the walk
+  for a cell's own contents — had no such descent, so a click stopped at the host paragraph's
+  object-replacement character. The table rendered (the cell render walk does flush inline-table draws),
+  it just wasn't reachable: the exact state you get by pasting a paragraph containing an inline table
+  into a cell. Both walks now share one geometry helper (rule #1). The same gap in the *link* walks is
+  fixed with it, so a hyperlink inside an inline table is now hoverable and clickable at any depth —
+  previously it read as plain text everywhere, top level included.
+- **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
+  while the collapsed selection meant the edit commands acted on one character — the same paint versus
+  operation mismatch, reached by pressing → after selecting a cell.
 
 ### Changed
 - **The synchronous `ParseHtml` / `LoadHtml` / `InsertHtml` no longer load remote images.** They used to
