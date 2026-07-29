@@ -784,17 +784,24 @@ public partial class RichEditor
         // Block caret in front of an image/table.
         if (_caretBlock != null && !ctrl && !IsReadOnly)
         {
-            if (e.Key == Key.Space || (e.Key == Key.Tab && !shift))
+            // Indent/outdent is the "space BEFORE a block" feature, so it belongs to the caret on the
+            // block's LEADING side only. From the trailing side the gap opened on the block's far side —
+            // press Space to the right of a table and the whitespace appeared in front of it, nowhere
+            // near the caret. The trailing side falls through to the dismissal below and types normally.
+            if (!_caretBlockAfter)
             {
-                if (Document != null) PushUndo();
-                _caretBlock.Indent = Math.Min(_caretBlock.Indent + 20, 600);
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
-            }
-            if ((e.Key == Key.Tab && shift) || (e.Key == Key.Back && _caretBlock.Indent > 0))
-            {
-                if (Document != null) PushUndo();
-                _caretBlock.Indent = Math.Max(0, _caretBlock.Indent - 20);
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                if (e.Key == Key.Space || (e.Key == Key.Tab && !shift))
+                {
+                    if (Document != null) PushUndo();
+                    _caretBlock.Indent = Math.Min(_caretBlock.Indent + 20, 600);
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
+                if ((e.Key == Key.Tab && shift) || (e.Key == Key.Back && _caretBlock.Indent > 0))
+                {
+                    if (Document != null) PushUndo();
+                    _caretBlock.Indent = Math.Max(0, _caretBlock.Indent - 20);
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
             }
             if ((e.Key == Key.Back || e.Key == Key.Delete) && Document != null)
             {
@@ -811,8 +818,14 @@ public partial class RichEditor
                                       vertical: e.Key is Key.Up or Key.Down);
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            // Any other key dismisses the block caret and continues normally.
+            // Any other key dismisses the block caret and continues normally — landing the text caret at
+            // the position the block caret stood for (the end of the paragraph before the block, or the
+            // start of the one after it). Without this the caret kept whatever position it held when the
+            // block caret was set, so a letter typed with the caret sitting after a table went back into
+            // the table's last cell.
+            var dismissed = _caretBlock;
             _caretBlock = null;
+            MoveCaretToBlockNeighbor(dismissed, before: !_caretBlockAfter);
             InvalidateVisual();
         }
 

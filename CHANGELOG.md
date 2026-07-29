@@ -186,6 +186,15 @@ Found by reading every source file end to end; each is covered by a regression t
   enclosing chain — the table, every table around it, and the host paragraph of any inline table on the
   way (measured: 80 → 80 before, 80 → 206 after). The IME composition path, which is stale for the same
   reason, now shares that helper.
+- **Pressing Space with the caret on a table's right-hand side opened the gap in front of it.** Indent
+  is the "space before a block" feature, but it fired from either side of the block caret, so the
+  whitespace appeared on the table's far side, nowhere near the caret. Indent/outdent (Space, Tab,
+  Shift+Tab) now belongs to the leading side only; on the trailing side the key types normally.
+- **Typing with a block caret active inserted at the wrong place.** Dismissing the block caret left the
+  text caret wherever it happened to be when the block caret was set, so a letter typed with the caret
+  sitting *after* a table went back into that table's last cell, and one typed *before* a table landed
+  in its first cell. The text caret now moves to the position the block caret stood for — the end of
+  the paragraph before the block, or the start of the one after it.
 - **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
   while the collapsed selection meant the edit commands acted on one character — the same paint versus
   operation mismatch, reached by pressing → after selecting a cell.
