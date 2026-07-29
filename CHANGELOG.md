@@ -173,6 +173,19 @@ Found by reading every source file end to end; each is covered by a regression t
   unstyled. Reproduced regardless of script or line length. The offset is now clamped to the paragraph's
   real length in the one place every caret placement, drag selection, link and cell hit-test goes
   through.
+- **Right-clicking inside an inline table offered no table operations.** The menu picked its target with
+  `GetBlockAtPoint`, which only sees top-level blocks; an inline table's grid hangs off a paragraph's
+  inlines, so the click fell through to the plain text menu with no row/column/merge/delete at all. The
+  target is now resolved from the hit position (`ContextMenuTargetTable`), which reaches a table at any
+  depth — the menu builder already handled inline tables, only the routing was missing.
+- **Resizing an inline table's row did not reflow its host paragraph until the next edit.** An inline
+  table is laid out inside the host paragraph's line box, and a resize drag mutates size without going
+  through an edit, so the frame runs as a "trusted" pass that returns the cached paragraph layout
+  without re-checking its signature. Only the table cache was evicted, so the paragraph kept its old
+  line box until a click or keystroke forced a rebuild. Both resize handlers now evict the whole
+  enclosing chain — the table, every table around it, and the host paragraph of any inline table on the
+  way (measured: 80 → 80 before, 80 → 206 after). The IME composition path, which is stale for the same
+  reason, now shares that helper.
 - **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
   while the collapsed selection meant the edit commands acted on one character — the same paint versus
   operation mismatch, reached by pressing → after selecting a cell.

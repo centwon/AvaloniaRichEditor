@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Linq;
 using Avalonia;
@@ -537,7 +537,7 @@ public partial class RichEditor
             // a "trusted" (no-edit) layout pass after the first move — so without this the cache would
             // serve the pre-drag widths and the table would only snap to the new size once the drag ended.
             // Evicting the entry forces LayoutTable to re-measure with the new widths every move (smooth).
-            _tableLayoutCache.Remove(_resizingTable);
+            InvalidateTableChain(_resizingTable);
             InvalidateMeasure(); // narrower columns reflow cell text taller -> total height changes
             InvalidateVisual();
             return;
@@ -551,7 +551,7 @@ public partial class RichEditor
                 _resizingRowTable.RowHeights.Add(0);
             // Renderer clamps up to content height, so 20 is just a hard floor for the stored value.
             _resizingRowTable.RowHeights[_resizingRowIndex] = Math.Max(20, _initialRowHeight + diff);
-            _tableLayoutCache.Remove(_resizingRowTable); // see the column branch — keep the drag live, not snapped
+            InvalidateTableChain(_resizingRowTable); // see the column branch — keep the drag live, not snapped
             InvalidateMeasure(); // the table's total height changed -> grow the scroll extent now,
             InvalidateVisual();  // not only on the next click (otherwise the resize hitches mid-drag)
             return;
@@ -1322,12 +1322,7 @@ public partial class RichEditor
             // reused whole on a "trusted" pass, and a host paragraph's signature can't see the preedit.
             // Evict the enclosing chain so the row re-measures — a nested cell has to push its host row
             // too, and an inline table has to re-shape the paragraph line it sits in.
-            for (var t = _caretPosition.Paragraph is { } cp ? FindCell(cp)?.tb : null;
-                 t != null; t = EnclosingTableOf(t))
-            {
-                _tableLayoutCache.Remove(t);
-                if (t.Parent is InlineTable it && it.Parent is Paragraph host) _layoutCache.Remove(host);
-            }
+            if (_caretPosition.Paragraph is { } cp && FindCell(cp)?.tb is { } t) InvalidateTableChain(t);
             InvalidateMeasure(); // the row grew/shrank -> the scroll extent follows
         }
         InvalidateVisual();

@@ -39,6 +39,24 @@ public partial class RichEditor
         return null;
     }
 
+    // Drops the cached geometry that a change to `t`'s size invalidates: the table itself, every table
+    // enclosing it, and the host paragraph of any inline table along the way.
+    //
+    // The host paragraph matters because an inline table is laid out INSIDE that paragraph's line box.
+    // Both a resize drag and an IME composition mutate size without going through an edit, so the frame
+    // runs as a "trusted" pass — which returns the cached layout without re-checking its signature. The
+    // table cache alone was evicted, so a resized inline table kept its old line box and the paragraph
+    // only reflowed on the next real edit (measured: 80 -> 80 on resize, 80 -> 206 once the host
+    // paragraph is evicted too).
+    private void InvalidateTableChain(TableBlock t)
+    {
+        for (var cur = t; cur != null; cur = EnclosingTableOf(cur))
+        {
+            _tableLayoutCache.Remove(cur);
+            if (cur.Parent is InlineTable it && it.Parent is Paragraph host) _layoutCache.Remove(host);
+        }
+    }
+
     // ---- staged Ctrl+A (HWP/Excel) ----------------------------------------
 
     // One stage of Ctrl+A while the caret is inside a table: the cell's contents -> the whole table

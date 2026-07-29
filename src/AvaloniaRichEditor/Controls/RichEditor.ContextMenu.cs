@@ -240,13 +240,16 @@ public partial class RichEditor
                 // Editing inside a cell: same caret menu as a top-level paragraph, with the table ops in a
                 // submenu. Target the INNERMOST table the caret is in (a nested table — P4-2b), not the
                 // top-level one GetBlockAtPoint returned, so row/column/merge act on the right table.
-                BuildCaretMenu(items, point, hasSelection,
-                    (tp.Paragraph != null ? FindCell(tp.Paragraph)?.tb : null) ?? tbk);
+                BuildCaretMenu(items, point, hasSelection, ContextMenuTargetTable(point) ?? tbk);
         }
         else
         {
             _selectedBlock = null;
-            BuildCaretMenu(items, point, hasSelection, null);
+            // A right-click inside an INLINE table's cell lands here: its grid hangs off a paragraph's
+            // inlines, so GetBlockAtPoint — top-level blocks only — never sees it and the menu used to
+            // come up with no table operations at all. Resolving the target from the hit position covers
+            // it, exactly as the block-table branch above does.
+            BuildCaretMenu(items, point, hasSelection, ContextMenuTargetTable(point));
         }
 
         ResetCaretBlink();
@@ -261,6 +264,13 @@ public partial class RichEditor
 
     // The block image inside a table cell whose rendered rect contains p (P4-2b), or null. Mirrors the
     // click-selection lookup; populated each render in _cellImageRects.
+    // The table the right-click menu's table operations should act on: the innermost table enclosing the
+    // clicked position, at any depth. Derived from the hit position rather than from GetBlockAtPoint,
+    // which only sees top-level blocks — that is what makes it resolve an inline table, whose grid lives
+    // in a paragraph's inlines and is never a block of the document.
+    private TableBlock? ContextMenuTargetTable(Point point)
+        => GetPositionFromPoint(point).Paragraph is { } p ? FindCell(p)?.tb : null;
+
     private ImageBlock? CellImageAtPoint(Point p)
     {
         foreach (var ci in _cellImageRects)
