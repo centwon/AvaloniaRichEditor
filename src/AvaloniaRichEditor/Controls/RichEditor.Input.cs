@@ -1031,19 +1031,25 @@ public partial class RichEditor
                 _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a top-level table cell upward from its first row -> the table's "before" caret. A
-            // nested table's first row falls through to a geometric step into the row/cell above.
+            // HWP: ↑ out of the first row lands in the paragraph BEFORE the table, not on a block caret
+            // beside it. (The block caret is still reachable with ←/→ and by clicking the outer border.)
+            // A nested table's first row falls through to a geometric step into the row/cell above.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0
                 && fc.tb.Parent is FlowDocument)
             {
-                _caretBlock = fc.tb; _caretBlockAfter = false;
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                _caretBlock = null;
+                MoveCaretToBlockNeighbor(fc.tb, before: true);
+                ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return;
             }
             // In a (possibly tall) cell, step just above the cell's top edge so the move always clears
             // it into the row above; outside a cell, a small fixed step is enough.
             double ty = CaretCellRect() is { } upCell ? upCell.Top - 2 : Math.Max(0, _lastCaretPoint.Y - 20);
             if (!shift && BlockAtY(ty) is { } ub && !CaretInBlock(ub))
             {
+                // HWP: ↑ arriving at a table steps INTO its last row (the column under the caret's x).
+                // An image has no text to enter, so it keeps the block caret.
+                if (ub is TableBlock utb && TryEnterTableRow(utb, firstRow: false))
+                { ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return; }
                 _caretBlock = ub; _caretBlockAfter = true; // entering a block from below
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
@@ -1068,20 +1074,26 @@ public partial class RichEditor
                 _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a top-level table cell downward from its last row -> the table's "after" caret. A
-            // nested table's last row falls through to a geometric step into the row/cell below.
+            // HWP: ↓ out of the last row lands in the paragraph AFTER the table, not on a block caret
+            // beside it. A nested table's last row falls through to a geometric step into the row below.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc
                 && fc.tb.Parent is FlowDocument
                 && fc.r + fc.tb.SpanOf(fc.r, fc.c).rs - 1 >= fc.tb.Rows - 1)
             {
-                _caretBlock = fc.tb; _caretBlockAfter = true;
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                _caretBlock = null;
+                MoveCaretToBlockNeighbor(fc.tb, before: false);
+                ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return;
             }
             // In a (possibly tall) cell, step just below the cell's bottom edge so the move always
             // clears it into the row below; outside a cell, a small fixed step is enough.
             double ty = CaretCellRect() is { } dnCell ? dnCell.Bottom + 2 : _lastCaretPoint.Y + 30;
             if (!shift && BlockAtY(ty) is { } db && !CaretInBlock(db))
             {
+                // HWP: ↓ arriving at a table steps INTO its first row (the column under the caret's x)
+                // rather than parking on the block caret beside it — from which a second ↓ then skipped
+                // the whole table. An image has no text to enter, so it keeps the block caret.
+                if (db is TableBlock dtb && TryEnterTableRow(dtb, firstRow: true))
+                { ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return; }
                 _caretBlock = db; _caretBlockAfter = false; // entering a block from above
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
@@ -1374,12 +1386,17 @@ public partial class RichEditor
     }
 
     // Steps a block caret. Horizontal (←/→) walks through the block: before -> (table cells |
-    // image after) -> after -> next text, and the reverse. Vertical (↑/↓) treats the block as one
-    // opaque unit and skips straight to the neighboring paragraph — cells are entered with →,
-    // Tab, or a click, not by arrowing down through the document.
+    // image after) -> after -> next text, and the reverse. Vertical (↑/↓) enters a TABLE's nearest row,
+    // matching ↑/↓ arriving from an adjacent paragraph — otherwise ↓ would enter the table from the
+    // paragraph above but skip it from the caret sitting right against it. An IMAGE has no text to
+    // enter, so vertical still treats it as one opaque unit and steps to the neighbouring paragraph.
     private void HandleBlockCaretArrow(bool forward, bool vertical = false)
     {
         var blk = _caretBlock!;
+        // ↓ from the "before" side / ↑ from the "after" side steps into the table's near row.
+        if (vertical && blk is TableBlock vtb && forward != _caretBlockAfter
+            && TryEnterTableRow(vtb, firstRow: forward))
+            return;
         if (forward)
         {
             if (!_caretBlockAfter && !vertical)
@@ -1539,6 +1556,24 @@ public partial class RichEditor
         foreach (var (r, c, rect) in tr.tl.AnchorRects)
             if (r == ar && c == ac) return rect;
         return null;
+    }
+
+    // Places the caret inside `tb`'s first (or last) row, in the column under the caret's current x —
+    // HWP behaviour for ↑/↓ arriving at a table: you step into the row, not onto a marker beside it.
+    // False when the geometry isn't available or the point doesn't resolve into this table, so the
+    // caller can fall back to the block caret.
+    private bool TryEnterTableRow(TableBlock tb, bool firstRow)
+    {
+        if (GetTableRect(tb) is not { } tr) return false;
+        int row = firstRow ? 0 : tb.Rows - 1;
+        if (row < 0 || row + 1 >= tr.tl.RowY.Length) return false;
+        double y = (tr.tl.RowY[row] + tr.tl.RowY[row + 1]) / 2; // the row's vertical middle
+        var tp = GetPositionFromPoint(new Point(_lastCaretPoint.X, y));
+        // IsCellOf so a row whose column holds a nested table still counts as "entered".
+        if (tp.Paragraph == null || !IsCellOf(tb, tp.Paragraph)) return false;
+        _caretBlock = null;
+        _caretPosition = tp;
+        return true;
     }
 
     // The image/table block whose rendered vertical span contains y, or null (used for Up/Down into a block).

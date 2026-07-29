@@ -191,6 +191,15 @@ Found by reading every source file end to end; each is covered by a regression t
   operation mismatch, reached by pressing → after selecting a cell.
 
 ### Changed
+- **↑/↓ now walk into a table's rows (HWP), instead of stopping beside it and then skipping it.**
+  Arriving at a table from the paragraph above, ↓ enters its first row in the column under the caret;
+  ↑ from below enters the last row. Inside, the arrows step row to row, and from the far row they leave
+  to the neighbouring paragraph. Previously vertical navigation parked on the block caret next to the
+  table and a second press jumped over the whole thing, so a table's cells could not be reached by
+  keyboard at all without Tab, →, or a click. The block caret is unchanged and still reached with ←/→
+  or by clicking the table's outer border — that is where indenting and deleting the table as a unit
+  live. An **image** keeps the old behaviour: it has no text to enter, so ↑/↓ still stop on its block
+  caret.
 - **The synchronous `ParseHtml` / `LoadHtml` / `InsertHtml` no longer load remote images.** They used to
   download every `http(s)` `<img>` on the calling thread (a 5 s per-parse budget), so loading web content
   from the UI thread froze the app for up to that long — a hung UI is a worse failure than a missing

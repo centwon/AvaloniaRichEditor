@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Reflection;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -8,8 +8,9 @@ using Xunit;
 
 namespace AvaloniaRichEditor.Tests;
 
-// Block-caret navigation around tables (roadmap bug: ↓ from the last cell must land on the
-// table's "after" caret). The block caret is private state, so these tests read it by reflection.
+// Block-caret navigation around tables. The block caret is now reached HORIZONTALLY (←/→) or by
+// clicking the table's outer border — ↑/↓ walk into the rows instead (HWP), which
+// VerticalTableNavigationTests covers. The block caret is private state, read here by reflection.
 public class BlockCaretTests
 {
     private static void Press(RichEditor ed, Key key, KeyModifiers mods = KeyModifiers.None)
@@ -40,15 +41,16 @@ public class BlockCaretTests
     }
 
     [AvaloniaFact]
-    public void Down_FromLastCell_EntersAfterTableCaret()
+    public void Down_FromLastCell_LeavesToTheParagraphAfter()
     {
         var (ed, tb) = EditorWithTable();
         PlaceCaret(ed, tb.Cells[1][1].Para, 1); // inside "w" (last row, last column)
 
         Press(ed, Key.Down);
 
-        Assert.Same(tb, CaretBlockField.GetValue(ed));
-        Assert.True((bool)CaretBlockAfterField.GetValue(ed)!);
+        // HWP: out of the last row goes straight to the following paragraph, not onto a block caret.
+        Assert.Null(CaretBlockField.GetValue(ed));
+        Assert.Equal("after", ((TextPointer)CaretPositionField.GetValue(ed)!).Paragraph!.Text());
     }
 
     [AvaloniaFact]
@@ -57,8 +59,8 @@ public class BlockCaretTests
         var (ed, tb) = EditorWithTable();
         PlaceCaret(ed, tb.Cells[1][1].Para, 1);
 
-        Press(ed, Key.Down); // -> after-table block caret
-        Press(ed, Key.Down); // -> paragraph after the table
+        Press(ed, Key.Right); // -> after-table block caret (the horizontal route)
+        Press(ed, Key.Down);  // -> paragraph after the table
 
         Assert.Null(CaretBlockField.GetValue(ed));
         var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
@@ -67,7 +69,7 @@ public class BlockCaretTests
     }
 
     [AvaloniaFact]
-    public void Down_FromMergedCellReachingLastRow_EntersAfterTableCaret()
+    public void Down_FromMergedCellReachingLastRow_LeavesToTheParagraphAfter()
     {
         var (ed, tb) = EditorWithTable();
         tb.MergeCells(0, 1, 1, 1); // vertical merge in the last column: anchor (0,1) spans both rows
@@ -75,8 +77,9 @@ public class BlockCaretTests
 
         Press(ed, Key.Down);
 
-        Assert.Same(tb, CaretBlockField.GetValue(ed));
-        Assert.True((bool)CaretBlockAfterField.GetValue(ed)!);
+        // The merged cell already reaches the last row, so ↓ exits the table.
+        Assert.Null(CaretBlockField.GetValue(ed));
+        Assert.Equal("after", ((TextPointer)CaretPositionField.GetValue(ed)!).Paragraph!.Text());
     }
 
     [AvaloniaFact]
@@ -127,31 +130,32 @@ public class BlockCaretTests
     }
 
     [AvaloniaFact]
-    public void Down_FromBeforeTableCaret_SkipsCells_ToFollowingParagraph()
+    public void Down_FromBeforeTableCaret_EntersTheFirstRow()
     {
         var (ed, tb) = EditorWithTable();
         PlaceCaret(ed, tb.Cells[0][0].Para, 0);
-        Press(ed, Key.Up);   // -> before-table caret
+        Press(ed, Key.Left); // -> before-table caret (the horizontal route)
 
-        Press(ed, Key.Down); // vertical: skip the table as one unit
+        Press(ed, Key.Down);
 
+        // Consistent with ↓ arriving from the paragraph above: it enters, it doesn't skip past.
         Assert.Null(CaretBlockField.GetValue(ed));
         var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
-        Assert.Equal("after", caret.Paragraph!.Text());
+        Assert.Contains(caret.Paragraph, tb.Cells[0].Select(c => c.Para));
     }
 
     [AvaloniaFact]
-    public void Up_FromAfterTableCaret_SkipsCells_ToPrecedingParagraph()
+    public void Up_FromAfterTableCaret_EntersTheLastRow()
     {
         var (ed, tb) = EditorWithTable();
         PlaceCaret(ed, tb.Cells[1][1].Para, 1);
-        Press(ed, Key.Down); // -> after-table caret
+        Press(ed, Key.Right); // -> after-table caret (the horizontal route)
 
-        Press(ed, Key.Up);   // vertical: skip the table as one unit
+        Press(ed, Key.Up);
 
         Assert.Null(CaretBlockField.GetValue(ed));
         var caret = (TextPointer)CaretPositionField.GetValue(ed)!;
-        Assert.Equal("before", caret.Paragraph!.Text());
+        Assert.Contains(caret.Paragraph, tb.Cells[tb.Rows - 1].Select(c => c.Para));
     }
 
     [AvaloniaFact]
@@ -159,7 +163,7 @@ public class BlockCaretTests
     {
         var (ed, tb) = EditorWithTable();
         PlaceCaret(ed, tb.Cells[0][0].Para, 0);
-        Press(ed, Key.Up);    // -> before-table caret
+        Press(ed, Key.Left);  // -> before-table caret (the horizontal route)
 
         Press(ed, Key.Right); // horizontal: walk into the cells
 
@@ -170,14 +174,15 @@ public class BlockCaretTests
     }
 
     [AvaloniaFact]
-    public void Up_FromFirstCell_EntersBeforeTableCaret()
+    public void Up_FromFirstCell_LeavesToTheParagraphBefore()
     {
         var (ed, tb) = EditorWithTable();
         PlaceCaret(ed, tb.Cells[0][0].Para, 0);
 
         Press(ed, Key.Up);
 
-        Assert.Same(tb, CaretBlockField.GetValue(ed));
-        Assert.False((bool)CaretBlockAfterField.GetValue(ed)!);
+        // HWP: out of the first row goes straight to the preceding paragraph.
+        Assert.Null(CaretBlockField.GetValue(ed));
+        Assert.Equal("before", ((TextPointer)CaretPositionField.GetValue(ed)!).Paragraph!.Text());
     }
 }
