@@ -122,8 +122,11 @@ public partial class RichEditor
             switch (b)
             {
                 case Paragraph p:
-                    // Wraps at the content width minus the list/indent gutter, as the render walk draws it.
-                    h += BuildTextLayout(p, Math.Max(10, w - CellParaLeft(p))).Height;
+                    // Wraps at the content width minus the list/indent gutter, as the render walk draws it —
+                    // including the IME composition, which the render walk splices in (DrawCellBlockList).
+                    // Without it the row is sized for the text without the composition and the composed
+                    // glyphs spill past the cell's bottom border on every wrap.
+                    h += PreeditAwareLayout(p, Math.Max(10, w - CellParaLeft(p))).Height;
                     break;
                 case ImageBlock im:
                     h += CellImageSize(im, w).h;

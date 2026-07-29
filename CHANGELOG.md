@@ -153,6 +153,14 @@ Found by reading every source file end to end; each is covered by a regression t
   into a cell. Both walks now share one geometry helper (rule #1). The same gap in the *link* walks is
   fixed with it, so a hyperlink inside an inline table is now hoverable and clickable at any depth —
   previously it read as plain text everywhere, top level included.
+- **A table row did not grow while the IME was composing in one of its cells.** The render walk splices
+  the preedit text into the caret's paragraph, but the measure walk rebuilt that paragraph without it,
+  so the row stayed sized for the text without the composition and the composed glyphs spilled past the
+  cell's bottom border — on every wrap while typing Korean/Japanese/Chinese into a narrow cell. The cell
+  measure now uses the same layout the renderer draws, and starting or ending a composition evicts the
+  cached table geometry up the enclosing chain (a nested cell pushes its host row; an inline table
+  re-shapes the paragraph line it sits in), since composition changes no model content and nothing else
+  would invalidate it.
 - **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
   while the collapsed selection meant the edit commands acted on one character — the same paint versus
   operation mismatch, reached by pressing → after selecting a cell.

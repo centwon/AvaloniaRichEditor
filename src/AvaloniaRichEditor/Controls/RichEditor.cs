@@ -1293,6 +1293,17 @@ public partial class RichEditor : Control
         return layout;
     }
 
+    // The layout a paragraph is actually RENDERED with. While the IME composes, the preedit text is
+    // spliced into the caret's paragraph, so it is taller (or wraps further) than its stored content —
+    // a measure walk that rebuilds it without the composition sizes the box for text that isn't what
+    // gets drawn. Every other paragraph takes the plain cached layout. The preedit build is deliberately
+    // uncached (it is transient), so this costs one extra shaping pass for the paragraph being composed
+    // into, and nothing at all when no composition is active.
+    private Avalonia.Media.TextFormatting.TextLayout PreeditAwareLayout(Paragraph p, double width)
+        => !string.IsNullOrEmpty(_preeditText) && ReferenceEquals(_caretPosition.Paragraph, p)
+            ? BuildTextLayout(p, width, _caretPosition.Offset, _preeditText)
+            : BuildTextLayout(p, width);
+
     // Drops cache entries for paragraphs/tables no longer in the document (e.g. deleted while editing),
     // keeping the live ones so nothing reshapes on the next frame.
     private void PruneLayoutCaches()

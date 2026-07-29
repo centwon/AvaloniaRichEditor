@@ -1313,7 +1313,23 @@ public partial class RichEditor
 
     private void SetPreedit(string? text)
     {
+        bool had = !string.IsNullOrEmpty(_preeditText);
         _preeditText = text;
+        if (had || !string.IsNullOrEmpty(text))
+        {
+            // Composition changes the caret paragraph's height but never its model content, so nothing
+            // else invalidates the geometry cached around it: the table layout is keyed on the table and
+            // reused whole on a "trusted" pass, and a host paragraph's signature can't see the preedit.
+            // Evict the enclosing chain so the row re-measures — a nested cell has to push its host row
+            // too, and an inline table has to re-shape the paragraph line it sits in.
+            for (var t = _caretPosition.Paragraph is { } cp ? FindCell(cp)?.tb : null;
+                 t != null; t = EnclosingTableOf(t))
+            {
+                _tableLayoutCache.Remove(t);
+                if (t.Parent is InlineTable it && it.Parent is Paragraph host) _layoutCache.Remove(host);
+            }
+            InvalidateMeasure(); // the row grew/shrank -> the scroll extent follows
+        }
         InvalidateVisual();
     }
 
