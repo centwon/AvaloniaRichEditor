@@ -200,6 +200,16 @@ Found by reading every source file end to end; each is covered by a regression t
   caret out from under the shortcut being typed. The same fall-through cancelled a selected image
   before its Ctrl+C could arrive. Modifier keys (Shift/Ctrl/Alt/Win, Caps/Num/Scroll Lock) are now
   ignored by the key handler, which acts on none of them.
+- **Shift+Tab outside a table typed four spaces.** It fell into the same branch as plain Tab, so the
+  key did the opposite of what it means. It now outdents the selected paragraphs, like Word and HWP.
+- **Clicking while the IME was composing landed at the wrong offset.** The glyphs on screen include the
+  preedit but the hit-test read the plain layout, so a click resolved to the position it would have had
+  without the composition — drifting further the longer the composition grew, and clamping to the end of
+  the paragraph once the click passed where the uncomposed text ended. The composed layout is now
+  hit-tested and its display index mapped back to a logical offset (before the composition maps through,
+  after it shifts back by its length, inside it resolves to its start). Inside a table cell the walk also
+  advanced by the uncomposed height while the cell's rect grew with the composition, so clicks on the
+  composition's own wrapped lines were attributed to the block below it.
 - **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
   while the collapsed selection meant the edit commands acted on one character — the same paint versus
   operation mismatch, reached by pressing → after selecting a cell.

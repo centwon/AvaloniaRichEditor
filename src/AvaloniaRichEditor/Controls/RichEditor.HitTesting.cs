@@ -435,6 +435,38 @@ public partial class RichEditor
         return Math.Clamp(hit.TextPosition + (hit.IsTrailing ? 1 : 0), 0, GetParagraphLength(p));
     }
 
+    // The height a paragraph is DRAWN at: its layout height, plus whatever an active IME composition
+    // adds. Hit-test walks must advance by this or they drift below the composing paragraph — the cell
+    // rect already grows with the composition, so only the walk inside it was left behind.
+    private double DrawnHeight(Paragraph p, double width, Avalonia.Media.TextFormatting.TextLayout plain)
+        => !string.IsNullOrEmpty(_preeditText) && ReferenceEquals(_caretPosition.Paragraph, p)
+            ? BuildTextLayout(p, width, _caretPosition.Offset, _preeditText).Height
+            : plain.Height;
+
+    // A point inside a paragraph -> a LOGICAL caret offset, with an IME composition accounted for.
+    //
+    // While composing, the glyphs on screen include the preedit, so the plain layout's geometry no
+    // longer matches what was clicked — a click landed at the offset it would have had if the
+    // composition weren't there, drifting further the longer the composition got. Hit-test the composed
+    // layout instead and convert its DISPLAY index back: before the composition maps straight through,
+    // after it shifts back by its length, and inside it resolves to its start (it is one pending unit,
+    // not addressable positions).
+    private int HitTestLogicalIndex(Paragraph p, double width,
+        Avalonia.Media.TextFormatting.TextLayout plain, Point localPoint)
+    {
+        if (string.IsNullOrEmpty(_preeditText) || !ReferenceEquals(_caretPosition.Paragraph, p))
+            return HitTestIndex(plain, localPoint, p);
+
+        int at = _caretPosition.Offset, len = _preeditText!.Length;
+        var composed = BuildTextLayout(p, width, at, _preeditText);
+        var hit = composed.HitTestPoint(localPoint);
+        int display = hit.TextPosition + (hit.IsTrailing ? 1 : 0);
+        int logical = display <= at ? display
+                    : display >= at + len ? display - len
+                    : at;
+        return Math.Clamp(logical, 0, GetParagraphLength(p));
+    }
+
     // Recursive hit-test of a block list laid out at (ox,oy) of width innerW (a cell content box, mirror
     // of DrawCellBlockList's advance). Returns the caret position the point lands in; a point below all
     // blocks snaps to the last paragraph. Descends into nested tables (P4-2b). Null only when the list
@@ -444,7 +476,7 @@ public partial class RichEditor
         double by = 0;
         Paragraph? lastPara = null;
         Avalonia.Media.TextFormatting.TextLayout? lastLayout = null;
-        double lastTop = 0, lastLeft = ox;
+        double lastTop = 0, lastLeft = ox, lastWidth = innerW;
         foreach (var cb in blocks)
         {
             double blkTop = oy + by;
@@ -452,17 +484,19 @@ public partial class RichEditor
             {
                 double pl = CellParaLeft(bp); // list/indent gutter, as every other cell walk applies
                 var bl = BuildTextLayout(bp, Math.Max(10, innerW - pl));
-                lastPara = bp; lastLayout = bl; lastTop = blkTop; lastLeft = ox + pl;
-                if (p.Y <= blkTop + bl.Height)
+                double bw = Math.Max(10, innerW - pl);
+                double bh = DrawnHeight(bp, bw, bl); // the composition grows what's painted here
+                lastPara = bp; lastLayout = bl; lastTop = blkTop; lastLeft = ox + pl; lastWidth = bw;
+                if (p.Y <= blkTop + bh)
                 {
                     // A cell paragraph can host an inline table too (paste a paragraph containing one into
                     // a cell). The top-level paragraph walk descended into it; this one didn't, so the
                     // click stopped at the host paragraph's ObjChar — the table rendered but its cells
                     // could not be entered or drag-selected.
                     if (InlineTableHitDescent(bp, bl, ox + pl, blkTop, p) is { } descended) return descended;
-                    return new TextPointer(bp, HitTestIndex(bl, new Point(p.X - ox - pl, p.Y - blkTop), bp));
+                    return new TextPointer(bp, HitTestLogicalIndex(bp, bw, bl, new Point(p.X - ox - pl, p.Y - blkTop)));
                 }
-                by += bl.Height;
+                by += bh;
             }
             else if (cb is ImageBlock cim) { by += CellImageSize(cim, innerW).h; }
             else if (cb is DividerBlock) { by += DividerHeight; }
@@ -479,7 +513,7 @@ public partial class RichEditor
         }
         // Below all blocks (or in a nested table's border gap): snap to the last paragraph seen.
         return lastPara != null && lastLayout != null
-            ? new TextPointer(lastPara, HitTestIndex(lastLayout, new Point(p.X - lastLeft, p.Y - lastTop), lastPara))
+            ? new TextPointer(lastPara, HitTestLogicalIndex(lastPara, lastWidth, lastLayout, new Point(p.X - lastLeft, p.Y - lastTop)))
             : null;
     }
 
@@ -604,7 +638,8 @@ public partial class RichEditor
                     {
                         bestDistY = distY2;
                         bestPara = paragraph;
-                        bestLocalIndex = HitTestIndex(ft, new Point(p.X - ppos, p.Y - top), paragraph);
+                        bestLocalIndex = HitTestLogicalIndex(paragraph, ParagraphWrapWidth(paragraph, maxWidth),
+                            ft, new Point(p.X - ppos, p.Y - top));
                     }
                 }
             }

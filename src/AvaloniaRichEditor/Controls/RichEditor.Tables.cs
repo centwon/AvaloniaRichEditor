@@ -267,6 +267,9 @@ public partial class RichEditor
         var loc = _caretPosition.Paragraph != null ? FindCell(_caretPosition.Paragraph) : null;
         if (loc == null)
         {
+            // Outside a table, Shift+Tab outdents (Word/HWP). It used to fall into the same branch as
+            // plain Tab and type four spaces — the opposite of what the key means.
+            if (shift) { Indent(-20); return; }
             if (Document != null) PushUndo();
             InsertText("    ");
             return;
