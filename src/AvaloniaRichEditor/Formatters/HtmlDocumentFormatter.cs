@@ -765,13 +765,26 @@ namespace AvaloniaRichEditor.Formatters
         // Emits a table as an HTML <table>. Shared by block tables and inline tables (milestone B). Cell
         // content emits every paragraph (separated by <br>), block images, and nested tables (recursing),
         // so the structure survives a copy to Word/HWP.
+        private static double SumColumnWidths(TableBlock tb)
+        {
+            double w = 0;
+            for (int c = 0; c < tb.Columns; c++) w += c < tb.ColumnWidths.Count ? tb.ColumnWidths[c] : 100;
+            return w;
+        }
+
         private static void EmitTable(StringBuilder sb, TableBlock tb, bool asInline = false)
         {
             // `data-are-inline` is ours: HTML has no inline table, so an InlineTable came back from our own
             // export as a block table, splitting the paragraph it lived in. External HTML never carries the
             // attribute and keeps landing as a block table, as before.
             string mark = asInline ? " data-are-inline=\"1\"" : "";
-            sb.Append($"<table{mark} border=\"1\" style=\"border-collapse:collapse; width:100%;\">\n");
+            // A block table fills the text column; an inline table is a character-sized object, so
+            // stretching it to 100% turned it into a full-width band on its own line in every consumer
+            // but our own importer. Size it to its own columns and let it sit in the line instead.
+            string sizing = asInline
+                ? $"width:{(int)System.Math.Max(1, SumColumnWidths(tb))}px; display:inline-table; vertical-align:middle;"
+                : "width:100%;";
+            sb.Append($"<table{mark} border=\"1\" style=\"border-collapse:collapse; {sizing}\">\n");
             // Per-column widths as a <colgroup> so the import restores the exact column proportions
             // (without it every column came back at the default width — the table looked squished).
             if (tb.ColumnWidths.Count > 0)
@@ -817,7 +830,10 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 sb.Append("</tr>\n");
             }
-            sb.Append("</table>\n");
+            // An inline table sits INSIDE a text line, so the pretty-printing newline after </table>
+            // becomes a whitespace text node between the table and the text that follows it — which the
+            // parser normalizes to a space, inserting one after every inline table on each save/load.
+            sb.Append(asInline ? "</table>" : "</table>\n");
         }
 
         // Emits a single inline (Run with all its styling, an inline image, or an inline table) as HTML.

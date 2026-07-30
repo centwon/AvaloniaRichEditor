@@ -72,8 +72,12 @@ public partial class RichEditor : Control
     private bool _cellSelMode;
     private TableBlock? _cellSelTable;
 
-    // Image resize state
-    private List<(Avalonia.Rect rect, ImageBlock img)> _imageHandles = new();
+    // Image resize state. The handle carries the size the image was DRAWN at, not just the block: inside
+    // a table cell a picture is scaled down to fit the cell (CellImageSize), so the declared Width can be
+    // several times the width the handle sits at. Seeding the drag from the declared size made a drag of
+    // a few dozen px land inside the range that still clamps to the same drawn width — the handle looked
+    // dead. The drag is relative to what the user can see.
+    private List<(Avalonia.Rect rect, ImageBlock img, double drawnW, double drawnH)> _imageHandles = new();
     // Rendered rects of block images inside table cells (P4-2b), so a click can select one (top-level
     // block images are found via GetBlockAtPoint; cell images need this registry, like inline images).
     private List<(Avalonia.Rect rect, ImageBlock img)> _cellImageRects = new();
@@ -1189,12 +1193,41 @@ public partial class RichEditor : Control
                     Mix(it.Table.Columns);
                     foreach (var w in it.Table.ColumnWidths) Mix(BitConverter.DoubleToInt64Bits(w));
                     foreach (var rh in it.Table.RowHeights) Mix(BitConverter.DoubleToInt64Bits(rh));
+                    // Every block a cell holds, not just its paragraphs: a block image, divider or
+                    // nested table in there sizes the cell too, so leaving them out served the host
+                    // paragraph's cached layout at the old box after such a block changed.
                     foreach (var (_, _, cell) in it.Table.LogicalCells())
-                        foreach (var b in cell.Blocks)
-                            if (b is Paragraph cp) Mix(ParagraphSig(cp));
+                        foreach (var b in cell.Blocks) Mix(BlockSig(b));
                 }
             }
             return h;
+        }
+    }
+
+    // Signature of one block inside an inline table's cell, for folding into the host paragraph's
+    // ParagraphSig. Only the fields that move the block's laid-out box matter — an image's display
+    // size and identity, a nested grid's dimensions and its own cells' contents.
+    private static long BlockSig(Block b)
+    {
+        unchecked
+        {
+            switch (b)
+            {
+                case Paragraph p: return ParagraphSig(p);
+                case ImageBlock img:
+                    return 31 ^ BitConverter.DoubleToInt64Bits(img.Width) * 3
+                              ^ BitConverter.DoubleToInt64Bits(img.Height) * 5
+                              ^ (img.RawBytes?.GetHashCode() ?? img.Image?.GetHashCode() ?? 0);
+                case DividerBlock: return 37;
+                case TableBlock tb:
+                    long h = 41 ^ (tb.Rows * 397L) ^ tb.Columns;
+                    foreach (var w in tb.ColumnWidths) h = h * 31 + BitConverter.DoubleToInt64Bits(w);
+                    foreach (var rh in tb.RowHeights) h = h * 31 + BitConverter.DoubleToInt64Bits(rh);
+                    foreach (var (_, _, cell) in tb.LogicalCells())
+                        foreach (var cb in cell.Blocks) h = h * 31 + BlockSig(cb);
+                    return h;
+                default: return 43;
+            }
         }
     }
 
@@ -1989,13 +2022,31 @@ public partial class RichEditor : Control
     private static bool RemoveBlockFromCells(System.Collections.Generic.IEnumerable<Block> blocks, Block target)
     {
         foreach (var blk in blocks)
+        {
             if (blk is TableBlock tb)
-                foreach (var row in tb.Cells)
-                    foreach (var cell in row)
-                    {
-                        if (cell.Blocks.Remove(target)) return true;
-                        if (RemoveBlockFromCells(cell.Blocks, target)) return true;
-                    }
+            {
+                if (RemoveBlockFromTable(tb, target)) return true;
+            }
+            // An inline table's cells are block containers too (milestone B), but they hang off a
+            // paragraph's inlines rather than a block list — so this walk never reached them and a
+            // block image / divider / nested table inside one could not be deleted.
+            else if (blk is Paragraph p)
+            {
+                foreach (var inl in p.Inlines)
+                    if (inl is InlineTable it && RemoveBlockFromTable(it.Table, target)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool RemoveBlockFromTable(TableBlock tb, Block target)
+    {
+        foreach (var row in tb.Cells)
+            foreach (var cell in row)
+            {
+                if (cell.Blocks.Remove(target)) return true;
+                if (RemoveBlockFromCells(cell.Blocks, target)) return true;
+            }
         return false;
     }
 
