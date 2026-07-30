@@ -18,7 +18,9 @@ namespace AvaloniaRichEditor.Tests.Render;
 // Assertions are STRUCTURAL (ink present / heading taller than body / a divider line / page-2 content /
 // a selection highlight), not golden-image comparisons — anti-aliasing and font rendering differ per
 // platform, so exact pixels aren't portable; relative checks against a bundled font (Inter) are.
-public class RenderPixelTests
+// Split across two files: this one holds the helpers and the single-block cases, RenderPixelTests.Complex
+// covers the recursive and clipped paths (merged cells, nested/inline tables, page splits).
+public partial class RenderPixelTests
 {
     private static readonly FontFamily Inter = new("avares://Avalonia.Fonts.Inter/Assets#Inter");
 
