@@ -528,7 +528,7 @@ public partial class RichEditor
                         var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
                         context.FillRectangle(AccentHandleFill, handle);
                         // Slightly larger hit area than the visual handle for easier grabbing.
-                        _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img));
+                        _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img, width, height));
                     }
 
                     yOffset += height + img.MarginBottom;
@@ -644,7 +644,7 @@ public partial class RichEditor
                         context.DrawRectangle(null, AccentBorderPen, ir);
                         var handle = new Rect(ox + iw - 6, blkY + ih - 6, 12, 12);
                         context.FillRectangle(AccentHandleFill, handle);
-                        _imageHandles.Add((new Rect(ox + iw - 9, blkY + ih - 9, 18, 18), cimg));
+                        _imageHandles.Add((new Rect(ox + iw - 9, blkY + ih - 9, 18, 18), cimg, iw, ih));
                         _cellImageRects.Add((ir, cimg));
                     }
                 }

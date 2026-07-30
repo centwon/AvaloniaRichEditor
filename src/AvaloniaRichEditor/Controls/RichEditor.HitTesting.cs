@@ -149,6 +149,11 @@ public partial class RichEditor
     // A block image's drawn size inside a cell of content width `innerWidth`: the declared size, scaled
     // down to fit the cell width (preserving aspect ratio). Shared by the cell measure, render and
     // hit-test walks so they advance by identical per-block heights.
+    //
+    // The cap is on the DRAWN size only — ImageBlock.Width keeps whatever it was set to (CSS max-width
+    // semantics), so a picture that is too big for its cell takes the room back if the column is later
+    // widened. A resize drag therefore stops moving once it reaches the cell edge while still growing
+    // the stored size; that is intended (decision 2026-07-31), not the handle failing to respond.
     private static (double w, double h) CellImageSize(ImageBlock im, double innerWidth)
     {
         double w = im.Width > 0 ? im.Width : 200, h = im.Height > 0 ? im.Height : 200;

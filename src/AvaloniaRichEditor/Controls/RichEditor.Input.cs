@@ -127,8 +127,11 @@ public partial class RichEditor
                     _dragUndoPending = Document != null; // checkpoint on the first real move, not on the click
                     _isResizingImage = true;
                     _resizingImage = h.img;
-                    _initialImageWidth = h.img.Width > 0 ? h.img.Width : 200;
-                    _initialImageHeight = h.img.Height > 0 ? h.img.Height : 200;
+                    // Start from the size the image was DRAWN at (the handle sits on that edge), not its
+                    // declared size: inside a cell those differ whenever the picture is wider than the
+                    // cell, and starting from the declared one made the drag do nothing visible.
+                    _initialImageWidth = h.drawnW > 0 ? h.drawnW : (h.img.Width > 0 ? h.img.Width : 200);
+                    _initialImageHeight = h.drawnH > 0 ? h.drawnH : (h.img.Height > 0 ? h.img.Height : 200);
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
                     _initialImageMouseX = point.X;
                     e.Pointer.Capture(this);
@@ -461,6 +464,24 @@ public partial class RichEditor
         catch { }
     }
 
+    // Repaint + re-measure after an image resize drag. A resize mutates size WITHOUT going through an
+    // edit, so the next frame runs as a "trusted" pass that hands back cached geometry unmodified — the
+    // same reason the column/row drags and the IME composition evict their enclosing chain. Without it
+    // an image inside a table cell grew in the model while the row it sits in kept its old height, at
+    // any depth, so the drag looked like it did nothing at all.
+    private void InvalidateResizedImageGeometry(object? owner)
+    {
+        var tb = owner switch
+        {
+            TableCell tc => tc.Parent as TableBlock,          // block image: parent is the cell
+            Paragraph p => FindCell(p)?.tb,                   // inline image: via its paragraph's cell
+            _ => null
+        };
+        if (tb != null) InvalidateTableChain(tb);
+        InvalidateMeasure(); // a taller image grows the row (or the document) -> scroll extent follows
+        InvalidateVisual();
+    }
+
     /// <inheritdoc/>
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -483,7 +504,7 @@ public partial class RichEditor
             double newW = Math.Max(8, _initialImageWidth + diff);
             _resizingInline.Width = newW;
             _resizingInline.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingInline.Height; // keep aspect ratio
-            InvalidateVisual();
+            InvalidateResizedImageGeometry(_resizingInline.Parent as Paragraph);
             return;
         }
 
@@ -494,7 +515,8 @@ public partial class RichEditor
             double newW = Math.Max(20, _initialImageWidth + diff);
             _resizingImage.Width = newW;
             _resizingImage.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingImage.Height; // keep aspect ratio
-            InvalidateVisual();
+            // A block image in a cell sizes that cell, and so the row: the image's parent IS the cell.
+            InvalidateResizedImageGeometry(_resizingImage.Parent as TableCell);
             return;
         }
 

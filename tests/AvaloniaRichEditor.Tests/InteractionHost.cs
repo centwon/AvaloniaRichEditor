@@ -95,8 +95,10 @@ internal sealed class InteractionHost : IDisposable
     public IReadOnlyList<(Rect rect, TableBlock tb, int rowIndex, double height)> RowHandles
         => Field<List<(Rect, TableBlock, int, double)>>("_rowBoundaries");
 
-    public IReadOnlyList<(Rect rect, ImageBlock img)> ImageHandles
-        => Field<List<(Rect, ImageBlock)>>("_imageHandles");
+    // drawnW/drawnH are the size the image was painted at, which inside a cell is the declared size
+    // scaled down to fit — the drag is measured against that, so tests need it too.
+    public IReadOnlyList<(Rect rect, ImageBlock img, double drawnW, double drawnH)> ImageHandles
+        => Field<List<(Rect, ImageBlock, double, double)>>("_imageHandles");
 
     public IReadOnlyList<(Rect rect, Paragraph p, InlineImage img)> InlineImageHandles
         => Field<List<(Rect, Paragraph, InlineImage)>>("_inlineHandles");
