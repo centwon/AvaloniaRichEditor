@@ -37,7 +37,10 @@ internal class UndoManager
 
     public void PushState(FlowDocument currentDoc, TextPointer currentCaret)
     {
-        if (currentDoc == null || currentCaret == null || currentCaret.Paragraph == null) return;
+        // A null caret paragraph is not a reason to skip the checkpoint: nothing places the caret until
+        // the first click, so a drag-resize right after a load pushed no state and could not be undone.
+        // GetGlobalIndex already answers 0 for it, and Undo() never guarded on it either.
+        if (currentDoc == null || currentCaret == null) return;
 
         int caretGlobal = GetGlobalIndex(currentDoc, currentCaret);
         var clonedDoc = currentDoc.Clone();

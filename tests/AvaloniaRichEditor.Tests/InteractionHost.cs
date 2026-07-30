@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Threading;
@@ -62,6 +65,30 @@ internal sealed class InteractionHost
         Window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
     }
+
+    // Paints one frame. Resize handles and cell image rects are recorded *while rendering*, so a test
+    // that wants to grab one has to paint first — a shown headless window doesn't paint on its own.
+    public void Render()
+    {
+        Pump();
+        var w = (int)Math.Max(1, Editor.Bounds.Width);
+        var h = (int)Math.Max(1, Editor.Bounds.Height);
+        using var rtb = new RenderTargetBitmap(new PixelSize(w, h));
+        rtb.Render(Editor);
+    }
+
+    // Resize affordances as the renderer placed them, in document space: what the user aims at.
+    public IReadOnlyList<(Rect rect, TableBlock tb, int colIndex)> ColumnHandles
+        => Field<List<(Rect, TableBlock, int)>>("_columnBoundaries");
+
+    public IReadOnlyList<(Rect rect, TableBlock tb, int rowIndex, double height)> RowHandles
+        => Field<List<(Rect, TableBlock, int, double)>>("_rowBoundaries");
+
+    public IReadOnlyList<(Rect rect, ImageBlock img)> ImageHandles
+        => Field<List<(Rect, ImageBlock)>>("_imageHandles");
+
+    public IReadOnlyList<(Rect rect, Paragraph p, InlineImage img)> InlineImageHandles
+        => Field<List<(Rect, Paragraph, InlineImage)>>("_inlineHandles");
 
     // ---- coordinates --------------------------------------------------------
     //
