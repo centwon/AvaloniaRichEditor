@@ -37,6 +37,17 @@ Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor
 - **`Paragraph.CopyFormatFrom(Paragraph)`** — copies every paragraph-level formatting field. One source
   for the edit paths that derive a new paragraph from an existing one (see the Enter fix below).
 
+### API
+- **`RichEditor.AutoLinkOnType` is now a `StyledProperty`** (`AutoLinkOnTypeProperty`), like every other
+  behaviour flag (`IsReadOnly`, `Allow*`), so it can be bound and styled instead of only assigned in code.
+  Same name, same default (`true`); the property was added after 0.9.0, so nothing depended on the old form.
+- **Documentation corrected to match behaviour** ahead of the 1.0 API freeze: the `RichEditor` summary still
+  advertised the removed `EditorMode` presets; `HtmlDocumentFormatter` did not mention that inline tables
+  round-trip; `RtfDocumentFormatter` did not say that writing covers more than reading (merges and shading
+  are export-only, nested tables flatten on import, an inline table splits its host paragraph);
+  `RichEditorToolbar` did not state the focus guarantee; and `SetFindHighlight` claimed it tinted every
+  match when the current selection is deliberately excluded.
+
 ### Interoperability
 - **Inline tables survive an HTML round-trip.** HTML has no inline table, so one went out as a `<table>`
   and came back as a *block* table — saving and reloading split every paragraph that held one, and the

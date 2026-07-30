@@ -15,6 +15,14 @@ namespace AvaloniaRichEditor.Formatters;
 /// simple tables (<c>\trowd…\cell…\row</c>). Unlike Word's CF_HTML (which references temp files for
 /// images), RTF embeds the image bytes, so nothing is lost. Zero external dependencies beyond a
 /// code-page provider for CJK text (<c>\'hh</c> bytes are decoded with the document's <c>\ansicpg</c>).
+/// <para>Writing covers more than reading, because that is what other applications consume: merged cells
+/// (<c>\clmgf</c>/<c>\clmrg</c>, <c>\clvmgf</c>/<c>\clvmrg</c>), per-cell shading (<c>\clcbpat</c>),
+/// everything a cell holds (several paragraphs, images, dividers, list markers), and tables nested in a
+/// cell (<c>\nestcell</c>/<c>\nestrow</c>). Reading back is lossier by design: merge flags and shading are
+/// ignored, and a nested table flattens into its parent cell (nested cells tab-separated, nested rows
+/// newline-separated). An <see cref="InlineTable"/> has no RTF equivalent, so it is written as a
+/// block-level table that splits its host paragraph — the content and its order survive, the in-line
+/// placement does not (use <c>.flow</c>/JSON or HTML to keep that).</para>
 /// </summary>
 public static class RtfDocumentFormatter
 {

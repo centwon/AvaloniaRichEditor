@@ -10,7 +10,12 @@ namespace AvaloniaRichEditor.Formatters
 {
     /// <summary>Converts between <see cref="FlowDocument"/> and HTML.
     /// Supports full round-trip for bold/italic/underline/strikethrough, colors, sizes, alignment,
-    /// headings, lists, tables (with cell merge), images, hyperlinks, and horizontal rules.</summary>
+    /// headings, lists, tables (with cell merge, per-cell background, nested tables), images,
+    /// hyperlinks, and horizontal rules.
+    /// <para>HTML has no inline table, so an <see cref="InlineTable"/> is emitted as a
+    /// <c>&lt;table&gt;</c> carrying a <c>data-are-inline</c> marker; this parser reads that back onto the
+    /// text line, while HTML from other applications keeps producing a block-level
+    /// <see cref="TableBlock"/>.</para></summary>
     public static class HtmlDocumentFormatter
     {
         // Tags that introduce/contain block-level structure. Their presence means we must

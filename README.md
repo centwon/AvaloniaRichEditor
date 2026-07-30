@@ -35,7 +35,10 @@ dotnet add package AvaloniaRichEditor
   lists, line spacing `Ctrl+1/5/2`, indent, font size, and more
 - Clipboard: internal rich copy/paste, rich **HTML copy-out** (`CF_HTML`) and external HTML/**RTF** paste
   (Word/HWP), image paste, Excel/TSV → table
-- HTML, JSON, and **RTF** import/export (round-trippable) — see the
+- HTML, JSON, and **RTF** import/export. JSON/`.flow` and HTML round-trip losslessly (an inline table
+  stays inline); RTF export is deliberately richer than RTF import — merged cells, per-cell shading and
+  nested tables are written for Word/HWP, while reading them back flattens nesting and ignores those cell
+  properties — see the
   [document format specification](docs/DOCUMENT_FORMAT.md) (JSON document format v1.0 and the `.flow` package)
 - Korean/CJK **IME** composition (inline preedit)
 - Word-style **page view** with selectable paper size (`PageSize`: Continuous (default) / A4/A3/A5/B4/B5/

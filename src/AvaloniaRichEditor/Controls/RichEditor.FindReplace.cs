@@ -14,8 +14,10 @@ public partial class RichEditor
     internal string? FindHighlightQuery { get; private set; }
     internal bool FindHighlightMatchCase { get; private set; }
 
-    /// <summary>Sets (or clears, with null/empty) the query whose matches are all highlighted while a
-    /// find UI is open. Independent of the caret selection; purely visual.</summary>
+    /// <summary>Sets (or clears, with null/empty) the query whose matches are highlighted while a find UI
+    /// is open. Every match except the current selection is tinted — the current one is already painted as
+    /// the selection, and tinting it too blends the two colours into a muddy fill. Independent of the
+    /// caret selection; purely visual.</summary>
     public void SetFindHighlight(string? query, bool matchCase)
     {
         string? q = string.IsNullOrEmpty(query) ? null : query;

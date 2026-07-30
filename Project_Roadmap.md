@@ -196,8 +196,21 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
       최적화 불필요로 종결.
       **회귀 가드(타이밍 대신 결정적)**: ① 조합이 **캐럿의 표 체인만** evict하는지(문서 전체 60개 캐시가
       조합 전후 그대로 60 — 전역 clear면 글자당 비용이 문서 크기에 비례하게 된다) ② 표 100유닛 힙 상한.
-- [ ] **P5 · 1.0 API 확정 리뷰** — `PublicAPI.Shipped.txt` 점검, 라운드3에서 **바뀐 동작이 XML doc과 일치**하는지.
-      1.0은 API 안정성 약속이므로 이름·기본값을 여기서 확정한다
+- [x] **P5 · 1.0 API 확정 리뷰** (2026-07-30 완료, 493 unit + 17 render 그린, 빌드 0 warn)
+      **API 파일은 동기 상태** — `PublicApiAnalyzers` 경고 0(선언 누락 없음). 0.9.0 이후 델타는
+      `PublicAPI.Unshipped.txt` 13개 추가 + `ParseHtml`/`ParseHtmlAsync` 시그니처 교체 2건뿐.
+      **이름·기본값은 그대로 확정**, 단 하나만 변경: `AutoLinkOnType`이 유일하게 평범한 CLR 속성이었다
+      → **`StyledProperty`로 승격**(`IsReadOnly`·`Allow*`와 동일, 바인딩/스타일 가능). 미출하 API라 호환 영향 없음.
+      **문서와 실제 동작 불일치 6건 수정**: ① `RichEditor` 클래스 doc이 **제거된 `EditorMode` 프리셋**
+      (ReadOnly/Basic/Full)을 아직 광고 ② `HtmlDocumentFormatter` — 인라인 표 왕복(`data-are-inline`) 누락
+      ③ `RtfDocumentFormatter` — 쓰기가 읽기보다 넓다는 사실(병합·셀 배경은 내보내기 전용, 중첩은 가져올 때
+      평탄화, 인라인 표는 문단 분할) 누락 ④ `RichEditorToolbar` — 버튼이 포커스를 안 가져간다는 보장(호스트가
+      넣은 `Leading/TrailingItems` 버튼까지)과 피커 팝업이 닫힐 때 포커스를 돌려준다는 P1 동작 누락
+      ⑤ `SetFindHighlight` — "모든 매치 강조"라고 적혀 있으나 실제로는 **현재 선택은 제외**(라운드2 수정)
+      ⑥ README의 "RTF round-trippable" — RTF는 비대칭임을 명시.
+      **미결(사용자 판단 필요)**: `Formatters.RoundTripHarness`가 **public**인데 이건 `--roundtrip` CLI 검증용
+      개발 도구다(라이브러리 소비자 대상 API가 아님). 1.0에서 `internal`로 내리면 breaking이지만 지금이 그럴
+      마지막 시점 — 0.9.0에 이미 나갔으므로 남길지/내릴지 결정 필요.
 - [ ] **P6 · mac/Linux 기능 실검증** — 3-OS CI는 그린이나 실기 확인은 미완(헤드리스 한계: 이미지 디코드 등)
 
 **릴리스 시 정리할 것**

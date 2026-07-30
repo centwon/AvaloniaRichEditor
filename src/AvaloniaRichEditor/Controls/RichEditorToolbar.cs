@@ -22,6 +22,11 @@ namespace AvaloniaRichEditor.Controls;
 /// Labels/tooltips come from <see cref="RichEditorLocalization"/>. Layout/placement is up to the host —
 /// this control is only the strip itself. App-shell concerns (save/open, zoom, printing) are deliberately
 /// out of scope.
+/// <para>No button in the strip takes focus — including buttons the host adds through
+/// <see cref="LeadingItems"/>/<see cref="TrailingItems"/>, whose <c>Focusable</c> is cleared as well.
+/// The caret is only painted while the editor is focused, so a focus grab would hide it and send the next
+/// keystroke to the button. A picker's popup (colour, table, list markers, line spacing) does take focus
+/// while it is open, and focus returns to <see cref="Target"/> when it closes.</para>
 /// </summary>
 public partial class RichEditorToolbar : UserControl
 {

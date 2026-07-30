@@ -8,6 +8,7 @@ AvaloniaRichEditor.Controls.RichEditor.ClearFindHighlight() -> void
 AvaloniaRichEditor.Controls.RichEditor.GetFindMatchPosition() -> (int current, int total)
 AvaloniaRichEditor.Controls.RichEditor.AutoLinkOnType.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.AutoLinkOnType.set -> void
+static readonly AvaloniaRichEditor.Controls.RichEditor.AutoLinkOnTypeProperty -> Avalonia.StyledProperty<bool>!
 AvaloniaRichEditor.Controls.RichEditor.AllowRemoteImagesOnPaste.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.AllowRemoteImagesOnPaste.set -> void
 static readonly AvaloniaRichEditor.Controls.RichEditor.AllowRemoteImagesOnPasteProperty -> Avalonia.StyledProperty<bool>!

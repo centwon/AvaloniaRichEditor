@@ -18,8 +18,10 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 
 /// <summary>A from-scratch rich text editor built on Avalonia's <c>TextLayout</c> engine.
-/// Supports inline formatting, paragraphs, lists, tables, images, HTML/JSON import-export,
-/// find/replace, undo/redo, CJK IME, and editor-mode presets (ReadOnly/Basic/Full).</summary>
+/// Supports inline formatting, paragraphs, lists, tables (merged cells, nested and inline tables),
+/// images, HTML/JSON/RTF/<c>.flow</c> import-export, PDF and printing, pagination, find/replace,
+/// undo/redo and CJK IME. What the user may do is set by <see cref="IsReadOnly"/> and the
+/// <c>Allow*</c> feature flags.</summary>
 public partial class RichEditor : Control
 {
 
@@ -772,9 +774,19 @@ public partial class RichEditor : Control
     // If the word ending at `endOffset` is a web URL, set NavigateUri on exactly that range.
     // Called when the user types a space after the URL (the space is already inserted and
     // excluded from the range, so it doesn't inherit the link).
+    /// <inheritdoc cref="AutoLinkOnType"/>
+    public static readonly StyledProperty<bool> AutoLinkOnTypeProperty =
+        AvaloniaProperty.Register<RichEditor, bool>(nameof(AutoLinkOnType), true);
+
     /// <summary>When true (default), typing whitespace/Enter after an <c>http(s)://</c> or <c>www.</c>
     /// token turns it into a hyperlink. Set false to disable auto-linking.</summary>
-    public bool AutoLinkOnType { get; set; } = true;
+    // A StyledProperty like every other behaviour flag (IsReadOnly, Allow*), so it can be bound and
+    // styled rather than only assigned in code.
+    public bool AutoLinkOnType
+    {
+        get => GetValue(AutoLinkOnTypeProperty);
+        set => SetValue(AutoLinkOnTypeProperty, value);
+    }
 
     // Called after a whitespace/Enter commit at `boundary` (the offset just past the token). Applies a
     // NavigateUri to a bare http(s):// or www. URL token, trimming trailing punctuation and validating the
