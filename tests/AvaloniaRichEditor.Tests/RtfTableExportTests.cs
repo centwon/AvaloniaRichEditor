@@ -261,8 +261,11 @@ public class RtfTableExportTests
     [Fact]
     public void AnInlineTable_ExportsAsATableBetweenTheSurroundingText()
     {
-        // RTF has no inline table, so the host paragraph splits around it. The three pieces must come out
-        // in order — before it, the table, then the rest. Previously the table was dropped entirely.
+        // RTF has no inline table, so the host paragraph splits around it and the grid goes out as a
+        // block-level table. The three pieces must come out in order — before it, the table, then the
+        // rest. Previously the table was dropped entirely. Our own ignorable {\*\arinline} marker rides
+        // along so that reading OUR file back restores the inline placement (asserted below); a foreign
+        // reader skips the marker and sees exactly this block table.
         var host = new Paragraph();
         host.Inlines.Add(new Run { Text = "before" });
         var it = new InlineTable { Table = new TableBlock(1, 1) };
@@ -277,8 +280,12 @@ public class RtfTableExportTests
         int after = rtf.IndexOf("after", System.StringComparison.Ordinal);
         Assert.True(before < table && table < after, $"order was before={before} table={table} after={after}");
 
+        // Reading our own file back restores the inline placement: one paragraph carrying the text on
+        // both sides of the table, and no top-level table block.
         var back = RoundTrip(DocOf(host));
-        Assert.Equal("inside", CellText(back.Blocks.OfType<TableBlock>().Single().Cells[0][0]));
+        var backHost = back.Blocks.OfType<Paragraph>().Single(p => p.Inlines.OfType<InlineTable>().Any());
+        Assert.Equal("inside", CellText(backHost.Inlines.OfType<InlineTable>().Single().Table.Cells[0][0]));
+        Assert.Empty(back.Blocks.OfType<TableBlock>());
         string plain = string.Concat(back.Blocks.OfType<Paragraph>().Select(Text));
         Assert.Contains("before", plain);
         Assert.Contains("after", plain);
