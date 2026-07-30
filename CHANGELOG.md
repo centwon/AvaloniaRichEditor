@@ -200,6 +200,13 @@ Found by reading every source file end to end; each is covered by a regression t
   caret out from under the shortcut being typed. The same fall-through cancelled a selected image
   before its Ctrl+C could arrive. Modifier keys (Shift/Ctrl/Alt/Win, Caps/Num/Scroll Lock) are now
   ignored by the key handler, which acts on none of them.
+- **Toolbar buttons stole focus, so the caret vanished and typing stopped.** The caret is only painted
+  while the editor is focused, and nothing handed focus back after a click. The command itself still ran
+  against the remembered caret position, which is why the buttons looked like they worked while the
+  keyboard had gone dead — the outdent button made it obvious, but every button behaved this way. No
+  toolbar button takes focus now. The combo boxes still do (their dropdowns need it) and give it back
+  when the dropdown closes, rather than on every selection change, which would pull focus away while
+  arrowing through an open list.
 - **Typing never scrolled the caret back into view.** Every other edit reaches the bring-into-view
   request through `ResetCaretBlink`, but the typing path deliberately skips that call — it would end
   the undo coalescing run and give each keystroke its own checkpoint — so nothing asked the host to

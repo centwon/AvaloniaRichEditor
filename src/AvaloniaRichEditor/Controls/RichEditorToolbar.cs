@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -152,6 +153,15 @@ public partial class RichEditorToolbar : UserControl
               || e.Property == RichEditor.ShowPageBoundariesProperty) SyncPage();
     }
 
+    // Clears Focusable on every Button in a built subtree. Host-supplied Leading/TrailingItems are walked
+    // too: they sit in the same strip, so a focus grab there hides the caret just the same.
+    private static void DisableButtonFocus(Control c)
+    {
+        if (c is Button b) b.Focusable = false;
+        foreach (var child in Avalonia.LogicalTree.LogicalExtensions.GetLogicalChildren(c))
+            if (child is Control cc) DisableButtonFocus(cc);
+    }
+
     // ---------------- UI construction ----------------
 
     private void Build()
@@ -196,6 +206,10 @@ public partial class RichEditorToolbar : UserControl
                 BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
             };
             ToolTip.SetTip(cb, tip);
+            // A combo legitimately needs focus while its list is open, so it can't simply refuse it like
+            // the buttons do. Hand focus back once the dropdown closes — doing it on SelectionChanged
+            // instead would yank focus away while arrowing through an open list.
+            cb.DropDownClosed += (_, _) => Target?.Focus();
             return cb;
         }
         Control Div() => new Border
@@ -369,6 +383,12 @@ public partial class RichEditorToolbar : UserControl
         foreach (var c in LeadingItems) AddHost(c);
         if (LeadingItems.Count > 0) wrap.Children.Add(Div());
         foreach (var c in items) wrap.Children.Add(c);
+        // No toolbar button may take focus. The caret is only painted while the editor is focused, so a
+        // click hid it and sent the next keystroke to the button — the command still ran against the
+        // remembered caret position, which is why the buttons looked like they worked while typing had
+        // stopped. Done as one pass over the assembled strip rather than a flag in each factory, because
+        // several pickers (colour, lists, spacing, table insert) build their buttons inline.
+        foreach (var c in wrap.Children) DisableButtonFocus(c);
         if (TrailingItems.Count > 0) wrap.Children.Add(Div());
         foreach (var c in TrailingItems) AddHost(c);
 
@@ -465,6 +485,7 @@ public partial class RichEditorToolbar : UserControl
                 Background = new SolidColorBrush(color),
                 Width = 22, Height = 22, Margin = new Thickness(1), Padding = new Thickness(0),
                 BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1),
+                Focusable = false, // see the Btn factory — the caret must survive a swatch click
             };
             sw.Click += (_, _) => Apply(color);
             grid.Children.Add(sw);
