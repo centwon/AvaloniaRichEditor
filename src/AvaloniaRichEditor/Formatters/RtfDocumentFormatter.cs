@@ -211,8 +211,10 @@ internal sealed class RtfParser
             case "intbl": break;                  // structure is driven by \cell/\row
             case "cellx": if (_st.Dest == Dest.Normal) _curCellx.Add(p ?? 0); break; // column boundary, for source-width preservation
 
-            // Nested tables (B deferred): the model can't nest a table in a cell, so flatten —
-            // nested cells become tab-separated, nested rows newline-separated, inside the parent cell.
+            // Nested tables flatten on import: nested cells become tab-separated, nested rows
+            // newline-separated, inside the parent cell. The model CAN nest a table in a cell now
+            // (milestone A) and the writer emits \nestcell/\nestrow, so this side is the remaining gap —
+            // reading them back as real nested tables needs a table stack in the parser.
             case "nestcell": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
             case "nestrow": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
 

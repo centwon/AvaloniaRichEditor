@@ -37,8 +37,29 @@ Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor
 - **`Paragraph.CopyFormatFrom(Paragraph)`** — copies every paragraph-level formatting field. One source
   for the edit paths that derive a new paragraph from an existing one (see the Enter fix below).
 
+### Interoperability
+- **Inline tables survive an HTML round-trip.** HTML has no inline table, so one went out as a `<table>`
+  and came back as a *block* table — saving and reloading split every paragraph that held one, and the
+  text after the table started a new paragraph. Our own export marks those tables (`data-are-inline`) and
+  the import puts them back on the text line. Foreign HTML carries no marker and still lands as a block
+  table.
+- **RTF export carries what a table actually holds.** The writer emitted only plain runs from a cell, so
+  merged cells, cell shading, images, list markers, nested tables and inline tables were dropped. Merges
+  now emit `\clmgf`/`\clmrg` and `\clvmgf`/`\clvmrg` (a `\cellx` per column either way), shading emits
+  `\clcbpat`, a cell writes all of its paragraphs/images/dividers/markers, and tables inside a cell go one
+  `\itap` deeper via `\nestcell`/`\nestrow`. An inline table splits its host paragraph (RTF has no inline
+  table), so text-then-table-then-rest comes out in order. Visual verification in Word/HWP is pending.
+
 ### Fixed
 Found by reading every source file end to end; each is covered by a regression test.
+- **RTF import dropped text before any ignorable group.** The pending run was flushed at the group's
+  closing brace with the skipped destination still active, which threw it away. Word writes such groups
+  routinely (bookmarks, fields, and a nested table's `{\*\nesttableprops …}`), so ordinary Word documents
+  imported with text missing. The run is now committed before descending into a group.
+- **RTF import restarted a table row from inside a skipped group.** `\trowd`/`\cell`/`\row`/`\cellx` acted
+  regardless of destination, and Word puts a nested table's row definition in `{\*\nesttableprops \trowd
+  …\nestrow}` — so the parent cell's accumulated text was discarded mid-cell. All four are now guarded on
+  the destination.
 - **`Ctrl+Shift+X` cut the selection instead of striking it through.** The cut branch matched `Ctrl+X`
   without excluding Shift, so it swallowed the strikethrough shortcut added in 0.9.0 — pressing it made
   the selected text disappear. (`Ctrl+Z` already guarded the same way for `Ctrl+Shift+Z`.)
