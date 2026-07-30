@@ -154,8 +154,31 @@ namespace AvaloniaRichEditor.Formatters
 
                 if (name == "table")
                 {
-                    Flush();
                     var tbl = ParseTable(child);
+                    // Our own export marks a table that was inline (see EmitTable): put it back on the text
+                    // line instead of flushing the paragraph, following the same ladder as the small-icon
+                    // <img> case — the pending paragraph, else the preceding one, else a new one.
+                    if (tbl != null && child.GetAttributeValue("data-are-inline", "") == "1")
+                    {
+                        var it = new InlineTable { Table = tbl };
+                        if (current != null) current.Inlines.Add(it);
+                        else if (flow.Blocks.Count > 0 && flow.Blocks[flow.Blocks.Count - 1] is Paragraph lastPara)
+                        {
+                            // Reopen that paragraph as the pending one (Flush re-adds it): HTML parsers
+                            // close a <p> when a <table> starts, so the text that followed the table
+                            // arrives as a later sibling and has to land back on the same line.
+                            lastPara.Inlines.Add(it);
+                            flow.Blocks.RemoveAt(flow.Blocks.Count - 1);
+                            current = lastPara;
+                        }
+                        else
+                        {
+                            current = new Paragraph();
+                            current.Inlines.Add(it);
+                        }
+                        continue;
+                    }
+                    Flush();
                     if (tbl != null) flow.Blocks.Add(tbl);
                 }
                 else if (name == "img")
@@ -737,9 +760,13 @@ namespace AvaloniaRichEditor.Formatters
         // Emits a table as an HTML <table>. Shared by block tables and inline tables (milestone B). Cell
         // content emits every paragraph (separated by <br>), block images, and nested tables (recursing),
         // so the structure survives a copy to Word/HWP.
-        private static void EmitTable(StringBuilder sb, TableBlock tb)
+        private static void EmitTable(StringBuilder sb, TableBlock tb, bool asInline = false)
         {
-            sb.Append("<table border=\"1\" style=\"border-collapse:collapse; width:100%;\">\n");
+            // `data-are-inline` is ours: HTML has no inline table, so an InlineTable came back from our own
+            // export as a block table, splitting the paragraph it lived in. External HTML never carries the
+            // attribute and keeps landing as a block table, as before.
+            string mark = asInline ? " data-are-inline=\"1\"" : "";
+            sb.Append($"<table{mark} border=\"1\" style=\"border-collapse:collapse; width:100%;\">\n");
             // Per-column widths as a <colgroup> so the import restores the exact column proportions
             // (without it every column came back at the default width — the table looked squished).
             if (tb.ColumnWidths.Count > 0)
@@ -800,7 +827,7 @@ namespace AvaloniaRichEditor.Formatters
             // (it pastes as a block-level table into Word/HWP rather than truly in-line — best effort).
             if (inline is InlineTable itbl)
             {
-                EmitTable(sb, itbl.Table);
+                EmitTable(sb, itbl.Table, asInline: true);
                 return;
             }
             if (inline is not Run r || r.Text == null) return;
