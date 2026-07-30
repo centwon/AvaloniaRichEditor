@@ -39,7 +39,7 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
   `Get-Process -Name "AvaloniaRichEditor.Demo" -ErrorAction SilentlyContinue | Stop-Process -Force`
   (빌드 에러 MSB3027/잠김 메시지가 나오면 컴파일은 성공했고 복사만 실패한 것.)
 - GUI 동작 검증은 직접 못 하므로, 백그라운드로 `dotnet run` 후 사용자에게 테스트를 요청한다.
-- 커밋 메시지 끝에 `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+- 커밋 메시지 끝에 `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 - `bin/`,`obj/`,`.vs/`는 `.gitignore` 처리됨(커밋에 넣지 말 것).
 
 ## 구조
