@@ -4,11 +4,18 @@ All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-07-31
+
+**The API is frozen.** From here on the public surface follows SemVer: no breaking change without a
+major bump. What made this 1.0 was not new features — the editor has been feature-complete since 0.8.0 —
+but verification depth: interaction and render-pixel test infrastructure, a full-source audit, real
+Word/HWP/browser checks of the exported formats, and measured performance.
 
 Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor) pulled ahead on after
-0.9.0, plus the defects a full read-through of every source file turned up. New public API is additive;
-325 → 355 unit + 9 render tests, build 0 warn / 0 err.
+0.9.0, the defects a full read-through of every source file turned up, and the 1.0 verification work
+(interaction and render-pixel test infrastructure, interoperability gaps, performance measurement, API
+freeze review). New public API is additive apart from the two removals noted below;
+355 → 528 unit + 9 → 17 render tests, build 0 warn / 0 err.
 
 ### Added
 - **`RichEditor.IsModified` / `MarkSaved()` / `IsModifiedChanged`** — a "needs saving" dirty flag. Any edit
@@ -74,6 +81,58 @@ Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor
 
 ### Fixed
 Found by reading every source file end to end; each is covered by a regression test.
+
+Four of these came out of the Word/HWP visual check the roadmap had been carrying as pending — they
+are the failures a round-trip through *our own* reader cannot show, because our reader tolerates the
+malformed output our writer produced.
+- **Exported tables had no borders in Word or HWP.** The writer emitted no `\clbrdr*` at all, so every
+  table — top-level, nested, or from an inline table — arrived as an invisible grid: present and
+  selectable, but with no lines, so an exported document did not look like the one on screen until
+  borders were applied by hand. Each cell now carries a plain single border on all four sides.
+- **Word glued a cell's text onto its nested table's first cell.** A paragraph that preceded a nested
+  table inside the same cell was never terminated with `\par` before the writer descended, so
+  "…형제 문단)" and "중첩1" ran together in both Word and HWP.
+- **Word dropped the paragraphs that followed a nested table in the same cell.** They were written
+  while `\itap` still pointed at the *inner* table's level, so Word booked them into a table that had
+  already been closed and discarded them outright. The cell's own level is now re-declared as soon as
+  the nested table ends, rather than only just before the closing `\cell`.
+- **An inline table exported to HTML became a full-width band on its own line.** It inherited the
+  block table's `width:100%`, so every consumer except our own importer (which reads the
+  `data-are-inline` marker) laid it out as a block. It is now sized to its own columns and marked
+  `display:inline-table`, so it sits in the text line in browsers and Word too.
+
+- **The resize handle on an image inside a table cell did nothing.** A cell scales a picture down to
+  fit its width, so the handle sits at the *drawn* right edge — but the drag arithmetic started from the
+  image's *declared* width, which for anything inserted into a cell is normally several times larger
+  (insertion caps to the document width, not the cell's). A drag of a few dozen pixels only moved the
+  declared size within the range that still clamps to the same drawn width, so nothing moved at all; at
+  greater nesting depth, where cells are narrower, it was worse. The handle now carries the size it was
+  drawn at and the drag is measured against that. The resize also evicts the enclosing table chain and
+  re-measures, like the column/row drags already did, so the row grows with the image on the same frame
+  instead of after the next edit.
+- **RTF import ignored cell merges and shading.** The writer has always emitted `\clmgf`/`\clmrg`,
+  `\clvmgf`/`\clvmrg` and `\clcbpat`, and Word and HWP honour them — but the reader skipped all five, so
+  a document exported and reloaded through *our own* format came back with the grid un-merged and the
+  cell colours gone. Both are now read back.
+- **An inline table did not survive an RTF round trip.** RTF has no inline table, so it goes out as a
+  block table and came back as one, splitting its host paragraph permanently. Our own ignorable
+  `{\*\arinline}` marker now rides along: other applications skip it and see exactly the block table
+  they saw before, while our reader puts the table back on its text line. An inline table nested inside
+  a table cell is still written (and read) as a nested block table.
+- **A block inside an inline table's cell could not be deleted.** The block-removal walk searched the
+  document's top level and then recursed through *block* table cells only, so an image, divider or
+  nested table living in an inline table's cell was never found: Delete pushed an undo checkpoint,
+  dropped the selection, and left the block on screen.
+- **An inline table's host paragraph kept a stale layout when a non-paragraph block in one of its cells
+  changed.** The host paragraph's cache signature folded in the inline table's cell *paragraphs* only, so
+  resizing an image (or editing a table) inside such a cell changed the table's measured box without
+  invalidating the line it sits on — the text kept its old line box until some other edit forced a rebuild.
+- **An HTML round-trip inserted a space after every inline table.** The exported `</table>` carried the
+  pretty-printing newline that block tables get, and inside a text line that whitespace text node parsed
+  back as a space — so saving and reloading grew one space per inline table, per cycle.
+- **README described RTF import as flattening nested tables**, which stopped being true when
+  `\nestcell`/`\nestrow` began importing as real nested tables. It now states the losses that remain
+  (merge flags, shading, and a nested table's column widths).
 - **RTF import dropped text before any ignorable group.** The pending run was flushed at the group's
   closing brace with the skipped destination still active, which threw it away. Word writes such groups
   routinely (bookmarks, fields, and a nested table's `{\*\nesttableprops …}`), so ordinary Word documents

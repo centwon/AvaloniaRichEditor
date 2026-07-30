@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 abstract AvaloniaRichEditor.Documents.TextElement.Clone() -> AvaloniaRichEditor.Documents.TextElement!
 AvaloniaRichEditor.Controls.RichEditor
 AvaloniaRichEditor.Controls.RichEditor.AllowFindReplace.get -> bool
@@ -334,7 +334,6 @@ static AvaloniaRichEditor.Formatters.DocumentPackage.Load(System.IO.Stream! sour
 static AvaloniaRichEditor.Formatters.DocumentPackage.Save(AvaloniaRichEditor.Documents.FlowDocument! document, System.IO.Stream! destination) -> void
 static AvaloniaRichEditor.Formatters.DocumentSerializer.Deserialize(string! json) -> AvaloniaRichEditor.Documents.FlowDocument!
 static AvaloniaRichEditor.Formatters.DocumentSerializer.Serialize(AvaloniaRichEditor.Documents.FlowDocument! document) -> string!
-static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtml(string! html, bool allowLocalFileImages = true) -> AvaloniaRichEditor.Documents.FlowDocument!
 static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ToHtml(AvaloniaRichEditor.Documents.FlowDocument! doc) -> string!
 static AvaloniaRichEditor.RichEditorLocalization.GetString(string! key) -> string!
 static AvaloniaRichEditor.RichEditorLocalization.Language.get -> string!
@@ -366,7 +365,6 @@ override AvaloniaRichEditor.Controls.RichEditorView.OnPropertyChanged(Avalonia.A
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ZoomFactorProperty -> Avalonia.StyledProperty<double>!
 AvaloniaRichEditor.Controls.RichEditor.LoadHtmlAsync(string? html) -> System.Threading.Tasks.Task!
 AvaloniaRichEditor.Formatters.RtfDocumentFormatter
-static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtmlAsync(string! html, bool allowLocalFileImages = true) -> System.Threading.Tasks.Task<AvaloniaRichEditor.Documents.FlowDocument!>!
 static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.LooksLikeRtf(string? text) -> bool
 static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.Parse(string! rtf) -> AvaloniaRichEditor.Documents.FlowDocument!
 AvaloniaRichEditor.Controls.RichEditor.GetPaperPixelSize() -> Avalonia.Size
@@ -494,3 +492,19 @@ AvaloniaRichEditor.Documents.PageSetup.ShowPageNumbers.get -> bool
 AvaloniaRichEditor.Documents.PageSetup.ShowPageNumbers.set -> void
 AvaloniaRichEditor.Documents.PageSetup.IsDefault.get -> bool
 AvaloniaRichEditor.Documents.PageSetup.Clone() -> AvaloniaRichEditor.Documents.PageSetup!
+AvaloniaRichEditor.Controls.RichEditor.IsModified.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.IsModifiedChanged -> System.EventHandler?
+AvaloniaRichEditor.Controls.RichEditor.MarkSaved() -> void
+AvaloniaRichEditor.Controls.RichEditor.RemoveList() -> void
+AvaloniaRichEditor.Controls.RichEditor.SetFindHighlight(string? query, bool matchCase) -> void
+AvaloniaRichEditor.Controls.RichEditor.ClearFindHighlight() -> void
+AvaloniaRichEditor.Controls.RichEditor.GetFindMatchPosition() -> (int current, int total)
+AvaloniaRichEditor.Controls.RichEditor.AutoLinkOnType.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.AutoLinkOnType.set -> void
+static readonly AvaloniaRichEditor.Controls.RichEditor.AutoLinkOnTypeProperty -> Avalonia.StyledProperty<bool>!
+AvaloniaRichEditor.Controls.RichEditor.AllowRemoteImagesOnPaste.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.AllowRemoteImagesOnPaste.set -> void
+static readonly AvaloniaRichEditor.Controls.RichEditor.AllowRemoteImagesOnPasteProperty -> Avalonia.StyledProperty<bool>!
+static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtml(string! html, bool allowLocalFileImages = true, bool allowRemoteImages = true) -> AvaloniaRichEditor.Documents.FlowDocument!
+static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtmlAsync(string! html, bool allowLocalFileImages = true, bool allowRemoteImages = true) -> System.Threading.Tasks.Task<AvaloniaRichEditor.Documents.FlowDocument!>!
+AvaloniaRichEditor.Documents.Paragraph.CopyFormatFrom(AvaloniaRichEditor.Documents.Paragraph! source) -> void
