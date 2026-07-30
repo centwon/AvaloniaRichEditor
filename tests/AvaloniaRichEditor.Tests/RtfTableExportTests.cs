@@ -158,20 +158,69 @@ public class RtfTableExportTests
     }
 
     [Fact]
-    public void ANestedTablesTextSurvivesTheRoundTrip()
+    public void ANestedTableRoundTripsAsANestedTable()
     {
-        // Our own parser has no nested tables (it flattens \nestcell into the parent cell), so this
-        // asserts the content survives — not the structure. Word and HWP read the nesting itself.
         var outer = new TableBlock(1, 1);
         outer.Cells[0][0].Blocks.Clear();
         outer.Cells[0][0].Blocks.Add(Grid(1, 2));
 
         var back = RoundTrip(DocOf(outer));
 
-        string text = string.Concat(back.Blocks.OfType<TableBlock>()
-            .SelectMany(t => t.Cells.SelectMany(row => row.Select(CellText))));
-        Assert.Contains("00", text);
-        Assert.Contains("01", text);
+        var cell = back.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        var inner = Assert.Single(cell.Blocks.OfType<TableBlock>());
+        Assert.Equal(1, inner.Rows);
+        Assert.Equal(2, inner.Columns);
+        Assert.Equal("00", CellText(inner.Cells[0][0]).Trim());
+        Assert.Equal("01", CellText(inner.Cells[0][1]).Trim());
+    }
+
+    // Two rows deep in the nested table, to prove the row accumulator isn't single-row.
+    [Fact]
+    public void AMultiRowNestedTableKeepsItsRows()
+    {
+        var outer = new TableBlock(1, 1);
+        outer.Cells[0][0].Blocks.Clear();
+        outer.Cells[0][0].Blocks.Add(Grid(2, 2));
+
+        var back = RoundTrip(DocOf(outer));
+
+        var inner = Assert.Single(back.Blocks.OfType<TableBlock>().Single().Cells[0][0].Blocks.OfType<TableBlock>());
+        Assert.Equal(2, inner.Rows);
+        Assert.Equal(2, inner.Columns);
+        Assert.Equal("11", CellText(inner.Cells[1][1]).Trim());
+    }
+
+    // A table nested two levels down: cell → table → cell → table.
+    [Fact]
+    public void ATableNestedTwoLevelsDeepSurvives()
+    {
+        var outer = new TableBlock(1, 1);
+        var middle = new TableBlock(1, 1);
+        middle.Cells[0][0].Blocks.Clear();
+        middle.Cells[0][0].Blocks.Add(Grid(1, 1));
+        outer.Cells[0][0].Blocks.Clear();
+        outer.Cells[0][0].Blocks.Add(middle);
+
+        var back = RoundTrip(DocOf(outer));
+
+        var lvl1 = Assert.Single(back.Blocks.OfType<TableBlock>().Single().Cells[0][0].Blocks.OfType<TableBlock>());
+        var lvl2 = Assert.Single(lvl1.Cells[0][0].Blocks.OfType<TableBlock>());
+        Assert.Equal("00", CellText(lvl2.Cells[0][0]).Trim());
+    }
+
+    // The parent cell's own text and its nested table both survive, in that order.
+    [Fact]
+    public void AParentCellKeepsItsTextAlongsideTheNestedTable()
+    {
+        var outer = new TableBlock(1, 1);
+        ((Run)outer.Cells[0][0].Para.Inlines[0]).Text = "parent";
+        outer.Cells[0][0].Blocks.Add(Grid(1, 1));
+
+        var back = RoundTrip(DocOf(outer));
+
+        var cell = back.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        Assert.Contains("parent", string.Concat(cell.Blocks.OfType<Paragraph>().Select(Text)));
+        Assert.Single(cell.Blocks.OfType<TableBlock>());
     }
 
     // Word writes a nested table's row definition inside an ignorable group. Acting on the \trowd in
@@ -187,10 +236,10 @@ public class RtfTableExportTests
 
         var doc = RtfDocumentFormatter.Parse(rtf);
 
-        var tb = doc.Blocks.OfType<TableBlock>().Single();
-        string text = CellText(tb.Cells[0][0]);
-        Assert.Contains("inner", text);
-        Assert.Contains("outer", text);
+        var cell = doc.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        Assert.Contains("outer", CellText(cell));           // the text that used to be discarded
+        var inner = Assert.Single(cell.Blocks.OfType<TableBlock>());
+        Assert.Contains("inner", CellText(inner.Cells[0][0]));
     }
 
     // Same root cause, outside tables: any ignorable group mid-paragraph (bookmarks, fields — routine in

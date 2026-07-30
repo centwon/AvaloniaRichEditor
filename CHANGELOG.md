@@ -58,6 +58,13 @@ Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor
   text after the table started a new paragraph. Our own export marks those tables (`data-are-inline`) and
   the import puts them back on the text line. Foreign HTML carries no marker and still lands as a block
   table.
+- **RTF import reads nested tables as nested tables.** `\nestcell`/`\nestrow` used to flatten into the
+  parent cell's text (tabs and newlines) because the model had no table-in-a-cell; it does now, so a table
+  inside a cell survives a Word/HWP paste — at any depth, keyed off `\itap` the way Word tells the levels
+  apart — and the parent cell keeps its own paragraphs in their original order around it. Nested column
+  widths still come out at the default: they live in the ignorable `{\*\nesttableprops}` group. The
+  `{\nonesttables …}` fallback copy is now skipped, so its `\par` no longer lands as a stray line break in
+  the parent cell.
 - **RTF export carries what a table actually holds.** The writer emitted only plain runs from a cell, so
   merged cells, cell shading, images, list markers, nested tables and inline tables were dropped. Merges
   now emit `\clmgf`/`\clmrg` and `\clvmgf`/`\clvmrg` (a `\cellx` per column either way), shading emits
