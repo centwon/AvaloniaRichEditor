@@ -41,6 +41,10 @@ Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor
 - **`RichEditor.AutoLinkOnType` is now a `StyledProperty`** (`AutoLinkOnTypeProperty`), like every other
   behaviour flag (`IsReadOnly`, `Allow*`), so it can be bound and styled instead of only assigned in code.
   Same name, same default (`true`); the property was added after 0.9.0, so nothing depended on the old form.
+- **`Formatters.RoundTripHarness` is no longer part of the library.** It is the `--roundtrip` CLI dev tool,
+  not consumer API, and it uses nothing but the public formatter surface — so it moved into the demo
+  project as an internal type. Removing public API is breaking, which is why it happens now, at the 1.0
+  freeze, rather than after it.
 - **Documentation corrected to match behaviour** ahead of the 1.0 API freeze: the `RichEditor` summary still
   advertised the removed `EditorMode` presets; `HtmlDocumentFormatter` did not mention that inline tables
   round-trip; `RtfDocumentFormatter` did not say that writing covers more than reading (merges and shading

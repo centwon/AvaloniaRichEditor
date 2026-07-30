@@ -4,12 +4,16 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace AvaloniaRichEditor.Formatters;
+using AvaloniaRichEditor.Formatters;
+
+namespace AvaloniaRichEditor.Demo;
 
 /// <summary>Round-trip validation harness: for every <c>*.html</c> in a corpus directory, runs
 /// <c>ParseHtml → ToHtml</c> and reports which rich-text feature tokens survived.
-/// Heuristic (token counts, not strict DOM diff) — useful for CI regression checks.</summary>
-public static class RoundTripHarness
+/// Heuristic (token counts, not strict DOM diff) — useful for CI regression checks.
+/// <para>Lives in the demo, not the library: it is the <c>--roundtrip</c> dev tool, driven from
+/// <see cref="Program"/>, and uses nothing but the public formatter API.</para></summary>
+internal static class RoundTripHarness
 {
     // (label, regex over HTML) pairs describing the features we care about for HTML round-trip fidelity.
     private static readonly (string Label, Regex Rx)[] Features =

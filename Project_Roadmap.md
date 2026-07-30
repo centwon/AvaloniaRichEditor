@@ -208,9 +208,10 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
       넣은 `Leading/TrailingItems` 버튼까지)과 피커 팝업이 닫힐 때 포커스를 돌려준다는 P1 동작 누락
       ⑤ `SetFindHighlight` — "모든 매치 강조"라고 적혀 있으나 실제로는 **현재 선택은 제외**(라운드2 수정)
       ⑥ README의 "RTF round-trippable" — RTF는 비대칭임을 명시.
-      **미결(사용자 판단 필요)**: `Formatters.RoundTripHarness`가 **public**인데 이건 `--roundtrip` CLI 검증용
-      개발 도구다(라이브러리 소비자 대상 API가 아님). 1.0에서 `internal`로 내리면 breaking이지만 지금이 그럴
-      마지막 시점 — 0.9.0에 이미 나갔으므로 남길지/내릴지 결정 필요.
+      **`RoundTripHarness` 공개 표면 정리(사용자 승인, 2026-07-30)**: `internal`로 내리는 대신 **데모 프로젝트로
+      이동**(`samples/AvaloniaRichEditor.Demo/RoundTripHarness.cs`, `internal`). 공개 포매터 API만 쓰므로
+      `InternalsVisibleTo`가 필요 없고, 라이브러리가 개발 도구를 아예 싣지 않게 된다. 공개 API 제거라 breaking —
+      그래서 1.0 동결 시점인 지금 한다(`*REMOVED*` 마커로 회수). `--roundtrip` 재실행으로 동작 확인 완료.
 - [ ] **P6 · mac/Linux 기능 실검증** — 3-OS CI는 그린이나 실기 확인은 미완(헤드리스 한계: 이미지 디코드 등)
 
 **릴리스 시 정리할 것**

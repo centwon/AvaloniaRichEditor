@@ -15,7 +15,7 @@ sealed class Program
         if (args.Length >= 2 && args[0] == "--roundtrip")
         {
             BuildAvaloniaApp().SetupWithoutStarting();
-            AvaloniaRichEditor.Formatters.RoundTripHarness.Run(args[1], args.Length >= 3 ? args[2] : args[1]);
+            RoundTripHarness.Run(args[1], args.Length >= 3 ? args[2] : args[1]);
             return;
         }
 

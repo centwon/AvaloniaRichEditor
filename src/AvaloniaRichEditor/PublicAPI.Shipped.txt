@@ -303,7 +303,6 @@ AvaloniaRichEditor.Documents.TextRange.TextRange(AvaloniaRichEditor.Documents.Te
 AvaloniaRichEditor.Formatters.DocumentPackage
 AvaloniaRichEditor.Formatters.DocumentSerializer
 AvaloniaRichEditor.Formatters.HtmlDocumentFormatter
-AvaloniaRichEditor.Formatters.RoundTripHarness
 AvaloniaRichEditor.RichEditorLocalization
 override AvaloniaRichEditor.Controls.RichEditor.MeasureOverride(Avalonia.Size availableSize) -> Avalonia.Size
 override AvaloniaRichEditor.Controls.RichEditor.OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
@@ -337,7 +336,6 @@ static AvaloniaRichEditor.Formatters.DocumentSerializer.Deserialize(string! json
 static AvaloniaRichEditor.Formatters.DocumentSerializer.Serialize(AvaloniaRichEditor.Documents.FlowDocument! document) -> string!
 static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtml(string! html, bool allowLocalFileImages = true) -> AvaloniaRichEditor.Documents.FlowDocument!
 static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ToHtml(AvaloniaRichEditor.Documents.FlowDocument! doc) -> string!
-static AvaloniaRichEditor.Formatters.RoundTripHarness.Run(string! inDir, string! outDir) -> void
 static AvaloniaRichEditor.RichEditorLocalization.GetString(string! key) -> string!
 static AvaloniaRichEditor.RichEditorLocalization.Language.get -> string!
 static AvaloniaRichEditor.RichEditorLocalization.Language.set -> void
