@@ -153,6 +153,15 @@ public partial class RichEditorToolbar : UserControl
               || e.Property == RichEditor.ShowPageBoundariesProperty) SyncPage();
     }
 
+    // A picker's popup takes focus while it is open, so the caret stops being painted and the next
+    // keystroke would go to whatever the popup left focused. Hand focus back to the editor on close —
+    // the same guarantee the strip's buttons give by refusing focus outright.
+    private Flyout PickerFlyout(Flyout f)
+    {
+        f.Closed += (_, _) => Target?.Focus();
+        return f;
+    }
+
     // Clears Focusable on every Button in a built subtree. Host-supplied Leading/TrailingItems are walked
     // too: they sit in the same strip, so a focus grab there hides the caret just the same.
     private static void DisableButtonFocus(Control c)
@@ -509,7 +518,7 @@ public partial class RichEditorToolbar : UserControl
         hexRow.Children.Add(applyBtn);
         panel.Children.Add(hexRow);
 
-        btn.Flyout = new Flyout { Content = panel };
+        btn.Flyout = PickerFlyout(new Flyout { Content = panel });
         return btn;
     }
 
@@ -577,7 +586,7 @@ public partial class RichEditorToolbar : UserControl
         var panel = new StackPanel { Spacing = 4 };
         panel.Children.Add(grid);
         panel.Children.Add(label);
-        btn.Flyout = new Flyout { Content = panel };
+        btn.Flyout = PickerFlyout(new Flyout { Content = panel });
         return btn;
     }
 
@@ -646,7 +655,7 @@ public partial class RichEditorToolbar : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
         ToolTip.SetTip(presets, Loc("LineSpacing"));
-        var flyout = new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft };
+        var flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft });
         var panel = new StackPanel { MinWidth = 64 };
         foreach (var pct in SpacingPercents)
         {
@@ -731,7 +740,7 @@ public partial class RichEditorToolbar : UserControl
             Padding = new Thickness(2, 0), MinWidth = 16, VerticalAlignment = VerticalAlignment.Center,
         };
         ToolTip.SetTip(presets, tip);
-        var flyout = new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft };
+        var flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft });
         var panel = new StackPanel { MinWidth = 64 };
         foreach (var (style, g) in options)
         {

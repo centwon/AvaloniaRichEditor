@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Themes.Fluent;
 using AvaloniaRichEditor.Tests;
 
 [assembly: AvaloniaTestApplication(typeof(TestAppBuilder))]
@@ -13,6 +14,11 @@ namespace AvaloniaRichEditor.Tests;
 // layout invalidation) runs on a real UI thread without a display.
 public class TestAppBuilder
 {
+    // The Fluent theme is here for one reason: a popup (context menu, toolbar flyout) can only open
+    // into the overlay layer that lives in the Window template, and an untemplated window has none, so
+    // every right-click threw "Unable to create IPopupImpl and no overlay layer is found".
     public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<Application>().UseHeadless(new AvaloniaHeadlessPlatformOptions());
+        => AppBuilder.Configure<Application>()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions())
+            .AfterSetup(b => ((Application)b.Instance!).Styles.Add(new FluentTheme()));
 }

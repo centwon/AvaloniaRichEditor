@@ -115,6 +115,18 @@ internal sealed class InteractionHost
         Pump();
     }
 
+    // Clicks the middle of some other control in the window (a toolbar button), which lives outside the
+    // editor's coordinate space.
+    public void ClickControl(Control control)
+    {
+        var centre = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), Window)
+                     ?? throw new InvalidOperationException($"{control} is not in the visual tree");
+        Window.MouseDown(centre, MouseButton.Left);
+        Pump();
+        Window.MouseUp(centre, MouseButton.Left);
+        Pump();
+    }
+
     public void Move(Point doc, RawInputModifiers modifiers = RawInputModifiers.None)
     {
         Window.MouseMove(ToWindow(doc), modifiers);
