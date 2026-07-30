@@ -11,6 +11,7 @@ test.html
 test.json
 bench-results.txt
 bench-text-results.txt
+bench-table-results.txt
 
 # Round-trip harness output
 tests/roundtrip-out/

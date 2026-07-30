@@ -19,13 +19,15 @@ sealed class Program
             return;
         }
 
-        // Performance measurement harness: AvaloniaRichEditor.Demo.exe --bench (image-heavy, N6-6)
-        // or --bench-text (large text documents, gate ③). Opens a real window, runs scripted scenarios,
-        // writes bench[-text]-results.txt, exits.
-        if (args.Length >= 1 && (args[0] == "--bench" || args[0] == "--bench-text"))
+        // Performance measurement harness: AvaloniaRichEditor.Demo.exe --bench (image-heavy, N6-6),
+        // --bench-text (large text documents, gate ③) or --bench-table (nested/inline tables + the IME
+        // composition path, P4). Opens a real window, runs scripted scenarios, writes the results file,
+        // exits.
+        if (args.Length >= 1 && (args[0] == "--bench" || args[0] == "--bench-text" || args[0] == "--bench-table"))
         {
             BenchHarness.Enabled = true;
             BenchHarness.TextMode = args[0] == "--bench-text";
+            BenchHarness.TableMode = args[0] == "--bench-table";
         }
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
