@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
@@ -120,6 +121,15 @@ public partial class RichEditorToolbar : UserControl
 
     private void OnLanguageChanged(object? sender, EventArgs e)
     {
+        // The event is raised on whatever thread set the language, and rebuilding the strip creates
+        // Avalonia controls — thread-affine objects. A host that switches language from a background
+        // thread (or any worker) would otherwise take down the app on "the calling thread cannot access
+        // this object"; hop to the UI thread instead.
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnLanguageChanged(sender, e));
+            return;
+        }
         Build();
         Sync();
     }

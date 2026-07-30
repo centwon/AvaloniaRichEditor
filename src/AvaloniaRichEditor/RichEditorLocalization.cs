@@ -305,7 +305,9 @@ public static class RichEditorLocalization
         }
     }
 
-    /// <summary>Raised after <see cref="Language"/> changes or new strings are registered for the active language.</summary>
+    /// <summary>Raised after <see cref="Language"/> changes or new strings are registered for the active
+    /// language. Raised synchronously on the thread that made the change, so a handler that touches UI
+    /// must marshal to the UI thread itself (the built-in <see cref="Controls.RichEditorToolbar"/> does).</summary>
     public static event EventHandler? LanguageChanged;
 
     /// <summary>
