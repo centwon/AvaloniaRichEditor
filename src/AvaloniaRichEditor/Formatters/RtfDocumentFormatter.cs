@@ -104,7 +104,11 @@ internal sealed class RtfParser
         while (_i < _s.Length)
         {
             char c = _s[_i];
-            if (c == '{') { _stack.Push(_st); _i++; }
+            // Commit the text collected so far BEFORE descending into a group. A group can switch to a
+            // destination we skip ({\*\nesttableprops …}, bookmarks, fields — all normal in Word output),
+            // and the closing brace's FlushRun then runs with that destination still active and throws the
+            // pending run away. Word documents lost the text preceding any such group.
+            if (c == '{') { if (_st.Dest == Dest.Normal) FlushRun(); _stack.Push(_st); _i++; }
             else if (c == '}')
             {
                 if (_st.Dest == Dest.Pict) FinalizePict(); else FlushRun();
@@ -197,12 +201,15 @@ internal sealed class RtfParser
             case "tab": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
             case "pard": break; // paragraph-property reset: nothing we track resets here
 
-            // tables
-            case "trowd": StartRow(); break;
-            case "cell": EndCell(); break;
-            case "row": EndRow(); break;
+            // tables. Every one of these is guarded by the destination: Word writes a nested table's row
+            // definition inside the ignorable group {\*\nesttableprops \trowd …\nestrow}, and acting on
+            // control words we are supposed to be skipping started a fresh row mid-cell — which threw
+            // away the text the parent cell had accumulated so far.
+            case "trowd": if (_st.Dest == Dest.Normal) StartRow(); break;
+            case "cell": if (_st.Dest == Dest.Normal) EndCell(); break;
+            case "row": if (_st.Dest == Dest.Normal) EndRow(); break;
             case "intbl": break;                  // structure is driven by \cell/\row
-            case "cellx": _curCellx.Add(p ?? 0); break; // column boundary, for source-width preservation
+            case "cellx": if (_st.Dest == Dest.Normal) _curCellx.Add(p ?? 0); break; // column boundary, for source-width preservation
 
             // Nested tables (B deferred): the model can't nest a table in a cell, so flatten —
             // nested cells become tab-separated, nested rows newline-separated, inside the parent cell.
@@ -553,10 +560,26 @@ internal sealed class RtfWriter
         double headingSize = heading ? HeadingSize(p.HeadingLevel) : 0;
         foreach (var inline in p.Inlines)
         {
-            if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, heading, headingSize);
-            else if (inline is InlineImage img && img.RawBytes != null) WritePict(img.RawBytes, img.MimeType, img.Width, img.Height);
+            // RTF has no inline table, so one splits its host paragraph: the text before it, then the
+            // table as a block-level one, then the rest as a fresh paragraph. Word/HWP show the same
+            // content in the same order; only the "inside the line" placement is lost (our own .flow and
+            // HTML keep it).
+            if (inline is InlineTable it)
+            {
+                _body.Append(@"\par").Append('\n');
+                WriteTable(it.Table);
+                _body.Append(@"\pard ");
+                continue;
+            }
+            WriteInline(inline, heading, headingSize);
         }
         _body.Append(@"\par").Append('\n');
+    }
+
+    private void WriteInline(Inline inline, bool heading, double headingSize)
+    {
+        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, heading, headingSize);
+        else if (inline is InlineImage img && img.RawBytes != null) WritePict(img.RawBytes, img.MimeType, img.Width, img.Height);
     }
 
     private void WriteRun(Run r, bool heading, double headingSize)
@@ -578,38 +601,102 @@ internal sealed class RtfWriter
         _body.Append('}');
     }
 
-    private void WriteTable(TableBlock tb)
+    // `depth` is the RTF table nesting level (\itap): 1 for a top-level table, 2+ for a table inside a
+    // cell, which RTF writes with \nestcell/\nestrow instead of \cell/\row.
+    private void WriteTable(TableBlock tb, int depth = 1)
     {
         for (int row = 0; row < tb.Rows; row++)
         {
-            _body.Append(@"\trowd");
-            // Cumulative right cell boundaries in twips (px*15), from the column widths.
+            var rowDef = new StringBuilder();
+            rowDef.Append(@"\trowd");
+            if (depth > 1) rowDef.Append($@"\itap{depth}");
+            // Cumulative right cell boundaries in twips (px*15), from the column widths. Each boundary is
+            // preceded by that cell's own properties: merge flags and shading.
             int x = 0;
             for (int col = 0; col < tb.Columns; col++)
             {
+                var (cs, rs) = tb.SpanOf(row, col);
+                bool covered = tb.IsCovered(row, col);
+                var (ar, ac) = tb.AnchorOf(row, col);
+                // Horizontal merge: the anchor opens the range, the columns it covers continue it.
+                if (cs > 1 && !covered) rowDef.Append(@"\clmgf");
+                else if (covered && ar == row) rowDef.Append(@"\clmrg");
+                // Vertical merge: same, down the rows.
+                if (rs > 1 && !covered) rowDef.Append(@"\clvmgf");
+                else if (covered && ar != row) rowDef.Append(@"\clvmrg");
+                // Cell shading uses the colour table, like text colour.
+                int bg = ColorIndex(tb.Cells[ar][ac].Background);
+                if (bg > 0) rowDef.Append($@"\clcbpat{bg}");
+
                 int wpx = col < tb.ColumnWidths.Count ? (int)tb.ColumnWidths[col] : 100;
                 x += wpx * 15;
-                _body.Append($@"\cellx{x}");
+                rowDef.Append($@"\cellx{x}");
             }
+
+            // A nested row's definition follows its cells, wrapped in an ignorable group; a top-level
+            // row's precedes them.
+            if (depth == 1) _body.Append(rowDef);
             for (int col = 0; col < tb.Columns; col++)
             {
-                _body.Append(@"\pard\intbl ");
-                var cell = tb.Cells[row][col];
-                // Every paragraph of the cell, separated by \par (P3/P4 multi-paragraph cells).
-                bool firstCellPara = true;
-                foreach (var cblk in cell.Blocks)
-                {
-                    if (cblk is not Paragraph cpara) continue;
-                    if (!firstCellPara) _body.Append(@"\par ");
-                    firstCellPara = false;
-                    foreach (var inline in cpara.Inlines)
-                        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
-                }
-                _body.Append(@"\cell");
+                _body.Append(@"\pard\intbl");
+                if (depth > 1) _body.Append($@"\itap{depth}");
+                _body.Append(' ');
+                WriteCellContent(tb.Cells[row][col], depth);
+                _body.Append(depth == 1 ? @"\cell" : @"\nestcell");
             }
-            _body.Append(@"\row").Append('\n');
+            if (depth == 1)
+                _body.Append(@"\row").Append('\n');
+            else
+                // \nesttableprops is ignorable: a reader that doesn't do nested tables still sees the
+                // cell text (ours flattens it into the parent cell), which is why this can't corrupt a
+                // document. \nonesttables carries the same fallback for very old readers.
+                _body.Append(@"{\*\nesttableprops").Append(rowDef).Append(@"\nestrow}{\nonesttables\par}").Append('\n');
         }
-        _body.Append(@"\pard").Append('\n');
+        if (depth == 1) _body.Append(@"\pard").Append('\n');
+    }
+
+    // Everything a cell can hold: several paragraphs (separated by \par), block images, dividers, and
+    // tables — nested ones and the inline tables living in a cell paragraph, both written one \itap deeper.
+    private void WriteCellContent(TableCell cell, int depth)
+    {
+        bool first = true;
+        foreach (var blk in cell.Blocks)
+        {
+            if (blk is Paragraph cpara)
+            {
+                if (!first) _body.Append(@"\par ");
+                first = false;
+                if (cpara.ListType != ListKind.None)
+                {
+                    WriteEscaped(Controls.RichEditor.ListMarkerText(cpara.ListType, cpara.ListMarker, 1));
+                    _body.Append(@"\tab ");
+                }
+                bool heading = cpara.HeadingLevel is >= 1 and <= 6;
+                double headingSize = heading ? HeadingSize(cpara.HeadingLevel) : 0;
+                foreach (var inline in cpara.Inlines)
+                {
+                    if (inline is InlineTable it) WriteTable(it.Table, depth + 1);
+                    else WriteInline(inline, heading, headingSize);
+                }
+            }
+            else if (blk is TableBlock nested)
+            {
+                first = false;
+                WriteTable(nested, depth + 1);
+            }
+            else if (blk is ImageBlock cib && cib.RawBytes != null)
+            {
+                if (!first) _body.Append(@"\par ");
+                first = false;
+                WritePict(cib.RawBytes, cib.MimeType, cib.Width, cib.Height);
+            }
+            else if (blk is DividerBlock)
+            {
+                if (!first) _body.Append(@"\par ");
+                first = false;
+                _body.Append(@"\brdrb\brdrs\brdrw10\brsp20 ");
+            }
+        }
     }
 
     // {\*\shppict{\pict ...}} — the modern wrapper our parser un-skips; bytes go out as hex, size in twips.
