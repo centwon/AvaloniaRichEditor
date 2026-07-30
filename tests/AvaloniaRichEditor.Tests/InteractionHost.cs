@@ -19,8 +19,11 @@ namespace AvaloniaRichEditor.Tests;
 // Two hard constraints, both measured:
 //   * The window must be Show()n. Without it input never reaches the control.
 //   * Never call Close(). It tears the headless platform down and every later test in the assembly
-//     fails. Hosts are therefore leaked on purpose; they cost a window each and nothing more.
-internal sealed class InteractionHost
+//     fails. The window therefore stays open for the rest of the run; Dispose only detaches its content.
+//     That matters for the toolbar: while attached it holds a subscription to the static
+//     RichEditorLocalization.LanguageChanged, so a left-over one would rebuild itself off the UI thread
+//     when a later (non-Avalonia) test changes the language, and crash on thread affinity.
+internal sealed class InteractionHost : IDisposable
 {
     public Window Window { get; }
     public RichEditor Editor { get; }
@@ -57,6 +60,14 @@ internal sealed class InteractionHost
         editor.Focus();
         host.Pump();
         return host;
+    }
+
+    // Detaches the content from the visual tree, dropping whatever it subscribed to on attach. The
+    // window itself has to stay open (see the note above).
+    public void Dispose()
+    {
+        Window.Content = null;
+        Pump();
     }
 
     // Runs pending dispatcher work and one layout pass, the way a frame would.

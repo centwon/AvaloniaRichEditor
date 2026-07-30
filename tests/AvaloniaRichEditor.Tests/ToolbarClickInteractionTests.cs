@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -15,13 +16,23 @@ namespace AvaloniaRichEditor.Tests;
 // ToolbarFocusTests asserts no button is Focusable, which is how the round 3 fix was written. That is a
 // property check, not the behaviour: what broke was that clicking a button stole focus, so the caret
 // vanished and the next keystroke went to the button. These click for real and then keep typing.
-public class ToolbarClickInteractionTests
+public class ToolbarClickInteractionTests : IDisposable
 {
-    private static (InteractionHost host, RichEditorToolbar toolbar) Setup(string html = "<p>abc</p>")
+    private readonly List<InteractionHost> _hosts = new();
+
+    // An attached toolbar listens to the static LanguageChanged event, so leaving one in the tree makes a
+    // later test that changes the language rebuild it off the UI thread. Detach at the end of each test.
+    public void Dispose()
+    {
+        foreach (var h in _hosts) h.Dispose();
+    }
+
+    private (InteractionHost host, RichEditorToolbar toolbar) Setup(string html = "<p>abc</p>")
     {
         var ed = new RichEditor { PageSize = RichEditorPageSize.Continuous };
         ed.LoadHtml(html);
         var pair = InteractionHost.CreateWithToolbar(ed);
+        _hosts.Add(pair.host);
         pair.host.Click(new Point(0, 8)); // caret into the text, as the user would before using a button
         return pair;
     }
