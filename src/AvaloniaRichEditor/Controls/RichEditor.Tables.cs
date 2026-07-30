@@ -267,9 +267,7 @@ public partial class RichEditor
         var loc = _caretPosition.Paragraph != null ? FindCell(_caretPosition.Paragraph) : null;
         if (loc == null)
         {
-            // Outside a table, Shift+Tab outdents (Word/HWP). It used to fall into the same branch as
-            // plain Tab and type four spaces — the opposite of what the key means.
-            if (shift) { Indent(-20); return; }
+            if (shift) { ShiftTabOutsideTable(); return; }
             if (Document != null) PushUndo();
             InsertText("    ");
             return;
@@ -304,6 +302,35 @@ public partial class RichEditor
             if (Document != null) UpdateParents(Document);
             FocusCell(top.Cells[top.Rows - 1][0].Para);
         }
+    }
+
+    // Shift+Tab outside a table has to undo what Tab did there. Tab types four spaces, so this removes
+    // up to four spaces immediately before the caret; only when there are none — the paragraph was
+    // indented from the toolbar or the shortcut instead — does it fall back to outdenting the paragraph.
+    // Outdenting alone looked like the key did nothing after a Tab, because the two act on different
+    // things: literal spaces in the text versus the paragraph's Indent.
+    private void ShiftTabOutsideTable()
+    {
+        var p = _caretPosition.Paragraph;
+        if (p != null && _selectionStart == _selectionEnd)
+        {
+            string plain = BuildPlain(p);
+            int off = System.Math.Clamp(_caretPosition.Offset, 0, plain.Length);
+            int start = off;
+            while (start > 0 && off - start < 4 && plain[start - 1] == ' ') start--;
+            if (start < off)
+            {
+                if (Document != null) PushUndo();
+                DeleteLocalText(p, start, off - start);
+                _caretPosition.Offset = start;
+                CollapseSelectionToCaret();
+                MarkTextChanged();
+                InvalidateVisual();
+                NotifyStatus();
+                return;
+            }
+        }
+        Indent(-20);
     }
 
     // All anchor cells in document order, descending into nested tables: each cell is followed by the

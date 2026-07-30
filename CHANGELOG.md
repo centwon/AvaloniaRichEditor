@@ -200,8 +200,15 @@ Found by reading every source file end to end; each is covered by a regression t
   caret out from under the shortcut being typed. The same fall-through cancelled a selected image
   before its Ctrl+C could arrive. Modifier keys (Shift/Ctrl/Alt/Win, Caps/Num/Scroll Lock) are now
   ignored by the key handler, which acts on none of them.
+- **Typing never scrolled the caret back into view.** Every other edit reaches the bring-into-view
+  request through `ResetCaretBlink`, but the typing path deliberately skips that call — it would end
+  the undo coalescing run and give each keystroke its own checkpoint — so nothing asked the host to
+  scroll. The caret walked off the bottom as text grew, most visibly inside a table cell, which expands
+  downward as its content wraps. Typing now raises the request without disturbing the coalescing.
 - **Shift+Tab outside a table typed four spaces.** It fell into the same branch as plain Tab, so the
-  key did the opposite of what it means. It now outdents the selected paragraphs, like Word and HWP.
+  key did the opposite of what it means. It now undoes what Tab did — removing up to four spaces
+  immediately before the caret — and falls back to outdenting the paragraph when there are none, so an
+  indent set from the toolbar is still reachable from the keyboard.
 - **Clicking while the IME was composing landed at the wrong offset.** The glyphs on screen include the
   preedit but the hit-test read the plain layout, so a click resolved to the position it would have had
   without the composition — drifting further the longer the composition grew, and clamping to the end of

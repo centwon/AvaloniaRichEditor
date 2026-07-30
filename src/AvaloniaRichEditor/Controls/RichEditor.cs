@@ -733,6 +733,12 @@ public partial class RichEditor : Control
         // Runs after the insertion so the space itself stays outside the linked range.
         if (AutoLinkOnType && (text == " " || text == "\t")) TryAutoLink(_caretPosition.Paragraph, preCaret);
         MarkTextChanged();
+        // Typing has to scroll the caret back into view. Every other edit reaches this through
+        // ResetCaretBlink, but the typing path deliberately avoids that call — it would end the undo
+        // coalescing run and give every keystroke its own checkpoint — so the flag is set directly.
+        // Without it the caret walked off the bottom as text grew, most visibly inside a table cell,
+        // which expands downward as its content wraps.
+        _bringCaretIntoView = true;
         InvalidateVisual();
         NotifyStatus();
     }
