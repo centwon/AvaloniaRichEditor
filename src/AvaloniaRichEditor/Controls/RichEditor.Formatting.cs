@@ -302,9 +302,16 @@ public partial class RichEditor
             }
             else
             {
-                var c = (Inline)inl.Clone();
-                c.Parent = cur;
-                cur.Inlines.Add(c);
+                // MOVE, don't clone. Only a run straddling a '\n' has to become new objects; everything
+                // else appears exactly once in the output, and the source paragraph is spliced out of the
+                // document on return. Cloning an InlineImage or InlineTable here replaced it with a copy
+                // and left the original — with its cell paragraphs — detached, so a caret inside an
+                // inline table's cell was orphaned by toggling a bullet on its host paragraph: it pointed
+                // into a subtree no longer in the document, and typing went nowhere visible. (Safe to
+                // re-parent in place: the enumeration doesn't modify p.Inlines, and the undo checkpoint
+                // was taken before any of this.)
+                inl.Parent = cur;
+                cur.Inlines.Add(inl);
             }
         }
         result.Add(cur);

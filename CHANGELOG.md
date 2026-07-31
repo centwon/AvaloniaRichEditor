@@ -113,6 +113,14 @@ process down, all now covered by tests.
 
 ### Fixed
 Found by reading every source file end to end; each is covered by a regression test.
+- **Turning on a list detached an inline table or image in the same paragraph.** Converting a paragraph
+  to a list item splits its hard lines into new paragraphs and splices those into the document — and it
+  *cloned* every non-Run inline into them, leaving the original object with the discarded source
+  paragraph. A caret inside an inline table's cell was then pointing into a subtree no longer in the
+  document: typing went nowhere visible, and the selection chrome for an inline image tracked an object
+  that had been replaced by a copy. Only a run straddling a newline has to become new objects; every
+  other inline is now moved, so it is the same instance on both sides of the toggle. Found by a
+  randomized edit-sequence run checked against the structural invariants after every step.
 - **Interaction state survived a document swap.** Assigning a new `Document` left the selected block,
   the block caret, the selected inline image and cell-selection mode pointing into the document just
   replaced. That kept the whole old tree alive for the lifetime of the editor, and left the commands
