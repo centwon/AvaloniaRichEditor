@@ -77,8 +77,12 @@ public static class DocumentSerializer
         return dto;
     }
 
-    /// <summary>Deserializes a <see cref="FlowDocument"/> from a JSON string produced by <see cref="Serialize"/>.
-    /// Returns an empty document on parse errors. Image decoding is deferred to first render.</summary>
+    /// <summary>Deserializes a <see cref="FlowDocument"/> from a JSON string produced by
+    /// <see cref="Serialize"/>. Image decoding is deferred to first render.</summary>
+    /// <exception cref="JsonException"><paramref name="json"/> is not valid JSON. Malformed input is
+    /// reported rather than silently read as an empty document, so a host cannot mistake a damaged file
+    /// for an empty one and overwrite it. A literal <c>null</c> is valid JSON and does yield an empty
+    /// document.</exception>
     public static FlowDocument Deserialize(string json)
     {
         var (dto, pool) = ParseJson(json);
@@ -253,8 +257,14 @@ public static class DocumentSerializer
 
     // ---- dto -> model ----
 
-    private static Block? DtoToBlock(BlockDto d, Dictionary<string, (byte[] Bytes, string Mime)> pool)
+    // Ceiling on a table's declared column count, which pads short rows and so gets allocated. The rows
+    // themselves need no cap: they come from the cells present in the file, which the input size bounds.
+    // Far beyond any real document, and matched to the HTML importer's own cap.
+    private const int MaxTableDimension = 1000;
+
+    private static Block? DtoToBlock(BlockDto? d, Dictionary<string, (byte[] Bytes, string Mime)> pool)
     {
+        if (d == null) return null; // a JSON null inside "Blocks" must not take the load down
         switch (d.Type)
         {
             case "Divider":
@@ -275,7 +285,11 @@ public static class DocumentSerializer
                     return ib;
                 }
             case "Table":
-                var tb = new TableBlock(Math.Max(1, d.Rows), Math.Max(1, d.Columns));
+                // 1x1, NOT the declared size: everything the constructor builds is cleared on the next
+                // three lines and rebuilt from the cells that actually exist, so sizing it from
+                // attacker-controlled numbers only ever wasted memory — a file claiming 100000000 rows
+                // exhausted it before a single cell was read.
+                var tb = new TableBlock(1, 1);
                 tb.Indent = d.Indent;
                 tb.MarginTop = d.MarginTop ?? 0;
                 tb.MarginBottom = d.MarginBottom ?? 10;
@@ -288,9 +302,11 @@ public static class DocumentSerializer
                     foreach (var rowD in d.Cells)
                     {
                         var row = new List<TableCell>();
+                        if (rowD == null) { tb.Cells.Add(row); continue; }
                         foreach (var cd in rowD)
                         {
                             TableCell cell;
+                            if (cd == null) { row.Add(new TableCell()); continue; } // JSON null cell
                             if (cd.Type == "Cell")
                             {
                                 // Multi-block cell (P4): rebuild every block, recursing for nested tables.
@@ -314,7 +330,9 @@ public static class DocumentSerializer
                         tb.Cells.Add(row);
                     }
                 tb.Rows = tb.Cells.Count;
-                int maxCols = Math.Max(1, d.Columns);
+                // The declared width pads short rows, so it is allocated too — cap it. The widest row
+                // that really exists always wins below, so a legitimate document is unaffected.
+                int maxCols = Math.Clamp(d.Columns, 1, MaxTableDimension);
                 foreach (var row in tb.Cells) if (row.Count > maxCols) maxCols = row.Count;
                 tb.Columns = maxCols;
                 // Pad jagged/short rows so the grid stays rectangular — corrupt or hand-edited JSON
@@ -363,6 +381,7 @@ public static class DocumentSerializer
         if (d.Inlines != null)
             foreach (var id in d.Inlines)
             {
+                if (id == null) continue; // JSON null inside "Inlines"
                 if (id.Type == "Image")
                 {
                     var im = new InlineImage

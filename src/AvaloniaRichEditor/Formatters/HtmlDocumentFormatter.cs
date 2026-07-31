@@ -342,6 +342,10 @@ namespace AvaloniaRichEditor.Formatters
             return System.Text.RegularExpressions.Regex.Replace(s, "\\s+", " ");
         }
 
+        // Ceiling on the column count an imported table may claim. Foreign HTML controls colspan, and
+        // the grid is allocated from it. Far beyond any real document (Word tops out at 63 columns).
+        private const int MaxTableColumns = 1000;
+
         private static TableBlock? ParseTable(HtmlNode node)
         {
             var rows = node.Descendants("tr")
@@ -373,7 +377,12 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     Ensure(occupied[r], col);
                     while (col < occupied[r].Count && occupied[r][col]) col++;
-                    int cs = Math.Max(1, td.GetAttributeValue("colspan", 1));
+                    // Both spans are attacker-controlled (any pasted web page is foreign input) and the
+                    // occupancy grid is sized from them, so both need a ceiling. rowspan is naturally
+                    // bounded by the rows that actually exist; colspan had none, so a single
+                    // colspan="100000000" grew the grid — and then the TableBlock — until the process
+                    // ran out of memory. No real table is anywhere near the cap.
+                    int cs = Math.Clamp(td.GetAttributeValue("colspan", 1), 1, MaxTableColumns);
                     int rs = Math.Max(1, Math.Min(td.GetAttributeValue("rowspan", 1), R - r));
                     placements[r].Add((col, cs, rs, td));
                     for (int rr = r; rr < r + rs; rr++)
@@ -386,6 +395,7 @@ namespace AvaloniaRichEditor.Formatters
                 }
             }
             if (colCount == 0) return null;
+            if (colCount > MaxTableColumns) colCount = MaxTableColumns;
 
             var tb = new TableBlock(R, colCount);
             // Restore per-column widths from <colgroup><col style="width:Npx">, if the export emitted them
