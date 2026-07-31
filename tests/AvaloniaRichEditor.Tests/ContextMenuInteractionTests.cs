@@ -63,8 +63,14 @@ public class ContextMenuInteractionTests
         doc.Blocks.Add(tb);
         var host = Host(doc);
 
-        // Well inside the first cell, away from the boundary handles.
-        host.Click(new Point(30, 14), MouseButton.Right);
+        // Derive the point from the geometry the renderer actually produced, never a hardcoded y.
+        // NormalizeBlocks puts a paragraph in front of the table, so the table's top depends on the
+        // default font's line height — which differs per machine (Malgun Gothic here, Segoe UI on a
+        // Windows CI runner, another fallback on macOS). A fixed y landed in that leading paragraph on
+        // CI and produced the plain text menu, on every OS but the author's.
+        var row0 = host.RowHandles.First(r => ReferenceEquals(r.tb, tb) && r.rowIndex == 0);
+        var insideFirstCell = new Point(row0.rect.Left + 20, row0.rect.Center.Y - row0.height / 2);
+        host.Click(insideFirstCell, MouseButton.Right);
 
         var menu = OpenMenu(host.Editor);
         Assert.NotNull(menu);
