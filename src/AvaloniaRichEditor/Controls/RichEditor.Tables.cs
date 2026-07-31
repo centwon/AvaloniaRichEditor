@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using AvaloniaRichEditor.Documents;
 
@@ -8,8 +9,18 @@ namespace AvaloniaRichEditor.Controls;
 // row/column structure commands. Part of RichEditor (split out of the main file for readability).
 public partial class RichEditor
 {
-    private (TableBlock tb, int r, int c)? FindCell(Paragraph p)
-        => Document == null ? null : FindCellIn(Document.Blocks, p);
+    // The innermost table + cell holding paragraph p, resolved through the parent chain
+    // (Paragraph -> TableCell -> TableBlock, wired by UpdateParents at any nesting depth, inline
+    // tables included). Was a full-document scan that recursed into every table and every inline
+    // table on each call — and this runs per keystroke, per pointer move and per menu build.
+    private static (TableBlock tb, int r, int c)? FindCell(Paragraph p)
+    {
+        if (p.Parent is not TableCell cell || cell.Parent is not TableBlock tb) return null;
+        for (int r = 0; r < tb.Rows; r++)
+            for (int c = 0; c < tb.Columns; c++)
+                if (ReferenceEquals(tb.Cells[r][c], cell)) return (tb, r, c);
+        return null;
+    }
 
     // The content width of the cell that encloses a nested table `t`, or null if `t` is top-level.
     // Used to clamp a nested table's width on resize so it stays within its cell.
@@ -28,29 +39,115 @@ public partial class RichEditor
         return null;
     }
 
-    // Finds the innermost table + cell directly holding paragraph p, recursing into nested tables
-    // (P4-2b). Returns the deepest enclosing cell so navigation/menus act on the table the caret is in.
-    private static (TableBlock tb, int r, int c)? FindCellIn(System.Collections.Generic.IEnumerable<Block> blocks, Paragraph p)
+    // Drops the cached geometry that a change to `t`'s size invalidates: the table itself, every table
+    // enclosing it, and the host paragraph of any inline table along the way.
+    //
+    // The host paragraph matters because an inline table is laid out INSIDE that paragraph's line box.
+    // Both a resize drag and an IME composition mutate size without going through an edit, so the frame
+    // runs as a "trusted" pass — which returns the cached layout without re-checking its signature. The
+    // table cache alone was evicted, so a resized inline table kept its old line box and the paragraph
+    // only reflowed on the next real edit (measured: 80 -> 80 on resize, 80 -> 206 once the host
+    // paragraph is evicted too).
+    private void InvalidateTableChain(TableBlock t)
     {
-        foreach (var b in blocks)
+        for (var cur = t; cur != null; cur = EnclosingTableOf(cur))
         {
-            if (b is TableBlock tb)
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                    {
-                        var cell = tb.Cells[r][c];
-                        var nested = FindCellIn(cell.Blocks, p);
-                        if (nested != null) return nested;
-                        if (cell.Blocks.Contains(p)) return (tb, r, c);
-                    }
-            // Inline tables live in a paragraph's inlines (milestone B); descend into them too so Tab/
-            // merge/menus find a cell whose caret sits inside an inline table.
-            else if (b is Paragraph para)
-                foreach (var inl in para.Inlines)
-                    if (inl is InlineTable it && FindCellIn(new[] { it.Table }, p) is { } hit)
-                        return hit;
+            _tableLayoutCache.Remove(cur);
+            if (cur.Parent is InlineTable it && it.Parent is Paragraph host) _layoutCache.Remove(host);
         }
+    }
+
+    // ---- staged Ctrl+A (HWP/Excel) ----------------------------------------
+
+    // One stage of Ctrl+A while the caret is inside a table: the cell's contents -> the whole table
+    // -> the enclosing table (one level per press). Returns false when there's no table stage left,
+    // and the caller selects the whole document. The stage is read back off the current selection
+    // rather than counted, so a click or an arrow key in between resets the sequence by itself.
+    private bool TrySelectAllStage()
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null) return false;
+
+        // A whole table is already selected -> climb to the table that contains it, if any; otherwise
+        // let the caller take the last step and select the document.
+        if (_cellSelTable is { } cur && WholeTableSelected(cur))
+            return EnclosingTableOf(cur) is { } outer && SelectWholeTable(outer);
+
+        if (FindCell(p) is not { } loc) return false;
+        var cell = loc.tb.Cells[loc.r][loc.c];
+        // Cell contents already fully selected -> the whole table. A single-cell table has no distinct
+        // table stage, so climb straight to the table around it (or fall through to the document).
+        if (CellEnds(cell) is { } ends && SelectionSpans(ends.first, ends.last))
+            return SelectWholeTable(loc.tb)
+                || (EnclosingTableOf(loc.tb) is { } up && SelectWholeTable(up));
+        return SelectCellContents(cell);
+    }
+
+    // The table one level further out: a table nested in a cell, or — for an inline table — the table
+    // holding the cell its host paragraph lives in. Null when the table is already top-level, so the
+    // climb ends and the next press selects the document.
+    private static TableBlock? EnclosingTableOf(TableBlock t)
+    {
+        if (t.Parent is TableCell c && c.Parent is TableBlock outer) return outer;
+        if (t.Parent is InlineTable it && it.Parent is Paragraph host
+            && host.Parent is TableCell hc && hc.Parent is TableBlock ht) return ht;
         return null;
+    }
+
+    // First and last paragraph of a cell's contents in document order, descending into anything
+    // nested inside it (a nested or inline table's own cells count as cell content).
+    private static (Paragraph first, Paragraph last)? CellEnds(TableCell cell)
+    {
+        Paragraph? first = null, last = null;
+        foreach (var q in ParagraphsInBlocks(cell.Blocks)) { first ??= q; last = q; }
+        return first != null ? (first, last!) : null;
+    }
+
+    private bool SelectionSpans(Paragraph first, Paragraph last)
+        => ReferenceEquals(_selectionStart.Paragraph, first) && _selectionStart.Offset == 0
+        && ReferenceEquals(_selectionEnd.Paragraph, last) && _selectionEnd.Offset == GetParagraphLength(last);
+
+    private bool WholeTableSelected(TableBlock tb)
+        => TableEnds(tb) is { } e && SelectionSpans(e.first, e.last);
+
+    // First/last paragraph of a whole table, taking the first and last LOGICAL (anchor) cells.
+    private static (Paragraph first, Paragraph last)? TableEnds(TableBlock tb)
+    {
+        TableCell? first = null, last = null;
+        foreach (var (_, _, cell) in tb.LogicalCells()) { first ??= cell; last = cell; }
+        if (first == null || ReferenceEquals(first, last)) return null; // single-cell: same as the cell stage
+        return CellEnds(first) is { } f && CellEnds(last!) is { } l ? (f.first, l.last) : null;
+    }
+
+    private bool SelectCellContents(TableCell cell)
+    {
+        if (CellEnds(cell) is not { } e) return false;
+        _cellSelMode = false; _cellSelTable = null;
+        SetSelection(e.first, e.last);
+        return true;
+    }
+
+    // Selects every cell of `tb`. Cell-selection mode makes the renderer fill the cells as a block
+    // (the same chrome a multi-cell drag produces). False for a single-cell table, where this would
+    // repeat the cell stage — the caller then moves on to the next level out.
+    private bool SelectWholeTable(TableBlock tb)
+    {
+        if (TableEnds(tb) is not { } e) return false;
+        _cellSelMode = true;
+        _cellSelTable = tb;
+        SetSelection(e.first, e.last);
+        return true;
+    }
+
+    private void SetSelection(Paragraph first, Paragraph last)
+    {
+        _selectedBlock = null;
+        _caretBlock = null;
+        _selectionStart = new TextPointer(first, 0);
+        _selectionEnd = new TextPointer(last, GetParagraphLength(last));
+        _caretPosition = new TextPointer(last, GetParagraphLength(last));
+        ResetCaretBlink();
+        InvalidateVisual();
     }
 
     // Rectangular cell block (inclusive, span-aware) defined by the two selection *endpoints* — the
@@ -62,15 +159,88 @@ public partial class RichEditor
         if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null) return null;
         if (FindCell(_selectionStart.Paragraph) is not { } s || s.tb != tb) return null;
         if (FindCell(_selectionEnd.Paragraph) is not { } e || e.tb != tb) return null;
-        // Both endpoints in the same cell = a caret/text selection inside one cell, not a cell block.
-        // (Must compare the cells directly: a merged cell spans rows/cols, so a span-expanded bounding
-        // box would otherwise look multi-cell even for a single merged cell.)
-        if (s.r == e.r && s.c == e.c) return null;
+        // Both endpoints in the same cell = a caret/text selection inside one cell, NOT a cell block —
+        // unless cell-selection mode is on for this table, where a single click selects exactly that one
+        // cell as a block (HWP/Excel). (Must compare the cells directly: a merged cell spans rows/cols,
+        // so a span-expanded bounding box would otherwise look multi-cell even for a single merged cell.)
+        if (s.r == e.r && s.c == e.c)
+        {
+            if (!_cellSelMode || !ReferenceEquals(_cellSelTable, tb)) return null;
+            var (cs1, rs1) = tb.SpanOf(s.r, s.c);
+            return (s.r, s.c, s.r + rs1 - 1, s.c + cs1 - 1);
+        }
         var (scs, srs) = tb.SpanOf(s.r, s.c);
         var (ecs, ers) = tb.SpanOf(e.r, e.c);
         int r0 = Math.Min(s.r, e.r), c0 = Math.Min(s.c, e.c);
         int r1 = Math.Max(s.r + srs - 1, e.r + ers - 1), c1 = Math.Max(s.c + scs - 1, e.c + ecs - 1);
         return (r0, c0, r1, c1);
+    }
+
+    // The cells the active cell block covers (row-major, anchors only, span-aware) — exactly the
+    // rectangle the renderer fills. Null when no cell block is active, so callers fall back to the
+    // linear text selection.
+    //
+    // This is what makes the painted selection and the operated-on range the same thing. The cell block
+    // used to be render-only chrome (SelectedCellRange fed the renderer and the context menu, nothing
+    // else), while every edit/format command walked the linear _selectionStart.._selectionEnd run. The
+    // two disagree in both directions: the linear run starts at the drag's offset inside the first cell
+    // (so the text before it survived a Delete), and document order between two corners sweeps in cells
+    // that lie OUTSIDE the rectangle (a vertical block in a 3-column table also caught the cells to its
+    // right). Every command now consults this first.
+    private List<TableCell>? SelectedCellsBlock()
+    {
+        if (!_cellSelMode || _cellSelTable is not { } tb) return null;
+        if (SelectedCellRange(tb) is not { } rg) return null;
+        var cells = new List<TableCell>();
+        var seen = new HashSet<TableCell>();
+        for (int r = Math.Max(0, rg.r0); r <= rg.r1 && r < tb.Rows; r++)
+            for (int c = Math.Max(0, rg.c0); c <= rg.c1 && c < tb.Columns; c++)
+            {
+                var (ar, ac) = tb.AnchorOf(r, c);
+                var cell = tb.Cells[ar][ac];
+                if (seen.Add(cell)) cells.Add(cell); // a merged cell is reached from each covered slot
+            }
+        return cells.Count > 0 ? cells : null;
+    }
+
+    // Every paragraph inside the active cell block, at any depth (nested and inline tables included).
+    private List<Paragraph> CellBlockParagraphs(List<TableCell> cells)
+    {
+        var result = new List<Paragraph>();
+        foreach (var cell in cells) result.AddRange(ParagraphsInBlocks(cell.Blocks));
+        return result;
+    }
+
+    // Selects exactly one cell as a block and enters cell-selection mode: a further single click picks
+    // another cell, a drag extends the block, a double-click drops back to a caret inside the cell.
+    // SelectCellContents is the text-editing counterpart (staged Ctrl+A) — same range, but out of mode.
+    private bool SelectCellAsBlock(TableBlock tb, TableCell cell)
+    {
+        if (CellEnds(cell) is not { } e) return false;
+        _cellSelMode = true;
+        _cellSelTable = tb;
+        SetSelection(e.first, e.last);
+        return true;
+    }
+
+    // Clears the contents of the selected cells, leaving the grid intact (Excel/HWP: Delete on a cell
+    // block empties the cells; removing rows/columns stays an explicit menu action, never a side effect
+    // of one key press). The caret lands in the first cleared cell and the block selection is consumed,
+    // so typing straight after a Delete goes somewhere predictable.
+    private void ClearSelectedCells(List<TableCell> cells)
+    {
+        foreach (var cell in cells)
+        {
+            cell.Blocks.Clear();
+            cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+        }
+        if (Document != null) UpdateParents(Document);
+        _cellSelMode = false;
+        _cellSelTable = null;
+        _caretPosition = new TextPointer(cells[0].Para, 0);
+        CollapseSelectionToCaret();
+        MarkTextChanged();
+        InvalidateMeasure(); // the rows shrink back to their empty height
     }
 
     // True when the box is a mergeable rectangle: spans more than one cell and no anchor inside it
@@ -97,6 +267,7 @@ public partial class RichEditor
         var loc = _caretPosition.Paragraph != null ? FindCell(_caretPosition.Paragraph) : null;
         if (loc == null)
         {
+            if (shift) { ShiftTabOutsideTable(); return; }
             if (Document != null) PushUndo();
             InsertText("    ");
             return;
@@ -131,6 +302,35 @@ public partial class RichEditor
             if (Document != null) UpdateParents(Document);
             FocusCell(top.Cells[top.Rows - 1][0].Para);
         }
+    }
+
+    // Shift+Tab outside a table has to undo what Tab did there. Tab types four spaces, so this removes
+    // up to four spaces immediately before the caret; only when there are none — the paragraph was
+    // indented from the toolbar or the shortcut instead — does it fall back to outdenting the paragraph.
+    // Outdenting alone looked like the key did nothing after a Tab, because the two act on different
+    // things: literal spaces in the text versus the paragraph's Indent.
+    private void ShiftTabOutsideTable()
+    {
+        var p = _caretPosition.Paragraph;
+        if (p != null && _selectionStart == _selectionEnd)
+        {
+            string plain = BuildPlain(p);
+            int off = System.Math.Clamp(_caretPosition.Offset, 0, plain.Length);
+            int start = off;
+            while (start > 0 && off - start < 4 && plain[start - 1] == ' ') start--;
+            if (start < off)
+            {
+                if (Document != null) PushUndo();
+                DeleteLocalText(p, start, off - start);
+                _caretPosition.Offset = start;
+                CollapseSelectionToCaret();
+                MarkTextChanged();
+                InvalidateVisual();
+                NotifyStatus();
+                return;
+            }
+        }
+        Indent(-20);
     }
 
     // All anchor cells in document order, descending into nested tables: each cell is followed by the
@@ -267,6 +467,9 @@ public partial class RichEditor
             var (ar, ac) = loc.tb.AnchorOf(loc.r, loc.c);
             cell = loc.tb.Cells[ar][ac].Para;
         }
+        // Tab navigation lands on the cell's own primary paragraph and highlights it. Selecting the cell
+        // as a *unit* is a different operation (SelectCellAsBlock) — routing Tab through it would drag
+        // the caret into whatever a nested table inside the cell ends with.
         int len = GetParagraphLength(cell);
         _caretPosition = new TextPointer(cell, len);
         _selectionStart = new TextPointer(cell, 0);

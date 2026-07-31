@@ -30,6 +30,10 @@ internal static class BenchHarness
     // --bench-text: large TEXT documents (hundreds of pages) instead of the image scenarios — gate ③
     // (large-document performance: layout/measure/scroll/typing latency + managed memory).
     public static bool TextMode;
+    // --bench-table: documents full of nested and INLINE tables, plus the IME composition path (P4).
+    // Round 3 made every composition update evict the enclosing table chain's geometry cache, and that
+    // runs once per composed character — this mode is where that cost gets a number.
+    public static bool TableMode;
 }
 
 // RichEditor with its managed Render() pass timed — the cost draw culling would cut.
@@ -71,14 +75,24 @@ internal class BenchWindow : Window
     private async Task RunAllAsync()
     {
         string outFile = Path.Combine(Environment.CurrentDirectory,
-            BenchHarness.TextMode ? "bench-text-results.txt" : "bench-results.txt");
+            BenchHarness.TableMode ? "bench-table-results.txt"
+            : BenchHarness.TextMode ? "bench-text-results.txt" : "bench-results.txt");
         try
         {
             _report.AppendLine($"RichEditor bench — {DateTime.Now:yyyy-MM-dd HH:mm} | window {Width}x{Height} | {RuntimeInformation.OSDescription}");
             _report.AppendLine($"build: {(Debugger.IsAttached ? "debugger" : "standalone")}, config: {(IsReleaseBuild() ? "Release" : "Debug")}");
             _report.AppendLine();
 
-            if (BenchHarness.TextMode)
+            if (BenchHarness.TableMode)
+            {
+                _report.AppendLine("mode: nested + INLINE tables (P4) — continuous view, one unit = 2 paragraphs");
+                _report.AppendLine("      + a paragraph hosting an inline table + a 2x3 table whose first cell holds a nested 2x2");
+                _report.AppendLine();
+                foreach (int n in new[] { 20, 50, 100 })
+                    await RunTableScenarioAsync(n);
+                await RunImeCompositionAsync();
+            }
+            else if (BenchHarness.TextMode)
             {
                 _report.AppendLine("mode: large TEXT documents (gate ③) — A4 page view, mixed runs + headings + a table every 50 paragraphs");
                 _report.AppendLine();
@@ -250,6 +264,192 @@ internal class BenchWindow : Window
 
         Focus();
         await SettleAsync();
+    }
+
+    // P4: documents whose cost is dominated by the RECURSIVE table paths — inline tables inside text
+    // lines and tables nested in cells. Both re-measure through LayoutTable/MeasureCellContentHeight and
+    // both keep a geometry cache that edits have to evict, so this is where a chain walk would show up.
+    private async Task RunTableScenarioAsync(int units)
+    {
+        _report.AppendLine($"=== {units} units ===");
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        long memBefore = GC.GetTotalMemory(forceFullCollection: true);
+
+        var doc = BuildTableDoc(units);
+        _editor.Document = doc;
+        _scroller.Offset = default;
+        await SettleAsync();
+
+        int inlineTables = doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines).OfType<InlineTable>().Count();
+        int tables = doc.Blocks.OfType<TableBlock>().Count();
+        _report.AppendLine($"doc: {doc.Blocks.Count} blocks ({tables} block tables, {inlineTables} inline tables, "
+                         + $"{_editor.GetPlainText().Length:N0} chars), extent {_scroller.Extent.Height:N0}px");
+
+        _editor.InvalidateMeasure();
+        var sw = Stopwatch.StartNew();
+        _editor.UpdateLayout();
+        sw.Stop();
+        _report.AppendLine($"full layout (cold):  {sw.Elapsed.TotalMilliseconds:F1} ms");
+
+        var warm = Time(10, () => { _editor.InvalidateMeasure(); _editor.UpdateLayout(); });
+        _report.AppendLine($"re-measure (warm):   median {Median(warm):F1} ms, max {warm.Max():F1} ms  (per caret-move cost)");
+
+        long memAfter = GC.GetTotalMemory(forceFullCollection: true);
+        _report.AppendLine($"managed heap:        {(memAfter - memBefore) / 1024.0 / 1024.0:F1} MB");
+
+        double extent = Math.Max(0, _scroller.Extent.Height - _scroller.Viewport.Height);
+        _editor.RenderMs.Clear();
+        var (fA, dA) = await AnimateScrollAsync(0, extent, TimeSpan.FromSeconds(2), invalidateEachFrame: false);
+        _report.AppendLine($"scroll (composited):  {fA / dA.TotalSeconds:F0} fps  ({_editor.RenderMs.Count} managed renders)");
+        _editor.RenderMs.Clear();
+        var (fB, dB) = await AnimateScrollAsync(extent, 0, TimeSpan.FromSeconds(2), invalidateEachFrame: true);
+        var renders = _editor.RenderMs.ToList();
+        _report.AppendLine($"scroll (invalidated): {fB / dB.TotalSeconds:F0} fps  ({renders.Count} managed renders)");
+        if (renders.Count > 0)
+            _report.AppendLine($"Render() time: median {Median(renders):F1} ms, p95 {Percentile(renders, 95):F1} ms, max {renders.Max():F1} ms");
+
+        // Typing in three places, because they invalidate different amounts: a plain paragraph, a cell
+        // inside a nested table (evicts the chain up to the outer table), and the paragraph that hosts an
+        // inline table (evicts the host paragraph's layout as well).
+        _editor.Focus();
+        foreach (var (label, target) in TypingTargets(doc))
+        {
+            PlaceCaret(target);
+            await SettleAsync();
+            var keys = new List<double>();
+            for (int i = 0; i < 30; i++)
+            {
+                sw.Restart();
+                _editor.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "가" });
+                _editor.UpdateLayout();
+                sw.Stop();
+                keys.Add(sw.Elapsed.TotalMilliseconds);
+            }
+            _report.AppendLine($"typing ({label}): first {keys[0]:F1} ms, rest median {Median(keys.Skip(1).ToList()):F1} ms, max {keys.Skip(1).Max():F1} ms");
+        }
+        _report.AppendLine();
+
+        Focus();
+        await SettleAsync();
+    }
+
+    // P4: the IME composition path. Every composition update splices the preedit into the caret's
+    // paragraph AND evicts the enclosing table chain's geometry cache (round 3), so the cost is paid per
+    // composed character. Measured at the three depths that evict different amounts of the chain.
+    private async Task RunImeCompositionAsync()
+    {
+        _report.AppendLine("=== IME composition (per composed character) ===");
+        var doc = BuildTableDoc(50);
+        _editor.Document = doc;
+        _scroller.Offset = default;
+        await SettleAsync();
+        _editor.Focus();
+
+        // A Hangul syllable is composed jamo by jamo; a long run of them is the worst case, since each
+        // update re-measures with a longer preedit.
+        const string composed = "가나다라마바사아자차카타파하가나다라마바사아자차카타파하";
+
+        foreach (var (label, target) in TypingTargets(doc))
+        {
+            PlaceCaret(target);
+            await SettleAsync();
+
+            var steps = new List<double>();
+            var sw = new Stopwatch();
+            for (int i = 1; i <= composed.Length; i++)
+            {
+                sw.Restart();
+                SetPreedit(composed.Substring(0, i));
+                _editor.UpdateLayout();
+                sw.Stop();
+                steps.Add(sw.Elapsed.TotalMilliseconds);
+            }
+            sw.Restart();
+            SetPreedit(null); // composition committed/cancelled — the chain is evicted once more
+            _editor.UpdateLayout();
+            sw.Stop();
+
+            _report.AppendLine($"composing in {label}: median {Median(steps):F2} ms, p95 {Percentile(steps, 95):F2} ms, "
+                             + $"max {steps.Max():F2} ms over {steps.Count} updates; end {sw.Elapsed.TotalMilliseconds:F2} ms");
+        }
+        _report.AppendLine();
+
+        Focus();
+        await SettleAsync();
+    }
+
+    // The three caret homes the table scenarios measure at, in the document they were given.
+    private static List<(string label, Paragraph target)> TypingTargets(FlowDocument doc)
+    {
+        var list = new List<(string, Paragraph)>();
+        var plain = doc.Blocks.OfType<Paragraph>()
+            .FirstOrDefault(p => !p.Inlines.OfType<InlineTable>().Any());
+        if (plain != null) list.Add(("plain paragraph", plain));
+
+        var host = doc.Blocks.OfType<Paragraph>()
+            .FirstOrDefault(p => p.Inlines.OfType<InlineTable>().Any());
+        if (host != null) list.Add(("inline-table host paragraph", host));
+
+        // A cell of the table nested inside another table's first cell: the deepest chain in the doc.
+        var nested = doc.Blocks.OfType<TableBlock>()
+            .SelectMany(t => t.Cells.SelectMany(r => r))
+            .SelectMany(c => c.Blocks.OfType<TableBlock>())
+            .FirstOrDefault();
+        if (nested != null) list.Add(("nested table cell", nested.Cells[0][0].Para));
+        return list;
+    }
+
+    private void PlaceCaret(Paragraph p)
+    {
+        foreach (var name in new[] { "_caretPosition", "_selectionStart", "_selectionEnd" })
+            typeof(RichEditor).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(_editor, new TextPointer(p, 0));
+    }
+
+    // The IME client's own entry point; private, so the harness reaches it the way the tests do.
+    private void SetPreedit(string? text)
+        => typeof(RichEditor).GetMethod("SetPreedit", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(_editor, new object?[] { text });
+
+    // One unit = two text paragraphs + a paragraph hosting an inline table + a 2×3 table whose first cell
+    // holds a nested 2×2. Enough recursion per unit that the cost is table-dominated, not text-dominated.
+    private static FlowDocument BuildTableDoc(int units)
+    {
+        const string ko = "표 성능 측정용 문단입니다. 중첩 표와 인라인 표가 섞인 문서에서 레이아웃과 타이핑 지연을 실측합니다. ";
+        const string en = "The quick brown fox jumps over the lazy dog inside a cell. ";
+        var doc = new FlowDocument();
+        for (int i = 0; i < units; i++)
+        {
+            for (int j = 0; j < 2; j++)
+            {
+                var p = new Paragraph();
+                p.Inlines.Add(new Run { Text = $"[{i}-{j}] " + ko, FontSize = 14 });
+                p.Inlines.Add(new Run { Text = en, FontSize = 12, Foreground = Brushes.Gray });
+                doc.Blocks.Add(p);
+            }
+
+            var hostPara = new Paragraph();
+            hostPara.Inlines.Add(new Run { Text = $"unit {i} inline: ", FontSize = 14 });
+            var it = new InlineTable { Table = new TableBlock(2, 2) };
+            for (int r = 0; r < 2; r++)
+                for (int c = 0; c < 2; c++)
+                    ((Run)it.Table.Cells[r][c].Para.Inlines[0]).Text = $"i{r}{c}";
+            hostPara.Inlines.Add(it);
+            hostPara.Inlines.Add(new Run { Text = " tail text after the inline table.", FontSize = 14 });
+            doc.Blocks.Add(hostPara);
+
+            var outer = new TableBlock(2, 3);
+            for (int r = 0; r < 2; r++)
+                for (int c = 0; c < 3; c++)
+                    ((Run)outer.Cells[r][c].Para.Inlines[0]).Text = $"r{r}c{c} {en}";
+            var inner = new TableBlock(2, 2);
+            for (int r = 0; r < 2; r++)
+                for (int c = 0; c < 2; c++)
+                    ((Run)inner.Cells[r][c].Para.Inlines[0]).Text = $"n{r}{c}";
+            outer.Cells[0][0].Blocks.Add(inner);
+            doc.Blocks.Add(outer);
+        }
+        return doc;
     }
 
     // A large text document: mostly mixed-format paragraphs, an h2 heading every 25 paragraphs, and a

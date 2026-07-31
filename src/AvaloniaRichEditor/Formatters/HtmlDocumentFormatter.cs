@@ -1,4 +1,4 @@
-using HtmlAgilityPack;
+﻿using HtmlAgilityPack;
 using System.Collections.Generic;
 using System.Linq;
 using AvaloniaRichEditor.Documents;
@@ -10,7 +10,12 @@ namespace AvaloniaRichEditor.Formatters
 {
     /// <summary>Converts between <see cref="FlowDocument"/> and HTML.
     /// Supports full round-trip for bold/italic/underline/strikethrough, colors, sizes, alignment,
-    /// headings, lists, tables (with cell merge), images, hyperlinks, and horizontal rules.</summary>
+    /// headings, lists, tables (with cell merge, per-cell background, nested tables), images,
+    /// hyperlinks, and horizontal rules.
+    /// <para>HTML has no inline table, so an <see cref="InlineTable"/> is emitted as a
+    /// <c>&lt;table&gt;</c> carrying a <c>data-are-inline</c> marker; this parser reads that back onto the
+    /// text line, while HTML from other applications keeps producing a block-level
+    /// <see cref="TableBlock"/>.</para></summary>
     public static class HtmlDocumentFormatter
     {
         // Tags that introduce/contain block-level structure. Their presence means we must
@@ -31,10 +36,12 @@ namespace AvaloniaRichEditor.Formatters
         // Shared across all parses: a new HttpClient per <img> leaks sockets.
         private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
         private static readonly TimeSpan RemoteImageBudget = TimeSpan.FromSeconds(5);
-        [ThreadStatic] private static DateTime _remoteImageDeadline;
-        // Per-parse flag (set from the parameter below); LoadImage is deeply nested, so this rides
-        // alongside the deadline instead of being threaded through every walker.
+        // Per-parse flags (set from the parameters below); LoadImage is deeply nested, so these ride
+        // on the thread instead of being threaded through every walker.
         [ThreadStatic] private static bool _blockLocalFileImages;
+        // When set, remote (http) <img> sources are skipped entirely (no fetch) — the privacy opt-out
+        // pasting HTML otherwise issues HTTP requests, e.g. to tracking pixels.
+        [ThreadStatic] private static bool _blockRemoteImages;
         // When set (by ParseHtmlAsync), remote <img> bytes have already been fetched off the UI
         // thread; LoadImage reads them from here instead of blocking on a synchronous download.
         [ThreadStatic] private static System.Collections.Generic.Dictionary<string, byte[]?>? _prefetchedRemoteImages;
@@ -42,13 +49,13 @@ namespace AvaloniaRichEditor.Formatters
         /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.
         /// When <paramref name="allowLocalFileImages"/> is false, <c>file://</c> image sources are
         /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).
-        /// Remote (<c>http</c>) images are downloaded synchronously on the calling thread (a per-parse
-        /// 5 s budget caps the stall); use <see cref="ParseHtmlAsync"/> to fetch them without blocking.</summary>
-        public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true)
+        /// Remote (<c>http</c>) images are <b>not</b> loaded: this overload never performs network I/O,
+        /// so it cannot stall the calling thread. Use <see cref="ParseHtmlAsync"/> to fetch them.</summary>
+        public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
         {
-            _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget;
             _blockLocalFileImages = !allowLocalFileImages;
-            _prefetchedRemoteImages = null; // sync path downloads inline
+            _blockRemoteImages = !allowRemoteImages;
+            _prefetchedRemoteImages = null; // no prefetch => remote images are skipped, never fetched here
             var doc = LoadHtmlDoc(ref html);
             return BuildDocument(doc, html);
         }
@@ -57,14 +64,17 @@ namespace AvaloniaRichEditor.Formatters
         /// concurrently off the UI thread first, so a slow network can't freeze the UI while pasting
         /// web content. The document model is still built on the calling thread (Avalonia model
         /// objects are thread-affine), so await this from the UI thread.</summary>
-        public static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true)
+        public static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
         {
             var doc = LoadHtmlDoc(ref html);
-            // Off-thread: network only — no model objects created here.
-            var prefetched = await PrefetchRemoteImagesAsync(doc).ConfigureAwait(true);
+            // Off-thread: network only — no model objects created here. Skip the network entirely when
+            // remote images are opted out (privacy).
+            var prefetched = allowRemoteImages
+                ? await PrefetchRemoteImagesAsync(doc).ConfigureAwait(true)
+                : new System.Collections.Generic.Dictionary<string, byte[]?>();
             // Back on the calling (UI) thread: build the model, reading the prefetched image bytes.
-            _remoteImageDeadline = DateTime.UtcNow + RemoteImageBudget; // data:/file: images still honored
             _blockLocalFileImages = !allowLocalFileImages;
+            _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = prefetched;
             try { return BuildDocument(doc, html); }
             finally { _prefetchedRemoteImages = null; }
@@ -149,8 +159,31 @@ namespace AvaloniaRichEditor.Formatters
 
                 if (name == "table")
                 {
-                    Flush();
                     var tbl = ParseTable(child);
+                    // Our own export marks a table that was inline (see EmitTable): put it back on the text
+                    // line instead of flushing the paragraph, following the same ladder as the small-icon
+                    // <img> case — the pending paragraph, else the preceding one, else a new one.
+                    if (tbl != null && child.GetAttributeValue("data-are-inline", "") == "1")
+                    {
+                        var it = new InlineTable { Table = tbl };
+                        if (current != null) current.Inlines.Add(it);
+                        else if (flow.Blocks.Count > 0 && flow.Blocks[flow.Blocks.Count - 1] is Paragraph lastPara)
+                        {
+                            // Reopen that paragraph as the pending one (Flush re-adds it): HTML parsers
+                            // close a <p> when a <table> starts, so the text that followed the table
+                            // arrives as a later sibling and has to land back on the same line.
+                            lastPara.Inlines.Add(it);
+                            flow.Blocks.RemoveAt(flow.Blocks.Count - 1);
+                            current = lastPara;
+                        }
+                        else
+                        {
+                            current = new Paragraph();
+                            current.Inlines.Add(it);
+                        }
+                        continue;
+                    }
+                    Flush();
                     if (tbl != null) flow.Blocks.Add(tbl);
                 }
                 else if (name == "img")
@@ -309,6 +342,10 @@ namespace AvaloniaRichEditor.Formatters
             return System.Text.RegularExpressions.Regex.Replace(s, "\\s+", " ");
         }
 
+        // Ceiling on the column count an imported table may claim. Foreign HTML controls colspan, and
+        // the grid is allocated from it. Far beyond any real document (Word tops out at 63 columns).
+        private const int MaxTableColumns = 1000;
+
         private static TableBlock? ParseTable(HtmlNode node)
         {
             var rows = node.Descendants("tr")
@@ -340,7 +377,12 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     Ensure(occupied[r], col);
                     while (col < occupied[r].Count && occupied[r][col]) col++;
-                    int cs = Math.Max(1, td.GetAttributeValue("colspan", 1));
+                    // Both spans are attacker-controlled (any pasted web page is foreign input) and the
+                    // occupancy grid is sized from them, so both need a ceiling. rowspan is naturally
+                    // bounded by the rows that actually exist; colspan had none, so a single
+                    // colspan="100000000" grew the grid — and then the TableBlock — until the process
+                    // ran out of memory. No real table is anywhere near the cap.
+                    int cs = Math.Clamp(td.GetAttributeValue("colspan", 1), 1, MaxTableColumns);
                     int rs = Math.Max(1, Math.Min(td.GetAttributeValue("rowspan", 1), R - r));
                     placements[r].Add((col, cs, rs, td));
                     for (int rr = r; rr < r + rs; rr++)
@@ -353,6 +395,7 @@ namespace AvaloniaRichEditor.Formatters
                 }
             }
             if (colCount == 0) return null;
+            if (colCount > MaxTableColumns) colCount = MaxTableColumns;
 
             var tb = new TableBlock(R, colCount);
             // Restore per-column widths from <colgroup><col style="width:Npx">, if the export emitted them
@@ -413,19 +456,14 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (src.StartsWith("http"))
                 {
-                    if (_prefetchedRemoteImages != null)
-                    {
-                        // ParseHtmlAsync already fetched these off the UI thread; null = failed/timed out.
-                        _prefetchedRemoteImages.TryGetValue(src, out bytes);
-                        if (bytes == null) return (null, null, 0, 0);
-                    }
-                    else
-                    {
-                        var remaining = _remoteImageDeadline - DateTime.UtcNow;
-                        if (remaining <= TimeSpan.Zero) return (null, null, 0, 0); // budget spent: skip, keep the rest of the paste
-                        using var cts = new System.Threading.CancellationTokenSource(remaining);
-                        bytes = Http.GetByteArrayAsync(src, cts.Token).GetAwaiter().GetResult();
-                    }
+                    if (_blockRemoteImages) return (null, null, 0, 0); // remote images opted out
+                    // Only the async path fetches. The synchronous parse never touches the network:
+                    // downloading on the calling thread froze the UI for up to the whole budget, and a
+                    // hung UI is a worse failure than a missing image (ParseHtmlAsync loads them).
+                    if (_prefetchedRemoteImages == null) return (null, null, 0, 0);
+                    // ParseHtmlAsync already fetched these off the UI thread; null = failed/timed out.
+                    _prefetchedRemoteImages.TryGetValue(src, out bytes);
+                    if (bytes == null) return (null, null, 0, 0);
                 }
                 else if (src.StartsWith("file:"))
                 {
@@ -542,9 +580,15 @@ namespace AvaloniaRichEditor.Formatters
             if (string.IsNullOrEmpty(styleAttr)) return;
             string s = styleAttr.ToLowerInvariant();
 
-            if (s.Contains("font-weight"))
+            // Scope to the declaration's own value: searching the whole style string made
+            // "font-weight:normal;width:600px" bold. A number is compared (>= 600), so 650 works too.
+            var fw = System.Text.RegularExpressions.Regex.Match(s, @"(?<![\w-])font-weight\s*:\s*([^;]+)");
+            if (fw.Success)
             {
-                if (s.Contains("bold") || s.Contains(":600") || s.Contains(": 600") || s.Contains(":700") || s.Contains(": 700") || s.Contains(":800") || s.Contains(":900"))
+                string v = fw.Groups[1].Value.Trim();
+                if (v.Contains("bold") // bold / bolder
+                    || (double.TryParse(v, System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double n) && n >= 600))
                     weight = FontWeight.Bold;
             }
             if (s.Contains("font-style:italic") || s.Contains("font-style: italic")) style = FontStyle.Italic;
@@ -731,9 +775,26 @@ namespace AvaloniaRichEditor.Formatters
         // Emits a table as an HTML <table>. Shared by block tables and inline tables (milestone B). Cell
         // content emits every paragraph (separated by <br>), block images, and nested tables (recursing),
         // so the structure survives a copy to Word/HWP.
-        private static void EmitTable(StringBuilder sb, TableBlock tb)
+        private static double SumColumnWidths(TableBlock tb)
         {
-            sb.Append("<table border=\"1\" style=\"border-collapse:collapse; width:100%;\">\n");
+            double w = 0;
+            for (int c = 0; c < tb.Columns; c++) w += c < tb.ColumnWidths.Count ? tb.ColumnWidths[c] : 100;
+            return w;
+        }
+
+        private static void EmitTable(StringBuilder sb, TableBlock tb, bool asInline = false)
+        {
+            // `data-are-inline` is ours: HTML has no inline table, so an InlineTable came back from our own
+            // export as a block table, splitting the paragraph it lived in. External HTML never carries the
+            // attribute and keeps landing as a block table, as before.
+            string mark = asInline ? " data-are-inline=\"1\"" : "";
+            // A block table fills the text column; an inline table is a character-sized object, so
+            // stretching it to 100% turned it into a full-width band on its own line in every consumer
+            // but our own importer. Size it to its own columns and let it sit in the line instead.
+            string sizing = asInline
+                ? $"width:{(int)System.Math.Max(1, SumColumnWidths(tb))}px; display:inline-table; vertical-align:middle;"
+                : "width:100%;";
+            sb.Append($"<table{mark} border=\"1\" style=\"border-collapse:collapse; {sizing}\">\n");
             // Per-column widths as a <colgroup> so the import restores the exact column proportions
             // (without it every column came back at the default width — the table looked squished).
             if (tb.ColumnWidths.Count > 0)
@@ -779,7 +840,10 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 sb.Append("</tr>\n");
             }
-            sb.Append("</table>\n");
+            // An inline table sits INSIDE a text line, so the pretty-printing newline after </table>
+            // becomes a whitespace text node between the table and the text that follows it — which the
+            // parser normalizes to a space, inserting one after every inline table on each save/load.
+            sb.Append(asInline ? "</table>" : "</table>\n");
         }
 
         // Emits a single inline (Run with all its styling, an inline image, or an inline table) as HTML.
@@ -794,7 +858,7 @@ namespace AvaloniaRichEditor.Formatters
             // (it pastes as a block-level table into Word/HWP rather than truly in-line — best effort).
             if (inline is InlineTable itbl)
             {
-                EmitTable(sb, itbl.Table);
+                EmitTable(sb, itbl.Table, asInline: true);
                 return;
             }
             if (inline is not Run r || r.Text == null) return;

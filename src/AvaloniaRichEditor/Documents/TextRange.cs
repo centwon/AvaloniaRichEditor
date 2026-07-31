@@ -55,33 +55,36 @@ public class TextRange
 
             int p1Len = GetParagraphLength(sp);
             DeleteInParagraph(sp, _start.Offset, p1Len);
-
-            // Remove every top-level block (paragraphs, images, tables) strictly between the
-            // start and end paragraphs' top-level blocks, so a drag selection that spans an
-            // image or table deletes those too.
-            var startTop = TopLevelBlockOf(doc, sp);
-            var endTop = TopLevelBlockOf(doc, ep);
-            int si = startTop != null ? doc.Blocks.IndexOf(startTop) : -1;
-            int ei = endTop != null ? doc.Blocks.IndexOf(endTop) : -1;
-            if (si >= 0 && ei >= 0 && ei > si)
-            {
-                for (int i = ei - 1; i > si; i--) doc.Blocks.RemoveAt(i);
-            }
-
             DeleteInParagraph(ep, 0, _end.Offset);
 
-            // Merging is only meaningful between two top-level paragraphs. When either endpoint
-            // is a table cell, merging would move text across the grid (the end cell's remainder
-            // used to land in the start cell) — instead keep the structure and just clear the
-            // fully-covered paragraphs (cells) between the endpoints.
-            bool spIsCell = !doc.Blocks.Contains(sp);
-            bool epIsCell = !doc.Blocks.Contains(ep);
-            if (!spIsCell && !epIsCell)
+            var container = ContainerOf(sp);
+            if (container != null && ReferenceEquals(container, ContainerOf(ep)))
             {
-                MergeParagraphs(sp, ep, doc);
+                // Both endpoints are siblings in ONE block list — the document's top level, or a single
+                // table cell (cells host sibling paragraphs since milestone A/P3). Remove the blocks
+                // strictly between them (a spanned image/table/divider goes too) and join the two halves.
+                // The old test was "is it a top-level block?", which classified two paragraphs of the SAME
+                // cell as "crosses the grid" and skipped the merge, leaving a stray paragraph break behind.
+                int si = container.IndexOf(sp), ei = container.IndexOf(ep);
+                if (si >= 0 && ei > si)
+                {
+                    for (int i = ei - 1; i > si; i--) container.RemoveAt(i);
+                    MergeParagraphs(sp, ep, container);
+                }
             }
             else
             {
+                // The selection really does cross a cell boundary. Merging would move text across the
+                // grid (the end cell's remainder landing in the start cell), so keep the structure:
+                // remove the whole top-level blocks between the two endpoints' top-level blocks, then
+                // clear the paragraphs that remain fully covered.
+                var startTop = TopLevelBlockOf(doc, sp);
+                var endTop = TopLevelBlockOf(doc, ep);
+                int si = startTop != null ? doc.Blocks.IndexOf(startTop) : -1;
+                int ei = endTop != null ? doc.Blocks.IndexOf(endTop) : -1;
+                if (si >= 0 && ei > si)
+                    for (int i = ei - 1; i > si; i--) doc.Blocks.RemoveAt(i);
+
                 var all = GetAllParagraphsInOrder(doc);
                 int sIdx = all.IndexOf(sp);
                 int eIdx = all.IndexOf(ep);
@@ -322,7 +325,8 @@ public class TextRange
         CoalesceRuns(p); // removing a run can leave its former neighbours adjacent with equal formatting
     }
 
-    private void MergeParagraphs(Paragraph target, Paragraph source, FlowDocument doc)
+    // Joins `source` into `target` — both siblings of `container` — and drops it from that list.
+    private void MergeParagraphs(Paragraph target, Paragraph source, IList<Block> container)
     {
         foreach (var inline in source.Inlines)
         {
@@ -331,9 +335,18 @@ public class TextRange
         }
         source.Inlines.Clear();
 
-        RemoveParagraphFromDocument(doc, source);
+        container.Remove(source);
         CoalesceRuns(target); // the boundary runs may now be adjacent with identical formatting
     }
+
+    // The block list that directly holds `p`: the document's top level, or an enclosing table cell's
+    // blocks (at any nesting depth). Same container switch the editor's split/insert paths use.
+    private static IList<Block>? ContainerOf(Paragraph p) => p.Parent switch
+    {
+        FlowDocument d => d.Blocks,
+        TableCell tc => tc.Blocks,
+        _ => null
+    };
 
     // Merges adjacent <see cref="Run"/>s that share all formatting into one, so an edit (paragraph
     // merge, mid-paragraph delete) doesn't leave the run list fragmented. Text and logical offsets are
@@ -382,41 +395,21 @@ public class TextRange
         return false;
     }
 
-    private void RemoveParagraphFromDocument(FlowDocument doc, Paragraph p)
+    /// <summary>The top-level <see cref="Block"/> of <paramref name="doc"/> that contains
+    /// <paramref name="p"/>: the paragraph itself when it is a document block, otherwise the outermost
+    /// block it lives in.</summary>
+    // Walks the Parent chain (Paragraph -> TableCell -> TableBlock -> [InlineTable -> host Paragraph]
+    // -> ... -> FlowDocument), so it resolves paragraphs at ANY depth. The previous one-level scan of
+    // every cell's block list returned null for a paragraph inside a nested or inline table, and the
+    // callers then silently skipped the blocks between the selection endpoints. Shared with the editor
+    // so there is a single walker (like CoalesceRuns).
+    internal static Block? TopLevelBlockOf(FlowDocument doc, Paragraph p)
     {
-        if (doc.Blocks.Contains(p))
+        object? current = p;
+        while (current is TextElement te)
         {
-            doc.Blocks.Remove(p);
-            return;
-        }
-
-        foreach (var block in doc.Blocks)
-        {
-            if (block is TableBlock tb)
-            {
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c].Blocks.Contains(p))
-                        {
-                            p.Inlines.Clear();
-                            p.Inlines.Add(new Run { Text = "", Parent = p });
-                            return;
-                        }
-            }
-        }
-    }
-
-    // The top-level Block in the document that contains the given paragraph: the paragraph
-    // itself if it's a top-level block, otherwise the TableBlock whose cell it is.
-    private Block? TopLevelBlockOf(FlowDocument doc, Paragraph p)
-    {
-        foreach (var block in doc.Blocks)
-        {
-            if (block == p) return block;
-            if (block is TableBlock tb)
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c].Blocks.Contains(p)) return tb;
+            if (te is Block b && ReferenceEquals(te.Parent, doc)) return b;
+            current = te.Parent;
         }
         return null;
     }

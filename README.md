@@ -4,9 +4,9 @@ A from-scratch rich text editor control for [Avalonia](https://avaloniaui.net) �
 ideas behind WPF's `RichTextBox`/`FlowDocument`, built entirely on Avalonia's `TextLayout` engine (no
 PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME are implemented directly.
 
-> **Status: `0.8.0`** — published on [NuGet](https://www.nuget.org/packages/AvaloniaRichEditor).
-> Feature-complete and usable for general work; on the `0.x` line the public API may still evolve before
-> a frozen `1.0`. See [`CHANGELOG.md`](CHANGELOG.md) and [`Project_Roadmap.md`](Project_Roadmap.md).
+> **Status: `1.0.0`** — published on [NuGet](https://www.nuget.org/packages/AvaloniaRichEditor).
+> The public API is frozen and follows [SemVer](https://semver.org): no breaking change without a major
+> bump. See [`CHANGELOG.md`](CHANGELOG.md) and [`Project_Roadmap.md`](Project_Roadmap.md).
 
 ## Install
 
@@ -35,7 +35,10 @@ dotnet add package AvaloniaRichEditor
   lists, line spacing `Ctrl+1/5/2`, indent, font size, and more
 - Clipboard: internal rich copy/paste, rich **HTML copy-out** (`CF_HTML`) and external HTML/**RTF** paste
   (Word/HWP), image paste, Excel/TSV → table
-- HTML, JSON, and **RTF** import/export (round-trippable) — see the
+- HTML, JSON, and **RTF** import/export. JSON/`.flow` and HTML round-trip losslessly (an inline table
+  stays inline); RTF export is deliberately richer than RTF import — merged cells and per-cell shading are
+  written for Word/HWP but ignored on the way back in, and a nested table imports at default column widths
+  (Word keeps them in an ignorable group) — see the
   [document format specification](docs/DOCUMENT_FORMAT.md) (JSON document format v1.0 and the `.flow` package)
 - Korean/CJK **IME** composition (inline preedit)
 - Word-style **page view** with selectable paper size (`PageSize`: Continuous (default) / A4/A3/A5/B4/B5/

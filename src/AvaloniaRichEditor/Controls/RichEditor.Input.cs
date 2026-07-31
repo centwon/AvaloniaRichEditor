@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Linq;
 using Avalonia;
@@ -53,7 +53,7 @@ public partial class RichEditor
         _pendingTableDraw = (rows, cols);
         _tableDrawStart = null;
         _tableDrawCurrent = null;
-        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Cross);
+        Cursor = CrossCursor;
     }
 
     // Clamps a view-space point to the editor's drawable bounds, so the draw-table rubber-band stays
@@ -124,11 +124,14 @@ public partial class RichEditor
             {
                 if (h.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null; // checkpoint on the first real move, not on the click
                     _isResizingImage = true;
                     _resizingImage = h.img;
-                    _initialImageWidth = h.img.Width > 0 ? h.img.Width : 200;
-                    _initialImageHeight = h.img.Height > 0 ? h.img.Height : 200;
+                    // Start from the size the image was DRAWN at (the handle sits on that edge), not its
+                    // declared size: inside a cell those differ whenever the picture is wider than the
+                    // cell, and starting from the declared one made the drag do nothing visible.
+                    _initialImageWidth = h.drawnW > 0 ? h.drawnW : (h.img.Width > 0 ? h.img.Width : 200);
+                    _initialImageHeight = h.drawnH > 0 ? h.drawnH : (h.img.Height > 0 ? h.img.Height : 200);
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
                     _initialImageMouseX = point.X;
                     e.Pointer.Capture(this);
@@ -141,7 +144,7 @@ public partial class RichEditor
             {
                 if (h.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null;
                     _isResizingInline = true;
                     _resizingInline = h.img;
                     _selectedInline = (h.p, h.img); // keep the selection chrome through the drag
@@ -161,7 +164,7 @@ public partial class RichEditor
             {
                 if (b.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null;
                     _isResizingColumn = true;
                     _resizingTable = b.tb;
                     _resizingColumnIndex = b.colIndex;
@@ -179,7 +182,7 @@ public partial class RichEditor
             {
                 if (b.rect.Contains(point))
                 {
-                    if (Document != null) PushUndo();
+                    _dragUndoPending = Document != null;
                     _isResizingRow = true;
                     _resizingRowTable = b.tb;
                     _resizingRowIndex = b.rowIndex;
@@ -256,10 +259,14 @@ public partial class RichEditor
                     e.Pointer.Capture(this);
                     return;
                 }
-                // Single click selects exactly one cell; a drag (OnPointerMoved) extends to a block.
+                // Single click selects exactly one cell as a block; a drag (OnPointerMoved) extends it.
                 _selectedBlock = null;
                 var tp = GetPositionFromPoint(point);
-                if (tp.Paragraph != null) FocusCell(tp.Paragraph);
+                if (tp.Paragraph != null && FindCell(tp.Paragraph) is { } clickedCell)
+                {
+                    var (ar, ac) = clickedCell.tb.AnchorOf(clickedCell.r, clickedCell.c);
+                    SelectCellAsBlock(clickedCell.tb, clickedCell.tb.Cells[ar][ac]);
+                }
                 e.Pointer.Capture(this);
                 _isSelecting = true;
                 return;
@@ -349,6 +356,12 @@ public partial class RichEditor
 
     private void ApplyCaretSelection(bool shift)
     {
+        // Moving the caret ends any cell block: the selection collapses to a caret, and leaving the mode
+        // on would keep the renderer filling the cell while the edit commands (which now honour the
+        // block) operated on a single character — the very paint/operation mismatch the block selection
+        // is meant to remove. Matches the staged Ctrl+A, which also restarts on a click or an arrow.
+        _cellSelMode = false;
+        _cellSelTable = null;
         if (!shift) _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         ResetCaretBlink();
@@ -451,6 +464,24 @@ public partial class RichEditor
         catch { }
     }
 
+    // Repaint + re-measure after an image resize drag. A resize mutates size WITHOUT going through an
+    // edit, so the next frame runs as a "trusted" pass that hands back cached geometry unmodified — the
+    // same reason the column/row drags and the IME composition evict their enclosing chain. Without it
+    // an image inside a table cell grew in the model while the row it sits in kept its old height, at
+    // any depth, so the drag looked like it did nothing at all.
+    private void InvalidateResizedImageGeometry(object? owner)
+    {
+        var tb = owner switch
+        {
+            TableCell tc => tc.Parent as TableBlock,          // block image: parent is the cell
+            Paragraph p => FindCell(p)?.tb,                   // inline image: via its paragraph's cell
+            _ => null
+        };
+        if (tb != null) InvalidateTableChain(tb);
+        InvalidateMeasure(); // a taller image grows the row (or the document) -> scroll extent follows
+        InvalidateVisual();
+    }
+
     /// <inheritdoc/>
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -460,7 +491,7 @@ public partial class RichEditor
         if (_pendingTableDraw != null)
         {
             if (_tableDrawStart != null) { _tableDrawCurrent = ClampToEditorBounds(e.GetPosition(this)); InvalidateVisual(); }
-            else Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Cross);
+            else Cursor = CrossCursor; // cached: this runs per mouse move, and a Cursor is a native handle
             return;
         }
 
@@ -469,20 +500,23 @@ public partial class RichEditor
         if (_isResizingInline && _resizingInline != null)
         {
             double diff = point.X - _initialImageMouseX;
+            if (diff != 0) PushDragUndoOnce(); // the drag really moved -> now it's an edit
             double newW = Math.Max(8, _initialImageWidth + diff);
             _resizingInline.Width = newW;
             _resizingInline.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingInline.Height; // keep aspect ratio
-            InvalidateVisual();
+            InvalidateResizedImageGeometry(_resizingInline.Parent as Paragraph);
             return;
         }
 
         if (_isResizingImage && _resizingImage != null)
         {
             double diff = point.X - _initialImageMouseX;
+            if (diff != 0) PushDragUndoOnce();
             double newW = Math.Max(20, _initialImageWidth + diff);
             _resizingImage.Width = newW;
             _resizingImage.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingImage.Height; // keep aspect ratio
-            InvalidateVisual();
+            // A block image in a cell sizes that cell, and so the row: the image's parent IS the cell.
+            InvalidateResizedImageGeometry(_resizingImage.Parent as TableCell);
             return;
         }
 
@@ -490,6 +524,7 @@ public partial class RichEditor
         {
             const double minW = 20;
             double diff = point.X - _initialMouseX;
+            if (diff != 0) PushDragUndoOnce();
 
             if (_resizingLastColumn)
             {
@@ -524,7 +559,7 @@ public partial class RichEditor
             // a "trusted" (no-edit) layout pass after the first move — so without this the cache would
             // serve the pre-drag widths and the table would only snap to the new size once the drag ended.
             // Evicting the entry forces LayoutTable to re-measure with the new widths every move (smooth).
-            _tableLayoutCache.Remove(_resizingTable);
+            InvalidateTableChain(_resizingTable);
             InvalidateMeasure(); // narrower columns reflow cell text taller -> total height changes
             InvalidateVisual();
             return;
@@ -533,11 +568,12 @@ public partial class RichEditor
         if (_isResizingRow && _resizingRowTable != null)
         {
             double diff = point.Y - _initialMouseY;
+            if (diff != 0) PushDragUndoOnce();
             while (_resizingRowTable.RowHeights.Count <= _resizingRowIndex)
                 _resizingRowTable.RowHeights.Add(0);
             // Renderer clamps up to content height, so 20 is just a hard floor for the stored value.
             _resizingRowTable.RowHeights[_resizingRowIndex] = Math.Max(20, _initialRowHeight + diff);
-            _tableLayoutCache.Remove(_resizingRowTable); // see the column branch — keep the drag live, not snapped
+            InvalidateTableChain(_resizingRowTable); // see the column branch — keep the drag live, not snapped
             InvalidateMeasure(); // the table's total height changed -> grow the scroll extent now,
             InvalidateVisual();  // not only on the next click (otherwise the resize hitches mid-drag)
             return;
@@ -653,7 +689,9 @@ public partial class RichEditor
 
         if (_isResizingImage)
         {
-            // Pre-resize state already pushed on press; undo restores original size in one step.
+            // Pre-resize state pushed on the drag's first move; undo restores original size in one
+            // step. A click that never moved leaves the arm pending — drop it (nothing changed).
+            _dragUndoPending = false;
             _isResizingImage = false;
             _resizingImage = null;
             e.Pointer.Capture(null);
@@ -662,7 +700,7 @@ public partial class RichEditor
 
         if (_isResizingInline)
         {
-            // Pre-resize state already pushed on press; undo restores original size in one step.
+            _dragUndoPending = false;
             _isResizingInline = false;
             _resizingInline = null;
             e.Pointer.Capture(null);
@@ -671,8 +709,9 @@ public partial class RichEditor
 
         if (_isResizingColumn)
         {
-            // Pre-resize state was already pushed on pointer-press, so undo restores
-            // the original width in a single step. Don't push the post-resize state here.
+            // Pre-resize state was pushed on the drag's first move, so undo restores the original
+            // width in a single step. Don't push the post-resize state here.
+            _dragUndoPending = false;
             _isResizingColumn = false;
             _resizingTable = null;
             e.Pointer.Capture(null);
@@ -681,7 +720,7 @@ public partial class RichEditor
 
         if (_isResizingRow)
         {
-            // Pre-resize state pushed on press; undo restores the original height in one step.
+            _dragUndoPending = false;
             _isResizingRow = false;
             _resizingRowTable = null;
             e.Pointer.Capture(null);
@@ -753,11 +792,25 @@ public partial class RichEditor
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
 
+        // A bare modifier press is the first half of a chord (Shift+Tab, Ctrl+B) — nothing below acts on
+        // one, and letting it fall through counted it as "some other key": it dismissed the block caret
+        // (moving the caret out from under the shortcut still being typed) and cancelled an image
+        // selection before its Ctrl+C arrived. Not marked handled, so the platform still tracks it.
+        if (e.Key is Key.LeftShift or Key.RightShift or Key.LeftCtrl or Key.RightCtrl
+            or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin
+            or Key.CapsLock or Key.NumLock or Key.Scroll)
+            return;
+
         // Escape abandons an armed/in-progress "draw table" mode.
         if (e.Key == Key.Escape && _pendingTableDraw != null) { CancelTableDraw(); e.Handled = true; return; }
 
         if (IsReadOnly)
         {
+            // Tab has to reach the focus manager. An editable editor keeps it for itself (indent, and
+            // moving between table cells, as Word does), but a viewer has no use for it — swallowing it
+            // made a read-only editor a keyboard trap: focus went in and could never Tab back out.
+            // Returned unhandled, so the default focus navigation runs.
+            if (e.Key == Key.Tab) return;
             // Allow caret movement and copy/select-all; block everything that edits.
             bool nav = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown;
             bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A);
@@ -767,17 +820,24 @@ public partial class RichEditor
         // Block caret in front of an image/table.
         if (_caretBlock != null && !ctrl && !IsReadOnly)
         {
-            if (e.Key == Key.Space || (e.Key == Key.Tab && !shift))
+            // Indent/outdent is the "space BEFORE a block" feature, so it belongs to the caret on the
+            // block's LEADING side only. From the trailing side the gap opened on the block's far side —
+            // press Space to the right of a table and the whitespace appeared in front of it, nowhere
+            // near the caret. The trailing side falls through to the dismissal below and types normally.
+            if (!_caretBlockAfter)
             {
-                if (Document != null) PushUndo();
-                _caretBlock.Indent = Math.Min(_caretBlock.Indent + 20, 600);
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
-            }
-            if ((e.Key == Key.Tab && shift) || (e.Key == Key.Back && _caretBlock.Indent > 0))
-            {
-                if (Document != null) PushUndo();
-                _caretBlock.Indent = Math.Max(0, _caretBlock.Indent - 20);
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                if (e.Key == Key.Space || (e.Key == Key.Tab && !shift))
+                {
+                    if (Document != null) PushUndo();
+                    _caretBlock.Indent = Math.Min(_caretBlock.Indent + 20, 600);
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
+                if ((e.Key == Key.Tab && shift) || (e.Key == Key.Back && _caretBlock.Indent > 0))
+                {
+                    if (Document != null) PushUndo();
+                    _caretBlock.Indent = Math.Max(0, _caretBlock.Indent - 20);
+                    ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                }
             }
             if ((e.Key == Key.Back || e.Key == Key.Delete) && Document != null)
             {
@@ -794,8 +854,14 @@ public partial class RichEditor
                                       vertical: e.Key is Key.Up or Key.Down);
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
-            // Any other key dismisses the block caret and continues normally.
+            // Any other key dismisses the block caret and continues normally — landing the text caret at
+            // the position the block caret stood for (the end of the paragraph before the block, or the
+            // start of the one after it). Without this the caret kept whatever position it held when the
+            // block caret was set, so a letter typed with the caret sitting after a table went back into
+            // the table's last cell.
+            var dismissed = _caretBlock;
             _caretBlock = null;
+            MoveCaretToBlockNeighbor(dismissed, before: !_caretBlockAfter);
             InvalidateVisual();
         }
 
@@ -847,7 +913,9 @@ public partial class RichEditor
             return;
         }
 
-        if (e.Key == Key.X && ctrl)
+        // !shift so Ctrl+Shift+X reaches the shortcut table (strikethrough) instead of cutting —
+        // the Ctrl+Z branch above guards the same way for Ctrl+Shift+Z.
+        if (e.Key == Key.X && ctrl && !shift)
         {
             if (!hasTextSel && Document != null && !IsReadOnly)
             {
@@ -930,15 +998,23 @@ public partial class RichEditor
         {
             if (Document != null)
             {
-                bool plainCharDelete = e.Key != Key.Enter
-                    && _selectionStart == _selectionEnd
-                    && _selectedBlock == null && _selectedInline == null
+                // Structural = a selection delete, a selected block/inline image, or Enter: always one
+                // checkpoint of its own.
+                bool structural = e.Key == Key.Enter
+                    || _selectionStart != _selectionEnd
+                    || _selectedBlock != null || _selectedInline != null;
+                bool plainCharDelete = !structural
                     && _caretPosition.Paragraph != null
                     && (e.Key == Key.Back
                         ? _caretPosition.Offset > 0
                         : _caretPosition.Offset < GetParagraphLength(_caretPosition.Paragraph));
                 if (plainCharDelete) PushUndoDeleting(e.Key == Key.Back);
-                else PushUndo();
+                // Otherwise the caret is at a paragraph edge: only checkpoint when there is actually an
+                // adjacent block to merge or remove. Backspace at the very start of the document (or
+                // Delete at its end) does nothing, and pushing anyway left a no-op step on the undo
+                // stack and flipped IsModified — a freshly loaded document then reported unsaved
+                // changes after one stray key press. (WordDelete already guards the same way.)
+                else if (structural || !DeleteAtEdgeIsNoOp(e.Key == Key.Back)) PushUndo();
             }
         }
 
@@ -1004,19 +1080,25 @@ public partial class RichEditor
                 _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a top-level table cell upward from its first row -> the table's "before" caret. A
-            // nested table's first row falls through to a geometric step into the row/cell above.
+            // HWP: ↑ out of the first row lands in the paragraph BEFORE the table, not on a block caret
+            // beside it. (The block caret is still reachable with ←/→ and by clicking the outer border.)
+            // A nested table's first row falls through to a geometric step into the row/cell above.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc && fc.r == 0
                 && fc.tb.Parent is FlowDocument)
             {
-                _caretBlock = fc.tb; _caretBlockAfter = false;
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                _caretBlock = null;
+                MoveCaretToBlockNeighbor(fc.tb, before: true);
+                ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return;
             }
             // In a (possibly tall) cell, step just above the cell's top edge so the move always clears
             // it into the row above; outside a cell, a small fixed step is enough.
             double ty = CaretCellRect() is { } upCell ? upCell.Top - 2 : Math.Max(0, _lastCaretPoint.Y - 20);
             if (!shift && BlockAtY(ty) is { } ub && !CaretInBlock(ub))
             {
+                // HWP: ↑ arriving at a table steps INTO its last row (the column under the caret's x).
+                // An image has no text to enter, so it keeps the block caret.
+                if (ub is TableBlock utb && TryEnterTableRow(utb, firstRow: false))
+                { ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return; }
                 _caretBlock = ub; _caretBlockAfter = true; // entering a block from below
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
@@ -1041,20 +1123,26 @@ public partial class RichEditor
                 _caretPosition = GetPositionFromPoint(new Point(_lastCaretPoint.X, tyc));
                 ApplyCaretSelection(shift); e.Handled = true; return;
             }
-            // Leaving a top-level table cell downward from its last row -> the table's "after" caret. A
-            // nested table's last row falls through to a geometric step into the row/cell below.
+            // HWP: ↓ out of the last row lands in the paragraph AFTER the table, not on a block caret
+            // beside it. A nested table's last row falls through to a geometric step into the row below.
             if (!shift && _caretPosition.Paragraph != null && FindCell(_caretPosition.Paragraph) is { } fc
                 && fc.tb.Parent is FlowDocument
                 && fc.r + fc.tb.SpanOf(fc.r, fc.c).rs - 1 >= fc.tb.Rows - 1)
             {
-                _caretBlock = fc.tb; _caretBlockAfter = true;
-                ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+                _caretBlock = null;
+                MoveCaretToBlockNeighbor(fc.tb, before: false);
+                ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return;
             }
             // In a (possibly tall) cell, step just below the cell's bottom edge so the move always
             // clears it into the row below; outside a cell, a small fixed step is enough.
             double ty = CaretCellRect() is { } dnCell ? dnCell.Bottom + 2 : _lastCaretPoint.Y + 30;
             if (!shift && BlockAtY(ty) is { } db && !CaretInBlock(db))
             {
+                // HWP: ↓ arriving at a table steps INTO its first row (the column under the caret's x)
+                // rather than parking on the block caret beside it — from which a second ↓ then skipped
+                // the whole table. An image has no text to enter, so it keeps the block caret.
+                if (db is TableBlock dtb && TryEnterTableRow(dtb, firstRow: true))
+                { ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return; }
                 _caretBlock = db; _caretBlockAfter = false; // entering a block from above
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
@@ -1221,13 +1309,17 @@ public partial class RichEditor
                 // Enter splits the paragraph at the caret into a new paragraph. On an empty list item it
                 // exits the list instead. A table cell now hosts sibling paragraphs (P3), so a cell
                 // paragraph splits within the cell's block list — the table grows to fit (InvalidateMeasure).
-                bool topLevel = Document != null && Document.Blocks.Contains(p);
+                bool topLevel = p?.Parent is FlowDocument;
                 bool inCell = p?.Parent is TableCell;
                 if (Document != null && (topLevel || inCell))
                 {
-                    PushUndo();
+                    // The checkpoint was already taken above (Enter is always "structural"). Pushing a
+                    // second one here cloned the same unchanged document twice, so one Enter cost two
+                    // undo steps — the first Ctrl+Z appeared to do nothing.
                     if (_selectionStart != _selectionEnd) DeleteSelection();
                     p = _caretPosition.Paragraph!;
+                    // Auto-link a trailing URL token before the split, so the link lands in the left paragraph.
+                    if (AutoLinkOnType) TryAutoLink(p, _caretPosition.Offset);
                     if (p.ListType != ListKind.None && GetParagraphLength(p) == 0)
                         p.ListType = ListKind.None; // empty list item -> leave the list, stay put
                     else
@@ -1282,7 +1374,18 @@ public partial class RichEditor
 
     private void SetPreedit(string? text)
     {
+        bool had = !string.IsNullOrEmpty(_preeditText);
         _preeditText = text;
+        if (had || !string.IsNullOrEmpty(text))
+        {
+            // Composition changes the caret paragraph's height but never its model content, so nothing
+            // else invalidates the geometry cached around it: the table layout is keyed on the table and
+            // reused whole on a "trusted" pass, and a host paragraph's signature can't see the preedit.
+            // Evict the enclosing chain so the row re-measures — a nested cell has to push its host row
+            // too, and an inline table has to re-shape the paragraph line it sits in.
+            if (_caretPosition.Paragraph is { } cp && FindCell(cp)?.tb is { } t) InvalidateTableChain(t);
+            InvalidateMeasure(); // the row grew/shrank -> the scroll extent follows
+        }
         InvalidateVisual();
     }
 
@@ -1332,12 +1435,17 @@ public partial class RichEditor
     }
 
     // Steps a block caret. Horizontal (←/→) walks through the block: before -> (table cells |
-    // image after) -> after -> next text, and the reverse. Vertical (↑/↓) treats the block as one
-    // opaque unit and skips straight to the neighboring paragraph — cells are entered with →,
-    // Tab, or a click, not by arrowing down through the document.
+    // image after) -> after -> next text, and the reverse. Vertical (↑/↓) enters a TABLE's nearest row,
+    // matching ↑/↓ arriving from an adjacent paragraph — otherwise ↓ would enter the table from the
+    // paragraph above but skip it from the caret sitting right against it. An IMAGE has no text to
+    // enter, so vertical still treats it as one opaque unit and steps to the neighbouring paragraph.
     private void HandleBlockCaretArrow(bool forward, bool vertical = false)
     {
         var blk = _caretBlock!;
+        // ↓ from the "before" side / ↑ from the "after" side steps into the table's near row.
+        if (vertical && blk is TableBlock vtb && forward != _caretBlockAfter
+            && TryEnterTableRow(vtb, firstRow: forward))
+            return;
         if (forward)
         {
             if (!_caretBlockAfter && !vertical)
@@ -1363,6 +1471,27 @@ public partial class RichEditor
     // True when the text caret currently sits inside a cell of the given block (a table).
     private bool CaretInBlock(Block b) => b is TableBlock tb && _caretPosition.Paragraph != null && IsCellOf(tb, _caretPosition.Paragraph);
 
+    // True when a plain Backspace/Delete at the caret would change nothing: the caret sits at the
+    // paragraph edge (offset 0 for Backspace, end for Delete) and the paragraph is the first/last block
+    // of its own container, so there is no neighbour to merge with or remove. Both edit branches work
+    // within the paragraph's container (the document's blocks, or the enclosing cell's), so the same
+    // test covers a caret in a cell.
+    private bool DeleteAtEdgeIsNoOp(bool backspace)
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null) return true;
+        System.Collections.Generic.IList<Block>? container = p.Parent switch
+        {
+            FlowDocument d => d.Blocks,
+            TableCell tc => tc.Blocks,
+            _ => null
+        };
+        if (container == null) return true;
+        int i = container.IndexOf(p);
+        if (i < 0) return true;
+        return backspace ? i == 0 : i == container.Count - 1;
+    }
+
     // The image/table block immediately before/after the caret's top-level paragraph, or null.
     private Block? AdjacentBlock(bool before)
     {
@@ -1385,7 +1514,8 @@ public partial class RichEditor
             var tl = LayoutTable(tb, 10 + tb.Indent, 0); // width (ColX) is top-independent
             var (cs, _) = tb.SpanOf(loc.r, loc.c);
             double cellWidth = tl.ColX[Math.Min(loc.c + cs, tb.Columns)] - tl.ColX[loc.c];
-            return BuildTextLayout(p, Math.Max(10, cellWidth - 10));
+            // Minus the list/indent gutter too — the cell render/hit-test walks wrap at this width.
+            return BuildTextLayout(p, Math.Max(10, cellWidth - 10 - CellParaLeft(p)));
         }
         return BuildTextLayout(p, Math.Max(10, ContentLayoutWidth - 20 - ParaLeft(p) - p.MarginRight));
     }
@@ -1475,6 +1605,24 @@ public partial class RichEditor
         foreach (var (r, c, rect) in tr.tl.AnchorRects)
             if (r == ar && c == ac) return rect;
         return null;
+    }
+
+    // Places the caret inside `tb`'s first (or last) row, in the column under the caret's current x —
+    // HWP behaviour for ↑/↓ arriving at a table: you step into the row, not onto a marker beside it.
+    // False when the geometry isn't available or the point doesn't resolve into this table, so the
+    // caller can fall back to the block caret.
+    private bool TryEnterTableRow(TableBlock tb, bool firstRow)
+    {
+        if (GetTableRect(tb) is not { } tr) return false;
+        int row = firstRow ? 0 : tb.Rows - 1;
+        if (row < 0 || row + 1 >= tr.tl.RowY.Length) return false;
+        double y = (tr.tl.RowY[row] + tr.tl.RowY[row + 1]) / 2; // the row's vertical middle
+        var tp = GetPositionFromPoint(new Point(_lastCaretPoint.X, y));
+        // IsCellOf so a row whose column holds a nested table still counts as "entered".
+        if (tp.Paragraph == null || !IsCellOf(tb, tp.Paragraph)) return false;
+        _caretBlock = null;
+        _caretPosition = tp;
+        return true;
     }
 
     // The image/table block whose rendered vertical span contains y, or null (used for Up/Down into a block).

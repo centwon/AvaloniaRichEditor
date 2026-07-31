@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
@@ -87,6 +87,7 @@ public partial class RichEditorToolbar
             BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
         };
         ToolTip.SetTip(cb, tip);
+        cb.DropDownClosed += (_, _) => Target?.Focus(); // see the Combo factory — give the caret back
         return cb;
     }
 
@@ -279,6 +280,7 @@ public partial class RichEditorToolbar
             using var writer = new StreamWriter(stream);
             await writer.WriteAsync(json);
         }
+        Target.MarkSaved(); // persisted → clear the modified flag (all export formats here are reloadable)
     }
 
     private async Task ImportAsync()

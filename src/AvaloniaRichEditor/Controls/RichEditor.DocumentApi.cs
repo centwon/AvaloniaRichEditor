@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Threading.Tasks;
 using AvaloniaRichEditor.Documents;
 
@@ -14,14 +14,14 @@ public partial class RichEditor
 
     /// <summary>Replaces the document with one parsed from HTML (empty document if null/empty).</summary>
     public void LoadHtml(string? html)
-        => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages));
+        => LoadDocument(string.IsNullOrEmpty(html) ? new FlowDocument() : Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages, AllowRemoteImagesOnPaste));
 
     /// <summary>Replaces the document with one parsed from HTML, downloading remote (<c>http</c>)
     /// images off the UI thread first so a slow network can't freeze the UI. Await from the UI thread.</summary>
     public async Task LoadHtmlAsync(string? html)
         => LoadDocument(string.IsNullOrEmpty(html)
             ? new FlowDocument()
-            : await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(html, AllowLocalFileImages));
+            : await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(html, AllowLocalFileImages, AllowRemoteImagesOnPaste));
 
     /// <summary>Serializes the document to RTF (Rich Text Format) — readable by Word, WordPad, LibreOffice,
     /// and HWP. Covers paragraphs, runs (bold/italic/underline/strike, size, colour, font), alignment,
@@ -38,6 +38,9 @@ public partial class RichEditor
     public string ToJson() => Document != null ? Formatters.DocumentSerializer.Serialize(Document) : "";
 
     /// <summary>Replaces the document with one loaded from the library's JSON format.</summary>
+    /// <exception cref="System.Text.Json.JsonException"><paramref name="json"/> is not valid JSON.
+    /// A damaged file is reported rather than loaded as an empty document — catch this and tell the
+    /// user, or the editor would show a blank page and a save would overwrite the original.</exception>
     public void LoadJson(string json) => LoadDocument(Formatters.DocumentSerializer.Deserialize(json));
 
     /// <summary>Serializes the document to JSON on a background thread, keeping the UI responsive
@@ -53,6 +56,8 @@ public partial class RichEditor
 
     /// <summary>Parses JSON into a document on a background thread (image decoding is already
     /// deferred to first render), then swaps it in. Call (and await) from the UI thread.</summary>
+    /// <exception cref="System.Text.Json.JsonException"><paramref name="json"/> is not valid JSON;
+    /// surfaces from the await. See <see cref="LoadJson"/>.</exception>
     public async Task LoadJsonAsync(string json)
     {
         // Background: parsing + base64 only. Model objects (brushes, decorations) are Avalonia
@@ -75,6 +80,9 @@ public partial class RichEditor
     /// <summary>Reads a <c>.flow</c> package from <paramref name="source"/> on a background thread
     /// (image decoding is already deferred to first render), then swaps the document in. Call (and
     /// await) from the UI thread.</summary>
+    /// <exception cref="System.IO.InvalidDataException"><paramref name="source"/> is not a readable
+    /// <c>.flow</c> package; surfaces from the await. See <see cref="LoadJson"/>.</exception>
+    /// <exception cref="System.Text.Json.JsonException">The package's document is not valid JSON.</exception>
     public async Task LoadPackageAsync(System.IO.Stream source)
     {
         // Background: zip/JSON parsing + byte extraction only; model built on the UI thread
@@ -98,14 +106,14 @@ public partial class RichEditor
         // next one — checking the buffer length conflated "first paragraph" with "buffer empty" and
         // dropped leading blank lines.
         bool first = true;
-        void AddPara(Paragraph p) { if (!first) sb.Append('\n'); first = false; sb.Append(BuildPlain(p)); }
-        foreach (var block in Document.Blocks)
+        // Every paragraph in document order at ANY depth. The walk used to descend exactly one level
+        // (top-level paragraphs + a cell's own paragraphs), so text inside a nested table or an inline
+        // table was dropped entirely — including from the accessibility peer, which reads this.
+        foreach (var p in GetAllParagraphsInOrder())
         {
-            if (block is Paragraph p) AddPara(p);
-            else if (block is TableBlock tb)
-                foreach (var (_, _, cell) in tb.LogicalCells())
-                    foreach (var cb in cell.Blocks)
-                        if (cb is Paragraph cp) AddPara(cp);
+            if (!first) sb.Append('\n');
+            first = false;
+            sb.Append(BuildPlain(p));
         }
         // LF-only renders as a single line in many Windows consumers; normalize every break (paragraph
         // separators above + soft '\n' from BuildPlain) to the platform newline.
@@ -126,6 +134,7 @@ public partial class RichEditor
         _caretPosition = new TextPointer(first, 0);
         CollapseSelectionToCaret();
         _undoManager = new UndoManager();
+        MarkSaved(); // freshly loaded content is the baseline, not a pending modification
         InvalidateVisual();
     }
 
@@ -133,7 +142,7 @@ public partial class RichEditor
     public void InsertHtml(string html)
     {
         if (Document == null || IsReadOnly || string.IsNullOrEmpty(html)) return;
-        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages);
+        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages, AllowRemoteImagesOnPaste);
         if (parsed.Blocks.Count == 0) return;
         PushUndo();
         InsertParsedDocument(parsed);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Linq;
 using Avalonia;
@@ -18,8 +18,10 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 
 /// <summary>A from-scratch rich text editor built on Avalonia's <c>TextLayout</c> engine.
-/// Supports inline formatting, paragraphs, lists, tables, images, HTML/JSON import-export,
-/// find/replace, undo/redo, CJK IME, and editor-mode presets (ReadOnly/Basic/Full).</summary>
+/// Supports inline formatting, paragraphs, lists, tables (merged cells, nested and inline tables),
+/// images, HTML/JSON/RTF/<c>.flow</c> import-export, PDF and printing, pagination, find/replace,
+/// undo/redo and CJK IME. What the user may do is set by <see cref="IsReadOnly"/> and the
+/// <c>Allow*</c> feature flags.</summary>
 public partial class RichEditor : Control
 {
 
@@ -70,8 +72,12 @@ public partial class RichEditor : Control
     private bool _cellSelMode;
     private TableBlock? _cellSelTable;
 
-    // Image resize state
-    private List<(Avalonia.Rect rect, ImageBlock img)> _imageHandles = new();
+    // Image resize state. The handle carries the size the image was DRAWN at, not just the block: inside
+    // a table cell a picture is scaled down to fit the cell (CellImageSize), so the declared Width can be
+    // several times the width the handle sits at. Seeding the drag from the declared size made a drag of
+    // a few dozen px land inside the range that still clamps to the same drawn width — the handle looked
+    // dead. The drag is relative to what the user can see.
+    private List<(Avalonia.Rect rect, ImageBlock img, double drawnW, double drawnH)> _imageHandles = new();
     // Rendered rects of block images inside table cells (P4-2b), so a click can select one (top-level
     // block images are found via GetBlockAtPoint; cell images need this registry, like inline images).
     private List<(Avalonia.Rect rect, ImageBlock img)> _cellImageRects = new();
@@ -275,9 +281,11 @@ public partial class RichEditor : Control
         {
             _layoutCache.Clear();
             _tableLayoutCache.Clear();
+            ResetInteractionState(); // selections/modes point into the document being replaced
             if (Document != null) UpdateParents(Document);
             SyncPageSetupOnDocumentChanged(); // apply the loaded doc's page setup to the page properties
             _textChangedPending = true; // wholesale content swap
+            SetModified(true);          // a raw Document assignment is a change; Load*/Clear reset it below
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             InvalidateMeasure();
             InvalidateVisual();
@@ -319,6 +327,39 @@ public partial class RichEditor : Control
             }
             InvalidateVisual();
         }
+    }
+
+    // Drops every piece of interaction state that names a block of the CURRENT document: the block
+    // selection, the block caret, the selected inline image, cell-selection mode and any drag in
+    // progress. Without this a document swap left them pointing into the document just replaced —
+    // which both keeps that whole tree alive for as long as the editor lives, and leaves commands
+    // acting on blocks that are no longer in the tree (Delete pushed an undo checkpoint and flipped
+    // IsModified for a block it could not find).
+    private void ResetInteractionState()
+    {
+        _selectedBlock = null;
+        _caretBlock = null;
+        _caretBlockAfter = false;
+        _selectedInline = null;
+        _cellSelMode = false;
+        _cellSelTable = null;
+        _pendingCaretStyles = null;
+
+        // A drag can only be in flight for a block of the old document.
+        _isResizingColumn = false; _resizingTable = null;
+        _isResizingRow = false; _resizingRowTable = null;
+        _isResizingImage = false; _resizingImage = null;
+        _isResizingInline = false; _resizingInline = null;
+        _dragUndoPending = false;
+        _isSelecting = false;
+
+        // Registries rebuilt on the next render; clearing them now releases the old blocks immediately.
+        _columnBoundaries.Clear();
+        _rowBoundaries.Clear();
+        _imageHandles.Clear();
+        _cellImageRects.Clear();
+        _inlineImageRects.Clear();
+        _inlineHandles.Clear();
     }
 
     private void DoUndo()
@@ -388,10 +429,28 @@ public partial class RichEditor : Control
     /// <summary>Raised when the <see cref="Document"/> is replaced with a different instance.</summary>
     public event EventHandler? DocumentChanged;
 
+    /// <summary>True when the document has been modified since it was loaded (or since
+    /// <see cref="MarkSaved"/>). Undo/redo count as modifications — the flag is a "needs saving" hint,
+    /// not a content diff against the saved state.</summary>
+    public bool IsModified { get; private set; }
+
+    /// <summary>Raised when <see cref="IsModified"/> changes.</summary>
+    public event EventHandler? IsModifiedChanged;
+
+    /// <summary>Clears the modified flag; call after persisting the document.</summary>
+    public void MarkSaved() => SetModified(false);
+
+    private void SetModified(bool value)
+    {
+        if (IsModified == value) return;
+        IsModified = value;
+        IsModifiedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     // Set by any edit; flushed (as TextChanged) from Render, off the render stack, so handlers see the
-    // already-mutated document and can't re-enter the render pass.
+    // already-mutated document and can't re-enter the render pass. Also flips the IsModified flag.
     private bool _textChangedPending;
-    private void MarkTextChanged() => _textChangedPending = true;
+    private void MarkTextChanged() { _textChangedPending = true; SetModified(true); }
 
     // Kind of edit currently coalescing into one undo checkpoint. A run of same-kind edits shares
     // a single full-document clone (the first-keystroke clone was measured at 162 ms on a
@@ -409,8 +468,21 @@ public partial class RichEditor : Control
     {
         if (Document != null) _undoManager.PushState(Document, _caretPosition);
         _textChangedPending = true;
+        SetModified(true);
         _editRun = EditRunKind.None;
         _editRunRearm = EditRunKind.None;
+    }
+
+    // A resize drag (image / inline image / column / row handle) arms this on press and checkpoints
+    // only when the pointer actually moves. Checkpointing on press instead made a bare click on a
+    // handle — which changes nothing — push an undo step and flip IsModified, so a freshly loaded
+    // document reported unsaved changes after a single click.
+    private bool _dragUndoPending;
+    private void PushDragUndoOnce()
+    {
+        if (!_dragUndoPending) return;
+        _dragUndoPending = false;
+        PushUndo();
     }
 
     // Undo checkpoint for typed text: coalesces a run of consecutive keystrokes into a single
@@ -424,6 +496,7 @@ public partial class RichEditor : Control
             _editRun = EditRunKind.Typing;
         }
         _textChangedPending = true;
+        SetModified(true);
     }
 
     // Undo checkpoint for a plain single-character Backspace/Delete: consecutive same-direction
@@ -435,6 +508,7 @@ public partial class RichEditor : Control
         if (_editRun != kind && Document != null) _undoManager.PushState(Document, _caretPosition);
         _editRunRearm = kind;
         _textChangedPending = true;
+        SetModified(true);
     }
 
     // Last-seen selection, to fire SelectionChanged only on real movement (not on every repaint/blink).
@@ -600,10 +674,23 @@ public partial class RichEditor : Control
                 blocks.Insert(i + 1, new Paragraph { Parent = parent });
         }
         foreach (var b in blocks)
-            if (b is TableBlock tb)
-                foreach (var row in tb.Cells)
-                    foreach (var cell in row)
-                        NormalizeBlockList(cell.Blocks, cell);
+        {
+            if (b is TableBlock tb) NormalizeTableCells(tb);
+            // An inline table's cells are block containers too (milestone B) but hang off a paragraph's
+            // inlines, so this walk never reached them: a deserialized inline-table cell holding only an
+            // image stayed paragraph-less and the caret could not enter it.
+            else if (b is Paragraph par)
+                foreach (var inl in par.Inlines)
+                    if (inl is InlineTable it)
+                        NormalizeTableCells(it.Table);
+        }
+    }
+
+    private static void NormalizeTableCells(TableBlock tb)
+    {
+        foreach (var row in tb.Cells)
+            foreach (var cell in row)
+                NormalizeBlockList(cell.Blocks, cell);
     }
 
     private void UpdateParents(FlowDocument doc)
@@ -682,10 +769,16 @@ public partial class RichEditor : Control
                           new TextPointer(_caretPosition.Paragraph, preCaret + text.Length))
                 .ApplyPropertyValue(r => { foreach (var a in pend) a(r); });
         }
-        // Auto-link: typing a space right after a web URL turns the URL into a hyperlink.
+        // Auto-link: typing whitespace right after a web URL turns the URL into a hyperlink.
         // Runs after the insertion so the space itself stays outside the linked range.
-        if (text == " ") TryAutoLink(preCaret);
+        if (AutoLinkOnType && (text == " " || text == "\t")) TryAutoLink(_caretPosition.Paragraph, preCaret);
         MarkTextChanged();
+        // Typing has to scroll the caret back into view. Every other edit reaches this through
+        // ResetCaretBlink, but the typing path deliberately avoids that call — it would end the undo
+        // coalescing run and give every keystroke its own checkpoint — so the flag is set directly.
+        // Without it the caret walked off the bottom as text grew, most visibly inside a table cell,
+        // which expands downward as its content wraps.
+        _bringCaretIntoView = true;
         InvalidateVisual();
         NotifyStatus();
     }
@@ -719,26 +812,53 @@ public partial class RichEditor : Control
     // If the word ending at `endOffset` is a web URL, set NavigateUri on exactly that range.
     // Called when the user types a space after the URL (the space is already inserted and
     // excluded from the range, so it doesn't inherit the link).
-    private void TryAutoLink(int endOffset)
+    /// <inheritdoc cref="AutoLinkOnType"/>
+    public static readonly StyledProperty<bool> AutoLinkOnTypeProperty =
+        AvaloniaProperty.Register<RichEditor, bool>(nameof(AutoLinkOnType), true);
+
+    /// <summary>When true (default), typing whitespace/Enter after an <c>http(s)://</c> or <c>www.</c>
+    /// token turns it into a hyperlink. Set false to disable auto-linking.</summary>
+    // A StyledProperty like every other behaviour flag (IsReadOnly, Allow*), so it can be bound and
+    // styled rather than only assigned in code.
+    public bool AutoLinkOnType
     {
-        var p = _caretPosition.Paragraph;
-        if (p == null) return;
+        get => GetValue(AutoLinkOnTypeProperty);
+        set => SetValue(AutoLinkOnTypeProperty, value);
+    }
+
+    // Called after a whitespace/Enter commit at `boundary` (the offset just past the token). Applies a
+    // NavigateUri to a bare http(s):// or www. URL token, trimming trailing punctuation and validating the
+    // result as an absolute http(s) URI with a dotted host. `www.` is prefixed with https://.
+    private void TryAutoLink(Paragraph p, int boundary)
+    {
         string plain = BuildPlain(p);
-        if (endOffset <= 0 || endOffset > plain.Length) return;
-        int start = endOffset;
+        int end = Math.Clamp(boundary, 0, plain.Length);
+        int start = end;
         while (start > 0 && !char.IsWhiteSpace(plain[start - 1]) && plain[start - 1] != ObjChar) start--;
-        string token = plain.Substring(start, endOffset - start);
-        bool https = token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-        bool http = !https && token.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
-        if (!https && !http) return;
-        if (token.Length <= (https ? 8 : 7) || !token.Contains('.')) return; // needs a host part
+        if (end - start < 8) return; // shortest sensible candidate ("http://x", "www.a.bc")
+        string token = plain.Substring(start, end - start).TrimEnd('.', ',', ';', ':', ')', ']', '!', '?', '"', '\'');
+        if (token.Length < 8) return;
+
+        bool www = token.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
+        bool http = token.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                 || token.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        if (!www && !http) return;
+        string url = www ? "https://" + token : token;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || !uri.Host.Contains('.')) return;
         if (RunAtOffset(p, start) is { } r0 && !string.IsNullOrEmpty(r0.NavigateUri)) return; // already linked
-        new TextRange(new TextPointer(p, start), new TextPointer(p, endOffset))
-            .ApplyPropertyValue(r => r.NavigateUri = token);
+
+        new TextRange(new TextPointer(p, start), new TextPointer(p, start + token.Length))
+            .ApplyPropertyValue(r => r.NavigateUri = url);
     }
 
     private void DeleteSelection()
     {
+        // A cell block clears the selected cells and leaves the grid standing (Excel/HWP). The linear
+        // range would instead delete from the drag's offset in the first cell through its offset in the
+        // last, leaving head/tail text behind and merging across the grid.
+        if (SelectedCellsBlock() is { } cells) { ClearSelectedCells(cells); return; }
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
             var range = new TextRange(_selectionStart, _selectionEnd);
@@ -965,6 +1085,19 @@ public partial class RichEditor : Control
     private static double ParaLeft(Paragraph p)
         => 10 + p.Indent + p.ListLevel * 20 + (p.ListType != ListKind.None ? ListMarkerWidth : 0);
 
+    // Wrap width of a top-level paragraph: the content width less the document's own margin, the
+    // paragraph's left gutter (indent + list marker) and its right margin. Single source so the measure
+    // walk, BlockExtent and the render walk can never disagree on where a line breaks — the formula was
+    // spelled out separately in each.
+    private static double ParagraphWrapWidth(Paragraph p, double maxWidth)
+        => Math.Max(10, maxWidth - 20 - ParaLeft(p) - p.MarginRight);
+
+    // The same gutter for a paragraph inside a table cell, measured from the cell's content box: the
+    // document's own 10px left margin is dropped (the cell supplies its padding). Single source for the
+    // cell walks — render, hit-test, link hit-test, caret and measure must all apply it (rule #1), or
+    // the text and the caret/click positions drift apart.
+    private static double CellParaLeft(Paragraph p) => ParaLeft(p) - 10;
+
     // The marker text for a list item: a bullet glyph or a formatted number, per the paragraph's
     // ListMarker style (Default = • for bullets, "N." for numbers).
     internal static string ListMarkerText(ListKind kind, ListMarkerStyle style, int num)
@@ -1094,12 +1227,41 @@ public partial class RichEditor : Control
                     Mix(it.Table.Columns);
                     foreach (var w in it.Table.ColumnWidths) Mix(BitConverter.DoubleToInt64Bits(w));
                     foreach (var rh in it.Table.RowHeights) Mix(BitConverter.DoubleToInt64Bits(rh));
+                    // Every block a cell holds, not just its paragraphs: a block image, divider or
+                    // nested table in there sizes the cell too, so leaving them out served the host
+                    // paragraph's cached layout at the old box after such a block changed.
                     foreach (var (_, _, cell) in it.Table.LogicalCells())
-                        foreach (var b in cell.Blocks)
-                            if (b is Paragraph cp) Mix(ParagraphSig(cp));
+                        foreach (var b in cell.Blocks) Mix(BlockSig(b));
                 }
             }
             return h;
+        }
+    }
+
+    // Signature of one block inside an inline table's cell, for folding into the host paragraph's
+    // ParagraphSig. Only the fields that move the block's laid-out box matter — an image's display
+    // size and identity, a nested grid's dimensions and its own cells' contents.
+    private static long BlockSig(Block b)
+    {
+        unchecked
+        {
+            switch (b)
+            {
+                case Paragraph p: return ParagraphSig(p);
+                case ImageBlock img:
+                    return 31 ^ BitConverter.DoubleToInt64Bits(img.Width) * 3
+                              ^ BitConverter.DoubleToInt64Bits(img.Height) * 5
+                              ^ (img.RawBytes?.GetHashCode() ?? img.Image?.GetHashCode() ?? 0);
+                case DividerBlock: return 37;
+                case TableBlock tb:
+                    long h = 41 ^ (tb.Rows * 397L) ^ tb.Columns;
+                    foreach (var w in tb.ColumnWidths) h = h * 31 + BitConverter.DoubleToInt64Bits(w);
+                    foreach (var rh in tb.RowHeights) h = h * 31 + BitConverter.DoubleToInt64Bits(rh);
+                    foreach (var (_, _, cell) in tb.LogicalCells())
+                        foreach (var cb in cell.Blocks) h = h * 31 + BlockSig(cb);
+                    return h;
+                default: return 43;
+            }
         }
     }
 
@@ -1223,6 +1385,17 @@ public partial class RichEditor : Control
         return layout;
     }
 
+    // The layout a paragraph is actually RENDERED with. While the IME composes, the preedit text is
+    // spliced into the caret's paragraph, so it is taller (or wraps further) than its stored content —
+    // a measure walk that rebuilds it without the composition sizes the box for text that isn't what
+    // gets drawn. Every other paragraph takes the plain cached layout. The preedit build is deliberately
+    // uncached (it is transient), so this costs one extra shaping pass for the paragraph being composed
+    // into, and nothing at all when no composition is active.
+    private Avalonia.Media.TextFormatting.TextLayout PreeditAwareLayout(Paragraph p, double width)
+        => !string.IsNullOrEmpty(_preeditText) && ReferenceEquals(_caretPosition.Paragraph, p)
+            ? BuildTextLayout(p, width, _caretPosition.Offset, _preeditText)
+            : BuildTextLayout(p, width);
+
     // Drops cache entries for paragraphs/tables no longer in the document (e.g. deleted while editing),
     // keeping the live ones so nothing reshapes on the next frame.
     private void PruneLayoutCaches()
@@ -1231,10 +1404,34 @@ public partial class RichEditor : Control
         var liveParas = new HashSet<Paragraph>(GetAllParagraphsInOrder());
         foreach (var key in _layoutCache.Keys.ToList())
             if (!liveParas.Contains(key)) _layoutCache.Remove(key);
+        // Nested and inline tables are live too; collecting only the top-level ones evicted their
+        // (still-used) geometry every prune, forcing a full re-measure on the next frame.
         var liveTables = new HashSet<TableBlock>();
-        foreach (var b in Document.Blocks) if (b is TableBlock tb) liveTables.Add(tb);
+        CollectTables(Document.Blocks, liveTables);
         foreach (var key in _tableLayoutCache.Keys.ToList())
             if (!liveTables.Contains(key)) _tableLayoutCache.Remove(key);
+    }
+
+    // Every table in the document at any depth: top level, nested in a cell, or inline in a paragraph.
+    private static void CollectTables(System.Collections.Generic.IEnumerable<Block> blocks, HashSet<TableBlock> into)
+    {
+        foreach (var b in blocks)
+        {
+            if (b is TableBlock tb)
+            {
+                into.Add(tb);
+                foreach (var (_, _, cell) in tb.LogicalCells()) CollectTables(cell.Blocks, into);
+            }
+            else if (b is Paragraph p)
+            {
+                foreach (var inl in p.Inlines)
+                    if (inl is InlineTable it)
+                    {
+                        into.Add(it.Table);
+                        foreach (var (_, _, cell) in it.Table.LogicalCells()) CollectTables(cell.Blocks, into);
+                    }
+            }
+        }
     }
 
     // Inserts the IME preedit text at a character offset, splitting a text segment if needed.
@@ -1272,19 +1469,11 @@ public partial class RichEditor : Control
         segs.Add(new LayoutSeg { Text = preedit, Props = preeditProps });
     }
 
+    // The top-level block containing p, at any nesting depth. Delegates to the single parent-chain
+    // walker (this used to be a second, one-level copy that missed nested/inline tables — so a paste
+    // target or a clipboard block capture anchored inside one silently fell back to the document end).
     private Block? FindTopLevelBlock(Paragraph p)
-    {
-        if (Document == null) return null;
-        foreach (var b in Document.Blocks)
-        {
-            if (b == p) return b;
-            if (b is TableBlock tb)
-                for (int r = 0; r < tb.Rows; r++)
-                    for (int c = 0; c < tb.Columns; c++)
-                        if (tb.Cells[r][c].Blocks.Contains(p)) return tb;
-        }
-        return null;
-    }
+        => Document != null ? TextRange.TopLevelBlockOf(Document, p) : null;
 
     private void InsertParsedDocument(FlowDocument parsed)
     {
@@ -1336,11 +1525,10 @@ public partial class RichEditor : Control
 
         // Split the caret paragraph: p keeps the head; tail takes the inlines after the caret (same props).
         int splitAt = SplitInlinesAt(p, _caretPosition.Offset);
-        var tail = new Paragraph
-        {
-            ListType = p.ListType, ListLevel = p.ListLevel, Indent = p.Indent,
-            TextAlignment = p.TextAlignment, Background = p.Background, HeadingLevel = p.HeadingLevel
-        };
+        // The tail continues the same paragraph, so it keeps the source's full format (heading level
+        // included — unlike Enter, this is a split of one logical paragraph, not a new one).
+        var tail = new Paragraph();
+        tail.CopyFormatFrom(p);
         while (p.Inlines.Count > splitAt)
         {
             var inl = p.Inlines[splitAt];
@@ -1532,14 +1720,12 @@ public partial class RichEditor : Control
         int idx = container.IndexOf(p);
         if (idx < 0) return;
         int insertAt = SplitInlinesAt(p, _caretPosition.Offset);
-        var np = new Paragraph
-        {
-            ListType = p.ListType,
-            ListLevel = p.ListLevel,
-            Indent = p.Indent,
-            TextAlignment = p.TextAlignment,
-            Background = p.Background
-        };
+        // Inherit the whole paragraph format (list, indent, alignment, background, line spacing,
+        // quote bar, margins, marker style) — but drop back to body text: a heading's Enter starts
+        // a normal paragraph (core rule #3).
+        var np = new Paragraph();
+        np.CopyFormatFrom(p);
+        np.HeadingLevel = 0;
         while (p.Inlines.Count > insertAt)
         {
             var inl = p.Inlines[insertAt];
@@ -1602,10 +1788,15 @@ public partial class RichEditor : Control
         }
     }
 
+    // Inside a table, Ctrl+A selects in stages (HWP/Excel): the cell's own contents, then the whole
+    // table — climbing one nesting level per press — then the document. Outside a table it selects
+    // the document straight away, as before.
     private void SelectAll()
     {
+        if (TrySelectAllStage()) return;
         var allParas = GetAllParagraphsInOrder();
         if (allParas.Count == 0) return;
+        _cellSelMode = false; _cellSelTable = null;
         _selectionStart = new TextPointer(allParas[0], 0);
         var lastPara = allParas[allParas.Count - 1];
         _selectionEnd = new TextPointer(lastPara, GetParagraphLength(lastPara));
@@ -1806,6 +1997,42 @@ public partial class RichEditor : Control
             context.FillRectangle(brush, new Rect(originX + rect.X, originY + rect.Y, rect.Width, rect.Height));
     }
 
+    // Amber tint painted under every occurrence of the find-highlight query (screen chrome only, never
+    // printed). Cheap no-op unless a find UI has set FindHighlightQuery.
+    private static readonly IBrush FindMatchBrush = new SolidColorBrush(Color.FromArgb(70, 255, 190, 0));
+
+    private void DrawFindHighlights(DrawingContext context, Paragraph p, Avalonia.Media.TextFormatting.TextLayout layout,
+        double originX, double originY)
+    {
+        if (FindHighlightQuery is not { } q) return;
+        var cmp = FindHighlightMatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        string text = BuildPlain(p);
+
+        // The CURRENT match is already marked by the selection, so it must not be tinted as well:
+        // amber over the translucent selection blue blends into a muddy low-contrast fill, and the
+        // user loses track of which match the caret is on. Highlight-all marks the OTHER matches
+        // (browser / VS Code behaviour). Same "selection is a match" test as GetFindMatchPosition.
+        int selStart = -1;
+        if (_selectionStart.Paragraph != null && ReferenceEquals(_selectionStart.Paragraph, p)
+            && ReferenceEquals(_selectionEnd.Paragraph, p))
+        {
+            int a = Math.Min(_selectionStart.Offset, _selectionEnd.Offset);
+            int b = Math.Max(_selectionStart.Offset, _selectionEnd.Offset);
+            if (b - a == q.Length) selStart = a;
+        }
+
+        int from = 0;
+        while (from <= text.Length)
+        {
+            int idx = text.IndexOf(q, from, cmp);
+            if (idx < 0) break;
+            if (idx != selStart)
+                foreach (var rect in layout.HitTestTextRange(idx, q.Length))
+                    context.FillRectangle(FindMatchBrush, new Rect(originX + rect.X, originY + rect.Y, rect.Width, rect.Height));
+            from = idx + 1;
+        }
+    }
+
     private void DeleteBlock(Block b)
     {
         if (Document == null) return;
@@ -1829,13 +2056,31 @@ public partial class RichEditor : Control
     private static bool RemoveBlockFromCells(System.Collections.Generic.IEnumerable<Block> blocks, Block target)
     {
         foreach (var blk in blocks)
+        {
             if (blk is TableBlock tb)
-                foreach (var row in tb.Cells)
-                    foreach (var cell in row)
-                    {
-                        if (cell.Blocks.Remove(target)) return true;
-                        if (RemoveBlockFromCells(cell.Blocks, target)) return true;
-                    }
+            {
+                if (RemoveBlockFromTable(tb, target)) return true;
+            }
+            // An inline table's cells are block containers too (milestone B), but they hang off a
+            // paragraph's inlines rather than a block list — so this walk never reached them and a
+            // block image / divider / nested table inside one could not be deleted.
+            else if (blk is Paragraph p)
+            {
+                foreach (var inl in p.Inlines)
+                    if (inl is InlineTable it && RemoveBlockFromTable(it.Table, target)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool RemoveBlockFromTable(TableBlock tb, Block target)
+    {
+        foreach (var row in tb.Cells)
+            foreach (var cell in row)
+            {
+                if (cell.Blocks.Remove(target)) return true;
+                if (RemoveBlockFromCells(cell.Blocks, target)) return true;
+            }
         return false;
     }
 

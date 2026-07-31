@@ -79,6 +79,29 @@ public class Paragraph : Block
     /// <summary><see langword="true"/> if this paragraph is a bullet or numbered list item.</summary>
     public bool IsListItem => ListType != ListKind.None;
 
+    /// <summary>Copies every paragraph-level formatting field from <paramref name="source"/> (the
+    /// inlines are not touched). Single source for the edit paths that derive a new paragraph from an
+    /// existing one — Enter's split, the paste tail, list splitting — which each used to copy a
+    /// hand-picked subset and silently dropped the rest (line spacing, quote bar, marker style…).
+    /// Mirrors the field list in <see cref="Clone"/>; a caller that must diverge (Enter resets the
+    /// heading level to body text) overrides the field afterwards.</summary>
+    public void CopyFormatFrom(Paragraph source)
+    {
+        MarginTop = source.MarginTop;
+        MarginBottom = source.MarginBottom;
+        MarginRight = source.MarginRight;
+        TextAlignment = source.TextAlignment;
+        LineHeight = source.LineHeight;
+        LineSpacing = source.LineSpacing;
+        ListType = source.ListType;
+        ListMarker = source.ListMarker;
+        HeadingLevel = source.HeadingLevel;
+        Background = source.Background;
+        Indent = source.Indent;
+        IsQuote = source.IsQuote;
+        ListLevel = source.ListLevel;
+    }
+
     /// <inheritdoc/>
     public override TextElement Clone()
     {

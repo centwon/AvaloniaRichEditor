@@ -97,23 +97,39 @@ public partial class RichEditor
     /// <summary>Sets the highlight (background) brush of the current selection; pass <see langword="null"/> to clear.</summary>
     public void SetHighlight(IBrush? brush) { ApplyStyleToSelection(r => r.Background = brush); }
 
-    /// <summary>Adjusts the indent of the caret paragraph by <paramref name="delta"/> pixels (clamped 0–400).</summary>
-    public void Indent(double delta)
+    // Applies a paragraph-level change to EVERY paragraph the selection touches (just the caret's when
+    // the selection is collapsed), at any depth — cell and inline-table paragraphs included. Single
+    // choke point for the paragraph commands, which each used to poke `_caretPosition.Paragraph`
+    // directly: selecting several paragraphs and clicking "center" only aligned the one the caret
+    // happened to land on, while the list commands on the same toolbar already applied to the whole
+    // selection. NotifyStatus because indent/spacing/heading all change block heights.
+    private void ApplyToSelectedParagraphs(Action<Paragraph> action)
     {
         if (_caretPosition.Paragraph == null || IsReadOnly) return;
         if (Document != null) PushUndo();
-        var p = _caretPosition.Paragraph;
-        p.Indent = Math.Clamp(p.Indent + delta, 0, 400);
+        var targets = SelectedParagraphsInOrder();
+        if (targets.Count == 0) targets = new List<Paragraph> { _caretPosition.Paragraph };
+        foreach (var p in targets) action(p);
         InvalidateVisual();
+        NotifyStatus();
     }
-    /// <summary>Sets the text alignment of the caret paragraph.</summary>
-    public void SetTextAlignment(TextAlignment align) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.TextAlignment = align; InvalidateVisual(); } }
-    /// <summary>Sets the absolute line-box height (px) of the caret paragraph ("exactly" spacing).
+
+    /// <summary>Adjusts the indent of every selected paragraph by <paramref name="delta"/> pixels
+    /// (each clamped 0–400); the caret paragraph alone when nothing is selected.</summary>
+    public void Indent(double delta)
+        => ApplyToSelectedParagraphs(p => p.Indent = Math.Clamp(p.Indent + delta, 0, 400));
+    /// <summary>Sets the text alignment of every selected paragraph (the caret paragraph when nothing
+    /// is selected).</summary>
+    public void SetTextAlignment(TextAlignment align)
+        => ApplyToSelectedParagraphs(p => p.TextAlignment = align);
+    /// <summary>Sets the absolute line-box height (px) of every selected paragraph ("exactly" spacing).
     /// Prefer <see cref="SetLineSpacing"/> for proportional spacing that scales with font size.</summary>
-    public void SetLineHeight(double height) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineHeight = height; InvalidateVisual(); } }
-    /// <summary>Sets proportional line spacing on the caret paragraph as a multiple of the natural
+    public void SetLineHeight(double height)
+        => ApplyToSelectedParagraphs(p => p.LineHeight = height);
+    /// <summary>Sets proportional line spacing on every selected paragraph as a multiple of the natural
     /// single-line height (1.0 = single, 1.5 = 1.5 lines; HWP % ÷ 100). <see cref="double.NaN"/> clears it.</summary>
-    public void SetLineSpacing(double multiplier) { if (_caretPosition.Paragraph != null && !IsReadOnly) { if (Document != null) PushUndo(); _caretPosition.Paragraph.LineSpacing = multiplier; InvalidateVisual(); } }
+    public void SetLineSpacing(double multiplier)
+        => ApplyToSelectedParagraphs(p => p.LineSpacing = multiplier);
     /// <summary>Toggles a bullet list on the selected paragraphs.</summary>
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
     /// <summary>Toggles a numbered list on the selected paragraphs.</summary>
@@ -121,6 +137,26 @@ public partial class RichEditor
     /// <summary>Applies a specific bullet/number marker style to the selected paragraphs, turning the
     /// list on (never a toggle). The style implies the list kind (bullets vs numbers).</summary>
     public void SetListStyle(ListMarkerStyle style) { SetListType(ListMarkerStyleKind(style), style); }
+
+    /// <summary>Removes the list attribute (bullet/number, marker style, and nesting level) from the
+    /// selected paragraphs entirely. Unlike the toggle, this always clears regardless of the current list
+    /// kind, so it's discoverable as a "None" list-style pick.</summary>
+    public void RemoveList()
+    {
+        if (_caretPosition.Paragraph == null || Document == null || IsReadOnly) return;
+        PushUndo();
+        // Any depth: clearing a list needs no block splicing, so cell paragraphs are cleared too.
+        var targets = SelectedParagraphsInOrder();
+        if (targets.Count == 0) targets = new List<Paragraph> { _caretPosition.Paragraph };
+        foreach (var p in targets)
+        {
+            p.ListType = ListKind.None;
+            p.ListMarker = ListMarkerStyle.Default;
+            p.ListLevel = 0;
+        }
+        UpdateParents(Document);
+        InvalidateVisual();
+    }
 
     // The list kind a marker style belongs to (number formats -> Ordered, everything else -> Bullet).
     private static ListKind ListMarkerStyleKind(ListMarkerStyle s) => s switch
@@ -138,13 +174,18 @@ public partial class RichEditor
         bool turningOff = marker == null && _caretPosition.Paragraph.ListType == kind;
         void ApplyMarker(Paragraph par) { if (marker.HasValue) par.ListMarker = marker.Value; }
 
-        // Apply to every selected top-level paragraph (just the caret's when there's no selection).
-        var targets = SelectedTopLevelParagraphs();
+        // Apply to every selected paragraph (just the caret's when there's no selection). Only
+        // top-level ones can take the hard-line splitting path below — it splices Document.Blocks —
+        // so paragraphs living in a table cell are toggled in place here, however many are selected.
+        var targets = new List<Paragraph>();
+        foreach (var p in SelectedParagraphsInOrder())
+        {
+            if (Document.Blocks.Contains(p)) { targets.Add(p); continue; }
+            p.ListType = turningOff ? ListKind.None : kind;
+            ApplyMarker(p);
+        }
         if (targets.Count == 0)
         {
-            // Caret in a table cell etc. -> just flag that paragraph.
-            _caretPosition.Paragraph.ListType = turningOff ? ListKind.None : kind;
-            ApplyMarker(_caretPosition.Paragraph);
             InvalidateVisual();
             return;
         }
@@ -192,23 +233,38 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // Top-level paragraphs touched by the current selection (or just the caret's when collapsed).
-    private List<Paragraph> SelectedTopLevelParagraphs()
+    // Every paragraph the current selection touches, in document order and at ANY depth — table cells
+    // and nested/inline tables included (or just the caret's paragraph when collapsed). Paragraph-level
+    // commands must reach cell paragraphs too; only the ones that splice Document.Blocks need the
+    // top-level subset below.
+    private List<Paragraph> SelectedParagraphsInOrder()
     {
         var result = new List<Paragraph>();
         if (Document == null) return result;
+        // An active cell block IS the selection — the rectangle the user sees filled, not the linear
+        // document-order run between its two corners (which misses the part of the first/last cell
+        // outside the drag offsets and sweeps in cells outside the rectangle).
+        if (SelectedCellsBlock() is { } cells) return CellBlockParagraphs(cells);
         var all = GetAllParagraphsInOrder();
         int si = _selectionStart.Paragraph != null ? all.IndexOf(_selectionStart.Paragraph) : -1;
         int ei = _selectionEnd.Paragraph != null ? all.IndexOf(_selectionEnd.Paragraph) : -1;
         if (si < 0 || ei < 0)
         {
-            if (_caretPosition.Paragraph != null && Document.Blocks.Contains(_caretPosition.Paragraph))
-                result.Add(_caretPosition.Paragraph);
+            if (_caretPosition.Paragraph != null) result.Add(_caretPosition.Paragraph);
             return result;
         }
         if (si > ei) (si, ei) = (ei, si);
-        for (int i = si; i <= ei; i++)
-            if (Document.Blocks.Contains(all[i])) result.Add(all[i]);
+        for (int i = si; i <= ei; i++) result.Add(all[i]);
+        return result;
+    }
+
+    // Top-level paragraphs touched by the current selection (or just the caret's when collapsed).
+    private List<Paragraph> SelectedTopLevelParagraphs()
+    {
+        var result = new List<Paragraph>();
+        if (Document == null) return result;
+        foreach (var p in SelectedParagraphsInOrder())
+            if (Document.Blocks.Contains(p)) result.Add(p);
         return result;
     }
 
@@ -217,14 +273,15 @@ public partial class RichEditor
     private List<Paragraph> SplitByNewlines(Paragraph p)
     {
         var result = new List<Paragraph>();
-        Paragraph NewPara() => new Paragraph
+        // Each split line is the same paragraph continued, so it carries the source's full format
+        // (heading level, line spacing, marker style, quote bar, margins) — a hand-picked subset
+        // here used to drop everything but list/indent/alignment/background.
+        Paragraph NewPara()
         {
-            ListType = p.ListType,
-            ListLevel = p.ListLevel,
-            Indent = p.Indent,
-            TextAlignment = p.TextAlignment,
-            Background = p.Background
-        };
+            var np = new Paragraph();
+            np.CopyFormatFrom(p);
+            return np;
+        }
         var cur = NewPara();
         foreach (var inl in p.Inlines)
         {
@@ -245,9 +302,16 @@ public partial class RichEditor
             }
             else
             {
-                var c = (Inline)inl.Clone();
-                c.Parent = cur;
-                cur.Inlines.Add(c);
+                // MOVE, don't clone. Only a run straddling a '\n' has to become new objects; everything
+                // else appears exactly once in the output, and the source paragraph is spliced out of the
+                // document on return. Cloning an InlineImage or InlineTable here replaced it with a copy
+                // and left the original — with its cell paragraphs — detached, so a caret inside an
+                // inline table's cell was orphaned by toggling a bullet on its host paragraph: it pointed
+                // into a subtree no longer in the document, and typing went nowhere visible. (Safe to
+                // re-parent in place: the enumeration doesn't modify p.Inlines, and the undo checkpoint
+                // was taken before any of this.)
+                inl.Parent = cur;
+                cur.Inlines.Add(inl);
             }
         }
         result.Add(cur);
@@ -256,27 +320,23 @@ public partial class RichEditor
         return result;
     }
 
-    /// <summary>Sets the heading level of the caret paragraph (1–6 = h1–h6, 0 = body).
+    /// <summary>Sets the heading level of every selected paragraph (1–6 = h1–h6, 0 = body); the caret
+    /// paragraph alone when nothing is selected.
     /// The heading's larger, bold look is applied at layout time (to runs left at the body default),
     /// not baked into the runs — so toggling a heading on and back off never overwrites or loses a
     /// run's manually-set font size.</summary>
     public void SetHeading(int level)
-    {
-        if (_caretPosition.Paragraph == null || IsReadOnly) return;
-        if (Document != null) PushUndo();
-        _caretPosition.Paragraph.HeadingLevel = level;
-        InvalidateVisual();
-        NotifyStatus(); // the heading size changes the paragraph's height -> re-measure the scroll extent
-    }
+        => ApplyToSelectedParagraphs(p => p.HeadingLevel = level);
 
-    /// <summary>Toggles blockquote styling (indented, with a quote bar) on the caret paragraph.</summary>
+    /// <summary>Toggles blockquote styling (indented, with a quote bar) on every selected paragraph
+    /// (the caret paragraph when nothing is selected).</summary>
     public void ToggleQuote()
     {
-        if (_caretPosition.Paragraph == null || IsReadOnly) return;
-        if (Document != null) PushUndo();
-        _caretPosition.Paragraph.IsQuote = !_caretPosition.Paragraph.IsQuote;
-        InvalidateVisual();
-        NotifyStatus();
+        // The caret paragraph decides the direction and every selected paragraph follows it, so a mixed
+        // selection ends up uniform rather than inverted item by item (same rule as the list toggle).
+        if (_caretPosition.Paragraph is not { } cp) return;
+        bool on = !cp.IsQuote;
+        ApplyToSelectedParagraphs(p => p.IsQuote = on);
     }
 
     /// <summary>Toggles strikethrough on the current selection (or the caret run).</summary>
@@ -305,6 +365,20 @@ public partial class RichEditor
         // Keyboard shortcuts are blocked in OnKeyDown, but the public commands (ToggleBold etc.)
         // must not mutate a ReadOnly document either.
         if (IsReadOnly) return;
+        // A cell block styles every run of every selected cell, whole cells at a time — the linear
+        // range would style only from the drag's offset in the first cell to its offset in the last.
+        if (SelectedCellsBlock() is { } cells)
+        {
+            if (Document != null) PushUndo();
+            foreach (var p in CellBlockParagraphs(cells))
+            {
+                foreach (var inl in p.Inlines) if (inl is Run r) styleAction(r);
+                TextRange.CoalesceRuns(p); // styling a whole paragraph can make its runs identical
+            }
+            InvalidateMeasure();
+            InvalidateVisual();
+            return;
+        }
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
             if (Document != null) PushUndo();

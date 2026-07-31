@@ -15,6 +15,15 @@ namespace AvaloniaRichEditor.Formatters;
 /// simple tables (<c>\trowd…\cell…\row</c>). Unlike Word's CF_HTML (which references temp files for
 /// images), RTF embeds the image bytes, so nothing is lost. Zero external dependencies beyond a
 /// code-page provider for CJK text (<c>\'hh</c> bytes are decoded with the document's <c>\ansicpg</c>).
+/// <para>Writing covers more than reading, because that is what other applications consume: merged cells
+/// (<c>\clmgf</c>/<c>\clmrg</c>, <c>\clvmgf</c>/<c>\clvmrg</c>), per-cell shading (<c>\clcbpat</c>),
+/// everything a cell holds (several paragraphs, images, dividers, list markers), and tables nested in a
+/// cell (<c>\nestcell</c>/<c>\nestrow</c>, read back as a real nested table). Reading back is still
+/// lossier in places: cell merge flags and shading are ignored, and a nested table's column widths come
+/// out at the default because they live in the ignorable <c>{\*\nesttableprops}</c> group. An
+/// <see cref="InlineTable"/> has no RTF equivalent, so it is written as a
+/// block-level table that splits its host paragraph — the content and its order survive, the in-line
+/// placement does not (use <c>.flow</c>/JSON or HTML to keep that).</para>
 /// </summary>
 public static class RtfDocumentFormatter
 {
@@ -89,13 +98,46 @@ internal sealed class RtfParser
     private int _pictWTwips, _pictHTwips;
 
     // Table builder: rows accumulate until a normal paragraph (or the document end) flushes them
-    // into a TableBlock. Each cell is one Paragraph; intra-cell \par becomes a newline.
-    private List<List<Paragraph>>? _tableRows;
-    private List<Paragraph>? _curRow;
+    // into a TableBlock. A cell is a TableCell so it can hold blocks, not just its text paragraph:
+    // Word writes a table inside a cell as nested rows, and those become real nested tables.
+    // Intra-cell \par becomes a newline.
+    private List<List<TableCell>>? _tableRows;
+    private List<TableCell>? _curRow;
+    // Nested tables, keyed by RTF nesting depth (\itap): 2 = a table inside a cell, 3 = one deeper, and
+    // so on. `_nestRows[d]` holds the finished rows at that depth and `_nestRow[d]` the row being filled;
+    // both are consumed when the cell one level up closes. Depth comes from \itap, which is how Word
+    // tells the levels apart — every \nestcell looks the same otherwise.
+    private readonly Dictionary<int, List<List<TableCell>>> _nestRows = new();
+    private readonly Dictionary<int, List<TableCell>> _nestRow = new();
+    private int _itap = 1;
+    // Paragraphs already closed in the cell being filled, keyed by the depth that cell belongs to: text
+    // that preceded a nested table stays with ITS cell instead of being taken by the deeper one.
+    private readonly Dictionary<int, List<Block>> _cellPending = new();
     // \cellx<N> = cumulative right boundary (twips) per column. Captured from the first row so the
     // pasted table keeps the source column widths instead of a uniform default.
     private List<int> _curCellx = new();
     private List<int>? _tableCellx;
+
+    // Per-cell properties from the row definition. In RTF these precede each \cellx, one group per
+    // column, so they accumulate here and commit when that column's boundary arrives. Merged cells
+    // still occupy a column each (with their own \cellx and \cell), so the imported grid has the same
+    // shape and only the spans have to be reconstructed.
+    private struct CellProps
+    {
+        public bool HMergeFirst;  // \clmgf — this cell starts a horizontal merge
+        public bool HMergeCont;   // \clmrg — it continues the one to its left
+        public bool VMergeFirst;  // \clvmgf — starts a vertical merge
+        public bool VMergeCont;   // \clvmrg — continues the one above
+        public int Shading;       // \clcbpat<N> — colour-table index, 0 = none
+    }
+    private CellProps _pendingCell;             // accumulating until the next \cellx
+    private List<CellProps> _curCellProps = new();
+    private List<List<CellProps>>? _tableCellProps;
+
+    // Set by our own {\*\arinline} marker: the next top-level table was an InlineTable and belongs back
+    // on the preceding paragraph's text line. A parser field, not part of the pushed/popped group state,
+    // because the marker group closes before the table it describes begins.
+    private bool _nextTableInline;
 
     public RtfParser(string s) => _s = s;
 
@@ -104,7 +146,11 @@ internal sealed class RtfParser
         while (_i < _s.Length)
         {
             char c = _s[_i];
-            if (c == '{') { _stack.Push(_st); _i++; }
+            // Commit the text collected so far BEFORE descending into a group. A group can switch to a
+            // destination we skip ({\*\nesttableprops …}, bookmarks, fields — all normal in Word output),
+            // and the closing brace's FlushRun then runs with that destination still active and throws the
+            // pending run away. Word documents lost the text preceding any such group.
+            if (c == '{') { if (_st.Dest == Dest.Normal) FlushRun(); _stack.Push(_st); _i++; }
             else if (c == '}')
             {
                 if (_st.Dest == Dest.Pict) FinalizePict(); else FlushRun();
@@ -195,19 +241,46 @@ internal sealed class RtfParser
             case "par": case "sect": EndParagraph(); break;
             case "line": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
             case "tab": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
-            case "pard": break; // paragraph-property reset: nothing we track resets here
+            case "pard": SetItap(1); break; // paragraph-property reset; \itap is one of those properties
 
-            // tables
-            case "trowd": StartRow(); break;
-            case "cell": EndCell(); break;
-            case "row": EndRow(); break;
+            // tables. Every one of these is guarded by the destination: Word writes a nested table's row
+            // definition inside the ignorable group {\*\nesttableprops \trowd …\nestrow}, and acting on
+            // control words we are supposed to be skipping started a fresh row mid-cell — which threw
+            // away the text the parent cell had accumulated so far.
+            case "trowd": if (_st.Dest == Dest.Normal) StartRow(); break;
+            case "cell": if (_st.Dest == Dest.Normal) EndCell(); break;
+            case "row": if (_st.Dest == Dest.Normal) EndRow(); break;
             case "intbl": break;                  // structure is driven by \cell/\row
-            case "cellx": _curCellx.Add(p ?? 0); break; // column boundary, for source-width preservation
+            // Column boundary: commits this column's width AND the cell properties collected for it.
+            case "cellx":
+                if (_st.Dest == Dest.Normal)
+                {
+                    _curCellx.Add(p ?? 0);
+                    _curCellProps.Add(_pendingCell);
+                    _pendingCell = default;
+                }
+                break;
 
-            // Nested tables (B deferred): the model can't nest a table in a cell, so flatten —
-            // nested cells become tab-separated, nested rows newline-separated, inside the parent cell.
-            case "nestcell": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
-            case "nestrow": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
+            // Cell merge + shading. The writer has always emitted these (Word and HWP honour them), but
+            // reading them back was skipped, so our own export came home with the grid un-merged and the
+            // cell colours gone — a round trip through our own format lost more than Word's did.
+            case "clmgf": if (_st.Dest == Dest.Normal) _pendingCell.HMergeFirst = true; break;
+            case "clmrg": if (_st.Dest == Dest.Normal) _pendingCell.HMergeCont = true; break;
+            case "clvmgf": if (_st.Dest == Dest.Normal) _pendingCell.VMergeFirst = true; break;
+            case "clvmrg": if (_st.Dest == Dest.Normal) _pendingCell.VMergeCont = true; break;
+            case "clcbpat": if (_st.Dest == Dest.Normal) _pendingCell.Shading = p ?? 0; break;
+
+            // A table inside a cell: the model nests (milestone A) and the writer emits these, so they
+            // come back as a real nested TableBlock in the parent cell rather than flattened text.
+            case "itap": SetItap(p ?? 1); break;
+            case "nestcell": if (_st.Dest == Dest.Normal) EndNestedCell(); break;
+            case "nestrow": EndNestedRow(); break; // see EndNestedRow: intentionally not destination-gated
+            // The fallback copy of a nested table, for readers that can't nest. We can, so skip it —
+            // otherwise its \par landed as a stray line break in the parent cell.
+            case "nonesttables": _st.Dest = Dest.Skip; break;
+            // Our own inline-table marker (see WriteParagraph). It arrives as {\*\arinline}, so \* has
+            // already switched this group to Skip — the group is empty and only the flag matters.
+            case "arinline": _nextTableInline = true; break;
 
             // Text boxes / shapes (HWP 글상자): the editor has no floating frame, so pull out the
             // \shptxt content as normal text and skip the shape's property name/value groups (\sp/\sn/\sv).
@@ -344,26 +417,106 @@ internal sealed class RtfParser
 
     private void StartRow()
     {
-        _tableRows ??= new List<List<Paragraph>>();
-        _curRow ??= new List<Paragraph>();
+        _tableRows ??= new List<List<TableCell>>();
+        _curRow ??= new List<TableCell>();
         _curCellx = new List<int>(); // \cellx for this row follows \trowd
+        _curCellProps = new List<CellProps>();
+        _pendingCell = default;
         _para = new Paragraph();     // first cell's content
     }
 
     private void EndCell()
     {
         if (_curRow == null) StartRow();
+        int col = _curRow!.Count;
+        var cell = TakeCell(childDepth: 2);
+        // The row definition precedes the cells' content, so this column's shading is already known.
+        if (col < _curCellProps.Count && _curCellProps[col].Shading is int ci && ci > 0 && ci < _colors.Count)
+        {
+            var bg = _colors[ci];
+            if (bg.A != 0) cell.Background = new ImmutableSolidColorBrush(bg);
+        }
+        _curRow.Add(cell);
+    }
+
+    // \nestcell ends one cell of the nested row at the current depth. That cell may itself contain the
+    // table one level deeper, which is why it goes through the same builder as a top-level cell.
+    private void EndNestedCell()
+    {
+        int depth = Math.Max(2, _itap);
+        if (!_nestRow.TryGetValue(depth, out var row)) _nestRow[depth] = row = new List<TableCell>();
+        row.Add(TakeCell(depth + 1));
+    }
+
+    // \nestrow ends the nested row at the current depth. It arrives inside {\*\nesttableprops …}, which
+    // is an ignorable destination, so this one is deliberately NOT gated on the destination — a reader
+    // that supports nesting has to act on it there. The row's \cellx widths are in that same group and
+    // are not read, so a nested table comes back at the default column width.
+    private void EndNestedRow()
+    {
+        int depth = Math.Max(2, _itap);
+        if (!_nestRow.TryGetValue(depth, out var row) || row.Count == 0) return;
+        if (!_nestRows.TryGetValue(depth, out var rows)) _nestRows[depth] = rows = new List<List<TableCell>>();
+        rows.Add(row);
+        _nestRow.Remove(depth);
+    }
+
+    // The cell that just ended: the paragraphs it collected, the table nested one level deeper (if any),
+    // and the paragraph currently being filled — in the order they appeared.
+    private TableCell TakeCell(int childDepth)
+    {
         FlushRun();
-        _curRow!.Add(_para);
+        var cell = new TableCell(_para);
         _para = new Paragraph();
+
+        // A nested row left open (no \nestrow seen, e.g. truncated input) still counts.
+        int saved = _itap;
+        _itap = childDepth;
+        EndNestedRow();
+        _itap = saved;
+
+        int at = 0;
+        if (_cellPending.TryGetValue(childDepth - 1, out var pending))
+        {
+            _cellPending.Remove(childDepth - 1);
+            foreach (var b in pending) cell.Blocks.Insert(at++, b);
+        }
+        if (_nestRows.TryGetValue(childDepth, out var rows))
+        {
+            _nestRows.Remove(childDepth);
+            if (BuildTable(rows, null) is { } inner) cell.Blocks.Insert(at, inner);
+        }
+        return cell;
+    }
+
+    // \itap<N> switches nesting depth. Going deeper closes the text collected so far as a paragraph of
+    // the cell being filled, so "text, then a nested table" keeps that order instead of the text being
+    // swallowed into the nested table's first cell.
+    private void SetItap(int depth)
+    {
+        if (depth == _itap) return;
+        if (depth > _itap)
+        {
+            FlushRun();
+            if (_para.Inlines.Count > 0)
+            {
+                // The paragraph belongs to the cell being filled at the CURRENT depth, not the deeper one.
+                if (!_cellPending.TryGetValue(_itap, out var pending))
+                    _cellPending[_itap] = pending = new List<Block>();
+                pending.Add(_para);
+                _para = new Paragraph();
+            }
+        }
+        _itap = depth;
     }
 
     private void EndRow()
     {
         if (_curRow == null) return;
-        _tableRows ??= new List<List<Paragraph>>();
+        _tableRows ??= new List<List<TableCell>>();
         _tableRows.Add(_curRow);
         _curRow = null;
+        (_tableCellProps ??= new List<List<CellProps>>()).Add(_curCellProps);
         if (_tableCellx == null && _curCellx.Count > 0) _tableCellx = _curCellx; // keep the first row's columns
     }
 
@@ -371,21 +524,81 @@ internal sealed class RtfParser
     {
         var rows = _tableRows;
         var cellx = _tableCellx;
+        var props = _tableCellProps;
         _tableRows = null;
         _curRow = null;
         _tableCellx = null;
-        if (rows == null || rows.Count == 0) return;
+        _tableCellProps = null;
+        bool inline = _nextTableInline;
+        _nextTableInline = false;
+        if (BuildTable(rows, cellx) is not { } table) return;
+        ApplyMerges(table, props);
+
+        // Marked as an inline table by our own writer: put it back on the preceding paragraph's line
+        // and continue that paragraph, so "text, table, more text" is one line again instead of three
+        // blocks. The host paragraph was closed by the \par the writer emits before the table.
+        if (inline && _doc.Blocks.Count > 0 && _doc.Blocks[_doc.Blocks.Count - 1] is Paragraph host)
+        {
+            _doc.Blocks.RemoveAt(_doc.Blocks.Count - 1);
+            var it = new InlineTable { Table = table };
+            it.Parent = host;
+            host.Inlines.Add(it);
+            // Whatever the current paragraph has collected is the text that followed the table.
+            foreach (var inl in new List<Inline>(_para.Inlines))
+            {
+                _para.Inlines.Remove(inl);
+                inl.Parent = host;
+                host.Inlines.Add(inl);
+            }
+            _para = host; // the caller adds it back
+            return;
+        }
+        _doc.Blocks.Add(table);
+    }
+
+    // Rebuilds the merge spans from the row definitions' \clmgf/\clmrg and \clvmgf/\clvmrg flags.
+    // A merged region is an anchor cell followed by continuation cells to its right and/or below;
+    // MergeCells folds the (empty) covered cells into it and stamps the spans.
+    private static void ApplyMerges(TableBlock tb, List<List<CellProps>>? props)
+    {
+        if (props == null) return;
+        for (int r = 0; r < tb.Rows && r < props.Count; r++)
+        {
+            var row = props[r];
+            for (int c = 0; c < tb.Columns && c < row.Count; c++)
+            {
+                if (!row[c].HMergeFirst && !row[c].VMergeFirst) continue;
+
+                int c1 = c;
+                if (row[c].HMergeFirst)
+                    while (c1 + 1 < tb.Columns && c1 + 1 < row.Count && row[c1 + 1].HMergeCont) c1++;
+
+                int r1 = r;
+                if (row[c].VMergeFirst)
+                    while (r1 + 1 < tb.Rows && r1 + 1 < props.Count
+                           && c < props[r1 + 1].Count && props[r1 + 1][c].VMergeCont) r1++;
+
+                if (r1 > r || c1 > c) tb.MergeCells(r, c, r1, c1);
+            }
+        }
+    }
+
+    // Rows of cells -> a TableBlock, padding short rows. Shared by the top-level table and the nested
+    // ones, so both get the same shape (spans reset to 1, widths from \cellx when available).
+    private static TableBlock? BuildTable(List<List<TableCell>>? rows, List<int>? cellx)
+    {
+        if (rows == null || rows.Count == 0) return null;
 
         int cols = 0;
         foreach (var r in rows) if (r.Count > cols) cols = r.Count;
-        if (cols == 0) return;
+        if (cols == 0) return null;
 
         var tb = new TableBlock(rows.Count, cols);
         tb.Cells.Clear();
         foreach (var r in rows)
         {
             var cells = new List<TableCell>(cols);
-            for (int c = 0; c < cols; c++) cells.Add(c < r.Count ? new TableCell(r[c]) : new TableCell());
+            for (int c = 0; c < cols; c++) cells.Add(c < r.Count ? r[c] : new TableCell());
             tb.Cells.Add(cells);
         }
         tb.Rows = rows.Count;
@@ -413,7 +626,7 @@ internal sealed class RtfParser
             tb.ColSpans.Add(cs);
             tb.RowSpans.Add(rs);
         }
-        _doc.Blocks.Add(tb);
+        return tb;
     }
 
     // ---- images ----
@@ -439,7 +652,10 @@ internal sealed class RtfParser
         }
         string mime = ImageMime.Detect(bytes) ?? _pictMime;
 
-        if (w < 64 && h < 64)
+        // A picture inside a table row belongs to the cell being built. Splicing it out as a block
+        // would push the cell's half-built paragraph into the document body — a photo in a Word/HWP
+        // table came out beside the table, with the surrounding text reordered. Keep it inline.
+        if ((w < 64 && h < 64) || _curRow != null)
         {
             var img = new InlineImage { Width = w, Height = h };
             img.SetImageData(bytes, mime, bmp);
@@ -550,10 +766,32 @@ internal sealed class RtfWriter
         double headingSize = heading ? HeadingSize(p.HeadingLevel) : 0;
         foreach (var inline in p.Inlines)
         {
-            if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, heading, headingSize);
-            else if (inline is InlineImage img && img.RawBytes != null) WritePict(img.RawBytes, img.MimeType, img.Width, img.Height);
+            // RTF has no inline table, so one splits its host paragraph: the text before it, then the
+            // table as a block-level one, then the rest as a fresh paragraph. Word/HWP show the same
+            // content in the same order; only the "inside the line" placement is lost (our own .flow and
+            // HTML keep it).
+            if (inline is InlineTable it)
+            {
+                _body.Append(@"\par").Append('\n');
+                // Ours, and deliberately an ignorable destination: RTF has no inline table, so the
+                // grid still goes out as a block-level table that every other reader shows exactly as
+                // before ({\*\...} groups are skipped by definition). Our own reader sees the marker
+                // and puts the table back on the text line, so RTF joins .flow/JSON/HTML in
+                // round-tripping an inline table through our own save/load.
+                _body.Append(@"{\*\arinline}");
+                WriteTable(it.Table);
+                _body.Append(@"\pard ");
+                continue;
+            }
+            WriteInline(inline, heading, headingSize);
         }
         _body.Append(@"\par").Append('\n');
+    }
+
+    private void WriteInline(Inline inline, bool heading, double headingSize)
+    {
+        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, heading, headingSize);
+        else if (inline is InlineImage img && img.RawBytes != null) WritePict(img.RawBytes, img.MimeType, img.Width, img.Height);
     }
 
     private void WriteRun(Run r, bool heading, double headingSize)
@@ -575,38 +813,146 @@ internal sealed class RtfWriter
         _body.Append('}');
     }
 
-    private void WriteTable(TableBlock tb)
+    // `depth` is the RTF table nesting level (\itap): 1 for a top-level table, 2+ for a table inside a
+    // cell, which RTF writes with \nestcell/\nestrow instead of \cell/\row.
+    private void WriteTable(TableBlock tb, int depth = 1)
     {
         for (int row = 0; row < tb.Rows; row++)
         {
-            _body.Append(@"\trowd");
-            // Cumulative right cell boundaries in twips (px*15), from the column widths.
+            var rowDef = new StringBuilder();
+            rowDef.Append(@"\trowd");
+            if (depth > 1) rowDef.Append($@"\itap{depth}");
+            // Cumulative right cell boundaries in twips (px*15), from the column widths. Each boundary is
+            // preceded by that cell's own properties: merge flags and shading.
             int x = 0;
             for (int col = 0; col < tb.Columns; col++)
             {
+                var (cs, rs) = tb.SpanOf(row, col);
+                bool covered = tb.IsCovered(row, col);
+                var (ar, ac) = tb.AnchorOf(row, col);
+                // Horizontal merge: the anchor opens the range, the columns it covers continue it.
+                if (cs > 1 && !covered) rowDef.Append(@"\clmgf");
+                else if (covered && ar == row) rowDef.Append(@"\clmrg");
+                // Vertical merge: same, down the rows.
+                if (rs > 1 && !covered) rowDef.Append(@"\clvmgf");
+                else if (covered && ar != row) rowDef.Append(@"\clvmrg");
+                // Cell shading uses the colour table, like text colour.
+                int bg = ColorIndex(tb.Cells[ar][ac].Background);
+                if (bg > 0) rowDef.Append($@"\clcbpat{bg}");
+                // Cell borders. Without these Word and HWP draw the grid with NO lines at all — the
+                // table is there and selectable, but invisible, so an exported document does not look
+                // like the one on screen. The editor draws a plain single border, so emit that.
+                rowDef.Append(@"\clbrdrt\brdrs\brdrw10\clbrdrl\brdrs\brdrw10")
+                      .Append(@"\clbrdrb\brdrs\brdrw10\clbrdrr\brdrs\brdrw10");
+
                 int wpx = col < tb.ColumnWidths.Count ? (int)tb.ColumnWidths[col] : 100;
                 x += wpx * 15;
-                _body.Append($@"\cellx{x}");
+                rowDef.Append($@"\cellx{x}");
             }
+
+            // A nested row's definition follows its cells, wrapped in an ignorable group; a top-level
+            // row's precedes them.
+            if (depth == 1) _body.Append(rowDef);
             for (int col = 0; col < tb.Columns; col++)
             {
-                _body.Append(@"\pard\intbl ");
-                var cell = tb.Cells[row][col];
-                // Every paragraph of the cell, separated by \par (P3/P4 multi-paragraph cells).
-                bool firstCellPara = true;
-                foreach (var cblk in cell.Blocks)
+                _body.Append(@"\pard\intbl");
+                if (depth > 1) _body.Append($@"\itap{depth}");
+                _body.Append(' ');
+                // A nested table leaves \itap set to ITS depth, so the cell has to re-declare its own
+                // before closing — otherwise the reader books this cell into the deeper table.
+                if (WriteCellContent(tb.Cells[row][col], depth))
                 {
-                    if (cblk is not Paragraph cpara) continue;
-                    if (!firstCellPara) _body.Append(@"\par ");
-                    firstCellPara = false;
-                    foreach (var inline in cpara.Inlines)
-                        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, false, 0);
+                    _body.Append(@"\pard\intbl");
+                    if (depth > 1) _body.Append($@"\itap{depth}");
+                    _body.Append(' ');
                 }
-                _body.Append(@"\cell");
+                _body.Append(depth == 1 ? @"\cell" : @"\nestcell");
             }
-            _body.Append(@"\row").Append('\n');
+            if (depth == 1)
+                _body.Append(@"\row").Append('\n');
+            else
+                // \nesttableprops is ignorable: a reader that doesn't do nested tables still sees the
+                // cell text (ours flattens it into the parent cell), which is why this can't corrupt a
+                // document. \nonesttables carries the same fallback for very old readers.
+                _body.Append(@"{\*\nesttableprops").Append(rowDef).Append(@"\nestrow}{\nonesttables\par}").Append('\n');
         }
-        _body.Append(@"\pard").Append('\n');
+        if (depth == 1) _body.Append(@"\pard").Append('\n');
+    }
+
+    // Everything a cell can hold: several paragraphs (separated by \par), block images, dividers, and
+    // tables — nested ones and the inline tables living in a cell paragraph, both written one \itap
+    // deeper. Returns true when it wrote such a table, so the caller can re-declare this cell's depth.
+    private bool WriteCellContent(TableCell cell, int depth)
+    {
+        bool first = true, wroteNested = false;
+
+        // A nested table leaves \itap at ITS depth and consumes the paragraph properties. Anything this
+        // cell writes afterwards has to re-open the cell's own level first, or Word books that text into
+        // the deeper table and drops it (a paragraph after a nested table vanished entirely).
+        void ReopenCell()
+        {
+            _body.Append(@"\pard\intbl");
+            if (depth > 1) _body.Append($@"\itap{depth}");
+            _body.Append(' ');
+            // A fresh paragraph is now open at this cell's level, so the next block writes straight
+            // into it rather than prefixing another \par (which would leave a blank line).
+            first = true;
+        }
+        // Terminate whatever this cell has written so far before descending into a nested table.
+        // Without it the preceding paragraph's text is not closed and Word glues it onto the first
+        // nested cell ("...형제 문단)중첩1").
+        void CloseBeforeNested()
+        {
+            if (!first) _body.Append(@"\par ");
+            first = false;
+        }
+
+        foreach (var blk in cell.Blocks)
+        {
+            if (blk is Paragraph cpara)
+            {
+                if (!first) _body.Append(@"\par ");
+                first = false;
+                if (cpara.ListType != ListKind.None)
+                {
+                    WriteEscaped(Controls.RichEditor.ListMarkerText(cpara.ListType, cpara.ListMarker, 1));
+                    _body.Append(@"\tab ");
+                }
+                bool heading = cpara.HeadingLevel is >= 1 and <= 6;
+                double headingSize = heading ? HeadingSize(cpara.HeadingLevel) : 0;
+                foreach (var inline in cpara.Inlines)
+                {
+                    if (inline is InlineTable it)
+                    {
+                        CloseBeforeNested();
+                        WriteTable(it.Table, depth + 1);
+                        wroteNested = true;
+                        ReopenCell(); // the rest of this paragraph belongs to THIS cell, not the inner table
+                    }
+                    else WriteInline(inline, heading, headingSize);
+                }
+            }
+            else if (blk is TableBlock nested)
+            {
+                CloseBeforeNested();
+                WriteTable(nested, depth + 1);
+                wroteNested = true;
+                ReopenCell();
+            }
+            else if (blk is ImageBlock cib && cib.RawBytes != null)
+            {
+                if (!first) _body.Append(@"\par ");
+                first = false;
+                WritePict(cib.RawBytes, cib.MimeType, cib.Width, cib.Height);
+            }
+            else if (blk is DividerBlock)
+            {
+                if (!first) _body.Append(@"\par ");
+                first = false;
+                _body.Append(@"\brdrb\brdrs\brdrw10\brsp20 ");
+            }
+        }
+        return wroteNested;
     }
 
     // {\*\shppict{\pict ...}} — the modern wrapper our parser un-skips; bytes go out as hex, size in twips.

@@ -82,13 +82,15 @@ public class FlowPackageTests
         Assert.Contains("\"ImageRef\"", json);
     }
 
+    // Was "returns an empty document"; changed at the 1.0 freeze (2026-07-31). Reading a damaged
+    // package as an empty one leaves the host unable to tell the two apart, so it shows a blank editor
+    // and a save overwrites a recoverable file with nothing. Malformed input is reported instead —
+    // see MalformedInputTests for the contract across all four importers.
     [Fact]
-    public void Load_GarbageStream_ReturnsEmptyDocument()
+    public void Load_GarbageStream_Throws()
     {
         using var ms = new MemoryStream(new byte[] { 1, 2, 3, 4, 5 });
-        var doc = DocumentPackage.Load(ms);
-        Assert.NotNull(doc);
-        Assert.Empty(doc.Blocks);
+        Assert.Throws<InvalidDataException>(() => DocumentPackage.Load(ms));
     }
 
     [Fact]

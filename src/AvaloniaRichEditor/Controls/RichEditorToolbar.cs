@@ -1,13 +1,15 @@
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
@@ -21,6 +23,11 @@ namespace AvaloniaRichEditor.Controls;
 /// Labels/tooltips come from <see cref="RichEditorLocalization"/>. Layout/placement is up to the host —
 /// this control is only the strip itself. App-shell concerns (save/open, zoom, printing) are deliberately
 /// out of scope.
+/// <para>No button in the strip takes focus — including buttons the host adds through
+/// <see cref="LeadingItems"/>/<see cref="TrailingItems"/>, whose <c>Focusable</c> is cleared as well.
+/// The caret is only painted while the editor is focused, so a focus grab would hide it and send the next
+/// keystroke to the button. A picker's popup (colour, table, list markers, line spacing) does take focus
+/// while it is open, and focus returns to <see cref="Target"/> when it closes.</para>
 /// </summary>
 public partial class RichEditorToolbar : UserControl
 {
@@ -114,6 +121,15 @@ public partial class RichEditorToolbar : UserControl
 
     private void OnLanguageChanged(object? sender, EventArgs e)
     {
+        // The event is raised on whatever thread set the language, and rebuilding the strip creates
+        // Avalonia controls — thread-affine objects. A host that switches language from a background
+        // thread (or any worker) would otherwise take down the app on "the calling thread cannot access
+        // this object"; hop to the UI thread instead.
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnLanguageChanged(sender, e));
+            return;
+        }
         Build();
         Sync();
     }
@@ -150,6 +166,24 @@ public partial class RichEditorToolbar : UserControl
         else if (e.Property == RichEditor.PageSizeProperty
               || e.Property == RichEditor.PageOrientationProperty
               || e.Property == RichEditor.ShowPageBoundariesProperty) SyncPage();
+    }
+
+    // A picker's popup takes focus while it is open, so the caret stops being painted and the next
+    // keystroke would go to whatever the popup left focused. Hand focus back to the editor on close —
+    // the same guarantee the strip's buttons give by refusing focus outright.
+    private Flyout PickerFlyout(Flyout f)
+    {
+        f.Closed += (_, _) => Target?.Focus();
+        return f;
+    }
+
+    // Clears Focusable on every Button in a built subtree. Host-supplied Leading/TrailingItems are walked
+    // too: they sit in the same strip, so a focus grab there hides the caret just the same.
+    private static void DisableButtonFocus(Control c)
+    {
+        if (c is Button b) b.Focusable = false;
+        foreach (var child in Avalonia.LogicalTree.LogicalExtensions.GetLogicalChildren(c))
+            if (child is Control cc) DisableButtonFocus(cc);
     }
 
     // ---------------- UI construction ----------------
@@ -196,6 +230,10 @@ public partial class RichEditorToolbar : UserControl
                 BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
             };
             ToolTip.SetTip(cb, tip);
+            // A combo legitimately needs focus while its list is open, so it can't simply refuse it like
+            // the buttons do. Hand focus back once the dropdown closes — doing it on SelectionChanged
+            // instead would yank focus away while arrowing through an open list.
+            cb.DropDownClosed += (_, _) => Target?.Focus();
             return cb;
         }
         Control Div() => new Border
@@ -369,6 +407,12 @@ public partial class RichEditorToolbar : UserControl
         foreach (var c in LeadingItems) AddHost(c);
         if (LeadingItems.Count > 0) wrap.Children.Add(Div());
         foreach (var c in items) wrap.Children.Add(c);
+        // No toolbar button may take focus. The caret is only painted while the editor is focused, so a
+        // click hid it and sent the next keystroke to the button — the command still ran against the
+        // remembered caret position, which is why the buttons looked like they worked while typing had
+        // stopped. Done as one pass over the assembled strip rather than a flag in each factory, because
+        // several pickers (colour, lists, spacing, table insert) build their buttons inline.
+        foreach (var c in wrap.Children) DisableButtonFocus(c);
         if (TrailingItems.Count > 0) wrap.Children.Add(Div());
         foreach (var c in TrailingItems) AddHost(c);
 
@@ -465,6 +509,7 @@ public partial class RichEditorToolbar : UserControl
                 Background = new SolidColorBrush(color),
                 Width = 22, Height = 22, Margin = new Thickness(1), Padding = new Thickness(0),
                 BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1),
+                Focusable = false, // see the Btn factory — the caret must survive a swatch click
             };
             sw.Click += (_, _) => Apply(color);
             grid.Children.Add(sw);
@@ -488,7 +533,7 @@ public partial class RichEditorToolbar : UserControl
         hexRow.Children.Add(applyBtn);
         panel.Children.Add(hexRow);
 
-        btn.Flyout = new Flyout { Content = panel };
+        btn.Flyout = PickerFlyout(new Flyout { Content = panel });
         return btn;
     }
 
@@ -556,7 +601,7 @@ public partial class RichEditorToolbar : UserControl
         var panel = new StackPanel { Spacing = 4 };
         panel.Children.Add(grid);
         panel.Children.Add(label);
-        btn.Flyout = new Flyout { Content = panel };
+        btn.Flyout = PickerFlyout(new Flyout { Content = panel });
         return btn;
     }
 
@@ -625,7 +670,7 @@ public partial class RichEditorToolbar : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
         ToolTip.SetTip(presets, Loc("LineSpacing"));
-        var flyout = new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft };
+        var flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft });
         var panel = new StackPanel { MinWidth = 64 };
         foreach (var pct in SpacingPercents)
         {
@@ -710,7 +755,7 @@ public partial class RichEditorToolbar : UserControl
             Padding = new Thickness(2, 0), MinWidth = 16, VerticalAlignment = VerticalAlignment.Center,
         };
         ToolTip.SetTip(presets, tip);
-        var flyout = new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft };
+        var flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft });
         var panel = new StackPanel { MinWidth = 64 };
         foreach (var (style, g) in options)
         {

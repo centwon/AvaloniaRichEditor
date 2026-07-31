@@ -125,15 +125,27 @@ public class RtfFormatterTests
     }
 
     [Fact]
-    public void NestedTable_FlattensIntoParentCell()
+    public void NestedTable_BecomesANestedTableInTheParentCell()
     {
-        // The nested cells/rows can't nest in the model, so they flatten into the parent cell text.
-        var doc = Parse("{\\rtf1\\ansi\\trowd\\cellx2000 outer \\nestcell inner1\\nestcell inner2\\nestrow\\cell\\row\\pard x\\par}");
-        var tb = doc.Blocks.OfType<TableBlock>().First();
-        var cell = tb.Cells[0][0].Para.Text();
-        Assert.Contains("outer", cell);
-        Assert.Contains("inner1", cell);
-        Assert.Contains("inner2", cell);
+        // \nestcell/\nestrow used to flatten into the parent cell's text (tabs and newlines) because the
+        // model had no table-in-a-cell. It does now, so they come back as a real nested table, and the
+        // parent cell keeps its own text alongside it.
+        //
+        // Word's shape: the nested row's cells come first at \itap2, then its row definition inside the
+        // ignorable props group, then the parent cell's own text back at \itap1.
+        var doc = Parse("{\\rtf1\\ansi\\trowd\\cellx2000" +
+                        "\\pard\\intbl\\itap2 inner1\\nestcell\\pard\\intbl\\itap2 inner2\\nestcell" +
+                        "{\\*\\nesttableprops\\trowd\\itap2\\cellx1000\\cellx2000\\nestrow}{\\nonesttables\\par}" +
+                        "\\pard\\intbl outer \\cell\\row\\pard x\\par}");
+
+        var cell = doc.Blocks.OfType<TableBlock>().First().Cells[0][0];
+        Assert.Contains("outer", string.Concat(cell.Blocks.OfType<Paragraph>().Select(p => p.Text())));
+
+        var inner = Assert.Single(cell.Blocks.OfType<TableBlock>());
+        Assert.Equal(1, inner.Rows);
+        Assert.Equal(2, inner.Columns);
+        Assert.Equal("inner1", inner.Cells[0][0].Para.Text().Trim());
+        Assert.Equal("inner2", inner.Cells[0][1].Para.Text().Trim());
     }
 
     [Fact]

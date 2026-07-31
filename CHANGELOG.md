@@ -1,8 +1,407 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2026-07-31
+
+**The API is frozen.** From here on the public surface follows SemVer: no breaking change without a
+major bump. What made this 1.0 was not new features — the editor has been feature-complete since 0.8.0 —
+but verification depth: interaction and render-pixel test infrastructure, a full-source audit, real
+Word/HWP/browser checks of the exported formats, and measured performance.
+
+Round-2 backport of platform-agnostic features the WinUI 3 port (WinUIRichEditor) pulled ahead on after
+0.9.0, the defects a full read-through of every source file turned up, and the 1.0 verification work
+(interaction and render-pixel test infrastructure, interoperability gaps, performance measurement, API
+freeze review). New public API is additive apart from the two removals noted below;
+355 → 528 unit + 9 → 17 render tests, build 0 warn / 0 err.
+
+### Added
+- **`RichEditor.IsModified` / `MarkSaved()` / `IsModifiedChanged`** — a "needs saving" dirty flag. Any edit
+  (typing, delete, structural, formatting) sets it; loading a document or calling `MarkSaved()` clears it.
+  Undo/redo count as modifications (it is a hint, not a content diff). The built-in toolbar Export clears it.
+- **`RichEditor.RemoveList()`** — removes the list attribute (bullet/number, marker style, nesting level)
+  from the selected paragraphs entirely, so "None" is reachable as an explicit list-style pick (not only the
+  toggle, which required matching the current kind).
+- **`RichEditor.AutoLinkOnType`** (default true) — toggle for typing-time auto-linking, and the linker now
+  also recognizes `www.` tokens (prefixed `https://`), trims trailing punctuation, validates the result as an
+  absolute http(s) URI with a dotted host, and fires on Tab/Enter as well as space.
+- **`RichEditor.AllowRemoteImagesOnPaste`** (default true) — privacy opt-out: when false, remote
+  (`http`/`https`) `<img>` sources in pasted/loaded HTML are not fetched. `HtmlDocumentFormatter.ParseHtml` /
+  `ParseHtmlAsync` gain a matching `allowRemoteImages` parameter. `data:`/`file:` images are unaffected.
+- **Find highlight-all.** `SetFindHighlight(query, matchCase)` / `ClearFindHighlight()` tint every occurrence
+  of the query (amber, screen-only — never printed); `GetFindMatchPosition()` returns the selection's
+  `(current, total)` position among matches for a find bar's "n/m" counter. `FindNext`/`FindPrev` set it.
+- **Staged `Ctrl+A` inside a table** (HWP/Excel): the first press selects the cell's own contents, the
+  next the whole table, then one enclosing table per press (a table nested in a cell, or an inline
+  table’s host cell), and finally the document. A single-cell table has no separate table stage. Outside a table it still selects the document straight away. The stage is derived from
+  the current selection, so a click or arrow key in between restarts the sequence.
+- **`Select Cell` context-menu command** (ko: 셀 선택) — enters cell-selection mode with the clicked cell
+  selected as a block, the only way to select exactly ONE cell (dragging needs two). Once in the mode a
+  single click picks another cell, a drag extends the block, and a double-click drops back to a caret
+  inside the cell.
+- **`Paragraph.CopyFormatFrom(Paragraph)`** — copies every paragraph-level formatting field. One source
+  for the edit paths that derive a new paragraph from an existing one (see the Enter fix below).
+
+### API
+- **`RichEditor.AutoLinkOnType` is now a `StyledProperty`** (`AutoLinkOnTypeProperty`), like every other
+  behaviour flag (`IsReadOnly`, `Allow*`), so it can be bound and styled instead of only assigned in code.
+  Same name, same default (`true`); the property was added after 0.9.0, so nothing depended on the old form.
+- **`Formatters.RoundTripHarness` is no longer part of the library.** It is the `--roundtrip` CLI dev tool,
+  not consumer API, and it uses nothing but the public formatter surface — so it moved into the demo
+  project as an internal type. Removing public API is breaking, which is why it happens now, at the 1.0
+  freeze, rather than after it.
+- **Documentation corrected to match behaviour** ahead of the 1.0 API freeze: the `RichEditor` summary still
+  advertised the removed `EditorMode` presets; `HtmlDocumentFormatter` did not mention that inline tables
+  round-trip; `RtfDocumentFormatter` did not say that writing covers more than reading (merges and shading
+  are export-only, nested tables flatten on import, an inline table splits its host paragraph);
+  `RichEditorToolbar` did not state the focus guarantee; and `SetFindHighlight` claimed it tinted every
+  match when the current selection is deliberately excluded.
+
+### Interoperability
+- **Inline tables survive an HTML round-trip.** HTML has no inline table, so one went out as a `<table>`
+  and came back as a *block* table — saving and reloading split every paragraph that held one, and the
+  text after the table started a new paragraph. Our own export marks those tables (`data-are-inline`) and
+  the import puts them back on the text line. Foreign HTML carries no marker and still lands as a block
+  table.
+- **RTF import reads nested tables as nested tables.** `\nestcell`/`\nestrow` used to flatten into the
+  parent cell's text (tabs and newlines) because the model had no table-in-a-cell; it does now, so a table
+  inside a cell survives a Word/HWP paste — at any depth, keyed off `\itap` the way Word tells the levels
+  apart — and the parent cell keeps its own paragraphs in their original order around it. Nested column
+  widths still come out at the default: they live in the ignorable `{\*\nesttableprops}` group. The
+  `{\nonesttables …}` fallback copy is now skipped, so its `\par` no longer lands as a stray line break in
+  the parent cell.
+- **RTF export carries what a table actually holds.** The writer emitted only plain runs from a cell, so
+  merged cells, cell shading, images, list markers, nested tables and inline tables were dropped. Merges
+  now emit `\clmgf`/`\clmrg` and `\clvmgf`/`\clvmrg` (a `\cellx` per column either way), shading emits
+  `\clcbpat`, a cell writes all of its paragraphs/images/dividers/markers, and tables inside a cell go one
+  `\itap` deeper via `\nestcell`/`\nestrow`. An inline table splits its host paragraph (RTF has no inline
+  table), so text-then-table-then-rest comes out in order. Visual verification in Word/HWP is pending.
+
+### Security / robustness
+Every importer is reachable from a paste or a file the user picked, so all of them take input the
+editor did not write. A sweep with malformed and hostile input found three ways to take the host
+process down, all now covered by tests.
+- **A single `<td colspan="100000000">` exhausted memory.** The HTML importer sized its occupancy grid
+  (and then the `TableBlock`) straight from the attribute. `rowspan` was already bounded by the rows
+  that exist; `colspan` had no ceiling at all, so pasting one crafted — or merely buggy — table hung
+  the application. Column counts are now capped well above any real document.
+- **A `.flow`/JSON document declaring a huge table exhausted memory before a cell was read.** The
+  `TableBlock` constructor was called with the file's own `Rows`/`Columns`, and everything it allocated
+  was discarded on the next three lines in favour of the cells that actually exist. It now starts at
+  1×1, and the declared column count (which pads short rows) is capped.
+- **A JSON `null` inside `Blocks` threw `NullReferenceException`** instead of being skipped. Null
+  entries in `Cells` and `Inlines` were equally unguarded.
+
+### Changed
+- **A damaged document is now reported instead of being read as an empty one.** `DocumentPackage.Load`
+  swallowed a corrupt package and returned an empty document, while `DocumentSerializer.Deserialize`
+  — documented identically — threw. The silent version is the one that loses data: the host cannot
+  tell "this file was empty" from "this file is damaged", shows a blank editor, and a save then
+  overwrites a recoverable file with nothing. Both now throw (`InvalidDataException` for a package that
+  is not readable, `JsonException` for invalid JSON), and `LoadJson`/`LoadJsonAsync`/`LoadPackageAsync`
+  document that it surfaces. A package that simply carries no `document.json` is still not an error,
+  and the built-in toolbar Import already caught this — a bad file now leaves the open document alone
+  rather than replacing it with a blank one.
+
+### Accessibility
+- **A read-only editor was a keyboard trap.** The read-only key gate swallowed everything that was not
+  caret movement or copy/select-all, Tab included — so focus could enter a viewer and never Tab back
+  out. Tab now reaches the focus manager when `IsReadOnly` is set. An editable editor still keeps Tab
+  for itself (indent, and moving between table cells), as Word does.
+
+### Fixed
+Found by reading every source file end to end; each is covered by a regression test.
+- **Turning on a list detached an inline table or image in the same paragraph.** Converting a paragraph
+  to a list item splits its hard lines into new paragraphs and splices those into the document — and it
+  *cloned* every non-Run inline into them, leaving the original object with the discarded source
+  paragraph. A caret inside an inline table's cell was then pointing into a subtree no longer in the
+  document: typing went nowhere visible, and the selection chrome for an inline image tracked an object
+  that had been replaced by a copy. Only a run straddling a newline has to become new objects; every
+  other inline is now moved, so it is the same instance on both sides of the toggle. Found by a
+  randomized edit-sequence run checked against the structural invariants after every step.
+- **Interaction state survived a document swap.** Assigning a new `Document` left the selected block,
+  the block caret, the selected inline image and cell-selection mode pointing into the document just
+  replaced. That kept the whole old tree alive for the lifetime of the editor, and left the commands
+  reading those fields acting on blocks no longer in the tree — Delete pushed an undo checkpoint and
+  flipped `IsModified` for a block it could not find. All per-document interaction state, including any
+  drag in progress, is now cleared with the caches.
+- **A new `Cursor` was allocated on every mouse move** while "draw table" was armed but not yet
+  dragging — a native handle per event, in the one method whose own comment says cursors are cached
+  because it runs per mouse move. It uses the cached cursor now.
+
+Four of these came out of the Word/HWP visual check the roadmap had been carrying as pending — they
+are the failures a round-trip through *our own* reader cannot show, because our reader tolerates the
+malformed output our writer produced.
+- **Exported tables had no borders in Word or HWP.** The writer emitted no `\clbrdr*` at all, so every
+  table — top-level, nested, or from an inline table — arrived as an invisible grid: present and
+  selectable, but with no lines, so an exported document did not look like the one on screen until
+  borders were applied by hand. Each cell now carries a plain single border on all four sides.
+- **Word glued a cell's text onto its nested table's first cell.** A paragraph that preceded a nested
+  table inside the same cell was never terminated with `\par` before the writer descended, so
+  "…형제 문단)" and "중첩1" ran together in both Word and HWP.
+- **Word dropped the paragraphs that followed a nested table in the same cell.** They were written
+  while `\itap` still pointed at the *inner* table's level, so Word booked them into a table that had
+  already been closed and discarded them outright. The cell's own level is now re-declared as soon as
+  the nested table ends, rather than only just before the closing `\cell`.
+- **An inline table exported to HTML became a full-width band on its own line.** It inherited the
+  block table's `width:100%`, so every consumer except our own importer (which reads the
+  `data-are-inline` marker) laid it out as a block. It is now sized to its own columns and marked
+  `display:inline-table`, so it sits in the text line in browsers and Word too.
+
+- **The resize handle on an image inside a table cell did nothing.** A cell scales a picture down to
+  fit its width, so the handle sits at the *drawn* right edge — but the drag arithmetic started from the
+  image's *declared* width, which for anything inserted into a cell is normally several times larger
+  (insertion caps to the document width, not the cell's). A drag of a few dozen pixels only moved the
+  declared size within the range that still clamps to the same drawn width, so nothing moved at all; at
+  greater nesting depth, where cells are narrower, it was worse. The handle now carries the size it was
+  drawn at and the drag is measured against that. The resize also evicts the enclosing table chain and
+  re-measures, like the column/row drags already did, so the row grows with the image on the same frame
+  instead of after the next edit.
+- **RTF import ignored cell merges and shading.** The writer has always emitted `\clmgf`/`\clmrg`,
+  `\clvmgf`/`\clvmrg` and `\clcbpat`, and Word and HWP honour them — but the reader skipped all five, so
+  a document exported and reloaded through *our own* format came back with the grid un-merged and the
+  cell colours gone. Both are now read back.
+- **An inline table did not survive an RTF round trip.** RTF has no inline table, so it goes out as a
+  block table and came back as one, splitting its host paragraph permanently. Our own ignorable
+  `{\*\arinline}` marker now rides along: other applications skip it and see exactly the block table
+  they saw before, while our reader puts the table back on its text line. An inline table nested inside
+  a table cell is still written (and read) as a nested block table.
+- **A block inside an inline table's cell could not be deleted.** The block-removal walk searched the
+  document's top level and then recursed through *block* table cells only, so an image, divider or
+  nested table living in an inline table's cell was never found: Delete pushed an undo checkpoint,
+  dropped the selection, and left the block on screen.
+- **An inline table's host paragraph kept a stale layout when a non-paragraph block in one of its cells
+  changed.** The host paragraph's cache signature folded in the inline table's cell *paragraphs* only, so
+  resizing an image (or editing a table) inside such a cell changed the table's measured box without
+  invalidating the line it sits on — the text kept its old line box until some other edit forced a rebuild.
+- **An HTML round-trip inserted a space after every inline table.** The exported `</table>` carried the
+  pretty-printing newline that block tables get, and inside a text line that whitespace text node parsed
+  back as a space — so saving and reloading grew one space per inline table, per cycle.
+- **README described RTF import as flattening nested tables**, which stopped being true when
+  `\nestcell`/`\nestrow` began importing as real nested tables. It now states the losses that remain
+  (merge flags, shading, and a nested table's column widths).
+- **RTF import dropped text before any ignorable group.** The pending run was flushed at the group's
+  closing brace with the skipped destination still active, which threw it away. Word writes such groups
+  routinely (bookmarks, fields, and a nested table's `{\*\nesttableprops …}`), so ordinary Word documents
+  imported with text missing. The run is now committed before descending into a group.
+- **RTF import restarted a table row from inside a skipped group.** `\trowd`/`\cell`/`\row`/`\cellx` acted
+  regardless of destination, and Word puts a nested table's row definition in `{\*\nesttableprops \trowd
+  …\nestrow}` — so the parent cell's accumulated text was discarded mid-cell. All four are now guarded on
+  the destination.
+- **`Ctrl+Shift+X` cut the selection instead of striking it through.** The cut branch matched `Ctrl+X`
+  without excluding Shift, so it swallowed the strikethrough shortcut added in 0.9.0 — pressing it made
+  the selected text disappear. (`Ctrl+Z` already guarded the same way for `Ctrl+Shift+Z`.)
+- **Enter, block paste and list conversion dropped paragraph formatting.** Three edit paths built the new
+  paragraph by hand-copying five fields, silently losing line spacing, absolute line height, the right
+  margin, the bullet/number marker style and the quote bar — so pressing Enter in a 1.5-spaced paragraph
+  reverted the next one to single spacing. All three now go through `Paragraph.CopyFormatFrom`; Enter
+  still drops back to body text (core rule #3).
+- **Merging table cells destroyed everything past a covered cell's first paragraph.** `MergeCells` only
+  folded in `.Para`, a leftover from the single-paragraph-cell era; extra paragraphs, block images,
+  dividers and nested tables stayed in the covered cell, which `LogicalCells()` skips — invisible, and
+  wiped outright by a later unmerge. They now move to the anchor cell in document order.
+- **`TextPointer.CompareTo` never descended into nested or inline tables**, so a pointer inside one was
+  reported "not found" (index -1) and always sorted first — selection ordering, range deletion and
+  highlighting came out backwards for milestone A/B content. It now walks the same recursive document
+  order as `ParagraphsInBlocks` / `CollectParagraphs`.
+- **Find highlight-all muddied the current match.** The amber tint painted over the translucent selection
+  blue, blending to a low-contrast fill that hid which match the caret was on. Highlight-all now marks the
+  *other* matches (browser / VS Code behaviour); the current one stays a clean selection.
+- **List markers were never drawn inside table cells.** `DrawListMarker` was called only from the
+  top-level paragraph path, so a bulleted/numbered cell paragraph kept its `ListType` in the model but
+  rendered as plain text. `DrawCellBlockList` now draws one marker per hard line (numbering restarts per
+  cell), and the marker gutter is applied by *every* cell walk through the new `CellParaLeft` — render,
+  hit-test, link hit-test, caret line layout and measure — so the text, the click position and the caret
+  can't drift apart (core rule #1).
+- **List commands only reached the first selected paragraph inside a table cell.** `ToggleBullet` /
+  `ToggleNumbering` / `SetListStyle` / `RemoveList` collected only *top-level* selected paragraphs and
+  otherwise fell back to "just the caret's paragraph", so selecting several paragraphs in one cell listed
+  the first alone. Selection collection is now container-agnostic (`SelectedParagraphsInOrder`); only the
+  hard-line splitting path, which splices `Document.Blocks`, stays top-level — cell paragraphs toggle in
+  place.
+- **Clicking a resize handle marked the document modified.** Image, inline-image, column and row handles
+  pushed an undo checkpoint on pointer-*press*, so a bare click (no drag) left a no-op undo step and
+  flipped `IsModified` — a freshly loaded document reported unsaved changes. The checkpoint is now taken
+  on the drag's first actual movement.
+- **HTML `font-weight` was read from the whole style string.** The check looked for `bold`/`:600`…
+  anywhere in the declaration list, so `font-weight:normal;width:600px` parsed as bold. It now reads the
+  declaration's own value and compares numerically (`>= 600`), which also covers values like 650.
+- **An RTF picture inside a table row escaped its cell.** `\pict` data 64 px or larger was always spliced
+  in as a document-level image block — mid-row that pushed the half-built cell paragraph into the document
+  body, so a photo in a Word/HWP table came out beside the table with the surrounding text reordered.
+  Pictures stay inline while a row is open.
+- **Inline-table cells were never normalized.** Core rule #5 (every cell holds at least one paragraph)
+  recursed into block-table cells only, so an inline-table cell whose only block is an image — as a
+  deserialized `.flow` can contain — stayed paragraph-less and the caret could not enter it.
+- **`LoadHtml` / `LoadHtmlAsync` / `InsertHtml` ignored `AllowRemoteImagesOnPaste`.** The flag reached the
+  paste path only, so the documented privacy opt-out did not apply to loaded or inserted HTML.
+
+- **A nested or inline table never showed cell-block selection.** `DrawNestedTable` didn't ask for the
+  selected cell range, so selecting several of an inner table's cells — by drag, or with the staged
+  Ctrl+A — painted no fill and looked like nothing had happened. It now applies the same chrome as a
+  top-level table.
+- **Undo/redo threw the caret to the start of the document when the edit was made at depth.**
+  `UndoManager` identifies the caret by its index in document paragraph order, and both that walk and its
+  inverse stopped at each cell's *first* paragraph — a leftover from the single-paragraph-cell era. A
+  caret in a cell's 2nd+ paragraph (milestone A/P3), in a nested table (P4-2b) or in an inline table
+  (milestone B) was therefore never numbered, so the lookup fell back to index 0 and undo dropped the
+  caret at the top of the document instead of where the edit happened. Both walks now descend
+  recursively through cells and inline tables, in the same order as `TextPointer.CompareTo` /
+  `ParagraphsInBlocks` (anchor cells only).
+- **Deleting a selection spanning two paragraphs of the SAME table cell left a stray paragraph break.**
+  The merge was gated on "are both endpoints top-level blocks?", so two paragraphs of one cell — which
+  cells have hosted since milestone A/P3 — were classified as "crosses the grid" and never joined; any
+  blocks spanned between them were only blanked, not removed. The test is now "are they siblings in one
+  block list?", which covers a cell exactly as it covers the document's top level. A selection that
+  genuinely crosses cells still preserves the grid structure, as before.
+- **Deleting a selection anchored inside a nested or inline table left the blocks between it and the
+  other endpoint behind.** `TextRange.TopLevelBlockOf` (and its copy `RichEditor.FindTopLevelBlock`)
+  scanned each cell's block list one level deep, so a paragraph in a nested/inline table resolved to
+  "no top-level block" and the between-blocks removal was skipped entirely. Both now share one
+  parent-chain walker, which resolves a paragraph at any depth. This also fixes the paste target and
+  the clipboard block capture, which silently fell back to the document end from such a caret.
+- **`GetPlainText()` dropped all text inside nested and inline tables** — it descended exactly one
+  level (top-level paragraphs plus a cell's own paragraphs). The accessibility peer reads this method,
+  so that content was invisible to assistive technology too. It now uses the recursive document order.
+- **`GetImageCount()` under-counted images in nested and inline tables**, so the
+  `RecommendedImageLimitExceeded` soft-limit warning fired late or not at all.
+- **Paragraph commands ignored the selection and only changed the caret's paragraph.**
+  `SetTextAlignment`, `SetHeading`, `SetLineSpacing`, `SetLineHeight`, `Indent` and `ToggleQuote` each
+  poked `_caretPosition.Paragraph` directly, so selecting several paragraphs and clicking "center"
+  aligned just the one the caret happened to land on — while the list commands on the same toolbar
+  already applied to the whole selection. All six now go through one selection-aware choke point that
+  reaches paragraphs at any depth (table cells and inline tables included). `ToggleQuote` takes its
+  direction from the caret paragraph and applies it uniformly, so a mixed selection ends up consistent
+  rather than inverted item by item (the same rule the list toggle uses).
+- **Backspace at the very start of the document (or Delete at its end) left a no-op undo step** and
+  flipped `IsModified`, so a freshly loaded document reported unsaved changes after one stray key
+  press. The checkpoint is now taken only when there is an adjacent block to merge or remove —
+  the guard `Ctrl+Backspace`/`Ctrl+Delete` already had.
+- **One `Enter` pushed two identical undo checkpoints**, so the first `Ctrl+Z` after it appeared to do
+  nothing (it restored an already-current state) and a second press was needed to undo the split. The
+  redundant inner checkpoint is gone; Enter is one step, like every other structural edit.
+
+- **The table cell block was painted but never operated on.** `SelectedCellRange` fed the renderer and
+  the context menu and nothing else, so every edit/format command walked the linear text run between the
+  drag's two endpoints instead. The two disagree in both directions: the linear run starts at the drag's
+  *offset* inside the first cell (so a Delete left the text before it standing, and character formatting
+  covered only part of the corner cells), and document order between two corners sweeps in cells that
+  lie **outside** the painted rectangle (a vertical block in a 3-column table also caught the cells to
+  its right). Delete, character formatting, paragraph formatting and the list commands now all consult
+  the cell block first. Per Excel/HWP, `Delete` on a cell block clears the selected cells and leaves the
+  grid standing — removing rows or columns stays an explicit menu action.
+- **A single cell could not be selected as a unit.** `SelectedCellRange` returned null outright when both
+  endpoints were in one cell, so the only way into cell-selection mode was a drag across two or more
+  cells. A one-cell block is now a first-class selection, reachable from the new **Select Cell** context
+  menu command (and by a single click once in cell-selection mode, which already worked).
+- **An inline table inside a table cell could not be entered or drag-selected with the mouse.** The
+  top-level paragraph hit-test descended into an inline table's cells, but `HitTestBlockList` — the walk
+  for a cell's own contents — had no such descent, so a click stopped at the host paragraph's
+  object-replacement character. The table rendered (the cell render walk does flush inline-table draws),
+  it just wasn't reachable: the exact state you get by pasting a paragraph containing an inline table
+  into a cell. Both walks now share one geometry helper (rule #1). The same gap in the *link* walks is
+  fixed with it, so a hyperlink inside an inline table is now hoverable and clickable at any depth —
+  previously it read as plain text everywhere, top level included.
+- **A table row did not grow while the IME was composing in one of its cells.** The render walk splices
+  the preedit text into the caret's paragraph, but the measure walk rebuilt that paragraph without it,
+  so the row stayed sized for the text without the composition and the composed glyphs spilled past the
+  cell's bottom border — on every wrap while typing Korean/Japanese/Chinese into a narrow cell. The cell
+  measure now uses the same layout the renderer draws, and starting or ending a composition evicts the
+  cached table geometry up the enclosing chain (a nested cell pushes its host row; an inline table
+  re-shapes the paragraph line it sits in), since composition changes no model content and nothing else
+  would invalidate it. Top-level paragraphs had the same measure gap with a milder symptom — the render
+  walk does advance by the preedit height, so nothing overlapped, but the reported extent stayed a line
+  short and a composition at the end of a document could not be scrolled to. `MeasureContentHeight` now
+  applies the composition height there too; `BlockExtent` deliberately keeps handing the hit-tests and
+  pagination the plain layout, whose indices are logical offsets rather than display positions.
+- **Clicking the empty space to the right of a line put the caret one past the paragraph's end.**
+  `HitTestIndex` passed Avalonia's `TextPosition + IsTrailing` straight through, and past the end of a
+  line that is the paragraph's length + 1 — an offset that doesn't exist. Two everyday consequences:
+  **Backspace deleted nothing** (the delete range fell outside every run), and **typing there started a
+  new unformatted run**, so text typed after clicking to the right of a bold or coloured line came out
+  unstyled. Reproduced regardless of script or line length. The offset is now clamped to the paragraph's
+  real length in the one place every caret placement, drag selection, link and cell hit-test goes
+  through.
+- **Right-clicking inside an inline table offered no table operations.** The menu picked its target with
+  `GetBlockAtPoint`, which only sees top-level blocks; an inline table's grid hangs off a paragraph's
+  inlines, so the click fell through to the plain text menu with no row/column/merge/delete at all. The
+  target is now resolved from the hit position (`ContextMenuTargetTable`), which reaches a table at any
+  depth — the menu builder already handled inline tables, only the routing was missing.
+- **Resizing an inline table's row did not reflow its host paragraph until the next edit.** An inline
+  table is laid out inside the host paragraph's line box, and a resize drag mutates size without going
+  through an edit, so the frame runs as a "trusted" pass that returns the cached paragraph layout
+  without re-checking its signature. Only the table cache was evicted, so the paragraph kept its old
+  line box until a click or keystroke forced a rebuild. Both resize handlers now evict the whole
+  enclosing chain — the table, every table around it, and the host paragraph of any inline table on the
+  way (measured: 80 → 80 before, 80 → 206 after). The IME composition path, which is stale for the same
+  reason, now shares that helper.
+- **Pressing Space with the caret on a table's right-hand side opened the gap in front of it.** Indent
+  is the "space before a block" feature, but it fired from either side of the block caret, so the
+  whitespace appeared on the table's far side, nowhere near the caret. Indent/outdent (Space, Tab,
+  Shift+Tab) now belongs to the leading side only; on the trailing side the key types normally.
+- **Typing with a block caret active inserted at the wrong place.** Dismissing the block caret left the
+  text caret wherever it happened to be when the block caret was set, so a letter typed with the caret
+  sitting *after* a table went back into that table's last cell, and one typed *before* a table landed
+  in its first cell. The text caret now moves to the position the block caret stood for — the end of
+  the paragraph before the block, or the start of the one after it.
+- **A bare modifier press acted as a keystroke.** Pressing Shift on its own — the first half of
+  Shift+Tab — dismissed the block caret, and with the caret-placement fix above that visibly moved the
+  caret out from under the shortcut being typed. The same fall-through cancelled a selected image
+  before its Ctrl+C could arrive. Modifier keys (Shift/Ctrl/Alt/Win, Caps/Num/Scroll Lock) are now
+  ignored by the key handler, which acts on none of them.
+- **Toolbar buttons stole focus, so the caret vanished and typing stopped.** The caret is only painted
+  while the editor is focused, and nothing handed focus back after a click. The command itself still ran
+  against the remembered caret position, which is why the buttons looked like they worked while the
+  keyboard had gone dead — the outdent button made it obvious, but every button behaved this way. No
+  toolbar button takes focus now. The combo boxes still do (their dropdowns need it) and give it back
+  when the dropdown closes, rather than on every selection change, which would pull focus away while
+  arrowing through an open list.
+- **Typing never scrolled the caret back into view.** Every other edit reaches the bring-into-view
+  request through `ResetCaretBlink`, but the typing path deliberately skips that call — it would end
+  the undo coalescing run and give each keystroke its own checkpoint — so nothing asked the host to
+  scroll. The caret walked off the bottom as text grew, most visibly inside a table cell, which expands
+  downward as its content wraps. Typing now raises the request without disturbing the coalescing.
+- **Shift+Tab outside a table typed four spaces.** It fell into the same branch as plain Tab, so the
+  key did the opposite of what it means. It now undoes what Tab did — removing up to four spaces
+  immediately before the caret — and falls back to outdenting the paragraph when there are none, so an
+  indent set from the toolbar is still reachable from the keyboard.
+- **Clicking while the IME was composing landed at the wrong offset.** The glyphs on screen include the
+  preedit but the hit-test read the plain layout, so a click resolved to the position it would have had
+  without the composition — drifting further the longer the composition grew, and clamping to the end of
+  the paragraph once the click passed where the uncomposed text ended. The composed layout is now
+  hit-tested and its display index mapped back to a logical offset (before the composition maps through,
+  after it shifts back by its length, inside it resolves to its start). Inside a table cell the walk also
+  advanced by the uncomposed height while the cell's rect grew with the composition, so clicks on the
+  composition's own wrapped lines were attributed to the block below it.
+- **Moving the caret now ends a cell block.** The mode survived arrow keys, so the cell stayed filled
+  while the collapsed selection meant the edit commands acted on one character — the same paint versus
+  operation mismatch, reached by pressing → after selecting a cell.
+
+### Changed
+- **↑/↓ now walk into a table's rows (HWP), instead of stopping beside it and then skipping it.**
+  Arriving at a table from the paragraph above, ↓ enters its first row in the column under the caret;
+  ↑ from below enters the last row. Inside, the arrows step row to row, and from the far row they leave
+  to the neighbouring paragraph. Previously vertical navigation parked on the block caret next to the
+  table and a second press jumped over the whole thing, so a table's cells could not be reached by
+  keyboard at all without Tab, →, or a click. The block caret is unchanged and still reached with ←/→
+  or by clicking the table's outer border — that is where indenting and deleting the table as a unit
+  live. An **image** keeps the old behaviour: it has no text to enter, so ↑/↓ still stop on its block
+  caret.
+- **The synchronous `ParseHtml` / `LoadHtml` / `InsertHtml` no longer load remote images.** They used to
+  download every `http(s)` `<img>` on the calling thread (a 5 s per-parse budget), so loading web content
+  from the UI thread froze the app for up to that long — a hung UI is a worse failure than a missing
+  image. The synchronous path now performs no network I/O at all; `data:` and `file:` images are
+  unaffected. Use `ParseHtmlAsync` / `LoadHtmlAsync` (what paste already uses) to fetch remote images.
+
+### Performance
+- **`FindCell` no longer scans the document.** It resolved a paragraph's table cell by recursing through
+  every table and inline table in the document; it now walks the `Paragraph → TableCell → TableBlock`
+  parent chain (wired by `UpdateParents`). It runs per keystroke, per pointer move and per menu build.
+- **`PruneLayoutCaches` no longer evicts live nested/inline tables' geometry.** It collected only
+  top-level tables as "live", so past the cache cap every prune dropped the still-used entries for
+  tables in cells and inline tables, forcing a full re-measure on the next frame.
 
 ## [0.9.0] - 2026-07-07
 

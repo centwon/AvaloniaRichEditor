@@ -8,11 +8,62 @@ namespace AvaloniaRichEditor.Controls;
 // anchored at the selection. Part of RichEditor (split out of the main file for readability).
 public partial class RichEditor
 {
+    // ---- highlight-all ------------------------------------------------------
+    // While non-null, the render walk tints EVERY occurrence of this query (browser/VS Code find UX).
+    // Set live by a find UI as the user types, and by FindNext/FindPrev; cleared when the bar closes.
+    internal string? FindHighlightQuery { get; private set; }
+    internal bool FindHighlightMatchCase { get; private set; }
+
+    /// <summary>Sets (or clears, with null/empty) the query whose matches are highlighted while a find UI
+    /// is open. Every match except the current selection is tinted — the current one is already painted as
+    /// the selection, and tinting it too blends the two colours into a muddy fill. Independent of the
+    /// caret selection; purely visual.</summary>
+    public void SetFindHighlight(string? query, bool matchCase)
+    {
+        string? q = string.IsNullOrEmpty(query) ? null : query;
+        if (q == FindHighlightQuery && matchCase == FindHighlightMatchCase) return;
+        FindHighlightQuery = q;
+        FindHighlightMatchCase = matchCase;
+        InvalidateVisual();
+    }
+
+    /// <summary>Clears the highlight-all overlay (call when the find UI closes).</summary>
+    public void ClearFindHighlight() => SetFindHighlight(null, false);
+
+    /// <summary>Position of the current selection among all matches of the highlight query:
+    /// (current 1-based index or 0 when the selection isn't on a match, total match count).
+    /// For a find bar's "n/m" counter.</summary>
+    public (int current, int total) GetFindMatchPosition()
+    {
+        if (FindHighlightQuery is not { } q || Document == null) return (0, 0);
+        var cmp = FindHighlightMatchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        TextPointer s = _selectionStart, e = _selectionEnd;
+        if (s.CompareTo(e) > 0) (s, e) = (e, s);
+        bool selIsMatch = s.Paragraph != null && ReferenceEquals(s.Paragraph, e.Paragraph)
+            && e.Offset - s.Offset == q.Length;
+        int total = 0, current = 0;
+        foreach (var p in GetAllParagraphsInOrder())
+        {
+            string text = BuildPlain(p);
+            int from = 0;
+            while (from <= text.Length)
+            {
+                int idx = text.IndexOf(q, from, cmp);
+                if (idx < 0) break;
+                total++;
+                if (selIsMatch && ReferenceEquals(p, s.Paragraph) && idx == s.Offset) current = total;
+                from = idx + 1;
+            }
+        }
+        return (current, total);
+    }
+
     /// <summary>Selects the next occurrence of <paramref name="query"/> after the caret, wrapping around.
     /// Returns <see langword="true"/> if a match was found.</summary>
     public bool FindNext(string query, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
+        SetFindHighlight(query, matchCase);
         var paras = GetAllParagraphsInOrder();
         int pi = _selectionEnd.Paragraph != null ? paras.IndexOf(_selectionEnd.Paragraph) : -1;
         return FindCore(query, matchCase, backwards: false, wrap: true, fromPi: pi, fromOff: _selectionEnd.Offset);
@@ -23,6 +74,7 @@ public partial class RichEditor
     public bool FindPrev(string query, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
+        SetFindHighlight(query, matchCase);
         var paras = GetAllParagraphsInOrder();
         int pi = _selectionStart.Paragraph != null ? paras.IndexOf(_selectionStart.Paragraph) : -1;
         return FindCore(query, matchCase, backwards: true, wrap: true, fromPi: pi, fromOff: _selectionStart.Offset);
