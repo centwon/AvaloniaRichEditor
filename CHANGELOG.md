@@ -105,8 +105,23 @@ process down, all now covered by tests.
   and the built-in toolbar Import already caught this — a bad file now leaves the open document alone
   rather than replacing it with a blank one.
 
+### Accessibility
+- **A read-only editor was a keyboard trap.** The read-only key gate swallowed everything that was not
+  caret movement or copy/select-all, Tab included — so focus could enter a viewer and never Tab back
+  out. Tab now reaches the focus manager when `IsReadOnly` is set. An editable editor still keeps Tab
+  for itself (indent, and moving between table cells), as Word does.
+
 ### Fixed
 Found by reading every source file end to end; each is covered by a regression test.
+- **Interaction state survived a document swap.** Assigning a new `Document` left the selected block,
+  the block caret, the selected inline image and cell-selection mode pointing into the document just
+  replaced. That kept the whole old tree alive for the lifetime of the editor, and left the commands
+  reading those fields acting on blocks no longer in the tree — Delete pushed an undo checkpoint and
+  flipped `IsModified` for a block it could not find. All per-document interaction state, including any
+  drag in progress, is now cleared with the caches.
+- **A new `Cursor` was allocated on every mouse move** while "draw table" was armed but not yet
+  dragging — a native handle per event, in the one method whose own comment says cursors are cached
+  because it runs per mouse move. It uses the cached cursor now.
 
 Four of these came out of the Word/HWP visual check the roadmap had been carrying as pending — they
 are the failures a round-trip through *our own* reader cannot show, because our reader tolerates the

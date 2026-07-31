@@ -281,6 +281,7 @@ public partial class RichEditor : Control
         {
             _layoutCache.Clear();
             _tableLayoutCache.Clear();
+            ResetInteractionState(); // selections/modes point into the document being replaced
             if (Document != null) UpdateParents(Document);
             SyncPageSetupOnDocumentChanged(); // apply the loaded doc's page setup to the page properties
             _textChangedPending = true; // wholesale content swap
@@ -326,6 +327,39 @@ public partial class RichEditor : Control
             }
             InvalidateVisual();
         }
+    }
+
+    // Drops every piece of interaction state that names a block of the CURRENT document: the block
+    // selection, the block caret, the selected inline image, cell-selection mode and any drag in
+    // progress. Without this a document swap left them pointing into the document just replaced —
+    // which both keeps that whole tree alive for as long as the editor lives, and leaves commands
+    // acting on blocks that are no longer in the tree (Delete pushed an undo checkpoint and flipped
+    // IsModified for a block it could not find).
+    private void ResetInteractionState()
+    {
+        _selectedBlock = null;
+        _caretBlock = null;
+        _caretBlockAfter = false;
+        _selectedInline = null;
+        _cellSelMode = false;
+        _cellSelTable = null;
+        _pendingCaretStyles = null;
+
+        // A drag can only be in flight for a block of the old document.
+        _isResizingColumn = false; _resizingTable = null;
+        _isResizingRow = false; _resizingRowTable = null;
+        _isResizingImage = false; _resizingImage = null;
+        _isResizingInline = false; _resizingInline = null;
+        _dragUndoPending = false;
+        _isSelecting = false;
+
+        // Registries rebuilt on the next render; clearing them now releases the old blocks immediately.
+        _columnBoundaries.Clear();
+        _rowBoundaries.Clear();
+        _imageHandles.Clear();
+        _cellImageRects.Clear();
+        _inlineImageRects.Clear();
+        _inlineHandles.Clear();
     }
 
     private void DoUndo()

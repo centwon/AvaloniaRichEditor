@@ -53,7 +53,7 @@ public partial class RichEditor
         _pendingTableDraw = (rows, cols);
         _tableDrawStart = null;
         _tableDrawCurrent = null;
-        Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Cross);
+        Cursor = CrossCursor;
     }
 
     // Clamps a view-space point to the editor's drawable bounds, so the draw-table rubber-band stays
@@ -491,7 +491,7 @@ public partial class RichEditor
         if (_pendingTableDraw != null)
         {
             if (_tableDrawStart != null) { _tableDrawCurrent = ClampToEditorBounds(e.GetPosition(this)); InvalidateVisual(); }
-            else Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Cross);
+            else Cursor = CrossCursor; // cached: this runs per mouse move, and a Cursor is a native handle
             return;
         }
 
@@ -806,6 +806,11 @@ public partial class RichEditor
 
         if (IsReadOnly)
         {
+            // Tab has to reach the focus manager. An editable editor keeps it for itself (indent, and
+            // moving between table cells, as Word does), but a viewer has no use for it — swallowing it
+            // made a read-only editor a keyboard trap: focus went in and could never Tab back out.
+            // Returned unhandled, so the default focus navigation runs.
+            if (e.Key == Key.Tab) return;
             // Allow caret movement and copy/select-all; block everything that edits.
             bool nav = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown;
             bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A);
