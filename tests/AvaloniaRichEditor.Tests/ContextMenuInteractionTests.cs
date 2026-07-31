@@ -16,12 +16,33 @@ namespace AvaloniaRichEditor.Tests;
 // the hit position has to survive the trip, and the menu that opens has to carry the matching items.
 public class ContextMenuInteractionTests
 {
+    // The label the product itself would put on a row command, in whatever language the run picked up
+    // from the OS. Comparing against this keeps the test language-independent AND exact.
+    private static string RowMenuLabel => RichEditorLocalization.GetString("InsertRowAbove");
+
     private static ContextMenu? OpenMenu(RichEditor ed)
         => typeof(RichEditor).GetField("_openContextMenu", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(ed) as ContextMenu;
 
     private static IEnumerable<string> Headers(ContextMenu menu)
         => (menu.ItemsSource ?? menu.Items)!.OfType<MenuItem>().Select(mi => mi.Header?.ToString() ?? "");
+
+    // Every header in the menu, submenus included. Right-clicking inside a cell shows the ordinary text
+    // menu with row/column operations grouped under a "Table" submenu (0.8.0), so a top-level-only walk
+    // cannot see them.
+    private static IEnumerable<string> AllHeaders(ContextMenu menu)
+    {
+        IEnumerable<string> Walk(IEnumerable<object?> items)
+        {
+            foreach (var mi in items.OfType<MenuItem>())
+            {
+                yield return mi.Header?.ToString() ?? "";
+                foreach (var nested in Walk((mi.ItemsSource ?? mi.Items)!.Cast<object?>()))
+                    yield return nested;
+            }
+        }
+        return Walk((menu.ItemsSource ?? menu.Items)!.Cast<object?>());
+    }
 
     private static InteractionHost Host(FlowDocument doc)
     {
@@ -74,7 +95,29 @@ public class ContextMenuInteractionTests
 
         var menu = OpenMenu(host.Editor);
         Assert.NotNull(menu);
-        Assert.Contains(Headers(menu!), h => h.Contains("행") || h.Contains("Row"));
+        // Submenus included: a click inside a cell gets the text menu with the table operations
+        // grouped under "Table", so a top-level-only walk cannot see them.
+        //
+        // Match the exact localized string rather than a fragment. The original check was
+        // `h.Contains("행") || h.Contains("Row")` — and in Korean "실행 취소" (Undo) and "다시 실행"
+        // (Redo) both contain 행, so it matched every menu ever built and tested nothing on the
+        // author's machine. It only became a real assertion on an English CI runner, which is where
+        // it finally failed.
+        Assert.Contains(RowMenuLabel, AllHeaders(menu!));
+    }
+
+    // Control for the test above: the same recursive search must NOT find row operations when the
+    // click was not in a table, or that assertion would hold no matter what the menu contained.
+    [AvaloniaFact]
+    public void RightClickingPlainTextOffersNoTableOperations()
+    {
+        var host = Host(TextDoc());
+
+        host.Click(new Point(10, 8), MouseButton.Right);
+
+        var menu = OpenMenu(host.Editor);
+        Assert.NotNull(menu);
+        Assert.DoesNotContain(RowMenuLabel, AllHeaders(menu!));
     }
 
     // A right-click must not move the caret or drop the selection: the menu's Copy/Cut act on it.
