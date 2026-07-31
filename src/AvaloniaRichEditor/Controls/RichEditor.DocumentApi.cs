@@ -38,6 +38,9 @@ public partial class RichEditor
     public string ToJson() => Document != null ? Formatters.DocumentSerializer.Serialize(Document) : "";
 
     /// <summary>Replaces the document with one loaded from the library's JSON format.</summary>
+    /// <exception cref="System.Text.Json.JsonException"><paramref name="json"/> is not valid JSON.
+    /// A damaged file is reported rather than loaded as an empty document — catch this and tell the
+    /// user, or the editor would show a blank page and a save would overwrite the original.</exception>
     public void LoadJson(string json) => LoadDocument(Formatters.DocumentSerializer.Deserialize(json));
 
     /// <summary>Serializes the document to JSON on a background thread, keeping the UI responsive
@@ -53,6 +56,8 @@ public partial class RichEditor
 
     /// <summary>Parses JSON into a document on a background thread (image decoding is already
     /// deferred to first render), then swaps it in. Call (and await) from the UI thread.</summary>
+    /// <exception cref="System.Text.Json.JsonException"><paramref name="json"/> is not valid JSON;
+    /// surfaces from the await. See <see cref="LoadJson"/>.</exception>
     public async Task LoadJsonAsync(string json)
     {
         // Background: parsing + base64 only. Model objects (brushes, decorations) are Avalonia
@@ -75,6 +80,9 @@ public partial class RichEditor
     /// <summary>Reads a <c>.flow</c> package from <paramref name="source"/> on a background thread
     /// (image decoding is already deferred to first render), then swaps the document in. Call (and
     /// await) from the UI thread.</summary>
+    /// <exception cref="System.IO.InvalidDataException"><paramref name="source"/> is not a readable
+    /// <c>.flow</c> package; surfaces from the await. See <see cref="LoadJson"/>.</exception>
+    /// <exception cref="System.Text.Json.JsonException">The package's document is not valid JSON.</exception>
     public async Task LoadPackageAsync(System.IO.Stream source)
     {
         // Background: zip/JSON parsing + byte extraction only; model built on the UI thread

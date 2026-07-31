@@ -79,6 +79,32 @@ freeze review). New public API is additive apart from the two removals noted bel
   `\itap` deeper via `\nestcell`/`\nestrow`. An inline table splits its host paragraph (RTF has no inline
   table), so text-then-table-then-rest comes out in order. Visual verification in Word/HWP is pending.
 
+### Security / robustness
+Every importer is reachable from a paste or a file the user picked, so all of them take input the
+editor did not write. A sweep with malformed and hostile input found three ways to take the host
+process down, all now covered by tests.
+- **A single `<td colspan="100000000">` exhausted memory.** The HTML importer sized its occupancy grid
+  (and then the `TableBlock`) straight from the attribute. `rowspan` was already bounded by the rows
+  that exist; `colspan` had no ceiling at all, so pasting one crafted — or merely buggy — table hung
+  the application. Column counts are now capped well above any real document.
+- **A `.flow`/JSON document declaring a huge table exhausted memory before a cell was read.** The
+  `TableBlock` constructor was called with the file's own `Rows`/`Columns`, and everything it allocated
+  was discarded on the next three lines in favour of the cells that actually exist. It now starts at
+  1×1, and the declared column count (which pads short rows) is capped.
+- **A JSON `null` inside `Blocks` threw `NullReferenceException`** instead of being skipped. Null
+  entries in `Cells` and `Inlines` were equally unguarded.
+
+### Changed
+- **A damaged document is now reported instead of being read as an empty one.** `DocumentPackage.Load`
+  swallowed a corrupt package and returned an empty document, while `DocumentSerializer.Deserialize`
+  — documented identically — threw. The silent version is the one that loses data: the host cannot
+  tell "this file was empty" from "this file is damaged", shows a blank editor, and a save then
+  overwrites a recoverable file with nothing. Both now throw (`InvalidDataException` for a package that
+  is not readable, `JsonException` for invalid JSON), and `LoadJson`/`LoadJsonAsync`/`LoadPackageAsync`
+  document that it surfaces. A package that simply carries no `document.json` is still not an error,
+  and the built-in toolbar Import already caught this — a bad file now leaves the open document alone
+  rather than replacing it with a blank one.
+
 ### Fixed
 Found by reading every source file end to end; each is covered by a regression test.
 

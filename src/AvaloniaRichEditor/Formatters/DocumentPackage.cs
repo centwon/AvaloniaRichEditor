@@ -62,9 +62,13 @@ public static class DocumentPackage
         }
     }
 
-    /// <summary>Reads a .flow package from <paramref name="source"/>. Returns an empty document on
-    /// malformed input, mirroring <see cref="DocumentSerializer.Deserialize"/>. Image decoding is
-    /// deferred to first render. The stream is left open.</summary>
+    /// <summary>Reads a <c>.flow</c> package from <paramref name="source"/>. Image decoding is deferred
+    /// to first render. The stream is left open.</summary>
+    /// <exception cref="InvalidDataException">The stream is not a readable <c>.flow</c> package (not a
+    /// zip, or damaged).</exception>
+    /// <exception cref="JsonException">The package's <c>document.json</c> is not valid JSON.</exception>
+    /// <remarks>A package with no <c>document.json</c> is not an error — it reads as an empty document,
+    /// so a container that carries only images still loads.</remarks>
     public static FlowDocument Load(Stream source)
     {
         var (dto, pool) = ReadPackage(source);
@@ -103,7 +107,13 @@ public static class DocumentPackage
             }
             return (dto, pool);
         }
-        catch (InvalidDataException) { return (null, pool); }
-        catch (JsonException) { return (null, pool); }
+        // A corrupt package used to come back as an empty document. That is the worst outcome
+        // available: the host has no way to tell "this file was empty" from "this file is damaged",
+        // shows the user a blank editor, and a save then overwrites a recoverable file with nothing.
+        // Malformed input is reported; the caller decides what to tell the user. (2026-07-31)
+        catch (InvalidDataException ex)
+        {
+            throw new InvalidDataException("The stream is not a readable .flow package.", ex);
+        }
     }
 }
