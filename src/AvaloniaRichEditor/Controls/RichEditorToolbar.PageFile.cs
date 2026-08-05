@@ -233,7 +233,22 @@ public partial class RichEditorToolbar
         if (_printBtn != null) _printBtn.IsVisible = _printRequested != null;
     }
 
+    // Both file actions are invoked fire-and-forget from their button (`() => _ = ExportAsync()`), so an
+    // exception that escapes becomes an UNOBSERVED task exception and disappears without a trace — no
+    // dialog, no error, nothing on screen. The picker calls themselves are the likeliest throwers (a
+    // storage provider that refuses, an unreadable file), which is exactly why the guard has to wrap the
+    // WHOLE body including the picker, not just the parsing that follows it.
     private async Task ExportAsync()
+    {
+        try { await ExportCoreAsync(); }
+        catch (Exception ex)
+        {
+            RichEditorDiagnostics.Report(ex);
+            System.Diagnostics.Debug.WriteLine($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExportCoreAsync()
     {
         var top = TopLevel.GetTopLevel(this);
         if (top == null || Target?.Document == null) return;
@@ -285,6 +300,16 @@ public partial class RichEditorToolbar
 
     private async Task ImportAsync()
     {
+        try { await ImportCoreAsync(); }
+        catch (Exception ex)
+        {
+            RichEditorDiagnostics.Report(ex);
+            System.Diagnostics.Debug.WriteLine($"Import failed: {ex.Message}");
+        }
+    }
+
+    private async Task ImportCoreAsync()
+    {
         var top = TopLevel.GetTopLevel(this);
         if (top == null || Target == null) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -293,29 +318,32 @@ public partial class RichEditorToolbar
             AllowMultiple = false,
         });
         if (files == null || files.Count == 0) return;
-        try
+
+        using var stream = await files[0].OpenReadAsync();
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        ms.Position = 0;
+        // Sniff the content: ZIP magic ("PK") = .flow package, "{\rtf" = RTF, "<" = HTML, else JSON.
+        // Faults land in ImportAsync's guard; the RTF branch reports through TryParse before that.
+        if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
         {
-            using var stream = await files[0].OpenReadAsync();
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-            ms.Position = 0;
-            // Sniff the content: ZIP magic ("PK") = .flow package, "{\rtf" = RTF, "<" = HTML, else JSON.
-            if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
-            {
-                await Target.LoadPackageAsync(ms);
-            }
+            await Target.LoadPackageAsync(ms);
+            return;
+        }
+
+        string latin1 = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        string utf8 = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        // RTF is parsed here rather than through LoadRtf so a damaged file reports on the same channel
+        // as every other import fault: LoadRtf deliberately keeps the open document and stays silent,
+        // which on a file-open reads as "nothing happened".
+        if (RtfDocumentFormatter.LooksLikeRtf(latin1))
+        {
+            if (RtfDocumentFormatter.TryParse(latin1, out var rtfDoc, out var rtfError))
+                Target.LoadDocument(rtfDoc);
             else
-            {
-                string latin1 = System.Text.Encoding.Latin1.GetString(ms.ToArray());
-                string utf8 = System.Text.Encoding.UTF8.GetString(ms.ToArray());
-                if (RtfDocumentFormatter.LooksLikeRtf(latin1)) Target.LoadRtf(latin1);
-                else if (utf8.TrimStart().StartsWith("<", StringComparison.Ordinal)) Target.LoadHtml(utf8);
-                else await Target.LoadJsonAsync(utf8);
-            }
+                System.Diagnostics.Debug.WriteLine($"Import failed: {rtfError}");
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Import failed: {ex.Message}");
-        }
+        else if (utf8.TrimStart().StartsWith("<", StringComparison.Ordinal)) Target.LoadHtml(utf8);
+        else await Target.LoadJsonAsync(utf8);
     }
 }

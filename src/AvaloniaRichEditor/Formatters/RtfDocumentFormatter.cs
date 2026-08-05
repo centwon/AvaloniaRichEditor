@@ -38,11 +38,43 @@ public static class RtfDocumentFormatter
     public static bool LooksLikeRtf(string? text)
         => text != null && text.TrimStart().StartsWith(@"{\rtf", StringComparison.Ordinal);
 
-    /// <summary>Parses an RTF string into a <see cref="FlowDocument"/> (empty document on failure).</summary>
+    /// <summary>Parses an RTF string into a <see cref="FlowDocument"/> (empty document on failure).
+    /// <para>Failure is indistinguishable from a genuinely empty document here. Callers that would
+    /// REPLACE open content with the result — loading a file, not pasting a fragment — must use
+    /// <see cref="TryParse"/> instead, or a damaged file silently blanks the document and the next
+    /// save writes that blank over the original.</para></summary>
     public static FlowDocument Parse(string rtf)
     {
-        try { return new RtfParser(rtf).Run(); }
-        catch { return new FlowDocument(); }
+        TryParse(rtf, out var document, out _);
+        return document;
+    }
+
+    /// <summary>Parses an RTF string, reporting whether it succeeded. Returns <see langword="false"/>
+    /// only when the RTF is damaged badly enough to abort the parse; a well-formed but empty document
+    /// is a success. On failure <paramref name="document"/> is an empty document (matching
+    /// <see cref="Parse"/>) and <paramref name="error"/> describes the fault.
+    /// <para>This is the safe entry point for anything that replaces open content — it is the RTF
+    /// counterpart of the exception <see cref="DocumentSerializer.Deserialize"/> throws for damaged
+    /// JSON. A parse that aborts part-way reports failure rather than returning what it had read so
+    /// far: truncated content that LOOKS like a document is the outcome most likely to be saved over
+    /// the original by a host that cannot tell it is incomplete.</para></summary>
+    public static bool TryParse(string rtf, out FlowDocument document, out string? error)
+    {
+        try
+        {
+            document = new RtfParser(rtf).Run();
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Also reported to RichEditorDiagnostics: Parse() discards `error`, so without this a paste
+            // that fell back to plain text would be invisible to a host watching only the fault channel.
+            RichEditorDiagnostics.Report(ex);
+            document = new FlowDocument();
+            error = $"{ex.GetType().Name}: {ex.Message}";
+            return false;
+        }
     }
 
     /// <summary>Serializes a <see cref="FlowDocument"/> to an RTF string (the inverse of <see cref="Parse"/>):

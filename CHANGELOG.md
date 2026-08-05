@@ -4,6 +4,48 @@ All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed — damaged RTF silently blanked the open document
+
+Opening a damaged `.rtf` replaced whatever was open with an empty document, and the next save wrote that
+blank over the original file. `LooksLikeRtf` passed, `Parse` swallowed the parse exception and returned
+an empty `FlowDocument`, and `LoadRtf` loaded it.
+
+1.0 had already established the opposite contract — `LoadJson`'s own doc comment says *"a damaged file is
+reported rather than loaded as an empty document … or the editor would show a blank page and a save would
+overwrite the original"* — and RTF was simply left out of it. This closes that gap.
+
+- **Added**: `RtfDocumentFormatter.TryParse(string, out FlowDocument, out string?)` — separates a damaged
+  file from a genuinely empty one. Paths that REPLACE open content (file open) must use it.
+- **Behaviour change**: `LoadRtf` now leaves the open document untouched when the RTF fails to parse
+  (previously: replaced it with an empty document). The signature stays `void` — a return type is part of
+  the IL signature, so changing it would break compiled consumers, and throwing a new exception would kill
+  hosts with no handler. When no document is open yet it still loads an empty one: there is nothing to
+  protect, and bailing would leave the editor inert.
+- `Parse` is unchanged in meaning (empty document on failure) — paste depends on that to fall through to
+  HTML/plain text.
+
+### Fixed — toolbar file actions failed without a trace
+
+`ImportAsync`/`ExportAsync` are invoked fire-and-forget from their buttons (`() => _ = ImportAsync()`),
+but the storage-provider picker calls sat OUTSIDE the try (and `ExportAsync` had no try at all). An
+exception from the picker became an unobserved task exception and vanished — no dialog, no error, nothing
+on screen, indistinguishable from "the button did nothing". Both now guard the whole body, picker
+included, and report through the new diagnostics channel.
+
+### Added — opt-in diagnostics for internally handled faults
+
+`RichEditorDiagnostics.Fault` (+ `RichEditorFaultEventArgs`, `Reset()`). The library handles a few dozen
+faults internally and carries on — that part is correct — but a host had no way to see any of it. Nothing
+about the control's behaviour changes; an unsubscribed host pays a static read and a null check. Each
+distinct fault (one `catch` site, one exception type) reports once, because several wired sites sit in
+render/caret-metrics paths where a persistent fault would fire many times a second.
+
+> Ported from the WinUI 3 peer (WinUIRichEditor), where these two defects were found. Both existed here
+> in identical form — they are shared-design defects, not port artifacts. Names are kept identical across
+> the two projects so the surfaces stay converged.
+
 ## [1.0.0] - 2026-07-31
 
 **The API is frozen.** From here on the public surface follows SemVer: no breaking change without a

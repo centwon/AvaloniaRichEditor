@@ -1,1 +1,11 @@
 ﻿#nullable enable
+AvaloniaRichEditor.RichEditorDiagnostics
+AvaloniaRichEditor.RichEditorFaultEventArgs
+AvaloniaRichEditor.RichEditorFaultEventArgs.Exception.get -> System.Exception!
+AvaloniaRichEditor.RichEditorFaultEventArgs.File.get -> string!
+AvaloniaRichEditor.RichEditorFaultEventArgs.Line.get -> int
+AvaloniaRichEditor.RichEditorFaultEventArgs.Member.get -> string!
+override AvaloniaRichEditor.RichEditorFaultEventArgs.ToString() -> string!
+static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.TryParse(string! rtf, out AvaloniaRichEditor.Documents.FlowDocument! document, out string? error) -> bool
+static AvaloniaRichEditor.RichEditorDiagnostics.Fault -> System.EventHandler<AvaloniaRichEditor.RichEditorFaultEventArgs!>?
+static AvaloniaRichEditor.RichEditorDiagnostics.Reset() -> void
