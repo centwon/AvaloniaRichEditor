@@ -42,6 +42,11 @@ about the control's behaviour changes; an unsubscribed host pays a static read a
 distinct fault (one `catch` site, one exception type) reports once, because several wired sites sit in
 render/caret-metrics paths where a persistent fault would fire many times a second.
 
+Every swallow site in the library reports — all 38 of them, not a selected few. Partial coverage would be
+worse than none: a host that subscribes and sees nothing would conclude nothing failed. Call sites pass
+only the exception; the location comes from the compiler (`CallerFilePath`/`CallerLineNumber`), which is
+what made uniform wiring affordable — no per-site naming decisions, and no runtime cost when unsubscribed.
+
 > Ported from the WinUI 3 peer (WinUIRichEditor), where these two defects were found. Both existed here
 > in identical form — they are shared-design defects, not port artifacts. Names are kept identical across
 > the two projects so the surfaces stay converged.

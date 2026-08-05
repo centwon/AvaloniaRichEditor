@@ -461,7 +461,7 @@ public partial class RichEditor
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
-        catch { }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
     // Repaint + re-measure after an image resize drag. A resize mutates size WITHOUT going through an

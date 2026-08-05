@@ -31,7 +31,8 @@ public static class RtfDocumentFormatter
     {
         // CP949 (Korean), Shift-JIS, GB2312 etc. aren't in .NET's default set — register them so
         // \'hh runs from HWP/Word decode correctly.
-        try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); } catch { }
+        try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
     /// <summary>True if <paramref name="text"/> starts with the RTF signature.</summary>
@@ -679,7 +680,8 @@ internal sealed class RtfParser
         if (w <= 0 || h <= 0)
         {
             try { bmp = new Avalonia.Media.Imaging.Bitmap(new System.IO.MemoryStream(bytes)); }
-            catch { return; } // not a decodable PNG/JPEG after all
+            // not a decodable PNG/JPEG after all
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
             w = bmp.Size.Width; h = bmp.Size.Height;
         }
         string mime = ImageMime.Detect(bytes) ?? _pictMime;
@@ -715,7 +717,7 @@ internal sealed class RtfParser
     private static Encoding GetEncoding(int codepage)
     {
         try { return Encoding.GetEncoding(codepage); }
-        catch { return Encoding.Latin1; }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return Encoding.Latin1; }
     }
 }
 

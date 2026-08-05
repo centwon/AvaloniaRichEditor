@@ -57,7 +57,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     return;
                 }
             }
-            catch { /* fall through to HTML/plain */ }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); } // fall through to HTML/plain
         }
 
         // 3. External HTML (from browsers, Word, etc.): parse and insert with formatting.
@@ -80,7 +80,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     return;
                 }
             }
-            catch { /* fall back to plain text */ }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); } // fall back to plain text
         }
 
         // 4. Bitmap image on the clipboard (e.g. a screenshot or copied picture). Images copied
@@ -128,7 +128,8 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) return;
         string? text = null;
-        try { text = await clipboard.TryGetTextAsync(); } catch { }
+        try { text = await clipboard.TryGetTextAsync(); }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
         if (string.IsNullOrEmpty(text)) return;
         PushUndo();
         InsertText(text);
@@ -192,7 +193,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             {
                 InsertImageBytes(System.IO.File.ReadAllBytes(path));
             }
-            catch { }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
         }
     }
 
@@ -213,7 +214,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             using var ms = new System.IO.MemoryStream(bytes);
             bmp = new Avalonia.Media.Imaging.Bitmap(ms);
         }
-        catch { return; }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
 
         var scaled = Downscale(bmp);
         var (w, h) = CapToContentWidth(
@@ -244,7 +245,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         double ratio = Math.Min((double)maxW / ps.Width, (double)maxH / ps.Height);
         var size = new PixelSize(Math.Max(1, (int)(ps.Width * ratio)), Math.Max(1, (int)(ps.Height * ratio)));
         try { return bmp.CreateScaledBitmap(size, Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality); }
-        catch { return bmp; }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return bmp; }
     }
 
     // Application-private clipboard formats: the image's original encoded bytes (so an in-editor
@@ -390,7 +391,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 bmp.Save(ms);
                 bytes = ms.ToArray();
             }
-            catch { return; }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
         }
         if (bytes == null) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -412,12 +413,12 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 if (bmp == null) { using var ms = new System.IO.MemoryStream(bytes); bmp = new Bitmap(ms); }
                 item.Set(DataFormat.Bitmap, bmp);
             }
-            catch { }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
             var dt = new DataTransfer();
             dt.Add(item);
             await clipboard.SetDataAsync(dt);
         }
-        catch { }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
     // Parses the meta string written by CopyImageToClipboardAsync. Null on any mismatch.
@@ -441,7 +442,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     {
         Avalonia.Input.IAsyncDataTransfer? dt;
         try { dt = await clipboard.TryGetDataAsync(); }
-        catch { return (null, null, null); }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (null, null, null); }
         if (dt == null) return (null, null, null);
 
         try
@@ -456,12 +457,14 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     object? raw;
                     if (fmt.Identifier == AreImageFormat.Identifier)
                     {
-                        try { raw = await item.TryGetRawAsync(fmt); } catch { continue; }
+                        try { raw = await item.TryGetRawAsync(fmt); }
+                        catch (Exception ex) { RichEditorDiagnostics.Report(ex); continue; }
                         if (raw is byte[] { Length: > 0 } ob) own = ob;
                     }
                     else if (fmt.Identifier == AreImageMetaFormat.Identifier)
                     {
-                        try { raw = await item.TryGetRawAsync(fmt); } catch { continue; }
+                        try { raw = await item.TryGetRawAsync(fmt); }
+                        catch (Exception ex) { RichEditorDiagnostics.Report(ex); continue; }
                         if (raw is string ms) meta = ms;
                         else if (raw is byte[] mb) meta = System.Text.Encoding.UTF8.GetString(mb);
                     }
@@ -469,7 +472,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 if (own != null)
                 {
                     try { using var ms = new System.IO.MemoryStream(own); return (new Bitmap(ms), own, meta); }
-                    catch { }
+                    catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
                 }
             }
 
@@ -485,7 +488,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
 
                     object? raw;
                     try { raw = await item.TryGetRawAsync(fmt); }
-                    catch { continue; }
+                    catch (Exception ex) { RichEditorDiagnostics.Report(ex); continue; }
 
                     if (raw is Avalonia.Media.Imaging.Bitmap bm) return (bm, null, null);
                     byte[]? bytes = raw as byte[];
@@ -498,7 +501,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     if (bytes is { Length: > 0 })
                     {
                         try { using var ms = new System.IO.MemoryStream(bytes); return (new Avalonia.Media.Imaging.Bitmap(ms), bytes, null); }
-                        catch { }
+                        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
                     }
                 }
             }
@@ -523,7 +526,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     {
         Avalonia.Input.IAsyncDataTransfer? dt;
         try { dt = await clipboard.TryGetDataAsync(); }
-        catch { return null; }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
         if (dt == null) return null;
 
         try
@@ -537,7 +540,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                         && id.IndexOf(idB, StringComparison.OrdinalIgnoreCase) < 0) continue;
                     object? raw;
                     try { raw = await item.TryGetRawAsync(fmt); }
-                    catch { continue; }
+                    catch (Exception ex) { RichEditorDiagnostics.Report(ex); continue; }
                     if (raw is string s && !string.IsNullOrWhiteSpace(s)) return s;
                     if (raw is byte[] b) return enc.GetString(b);
                 }

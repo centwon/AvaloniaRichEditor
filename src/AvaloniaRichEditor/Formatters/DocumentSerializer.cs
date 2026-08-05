@@ -444,7 +444,7 @@ public static class DocumentSerializer
         // Immutable: no dispatcher thread affinity (mutable SolidColorBrush created off the UI
         // thread crashes the compositor on first render) and no per-brush change tracking.
         try { return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(value)); }
-        catch { return null; }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
     }
 
     // Adds the image bytes to the document pool (deduplicated by content hash) and returns the
@@ -479,14 +479,14 @@ public static class DocumentSerializer
             bmp.Save(ms);
             return ms.ToArray();
         }
-        catch { return null; }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
     }
 
     private static byte[]? TryFromBase64(string? value)
     {
         if (string.IsNullOrEmpty(value)) return null;
         try { return Convert.FromBase64String(value); }
-        catch { return null; }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
     }
 }
 
