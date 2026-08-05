@@ -123,7 +123,7 @@ namespace AvaloniaRichEditor.Formatters
             async System.Threading.Tasks.Task<(string, byte[]?)> Fetch(string url)
             {
                 try { return (url, await Http.GetByteArrayAsync(url, cts.Token).ConfigureAwait(false)); }
-                catch { return (url, null); }
+                catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (url, null); }
             }
             foreach (var (url, bytes) in await System.Threading.Tasks.Task.WhenAll(urls.Select(Fetch)).ConfigureAwait(false))
                 result[url] = bytes;
@@ -478,7 +478,7 @@ namespace AvaloniaRichEditor.Formatters
                 double h = (!double.IsNaN(declH) && declH > 0) ? declH : bitmap.Size.Height;
                 return (bytes, bitmap, w, h);
             }
-            catch { return (null, null, 0, 0); }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (null, null, 0, 0); }
         }
 
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
@@ -668,7 +668,8 @@ namespace AvaloniaRichEditor.Formatters
             }
             if (value.StartsWith("#"))
             {
-                try { return new SolidColorBrush(Color.Parse(value)); } catch { return null; }
+                try { return new SolidColorBrush(Color.Parse(value)); }
+                catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
             }
             return value switch
             {
@@ -925,7 +926,7 @@ namespace AvaloniaRichEditor.Formatters
                     bmp.Save(ms);
                     b64 = System.Convert.ToBase64String(ms.ToArray());
                 }
-                catch { return ""; }
+                catch (Exception ex) { RichEditorDiagnostics.Report(ex); return ""; }
                 m = "image/png";
             }
             else return "";

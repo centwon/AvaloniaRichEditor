@@ -64,7 +64,7 @@ public partial class RichEditor
             img.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
             InvalidateVisual();
         }
-        catch { }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
     private Task SaveImageAsync(ImageBlock img) => SaveBitmapAsync(img.Image);
@@ -86,7 +86,7 @@ public partial class RichEditor
             await using var s = await file.OpenWriteAsync();
             bmp.Save(s);
         }
-        catch { }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
     // HWP-style "글자처럼 취급" (treat as character): demote a block image into an InlineImage,
@@ -205,7 +205,7 @@ public partial class RichEditor
             img.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
             InvalidateVisual();
         }
-        catch { }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
     /// <summary>Opens a file picker and inserts the chosen image at the caret.</summary>
@@ -228,6 +228,6 @@ public partial class RichEditor
             await s.CopyToAsync(ms);
             InsertImageBytes(ms.ToArray()); // keep the file's original encoding (no PNG re-encode on save)
         }
-        catch { }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 }

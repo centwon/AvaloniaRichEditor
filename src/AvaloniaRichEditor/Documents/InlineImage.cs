@@ -34,7 +34,8 @@ public class InlineImage : Inline
                     using var ms = new System.IO.MemoryStream(RawBytes);
                     _cachedBitmap = new Bitmap(ms);
                 }
-                catch { _decodeFailed = true; } // undecodable now: stop retrying, but keep the bytes
+                // undecodable now: stop retrying, but keep the bytes
+                catch (System.Exception ex) { RichEditorDiagnostics.Report(ex); _decodeFailed = true; }
             }
             return _cachedBitmap;
         }

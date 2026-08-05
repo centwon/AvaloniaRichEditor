@@ -1843,7 +1843,7 @@ public partial class RichEditor : Control
                 if (w <= 0) im.Width = bmp.Size.Width;
                 if (h <= 0) im.Height = bmp.Size.Height;
             }
-            catch { }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
         }
 
         int at = SplitInlinesAt(p, _caretPosition.Offset);
@@ -1894,7 +1894,7 @@ public partial class RichEditor : Control
             // Another process can hold the clipboard open; an unhandled throw here would
             // crash the process (async void). The internal rich slots above are already set.
             try { await SetClipboardTextAndHtmlAsync(clipboard, text, html); }
-            catch { }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
         }
     }
 
