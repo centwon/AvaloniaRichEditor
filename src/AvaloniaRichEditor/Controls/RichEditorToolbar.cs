@@ -58,6 +58,40 @@ public partial class RichEditorToolbar : UserControl
     private TextBox? _spacingBox; // editable line-spacing %, reflects/sets the caret paragraph
     private TextBlock? _bulletPreview, _numberPreview; // current list marker shown in the list combo boxes
     private static readonly int[] SpacingPercents = { 100, 110, 120, 130, 150, 160, 180, 200, 250, 300 };
+
+    private static double[] _fontSizes = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72 };
+
+    /// <summary>The font sizes (in points) offered by the toolbar's size combo. Hosts can replace this
+    /// array to customize the options.
+    /// <para>Read while the strip is being built, so assign it BEFORE creating the toolbar. An existing
+    /// toolbar keeps the sizes it was built with until something rebuilds it.</para></summary>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+    /// <exception cref="ArgumentException">The array is empty, or holds a size that is not a positive
+    /// finite number.</exception>
+    public static double[] FontSizes
+    {
+        get => _fontSizes;
+        // Validated here rather than at the point of use: the array is consumed while the toolbar builds
+        // itself, so a bad value would otherwise surface as a crash inside the build with nothing
+        // pointing back at the assignment that caused it.
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (value.Length == 0)
+                throw new ArgumentException("At least one font size is required.", nameof(value));
+            foreach (double pt in value)
+                if (!double.IsFinite(pt) || pt <= 0)
+                    throw new ArgumentException($"Font size must be a positive finite number, was {pt}.", nameof(value));
+            _fontSizes = value;
+        }
+    }
+
+    // The combo matches its selection by ITEM TEXT (SelectByContent), so the item labels and the value
+    // reflected back from the caret must be formatted by the same function — otherwise a size that is
+    // not a whole number can never show as selected. Invariant so the round trip does not depend on the
+    // decimal separator of the current culture.
+    private static string SizeText(double pt)
+        => pt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     private Control? _tableBtn, _imageBtn, _dividerBtn;
     // Color-picker faces, synced to the caret's run: either a swatch bar under the built-in glyph,
     // or (with a host icon) a wrapper whose Foreground tints the icon's colour-inheriting layers.
@@ -319,12 +353,14 @@ public partial class RichEditorToolbar : UserControl
 
         _sizeCombo = Combo(Loc("FontSize"), 60);
         // Font sizes are points (pt). Body default is 10pt; range ~6–72.
-        foreach (var s in new[] { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72 })
-            _sizeCombo.Items.Add(new ComboBoxItem { Content = s.ToString() });
+        foreach (var s in FontSizes)
+            _sizeCombo.Items.Add(new ComboBoxItem { Content = SizeText(s) });
         _sizeCombo.SelectionChanged += (_, _) =>
         {
             if (_suppress || _sizeCombo.SelectedItem is not ComboBoxItem it) return;
-            if (double.TryParse(it.Content?.ToString(), out double size)) Target?.SetFontSize(size);
+            if (double.TryParse(it.Content?.ToString(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double size))
+                Target?.SetFontSize(size);
         };
         Add(_sizeCombo);
         Add(Div());
@@ -425,8 +461,39 @@ public partial class RichEditorToolbar : UserControl
         ApplyFlags();
     }
 
-    // The 40-swatch palette (greys + hues in a few shades) shared by the text-color/highlight pickers.
-    private static readonly string[] Palette =
+    /// <summary>The colour palette (hex strings) offered by the toolbar's text and highlight pickers.
+    /// Hosts can replace this array. The default is 40 swatches: greys plus hues in a few shades.
+    /// <para>Read when a colour flyout is built, so assign it before the toolbar is created. Entries are
+    /// parsed by <c>Color.Parse</c>; an entry that does not parse renders as BLACK rather than throwing,
+    /// so a typo shows up as an unexpected swatch, not a toolbar that fails to build.</para>
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+    /// <exception cref="ArgumentException">The array is empty.</exception>
+    public static string[] Palette
+    {
+        get => _palette;
+        // Entry FORMAT is deliberately not validated — the swatch grid is cosmetic and an unparseable
+        // entry already degrades gracefully. Null/empty is different: it produces an empty colour
+        // picker, which reads as a broken toolbar rather than a wrong colour.
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (value.Length == 0)
+                throw new ArgumentException("At least one palette entry is required.", nameof(value));
+            _palette = value;
+        }
+    }
+
+    // Color.Parse throws on anything it does not recognise, which would take down the whole toolbar
+    // build over one bad entry. Palette is host-supplied, so a typo degrades to black instead — the
+    // swatch grid is cosmetic, and a wrong colour is a far better failure than a crash.
+    private static Color ParseSwatch(string hex)
+    {
+        try { return Color.Parse(hex); }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return Colors.Black; }
+    }
+
+    private static string[] _palette =
     {
         "#000000","#444444","#666666","#999999","#BBBBBB","#DDDDDD","#EEEEEE","#FFFFFF",
         "#FF0000","#E67E22","#F1C40F","#2ECC71","#1ABC9C","#3498DB","#9B59B6","#E91E63",
@@ -503,7 +570,7 @@ public partial class RichEditorToolbar : UserControl
         var grid = new UniformGrid { Columns = 8 };
         foreach (var hex in Palette)
         {
-            var color = Color.Parse(hex);
+            var color = ParseSwatch(hex);
             var sw = new Button
             {
                 Background = new SolidColorBrush(color),
@@ -855,7 +922,7 @@ public partial class RichEditorToolbar : UserControl
         ReflectPickerColor(highlight: true, f.Background ?? NoColorBrush);
 
         _suppress = true;
-        if (_sizeCombo != null) SelectByContent(_sizeCombo, ((int)f.FontSize).ToString());
+        if (_sizeCombo != null) SelectByContent(_sizeCombo, SizeText(f.FontSize));
         if (_fontCombo != null)
         {
             // Runs without an explicit font fall back to the editor's DefaultFontFamily for

@@ -34,6 +34,24 @@ exception from the picker became an unobserved task exception and vanished — n
 on screen, indistinguishable from "the button did nothing". Both now guard the whole body, picker
 included, and report through the new diagnostics channel.
 
+### Added — the toolbar's font sizes and colour palette are replaceable
+
+`RichEditorToolbar.FontSizes` (`double[]`) and `RichEditorToolbar.Palette` (`string[]`) are now public
+static properties. The defaults are unchanged — the same sizes and the same 40 swatches this toolbar has
+always shown.
+
+- Both are read while the toolbar builds its strip and colour flyouts, so assign them BEFORE creating the
+  toolbar. An existing toolbar keeps what it was built with until something rebuilds it.
+- The setters reject null and empty arrays, and `FontSizes` rejects sizes that are not positive finite
+  numbers. Validating at assignment rather than at use means the exception points at the line that caused
+  it instead of surfacing as a crash inside the toolbar build.
+- Palette entry FORMAT is not validated: an unparseable entry now renders as **black** instead of throwing.
+  Previously `Color.Parse` threw straight out of the build — tolerable when the palette was a private
+  constant, not when it is host-supplied, where one typo would take down the whole toolbar.
+- Fixed along the way: the size combo matches its selection by item text, but labels were written as
+  integers while the caret's size was reflected through an `(int)` cast, so a fractional size (10.5pt)
+  could never show as selected. Both now go through one invariant formatter.
+
 ### Added — opt-in diagnostics for internally handled faults
 
 `RichEditorDiagnostics.Fault` (+ `RichEditorFaultEventArgs`, `Reset()`). The library handles a few dozen
