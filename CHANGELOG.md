@@ -70,6 +70,24 @@ against the previous source — none of these is a porting artefact.
   it as an empty paragraph with a bottom border — but only the *writing* half existed (`\brdrb` was never
   read), so every divider was gone after one save/load.
 
+**RTF, part 2 — truncation**
+
+- **A truncated `.rtf` silently overwrote the open document.** `TryParse`'s own documentation promised
+  that a parse aborting part-way reports failure rather than returning what it read; it did not.
+  Truncation does not abort anything — the reader runs out of input and finalizes every partial
+  structure as though it had been closed, so a half-copied file was indistinguishable from cleanly
+  reading a **shorter** document. `LoadRtf` replaced the open one with the remains, which is precisely
+  the data loss `TryParse` was introduced to prevent.
+  - The damage it *did* detect is the kind that **throws** — and that is exactly what the
+    `DamagedRtfTests` fixture is (`\fs99999999999999999999` overflows an int). Every test in that file
+    exercised the one kind of damage the reader already noticed, so the gap sat under full coverage.
+  - RTF is brace-balanced, so groups still open at the end are the giveaway (`RtfParser.UnclosedGroups`).
+    Detected: truncated inside a group, after readable text, mid-table, and with no closing brace at all.
+    Valid input and a genuinely empty document still succeed; trailing junk braces are still tolerated.
+  - **`Parse` stays lenient** — it is the paste path, where whatever was readable beats nothing, so it no
+    longer routes through `TryParse`. Keeping the strictness in `TryParse` alone is what the two entry
+    points were separated for.
+
 **Tests**
 
 - `DocumentInvariantFuzzTests.AssertTable` walked only `LogicalCells()`, so it checked the anchors and
