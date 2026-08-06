@@ -196,6 +196,22 @@ public partial class RichEditor
 
         if (IsReadOnly)
         {
+            // An image under the pointer wins even in a viewer, matching the WinUI peer. The generic menu
+            // below offers a Copy that acts on the TEXT SELECTION — usually empty when you have just
+            // right-clicked a picture — so a reader who wants the image got nothing that could give it to
+            // them. The image menu returns after its Copy while read-only, so no editing verb appears.
+            var roImage = GetBlockAtPoint(point) as ImageBlock ?? CellImageAtPoint(point);
+            if (roImage != null)
+            {
+                var imgItems = new List<Control>();
+                BuildImageMenu(imgItems, roImage);
+                var imgMenu = NewContextMenu();
+                imgMenu.ItemsSource = imgItems;
+                _openContextMenu = imgMenu;
+                imgMenu.Open(this);
+                return;
+            }
+
             var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)) };
             var roMenu = NewContextMenu();
             roMenu.ItemsSource = roItems;
@@ -467,6 +483,11 @@ public partial class RichEditor
     {
         // Edit
         items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: false, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        // A viewer gets the copy and nothing else. Everything below MUTATES the image — resize, promote
+        // to a character, margins, replace, save, delete — so a read-only editor must not offer any of
+        // it. Copy is the whole point of reaching this menu in a viewer: it copies the IMAGE, which the
+        // generic read-only menu's Copy cannot do (that one acts on the text selection).
+        if (IsReadOnly) return;
         // 개체 모양 (object shape): size preset, 글자처럼 취급, margin.
         items.Add(new Separator());
         // Size presets in a submenu. "Original" resets to natural size; the fractions scale the
@@ -510,6 +531,7 @@ public partial class RichEditor
     {
         // Edit
         items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: true, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        if (IsReadOnly) return; // see BuildImageMenu: everything below mutates the image
         // 개체 모양 (object shape): size preset + 글자처럼 취급.
         items.Add(new Separator());
         items.Add(Sub(Loc("ImageSize"),
