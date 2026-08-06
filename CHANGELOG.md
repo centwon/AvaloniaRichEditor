@@ -6,6 +6,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round-trip defects backported from the WinUI port (round 4)
+
+Eleven defects found in **WinUIRichEditor** by widening its model-level round-trip fuzz (24 seeds → 400 →
+20000) and by teaching that fuzz to generate images and dividers at all. Each was confirmed present in
+**this** source before being changed here, and 22 of the 28 new tests in `Round4BackportTests` fail
+against the previous source — none of these is a porting artefact.
+
+**The merge grid**
+
+- **`MergeCells` could leave cells unreachable.** A merge that cut across an existing one overwrote the
+  anchor without releasing the cells that anchor owned, so those stayed flagged covered with nothing
+  covering them. `LogicalCells()` skips such a cell for good: its content is invisible to rendering,
+  selection, every table command and every formatter, and enough of them leave a table with no logical
+  cells at all. The range is now **expanded to contain every merge it touches** (the rule a spreadsheet
+  applies), then released and re-stamped.
+  > **Contract**: any operation that touches the merge grid must leave covered markers in PAIRS — every
+  > covered cell has an anchor whose span actually reaches it. Shrinking a span or overwriting an anchor
+  > has to release the difference.
+
+**HTML**
+
+- **Nested list items came back reordered / vanished.** A sublist that is a direct child of `<ul>` (the
+  shape this writer emits whenever a deeper item follows a shallower one, and for an item with no
+  shallower item above it) was never visited, so those items were **lost** — and a document made only of
+  them fell through to the raw-markup fallback. `ParseList` now walks `<li>` and `<ul>`/`<ol>` in **one
+  pass, in document order**; two passes would fix the loss but silently lift every nested item above its
+  parent.
+- **Saving an empty document put the editor's own tags on screen as body text.** The export is
+  `<p style="…"></p>`, which yields no block, and the "input was not markup" fallback dumped the source.
+  An element node anywhere is now the discriminator; plain text still comes through the fallback.
+- **Consecutive spaces collapsed.** HTML folds runs of whitespace, so `a  b` came back as `a b` on the
+  first save/load. Spaces that follow a space now go out as `&nbsp;` (what Word emits), with the first of
+  each run left collapsible so the line can still wrap there. Three further positions where HTML throws
+  whitespace away — before a soft break, at the end of a block, and a run of nothing but spaces — are
+  encoded too; `MergeCells`' join separator is exactly the third shape.
+  - `CollapseWhitespace` used `\s`, which **matches U+00A0**, so it folded the very character that was
+    there to survive folding. Whitespace tests are now ASCII-only (`IsCollapsibleWhitespace`), because
+    `string.IsNullOrWhiteSpace` has the same problem and a node of only `&nbsp;` is *content*.
+  - Side effect: Word/HWP indentation written as runs of `&nbsp;` now keeps its width instead of folding
+    to one space.
+- **A hyperlink lost the colour the document gave it.** The reader paints links blue over whatever the
+  source declared — a deliberate rule, since foreign pages style anchors dark or white — but that also
+  ate the user's own choice on every save/load. `data-are-fg` now separates this library's colour from a
+  site's; foreign anchors still go blue (both directions are pinned by tests).
+- **A list item that was also a heading lost its level** (`<li>` wins the tag) → carried by `data-are-h`.
+- **A blank line the author typed was dropped.** Empty elements must keep being dropped — foreign HTML is
+  full of empty `<p>`/`<div>` used for spacing — so `data-are-empty` marks this document's own.
+- **An image alone in its paragraph jumped into the paragraph above it.** A `<p>` holding only an `<img>`
+  is walked as a block, so there was no pending paragraph and the importer rejoined the preceding one.
+  Marked with `data-are-opens` — the same fix the inline-table path needed, **and that path did not have
+  it here either**, so both shapes were fixed together.
+
+**RTF**
+
+- **A blank paragraph grew under every image on every round trip.** A block picture is written as
+  `\pard <pict>\par`, and that `\par` TERMINATES the image's paragraph rather than starting one — the gap
+  under a picture widened each time a document was saved and reopened. A blank line the author really did
+  put there still survives (it has its own `\pard\par`).
+- **An image after a table moved in front of it.** A table is only pending rows until `FinalizeTable`
+  runs, so a picture following `\row` was appended first.
+- **A divider came back as a blank line.** A rule has no control word in RTF; Word and this writer spell
+  it as an empty paragraph with a bottom border — but only the *writing* half existed (`\brdrb` was never
+  read), so every divider was gone after one save/load.
+
+**Tests**
+
+- `DocumentInvariantFuzzTests.AssertTable` walked only `LogicalCells()`, so it checked the anchors and
+  said nothing about covered slots — the orphan above passed straight through it. It now validates the
+  grid from **both** directions.
+- `Round4BackportTests` (28) pins every item above. Unit tests 644 → 672.
+
 ### Fixed — damaged RTF silently blanked the open document
 
 Opening a damaged `.rtf` replaced whatever was open with an empty document, and the next save wrote that
