@@ -88,6 +88,19 @@ against the previous source — none of these is a porting artefact.
     longer routes through `TryParse`. Keeping the strictness in `TryParse` alone is what the two entry
     points were separated for.
 
+**The context menu in a viewer**
+
+- **Right-clicking an image in a read-only editor gave no way to copy the image.** The read-only branch
+  came before any object menu and offered a generic Copy, which acts on the TEXT SELECTION — empty, in
+  the usual case where the reader has just right-clicked a picture. Matched to the WinUI peer, where the
+  object menu wins and gates its own editing verbs.
+  - Two halves, and the second is what keeps the first from being a regression: the image hit-test now
+    runs BEFORE the read-only branch, and `BuildImageMenu`/`BuildInlineImageMenu` return right after
+    Copy when read-only. Everything below that point resizes, converts, replaces, saves or deletes the
+    image, so routing a viewer there without the gate would be worse than the gap it closed.
+  - Pinned by three tests that right-click for real; two of them fail for different reasons, one per
+    half.
+
 **Tests**
 
 - `DocumentInvariantFuzzTests.AssertTable` walked only `LogicalCells()`, so it checked the anchors and
