@@ -74,6 +74,36 @@ public class DocumentInvariantFuzzTests
         Assert.Equal(tb.Rows, tb.Cells.Count);
         foreach (var row in tb.Cells)
             Assert.Equal(tb.Columns, row.Count); // the grid stays rectangular
+
+        // The merge grid, from BOTH directions. Walking only LogicalCells() checks the anchors and says
+        // nothing about the covered slots, which is exactly where a merge grid goes wrong: a cell left
+        // flagged covered after its anchor was shrunk or overwritten is an ORPHAN — LogicalCells() skips
+        // it, so its content is unreachable to rendering, selection, every table command and every
+        // formatter, and enough of them leave a table with no logical cells at all.
+        Assert.NotEmpty(tb.LogicalCells());
+        for (int r = 0; r < tb.Rows; r++)
+            for (int c = 0; c < tb.Columns; c++)
+            {
+                var (cs, rs) = tb.SpanOf(r, c);
+                if (tb.IsCovered(r, c))
+                {
+                    Assert.True(cs == 0 && rs == 0, $"{where}: covered slot ({r},{c}) reports span ({cs},{rs})");
+                    var (ar, ac) = tb.AnchorOf(r, c);
+                    Assert.True(ar >= 0 && ac >= 0 && ar < tb.Rows && ac < tb.Columns,
+                        $"{where}: covered slot ({r},{c}) has off-grid anchor ({ar},{ac})");
+                    Assert.False(ar == r && ac == c, $"{where}: covered slot ({r},{c}) is its own anchor");
+                    Assert.False(tb.IsCovered(ar, ac),
+                        $"{where}: covered slot ({r},{c}) resolves to ({ar},{ac}), which is itself covered");
+                    var (acs, ars) = tb.SpanOf(ar, ac);
+                    Assert.True(r >= ar && r < ar + ars && c >= ac && c < ac + acs,
+                        $"{where}: covered slot ({r},{c}) claims anchor ({ar},{ac}), whose span ({acs},{ars}) does not reach it");
+                    continue;
+                }
+                Assert.True(cs >= 1 && rs >= 1, $"{where}: anchor ({r},{c}) reports span ({cs},{rs})");
+                Assert.True(c + cs <= tb.Columns && r + rs <= tb.Rows,
+                    $"{where}: span at ({r},{c}) = ({cs},{rs}) runs past the grid");
+            }
+
         foreach (var (r, c, cell) in tb.LogicalCells())
         {
             Assert.True(ReferenceEquals(cell.Parent, tb), $"{where}: cell({r},{c}).Parent is not its table");
