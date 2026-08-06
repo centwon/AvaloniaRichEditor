@@ -46,8 +46,11 @@ public static class RtfDocumentFormatter
     /// save writes that blank over the original.</para></summary>
     public static FlowDocument Parse(string rtf)
     {
-        TryParse(rtf, out var document, out _);
-        return document;
+        // Deliberately NOT TryParse: this path is for pasting a fragment, where whatever was readable is
+        // better than nothing, and a truncated clipboard flavour should still contribute its text. The
+        // strictness that protects an open document belongs only to TryParse.
+        try { return new RtfParser(rtf).Run(); }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return new FlowDocument(); }
     }
 
     /// <summary>Parses an RTF string, reporting whether it succeeded. Returns <see langword="false"/>
@@ -63,7 +66,21 @@ public static class RtfDocumentFormatter
     {
         try
         {
-            document = new RtfParser(rtf).Run();
+            var parser = new RtfParser(rtf);
+            var parsed = parser.Run();
+            // Truncation is the common damage — a half-copied file, a cut-short download — and it does
+            // not throw: the reader just runs out of input and finalizes what it has. That looked like a
+            // clean parse of a SHORTER document, so LoadRtf replaced the open one with it and the next
+            // save wrote the shorter version over the original. Unclosed groups are the giveaway, and
+            // until this check the only damage actually detected was input that ABORTS the parse (a
+            // numeric overflow, say) — which is what the fixture in DamagedRtfTests happens to be.
+            if (parser.UnclosedGroups > 0)
+            {
+                document = new FlowDocument();
+                error = $"The RTF ends inside {parser.UnclosedGroups} unclosed group(s); the file is truncated.";
+                return false;
+            }
+            document = parsed;
             error = null;
             return true;
         }
@@ -200,8 +217,16 @@ internal sealed class RtfParser
         FinalizeTable();
         if (_para.Inlines.Count > 0) _doc.Blocks.Add(_para);
         if (_doc.Blocks.Count == 0) _doc.Blocks.Add(new Paragraph());
+        // RTF is brace-balanced, so groups still open here mean the input ENDED early. Nothing above
+        // notices: the loop simply runs out of characters and every partial structure is finalized as
+        // though it had been closed properly, which is why a truncated file looks like a clean parse.
+        // See TryParse — a truncated file must not be allowed to replace an open document.
+        UnclosedGroups = _stack.Count;
         return _doc;
     }
+
+    /// How many groups were still open when the input ran out. Non-zero means truncated.
+    public int UnclosedGroups { get; private set; }
 
     // ---- control word / symbol ----
 
@@ -274,7 +299,13 @@ internal sealed class RtfParser
             case "par": case "sect": EndParagraph(); break;
             case "line": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
             case "tab": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
-            case "pard": SetItap(1); break; // paragraph-property reset; \itap is one of those properties
+            case "pard":
+                _paraBottomBorder = false; // a border is paragraph formatting, so the reset clears it
+                SetItap(1); break;         // paragraph-property reset; \itap is one of those properties
+            // A horizontal rule has no control word of its own in RTF; Word — and this writer — spell it
+            // as an empty paragraph carrying a bottom border. Only the writing half existed, so every
+            // divider came back as a blank line and was gone for good after one save/load.
+            case "brdrb": if (_st.Dest == Dest.Normal && _curRow == null) _paraBottomBorder = true; break;
 
             // tables. Every one of these is guarded by the destination: Word writes a nested table's row
             // definition inside the ignorable group {\*\nesttableprops \trowd …\nestrow}, and acting on
@@ -442,9 +473,35 @@ internal sealed class RtfParser
         if (_curRow != null) { _bytes.Add(10); return; }
         FlushRun();
         FinalizeTable(); // a normal paragraph ends any table that was being built
+
+        // RTF has no block picture: the writer emits one as `\pard <pict>\par`, so that \par TERMINATES
+        // the image's own paragraph rather than starting a new one. Reading it as content added a blank
+        // paragraph after every image — and another on the next cycle, and the next, so a document saved
+        // and reopened a few times grew a gap under each picture.
+        //
+        // A blank line the author really did put under an image still survives: the writer emits it as
+        // its OWN `\pard\par`, so the first \par is consumed here and the second one lands as usual.
+        bool structural = _imageOwnsNextPar && _para.Inlines.Count == 0;
+        _imageOwnsNextPar = false;
+        if (structural) return;
+
+        // An empty paragraph carrying a bottom border is a horizontal rule (see the \brdrb case).
+        if (_paraBottomBorder && _para.Inlines.Count == 0)
+        {
+            _paraBottomBorder = false;
+            _doc.Blocks.Add(new DividerBlock());
+            _para = new Paragraph();
+            return;
+        }
+        _paraBottomBorder = false;
         _doc.Blocks.Add(_para);
         _para = new Paragraph();
     }
+
+    // True immediately after a block picture was added, while its terminating \par is still pending.
+    private bool _imageOwnsNextPar;
+    // True while the paragraph being read carries a bottom border (\brdrb) — see EndParagraph.
+    private bool _paraBottomBorder;
 
     // ---- tables ----
 
@@ -697,10 +754,16 @@ internal sealed class RtfParser
         }
         else
         {
+            // A table is not appended to the document until FinalizeTable runs, and until then it is
+            // only pending rows — so a picture that follows `\row` would be added FIRST and end up
+            // ahead of the table it came after. Every other block append goes through EndParagraph,
+            // which finalizes; this one has to do the same.
+            FinalizeTable();
             if (_para.Inlines.Count > 0) { _doc.Blocks.Add(_para); _para = new Paragraph(); }
             var ib = new ImageBlock { Width = w, Height = h };
             ib.SetImageData(bytes, mime, bmp);
             _doc.Blocks.Add(ib);
+            _imageOwnsNextPar = true;
         }
     }
 

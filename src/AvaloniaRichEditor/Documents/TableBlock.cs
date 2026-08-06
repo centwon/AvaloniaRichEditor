@@ -281,10 +281,47 @@ public class TableBlock : Block
 
     /// Merges the rectangular block (r0..r1, c0..c1) into a single anchor at (r0,c0).
     /// Non-empty content of covered cells is appended to the anchor. No-op on a degenerate range.
+    /// <para>A range that touches an existing merge is EXPANDED to contain that merge whole (repeatedly,
+    /// until it straddles none) — the same rule a spreadsheet applies, and the only one that keeps the
+    /// result a rectangle.</para>
     public void MergeCells(int r0, int c0, int r1, int c1)
     {
         if (!InBounds(r0, c0) || !InBounds(r1, c1)) return;
-        if (r1 < r0 || c1 < c0 || (r0 == r1 && c0 == c1)) return;
+        if (r1 < r0 || c1 < c0) return;
+
+        // Expand over every merge the range straddles. Without this the range could cut an existing
+        // merge in half: stamping its anchor as covered leaves the cells THAT anchor owned pointing at
+        // a covered cell, and shrinking the anchor at (r0,c0) leaves the cells it used to own flagged
+        // covered with nothing covering them. Either way those cells are ORPHANS — LogicalCells() skips
+        // them, so their content is unreachable to rendering, selection, every table command and every
+        // formatter, and enough of them leave a table with no logical cells at all. A covered slot
+        // reports (0,0) and is therefore skipped here: its anchor is elsewhere in the grid and pulls
+        // the range over on its own iteration.
+        bool grew = true;
+        while (grew)
+        {
+            grew = false;
+            for (int r = 0; r < Rows; r++)
+                for (int c = 0; c < Columns; c++)
+                {
+                    var (cs, rs) = SpanOf(r, c);
+                    if (cs <= 1 && rs <= 1) continue;          // plain cell or covered slot
+                    if (cs < 1 || rs < 1) continue;
+                    int endR = r + rs - 1, endC = c + cs - 1;
+                    if (r > r1 || endR < r0 || c > c1 || endC < c0) continue; // disjoint
+                    if (r < r0) { r0 = r; grew = true; }
+                    if (c < c0) { c0 = c; grew = true; }
+                    if (endR > r1) { r1 = endR; grew = true; }
+                    if (endC > c1) { c1 = endC; grew = true; }
+                }
+        }
+        if (r0 == r1 && c0 == c1) return; // a single plain cell: nothing to merge
+
+        // Release the whole range to plain cells before re-stamping. Expansion guarantees every anchor
+        // that reaches into the range lies entirely inside it, so this cannot orphan anything outside.
+        for (int r = r0; r <= r1; r++)
+            for (int c = c0; c <= c1; c++) { ColSpans[r][c] = 1; RowSpans[r][c] = 1; }
+
         var anchorCell = Cells[r0][c0];
         var anchor = anchorCell.Para;
         for (int r = r0; r <= r1; r++)

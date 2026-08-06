@@ -58,6 +58,51 @@ public class DamagedRtfTests
     public void Parse_StillReturnsEmptyOnDamagedInput()
         => Assert.Empty(RtfDocumentFormatter.Parse(Damaged).Blocks);
 
+    // TRUNCATION is the damage that actually happens to files — a half-copied document, a download cut
+    // short — and it does NOT abort the parse: the reader runs out of input and finalizes what it has,
+    // which is indistinguishable from cleanly reading a SHORTER document. TryParse reported success and
+    // LoadRtf replaced the open document with the remains. The `Damaged` fixture above never caught this
+    // because it is the other kind of damage, the kind that throws.
+    //
+    // RTF is brace-balanced, so groups still open at the end are the giveaway.
+    [Theory]
+    [InlineData(@"{\rtf1\ansi {\*\broken")]              // truncated inside a nested group
+    [InlineData(@"{\rtf1\ansi hello there")]             // truncated after readable text
+    [InlineData(@"{\rtf1\ansi\trowd\cellx1000 a\cell")]  // truncated mid-table
+    [InlineData(@"{\rtf1\ansi\b bold text\par")]         // no closing brace at all
+    public void TryParse_ReportsTruncatedInput(string truncated)
+    {
+        Assert.False(RtfDocumentFormatter.TryParse(truncated, out var doc, out string? error));
+        Assert.NotNull(error);
+        Assert.Contains("truncated", error, StringComparison.Ordinal);
+        Assert.Empty(doc.Blocks);
+    }
+
+    // Trailing junk braces are not truncation and stay tolerated, as before.
+    [Fact]
+    public void TryParse_ToleratesExtraClosingBraces()
+        => Assert.True(RtfDocumentFormatter.TryParse(@"{\rtf1\ansi hi\par}}}}", out _, out _));
+
+    // Parse stays lenient on truncation on purpose: for a clipboard fragment, whatever was readable
+    // beats nothing. Only TryParse — which guards an open document — is strict.
+    [Fact]
+    public void Parse_StaysLenientOnTruncatedInput()
+        => Assert.Contains("hello there", AllText(RtfDocumentFormatter.Parse(@"{\rtf1\ansi hello there")),
+                           StringComparison.Ordinal);
+
+    [AvaloniaFact]
+    public void LoadRtf_TruncatedInput_KeepsTheOpenDocument()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p>precious</p>");
+        var before = ed.Document;
+
+        ed.LoadRtf(@"{\rtf1\ansi {\*\broken");
+
+        Assert.Same(before, ed.Document);
+        Assert.Contains("precious", AllText(ed.Document!), StringComparison.Ordinal);
+    }
+
     // ---- control -----------------------------------------------------------
 
     // The defect this whole change exists for.

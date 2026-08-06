@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Avalonia;
@@ -146,5 +146,77 @@ public class ContextMenuInteractionTests
         var menu = OpenMenu(host.Editor);
         Assert.NotNull(menu);
         Assert.Equal(2, Headers(menu!).Count());
+    }
+
+    // A decodable 1x1 PNG, as elsewhere in the interaction suites.
+    private static readonly byte[] Png = System.Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+
+    // The image is made deliberately large and preceded by one short paragraph, so a click at
+    // ImagePoint is inside it by construction — the tests below assert which MENU came up, and that
+    // assertion is only meaningful if the click actually landed on the picture.
+    private static readonly Point ImagePoint = new(80, 120);
+
+    private static InteractionHost HostWithImage(out ImageBlock image)
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "above" } } });
+        var img = new ImageBlock { Width = 300, Height = 300 };
+        img.SetImageData(Png, "image/png");
+        doc.Blocks.Add(img);
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "below" } } });
+        image = img;
+        return Host(doc);
+    }
+
+    // Right-clicking an IMAGE in a viewer offers the image's own Copy — the generic read-only menu's
+    // Copy acts on the text selection, which is empty when you have just right-clicked a picture, so a
+    // reader who wanted the image had no way to get it. Matches the WinUI peer, where the object menu
+    // wins over the read-only branch and gates its editing verbs internally.
+    [AvaloniaFact]
+    public void ReadOnlyRightClickOnAnImage_OffersTheImagesOwnCopy()
+    {
+        var host = HostWithImage(out _);
+        host.Editor.IsReadOnly = true;
+
+        host.Click(ImagePoint, MouseButton.Right);
+
+        var menu = OpenMenu(host.Editor);
+        Assert.NotNull(menu);
+        var headers = Headers(menu!).ToList();
+        Assert.Equal(new[] { RichEditorLocalization.GetString("Copy") }, headers);
+    }
+
+    // …and NOTHING that would change it. Every verb below Copy in the image menu mutates the image, so a
+    // viewer offering any of them would be a worse regression than the gap this closed.
+    //
+    // This one does NOT discriminate the routing change — before it, a read-only right-click got the
+    // generic two-item menu, which has no editing verbs either. It guards the OTHER half: the
+    // `if (IsReadOnly) return;` inside BuildImageMenu. Removing that alone fails this test and leaves the
+    // one above passing, which is exactly the split the two are meant to cover.
+    [AvaloniaFact]
+    public void ReadOnlyRightClickOnAnImage_OffersNoEditingVerb()
+    {
+        var host = HostWithImage(out _);
+        host.Editor.IsReadOnly = true;
+
+        host.Click(ImagePoint, MouseButton.Right);
+
+        var all = AllHeaders(OpenMenu(host.Editor)!).ToList();
+        foreach (var key in new[] { "ImageSize", "InlineWithText", "ReplaceImage", "SaveImageAs", "Delete", "Margin" })
+            Assert.DoesNotContain(RichEditorLocalization.GetString(key), all);
+    }
+
+    // The editable case is unchanged: the same click still opens the full image menu.
+    [AvaloniaFact]
+    public void EditableRightClickOnAnImage_StillOffersTheEditingVerbs()
+    {
+        var host = HostWithImage(out _);
+
+        host.Click(ImagePoint, MouseButton.Right);
+
+        var all = AllHeaders(OpenMenu(host.Editor)!).ToList();
+        Assert.Contains(RichEditorLocalization.GetString("ImageSize"), all);
+        Assert.Contains(RichEditorLocalization.GetString("Delete"), all);
     }
 }
