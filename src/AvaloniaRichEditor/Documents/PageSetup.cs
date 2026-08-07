@@ -23,7 +23,6 @@ public class PageSetup
     /// <summary>Whether "page / total" is drawn in the bottom margin.</summary>
     public bool ShowPageNumbers { get; set; }
 
-    /// <summary>Returns a shallow value copy of this page setup.</summary>
     /// <summary>The page margin, in DIPs, that the editor draws and that the header/footer band lives in.</summary>
     // Here rather than on the control because the RTF writer needs it too, and a formatter reaching for a
     // control's statics is how a headless formatter stops being headless.
@@ -48,6 +47,7 @@ public class PageSetup
         return orientation == Controls.RichEditorPageOrientation.Landscape ? (h, w) : (w, h);
     }
 
+    /// <summary>Returns a shallow value copy of this page setup.</summary>
     public PageSetup Clone() => new()
     {
         PageSize = PageSize,
