@@ -147,7 +147,7 @@ internal sealed class RtfParser
     private readonly string _s;
     private int _i;
 
-    private enum Dest { Normal, Skip, ColorTable, Pict }
+    private enum Dest { Normal, Skip, ColorTable, Pict, PageChrome }
 
     private struct State
     {
@@ -239,14 +239,18 @@ internal sealed class RtfParser
             if (c == '{') { if (_st.Dest == Dest.Normal) FlushRun(); _stack.Push(_st); _i++; }
             else if (c == '}')
             {
-                if (_st.Dest == Dest.Pict) FinalizePict(); else FlushRun();
+                if (_st.Dest == Dest.Pict) FinalizePict();
+                else if (_st.Dest == Dest.PageChrome && _stack.Count == _chromeDepth) FinalizePageChrome();
+                else FlushRun();
                 _st = _stack.Count > 0 ? _stack.Pop() : _st; _i++;
             }
             else if (c == '\\') ReadControl();
             else if (c == '\r' || c == '\n') _i++;            // RTF line breaks are not content
             else if (_st.Dest == Dest.ColorTable && c == ';') { CloseColorEntry(); _i++; }
             else if (_st.Dest == Dest.Pict) { if (Uri.IsHexDigit(c)) _pictHex.Append(c); _i++; }
-            else { if (_st.Dest == Dest.Normal) AppendByte(c); _i++; }
+            // Page chrome collects plain characters too — its text is ordinary text, just bound for the
+            // header/footer band instead of the body.
+            else { if (_st.Dest is Dest.Normal or Dest.PageChrome) AppendByte(c); _i++; }
         }
         EndRow();        // a table that ran to the document end (no trailing normal paragraph)
         FlushRun();
@@ -332,7 +336,13 @@ internal sealed class RtfParser
             case "plain": FlushRun(); _st.Bold = _st.Italic = _st.Underline = _st.Strike = false; _st.FontSize = 0; _st.Color = -1; break;
 
             // text/paragraph structure
-            case "par": case "sect": _skipMarkerText = false; EndParagraph(); break;
+            case "par": case "sect":
+                _skipMarkerText = false;
+                // Inside a header/footer a \par separates lines of a band this model stores as ONE line —
+                // it must not reach EndParagraph, which would append a paragraph to the DOCUMENT.
+                if (_st.Dest == Dest.PageChrome) { FlushRun(); _chromeText.Append(' '); break; }
+                EndParagraph();
+                break;
             case "line": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
             // A \tab also TERMINATES a list marker's text (see armkb/armkn): that one is structure, so
             // it is consumed rather than emitted. Every other \tab is a real tab.
@@ -412,6 +422,21 @@ internal sealed class RtfParser
 
             // destinations
             case "colortbl": _st.Dest = Dest.ColorTable; _colors.Clear(); _ctR = _ctG = _ctB = 0; _ctHasColor = false; break;
+            // {\header …}/{\footer …} and their left/right/first-page variants. Until this existed they were
+            // UNKNOWN destinations, so their text flowed straight into the body: opening a Word document
+            // with a header put that header in as the document's first paragraph.
+            case "header": case "headerl": case "headerr": case "headerf":
+                StartPageChrome(header: true); break;
+            case "footer": case "footerl": case "footerr": case "footerf":
+                StartPageChrome(header: false); break;
+            // The page-number placeholders. Inside the chrome they mean "this document wants page numbers"
+            // and contribute no text; everything after one is that band's DECORATION, not content — our own
+            // writer follows \chpgn with " / " and a NUMPAGES field, and collecting that made the separator
+            // ACCUMULATE ("footer/" then "footer//" on the next save).
+            case "chpgn": case "pgnstart":
+                if (_st.Dest == Dest.PageChrome) { FlushRun(); _chromeNumbers = true; _chromeTextClosed = true; }
+                break;
+
             case "fonttbl": case "stylesheet": case "info": case "pntext": case "themedata":
             case "datastore": case "xmlnstbl": case "rsidtbl": case "generator": case "listtable":
             case "listoverridetable": case "revtbl":
@@ -457,7 +482,7 @@ internal sealed class RtfParser
         FlushBytes(); // keep order: any buffered code-page text comes before the unicode char
         // _skipMarkerText matters HERE too, and this is the path that carries it: a non-ASCII bullet goes
         // out as \uN, so gating only the byte path swallowed "1." and let "•" through.
-        if (_st.Dest == Dest.Normal && !_skipMarkerText)
+        if ((_st.Dest == Dest.Normal || _st.Dest == Dest.PageChrome) && !_skipMarkerText)
         {
             if (code < 0) code += 65536; // RTF \u is signed 16-bit
             // \u carries one UTF-16 code UNIT (not a scalar): astral chars arrive as two \u (a surrogate
@@ -499,7 +524,7 @@ internal sealed class RtfParser
 
     private void AppendByte(char c)
     {
-        if (_st.Dest != Dest.Normal || _skipMarkerText) return;
+        if ((_st.Dest != Dest.Normal && _st.Dest != Dest.PageChrome) || _skipMarkerText) return;
         if (c < 256) _bytes.Add((byte)c);
         else { FlushBytes(); _run.Append(c); }
     }
@@ -511,10 +536,63 @@ internal sealed class RtfParser
         _bytes.Clear();
     }
 
+    // ---- page chrome ({\header …} / {\footer …}) ----
+
+    private bool _chromeIsHeader;      // which of the two the current group is
+    private int _chromeDepth = -1;     // group depth that opened it, so the matching '}' is identifiable
+    private bool _chromeNumbers;       // a \chpgn / page field was seen inside a footer
+    private bool _chromeTextClosed;    // past the page-number placeholder: the rest is decoration
+    private readonly StringBuilder _chromeText = new();
+
+    private void StartPageChrome(bool header)
+    {
+        _st.Dest = Dest.PageChrome;
+        _chromeIsHeader = header;
+        _chromeDepth = _stack.Count;
+        _chromeText.Clear();
+        _chromeTextClosed = false;
+    }
+
+    // Takes the text the chrome group accumulated and puts it on the document's PageSetup instead of into
+    // the body. The model holds ONE line per band, so a multi-paragraph header collapses to its text with
+    // single spaces — lossy, and honestly so: this reader has nowhere richer to put it.
+    private void FinalizePageChrome()
+    {
+        FlushRun(); // banks whatever the last line collected
+
+        string text = System.Text.RegularExpressions.Regex.Replace(_chromeText.ToString(), @"\s+", " ").Trim();
+        _chromeText.Clear();
+        _chromeDepth = -1;
+        _chromeTextClosed = false;
+
+        if (text.Length == 0 && !_chromeNumbers) return;
+        _doc.PageSetup ??= new PageSetup();
+        if (_chromeIsHeader)
+        {
+            if (text.Length > 0 && string.IsNullOrEmpty(_doc.PageSetup.Header)) _doc.PageSetup.Header = text;
+        }
+        else
+        {
+            if (text.Length > 0 && string.IsNullOrEmpty(_doc.PageSetup.Footer)) _doc.PageSetup.Footer = text;
+            if (_chromeNumbers) _doc.PageSetup.ShowPageNumbers = true;
+        }
+        _chromeNumbers = false;
+    }
+
     private void FlushRun()
     {
         FlushBytes();
         if (_run.Length == 0) return;
+        // Page chrome banks its text instead of discarding it. This is the ONE place that has to know,
+        // because FlushRun is called from everywhere — every group close, every font/bold change — and a
+        // footer with a page-number field hit exactly that: the field's closing brace ran FlushRun with the
+        // chrome destination still active and the footer text vanished.
+        if (_st.Dest == Dest.PageChrome)
+        {
+            if (!_chromeTextClosed) _chromeText.Append(_run);
+            _run.Clear();
+            return;
+        }
         if (_st.Dest != Dest.Normal) { _run.Clear(); return; }
         _para.Inlines.Add(MakeRun(_run.ToString()));
         _run.Clear();
@@ -891,6 +969,10 @@ internal sealed class RtfWriter
         sb.Append(@"{\colortbl;");
         foreach (var c in _colors) sb.Append($@"\red{c.R}\green{c.G}\blue{c.B};");
         sb.Append('}').Append('\n');
+        // The header/footer destinations belong to the document area, BEFORE the body — that is where Word
+        // puts them and where readers look. Nothing wrote them, so a document with a header exported to
+        // Word or HWP simply lost it while the model and .flow carried it correctly.
+        WritePageChrome(sb, doc.PageSetup);
         sb.Append(_body);
         sb.Append('}');
         return sb.ToString();
@@ -912,6 +994,45 @@ internal sealed class RtfWriter
                 _body.Append(@"\pard\brdrb\brdrs\brdrw10\brsp20 \par").Append('\n');
                 break;
         }
+    }
+
+    // {\header …} / {\footer …} — the page chrome the editor draws in the margin bands.
+    //
+    // The footer carries the page number when the document asks for it, at a RIGHT TAB STOP on the content
+    // edge, because that is how the editor draws it (footer text left, "3 / 12" right). Without the
+    // explicit stop the number lands on whatever default tab the reader happens to have.
+    private void WritePageChrome(StringBuilder sb, PageSetup? ps)
+    {
+        if (ps == null) return;
+        bool hasHeader = !string.IsNullOrEmpty(ps.Header);
+        bool hasFooter = !string.IsNullOrEmpty(ps.Footer) || ps.ShowPageNumbers;
+        if (!hasHeader && !hasFooter) return;
+
+        // The writer emits into _body; borrow it so WriteEscaped can be reused, then move the result.
+        int mark = _body.Length;
+
+        if (hasHeader)
+        {
+            _body.Append(@"{\header\pard\plain\ql ");
+            WriteEscaped(ps.Header!);
+            _body.Append(@"\par}").Append('\n');
+        }
+        if (hasFooter)
+        {
+            var (w, _) = PageSetup.PaperDips(ps.PageSize, ps.Orientation);
+            int contentTwips = (int)Math.Round((w - 2 * PageSetup.MarginX) * 15);
+            _body.Append(@"{\footer\pard\plain\ql");
+            if (ps.ShowPageNumbers) _body.Append(@"\tqr\tx").Append(contentTwips);
+            _body.Append(' ');
+            if (!string.IsNullOrEmpty(ps.Footer)) WriteEscaped(ps.Footer!);
+            // \chpgn is the current page; the total needs a field, which is what Word writes. This parser
+            // reads both as "the document wanted page numbers" rather than as text.
+            if (ps.ShowPageNumbers) _body.Append(@"\tab \chpgn / {\field{\*\fldinst NUMPAGES}{\fldrslt }}");
+            _body.Append(@"\par}").Append('\n');
+        }
+
+        sb.Append(_body, mark, _body.Length - mark);
+        _body.Length = mark;
     }
 
     // "\pard" + this paragraph's own properties.

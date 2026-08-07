@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Media;
@@ -72,8 +72,10 @@ public partial class RichEditor
 
     // Paper margins (content box inset) and the grey-desk gap between consecutive pages — uniform
     // across paper sizes.
-    internal const double PagePadX = 48;
-    internal const double PagePadY = 40;
+    // Aliases of the shared page geometry (Documents.PageSetup): the RTF writer needs the same numbers
+    // for its footer tab stop and cannot read them off a control type without dragging the control in.
+    internal const double PagePadX = Documents.PageSetup.MarginX;
+    internal const double PagePadY = Documents.PageSetup.MarginY;
     // Grey-desk gap above the first page and between consecutive pages in page-outline view. Kept thin
     // (~2 pt) so pages sit close together with just a sliver of desk between them, rather than a wide
     // grey band. The whole page-stack layout (MeasureOverride height, PageRectView, MapViewToDoc) is
@@ -132,24 +134,9 @@ public partial class RichEditor
     // Paper pixel dimensions at 96 DPI (portrait), then swapped for landscape. Continuous falls back
     // to A4 for print/PDF (you can't print an unbounded-width column), but its layout width comes from
     // the control, not these.
-    private (double w, double h) PaperDims
-    {
-        get
-        {
-            var (w, h) = PageSize switch
-            {
-                RichEditorPageSize.A3 => (1123.0, 1587.0),  // 297 x 420 mm
-                RichEditorPageSize.A5 => (559.0, 794.0),    // 148 x 210 mm
-                RichEditorPageSize.B4 => (971.0, 1376.0),   // JIS 257 x 364 mm
-                RichEditorPageSize.B5 => (688.0, 971.0),    // JIS 182 x 257 mm
-                RichEditorPageSize.Letter => (816.0, 1056.0), // 8.5 x 11 in
-                RichEditorPageSize.Legal => (816.0, 1344.0),  // 8.5 x 14 in
-                RichEditorPageSize.Tabloid => (1056.0, 1632.0), // 11 x 17 in
-                _ => (A4PageWidth, A4PageHeight),           // A4, and Continuous's print fallback
-            };
-            return PageOrientation == RichEditorPageOrientation.Landscape ? (h, w) : (w, h);
-        }
-    }
+    // The table itself lives in Documents.PageSetup so the RTF writer uses the very same numbers.
+    private (double w, double h) PaperDims => Documents.PageSetup.PaperDips(PageSize, PageOrientation);
+
     internal double PaperWidth => PaperDims.w;
     internal double PaperHeight => PaperDims.h;
     internal double PaperContentWidth => PaperWidth - 2 * PagePadX;
