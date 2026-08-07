@@ -6,6 +6,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — interop defects backported from the WinUI port (round 5)
+
+Six defects found in **WinUIRichEditor**'s 2026-08-07 audit, each confirmed present in **this** source by
+direct comparison before being changed here. `BackportRound5Tests` has 19 tests; reverting the six fixes
+fails 17 of them, so none of this is a porting artefact.
+
+**Five of the six share one shape**: the model was never wrong, so a round trip through this project's own
+reader agreed with itself, and the defect existed only in what the FORMAT told an outside consumer. Three
+were found by a human pasting into Word and HWP, not by a test — which is why several of the new
+assertions read the WRITTEN BYTES. A symmetry check cannot see a value that was never written.
+
+**The native formats**
+
+- **A paragraph fill inside a table cell was erased on save.** The legacy one-paragraph cell encoding
+  shares a single `Background` field between the cell's fill and the paragraph's, and the cell's
+  assignment came last — so with no cell fill the paragraph's was overwritten with `null` and gone, in
+  this editor's own save format. Such a paragraph arrives whenever HTML with a styled `<p>` in a `<td>` is
+  pasted. Fixed without touching the format: the existing `"Cell"` wrapper is used whenever the paragraph
+  has a fill of its own, which readers already understand.
+
+**HTML**
+
+- **A cell's paragraphs lost every paragraph-level property on export.** They went out as bare inlines
+  separated by `<br>`, and bare inlines can carry nothing paragraph-level — so a bulleted, centred,
+  indented, shaded or heading cell paragraph exported as none of it, including into the clipboard's HTML
+  flavour. The reader could always do it (foreign Word tables with bulleted cells parse correctly); only
+  the writer could not produce the element form.
+- **Two plain paragraphs in one cell collapsed into one on every cycle.** `<br>` is not a paragraph
+  boundary to the reader. The collapse is *idempotent*, which is exactly why no round-trip test saw it.
+- **A paragraph holding a picture lost its own formatting on import.** The walker's "recurse into anything
+  containing block-or-media" branch runs before the one that reads a paragraph element's style, so an
+  `<img>` anywhere in the paragraph turned `<p style="…">` into a mere container. Narrowed deliberately: a
+  container with real BLOCK children (a `<div>` of `<p>`s) still behaves exactly as before, because
+  foreign HTML depends on that.
+- **Paragraph spacing was never written.** `MarginTop`/`MarginBottom`/`MarginRight` went out as nothing
+  and came back as the defaults. They now go out twice — as real CSS so a browser or Word shows the
+  spacing, and as a `data-are-m` marker because only the marker is read back. Reading foreign
+  `margin-top` would give every web paste that page's vertical rhythm (the reason `data-are-empty` exists).
+
+**RTF**
+
+- **A list marker became part of the document's text.** The marker went out as bare text + `	ab` — a
+  trade-off the comment there called deliberate ("our parser treats it as text") — but the cost was not
+  cosmetic: a bulleted item reopened as the plain text `"•	항목"`, the list gone and the bullet now part
+  of what the user typed. Perfectly idempotent, so no round-trip test could see it.
+  The marker stays literal text (that is what every other reader renders, and the standard
+  `{\pntext}{\*\pn}` pair is NOT a substitute — HWP skips both and shows no marker at all, measured on
+  the peer against a real HWP paste). An ignorable `{\*rmkb|armkn}` tag in front of it says "the text
+  up to the next `	ab` is the marker, not content", which only this reader acts on; its parameter carries
+  the exact marker style and `{\*rlvl}` carries the nesting level, so **`ListLevel` now survives RTF**.
+  A list item also gets a real hanging indent (`i-360\li<gutter>	x<gutter>`) — without one the tab
+  landed on the reader's next DEFAULT tab stop, which in HWP threw the text across the line.
+- **A cell paragraph stated none of its own properties.** The cell writer opened every cell with
+  `\pard\intbl` and never wrote alignment or indent, so a centred paragraph inside a table exported as
+  left-aligned while the identical paragraph at the top level exported correctly. Alignment is now also
+  always explicit (`\ql` included): the spec says `\pard` resets to left, but HWP keeps a previously seen
+  `\qr`, so one right-aligned paragraph turned every following one right-aligned on paste.
+
+⚠️ One existing test, `RtfTableExportTests.AListParagraphInACell_KeepsItsMarker`, was asserting the
+marker glyph came back in the cell's TEXT — it passed only *because* of the injection. It now asserts what
+it was really for: the paragraph is still a list, the marker is still literal in the written RTF, and the
+text is only its text.
+
+
 ### Fixed — round-trip defects backported from the WinUI port (round 4)
 
 Eleven defects found in **WinUIRichEditor** by widening its model-level round-trip fuzz (24 seeds → 400 →

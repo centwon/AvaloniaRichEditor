@@ -119,10 +119,20 @@ public class RtfTableExportTests
         var tb = Grid(1, 1);
         tb.Cells[0][0].Para.ListType = ListKind.Bullet;
 
-        var back = RoundTrip(DocOf(tb));
+        // The marker is still written as literal text, so a reader that does not implement RTF lists
+        // (HWP does not) still shows a bullet.
+        string rtf = Write(DocOf(tb));
+        Assert.Contains(@"{\*\armkb", rtf);
 
+        var back = RoundTrip(DocOf(tb));
         var cell = back.Blocks.OfType<TableBlock>().Single().Cells[0][0];
-        Assert.Contains("•", CellText(cell));
+
+        // What this used to assert was that the glyph came back in the cell's TEXT — and it did, because
+        // the marker was being injected into the document's content (a bulleted item reopened as "•\t00").
+        // That is the defect this round fixes, so the assertion is now the one the test was really for:
+        // the paragraph is still a LIST, and its text is only its text.
+        Assert.Equal(ListKind.Bullet, cell.Blocks.OfType<Paragraph>().First().ListType);
+        Assert.DoesNotContain("•", CellText(cell));
         Assert.Contains("00", CellText(cell)); // the text is still there too
     }
 

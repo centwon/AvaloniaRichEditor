@@ -179,8 +179,16 @@ public static class DocumentSerializer
                         // readers still load it. A cell with multiple blocks or non-paragraph content (P4:
                         // several paragraphs, a block image, a nested table) is wrapped in a "Cell" DTO
                         // whose Blocks carry the full list (recursively).
+                        //
+                        // The legacy form has ONE Background field standing for two different fills, so it
+                        // is only usable when the paragraph has no fill of its own: otherwise the
+                        // assignment below overwrites the paragraph's with the cell's, and when the cell
+                        // has none that means writing null — the paragraph's fill is erased outright, in
+                        // this editor's own save format. A paragraph fill inside a cell arrives whenever
+                        // HTML with a styled <p> in a <td> is pasted. The wrapper form keeps the two fills
+                        // on separate DTOs and readers already understand it, so the format is unchanged.
                         BlockDto cdto;
-                        if (cell.Blocks.Count == 1 && cell.Blocks[0] is Paragraph cpara)
+                        if (cell.Blocks.Count == 1 && cell.Blocks[0] is Paragraph cpara && cpara.Background == null)
                         {
                             cdto = ParagraphToDto(cpara, pool);
                         }
