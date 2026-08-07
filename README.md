@@ -1,5 +1,7 @@
 # AvaloniaRichEditor
 
+*Read this in other languages: [한국어](README.ko.md)*
+
 A from-scratch rich text editor control for [Avalonia](https://avaloniaui.net) — a pure C# port of the
 ideas behind WPF's `RichTextBox`/`FlowDocument`, built entirely on Avalonia's `TextLayout` engine (no
 PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME are implemented directly.
