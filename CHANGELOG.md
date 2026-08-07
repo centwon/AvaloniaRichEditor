@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — RTF lost headers and footers in BOTH directions (round 6, from the WinUI port)
+
+The model has carried `PageSetup.Header`/`Footer`/`ShowPageNumbers` since page setup existed, and
+JSON/`.flow` persist them. RTF had neither half, and that was two defects — the second worse than the first:
+
+- **Nothing wrote them.** Exporting to Word or HWP silently dropped the header. Now `{\header …}` and
+  `{ooter …}` go into the document area, before the body, where Word puts them and readers look.
+- **Nothing read them, and `header`/`footer` were UNKNOWN destinations** — so their text flowed into the
+  body. Opening a Word document with a header **inserted that header as the document's first paragraph**.
+  Measured before and after. The left/right/first-page variants (`\headerl` etc.) read into the same band.
+
+The page number rides at an explicit RIGHT tab stop in the footer (`	qr	x`), because that is how the
+editor draws it (footer text left, "3 / 12" right); without the stop it lands on whatever default tab the
+reader happens to have. The paper-size table moved to `Documents.PageSetup` so the control's layout and the
+writer's tab stop use the very same numbers — and it cannot live on the control, because a formatter
+reaching for a control's statics is how a headless formatter stops being headless.
+
+> ⚠️ Three traps, all of them this codebase's recurring shapes, and all found on the peer first:
+> ① `FlushRun()` DISCARDS text when the destination is not Normal, and it is called from every group close
+>    and every font change — a footer's page-number field closing threw the footer text away. Exactly one
+>    place was taught about the chrome; no second copy.
+> ② The plain-character path gated on `Dest.Normal` alone, so ASCII headers vanished whole while non-ASCII
+>    ones lost only the spaces BETWEEN words — one cause, two symptoms.
+> ③ **A separator became content and accumulated.** The `" / "` this writer puts between `\chpgn` and the
+>    NUMPAGES field was collected as footer text, so the footer grew a `/` on every save. Everything after
+>    the page-number placeholder is that band's decoration, not content. **One round trip looked fine** —
+>    which is why the test runs two.
+
+`RtfPageChromeTests` has 10 tests. Falsification: disabling only the writer fails 5, only the reader fails 8.
+
+
 ### Fixed — interop defects backported from the WinUI port (round 5)
 
 Six defects found in **WinUIRichEditor**'s 2026-08-07 audit, each confirmed present in **this** source by
