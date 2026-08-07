@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -27,6 +27,42 @@ namespace AvaloniaRichEditor.Formatters;
 /// </summary>
 public static class RtfDocumentFormatter
 {
+    // The left gutter a list item at this nesting level gets, in twips. One place, because the writer adds
+    // it to \li and the reader subtracts the same amount back out — if these two ever disagree, a list
+    // item's indent grows or shrinks on every save.
+    internal static int ListGutterTwips(int level) => 720 * (Math.Clamp(level, 0, 8) + 1);
+
+    // Marker style <-> wire code for {\*\armkb|armkn}, spelled out in BOTH directions on purpose: a cast
+    // would tie the RTF we write to the enum's declaration order, so inserting a style would silently
+    // change the format.
+    internal static int MarkerCode(ListMarkerStyle s) => s switch
+    {
+        ListMarkerStyle.Disc => 1,
+        ListMarkerStyle.Circle => 2,
+        ListMarkerStyle.Square => 3,
+        ListMarkerStyle.Dash => 4,
+        ListMarkerStyle.Decimal => 5,
+        ListMarkerStyle.DecimalParen => 6,
+        ListMarkerStyle.LowerAlpha => 7,
+        ListMarkerStyle.UpperAlpha => 8,
+        ListMarkerStyle.LowerRoman => 9,
+        _ => 0,
+    };
+
+    internal static ListMarkerStyle MarkerFromCode(int c) => c switch
+    {
+        1 => ListMarkerStyle.Disc,
+        2 => ListMarkerStyle.Circle,
+        3 => ListMarkerStyle.Square,
+        4 => ListMarkerStyle.Dash,
+        5 => ListMarkerStyle.Decimal,
+        6 => ListMarkerStyle.DecimalParen,
+        7 => ListMarkerStyle.LowerAlpha,
+        8 => ListMarkerStyle.UpperAlpha,
+        9 => ListMarkerStyle.LowerRoman,
+        _ => ListMarkerStyle.Default,
+    };
+
     static RtfDocumentFormatter()
     {
         // CP949 (Korean), Shift-JIS, GB2312 etc. aren't in .NET's default set — register them so
@@ -296,16 +332,35 @@ internal sealed class RtfParser
             case "plain": FlushRun(); _st.Bold = _st.Italic = _st.Underline = _st.Strike = false; _st.FontSize = 0; _st.Color = -1; break;
 
             // text/paragraph structure
-            case "par": case "sect": EndParagraph(); break;
+            case "par": case "sect": _skipMarkerText = false; EndParagraph(); break;
             case "line": if (_st.Dest == Dest.Normal) _bytes.Add(10); break;
-            case "tab": if (_st.Dest == Dest.Normal) _bytes.Add(9); break;
+            // A \tab also TERMINATES a list marker's text (see armkb/armkn): that one is structure, so
+            // it is consumed rather than emitted. Every other \tab is a real tab.
+            case "tab":
+                if (_skipMarkerText) { _skipMarkerText = false; break; }
+                if (_st.Dest == Dest.Normal) _bytes.Add(9);
+                break;
             case "pard":
+                _skipMarkerText = false;   // a marker's text never spans a paragraph reset
                 _paraBottomBorder = false; // a border is paragraph formatting, so the reset clears it
                 SetItap(1); break;         // paragraph-property reset; \itap is one of those properties
             // A horizontal rule has no control word of its own in RTF; Word — and this writer — spell it
             // as an empty paragraph carrying a bottom border. Only the writing half existed, so every
             // divider came back as a blank line and was gone for good after one save/load.
             case "brdrb": if (_st.Dest == Dest.Normal && _curRow == null) _paraBottomBorder = true; break;
+
+            // Ours (see WriteListMarker): the list nesting level, announced before the marker tag. It
+            // restores ListLevel — RTF has no standard place for it — and says how much gutter the \li
+            // above carried, so it can be taken back out of the author's own indent.
+            case "arlvl":
+                _para.ListLevel = Math.Clamp(p ?? 0, 0, 8);
+                _pendingListGutter = RtfDocumentFormatter.ListGutterTwips(_para.ListLevel);
+                break;
+            // The list kind + exact marker style, and a signal that the text up to the next \tab is the
+            // MARKER rather than content. Every other reader skips the ignorable group and renders that
+            // text, which is the point — it is the only spelling both Word and HWP show.
+            case "armkb": _para.ListType = ListKind.Bullet; StartMarkerText(p); break;
+            case "armkn": _para.ListType = ListKind.Ordered; StartMarkerText(p); break;
 
             // tables. Every one of these is guarded by the destination: Word writes a nested table's row
             // definition inside the ignorable group {\*\nesttableprops \trowd …\nestrow}, and acting on
@@ -400,7 +455,9 @@ internal sealed class RtfParser
     private void EmitUnicode(int code)
     {
         FlushBytes(); // keep order: any buffered code-page text comes before the unicode char
-        if (_st.Dest == Dest.Normal)
+        // _skipMarkerText matters HERE too, and this is the path that carries it: a non-ASCII bullet goes
+        // out as \uN, so gating only the byte path swallowed "1." and let "•" through.
+        if (_st.Dest == Dest.Normal && !_skipMarkerText)
         {
             if (code < 0) code += 65536; // RTF \u is signed 16-bit
             // \u carries one UTF-16 code UNIT (not a scalar): astral chars arrive as two \u (a surrogate
@@ -420,9 +477,29 @@ internal sealed class RtfParser
 
     // ---- building ----
 
+    // True from a {\*\armkb|armkn} tag until the \tab that closes the list marker's literal text, which
+    // this reader must NOT take as content (other readers render it — that is why it is written at all).
+    private bool _skipMarkerText;
+
+    // The gutter the writer folded into \li for the level last announced by {\*rlvl}.
+    private int _pendingListGutter;
+
+    // Also carries the exact marker style, and takes the list gutter back out of the indent: the writer
+    // adds it to \li so other readers lay the item out.
+    private void StartMarkerText(int? code)
+    {
+        if (code is { } c) _para.ListMarker = RtfDocumentFormatter.MarkerFromCode(c);
+        if (_pendingListGutter > 0)
+        {
+            _para.Indent = Math.Max(0, _para.Indent - _pendingListGutter / 15.0);
+            _pendingListGutter = 0;
+        }
+        _skipMarkerText = true;
+    }
+
     private void AppendByte(char c)
     {
-        if (_st.Dest != Dest.Normal) return;
+        if (_st.Dest != Dest.Normal || _skipMarkerText) return;
         if (c < 256) _bytes.Add((byte)c);
         else { FlushBytes(); _run.Append(c); }
     }
@@ -837,27 +914,73 @@ internal sealed class RtfWriter
         }
     }
 
-    private void WriteParagraph(Paragraph p, int ordered)
+    // "\pard" + this paragraph's own properties.
+    private void WriteParagraphProps(Paragraph p)
     {
         _body.Append(@"\pard");
+        WriteParagraphPropsBody(p); // ends with the delimiter space for the last control word
+    }
+
+    // The properties themselves, without the \pard. Split out because a CELL paragraph opens with
+    // `\pard\intbl` and never followed it with any of these — so a centred or indented paragraph inside a
+    // table exported as neither, while the identical paragraph at the top level exported correctly. Not a
+    // limitation of RTF: the top-level path has always written them, and the cell path simply never did.
+    private void WriteParagraphPropsBody(Paragraph p)
+    {
+        // ALWAYS emit the alignment, including \ql for left. In the spec \pard resets alignment to left,
+        // but HWP treats \pard as "back to the current defaults" and keeps a previously seen \qr — so a
+        // single right-aligned paragraph turned every following one right-aligned on paste. Being explicit
+        // costs 3 bytes per paragraph and removes the reader-dependent behaviour entirely.
         switch (p.TextAlignment)
         {
             case TextAlignment.Center: _body.Append(@"\qc"); break;
             case TextAlignment.Right: _body.Append(@"\qr"); break;
             case TextAlignment.Justify: _body.Append(@"\qj"); break;
+            default: _body.Append(@"\ql"); break;
         }
-        if (p.Indent > 0) _body.Append($@"\li{(int)(p.Indent * 15)}");
-        _body.Append(' ');
-
-        // Lists have no portable round-trip in this subset, so emit a literal marker + tab (Word renders
-        // it; our parser treats it as text). The bullet glyph / number format follows ListMarker (the
-        // marker text is reused from the editor; non-ASCII bullets are \u-escaped). Headings export as
-        // the larger/bold look the editor shows.
-        if (p.ListType != ListKind.None)
+        // A list item needs a real hanging indent, not just a marker followed by \tab. Without one the tab
+        // lands on the reader's next DEFAULT tab stop — in HWP that is far to the right, so the text was
+        // thrown across the line while the marker sat alone at the margin. \fi-360 hangs the marker, \li
+        // puts the text at the gutter, \tx pins the tab there. This is what Word writes for its own lists.
+        int indentTwips = (int)(p.Indent * 15);
+        if (p.IsListItem)
         {
-            WriteEscaped(Controls.RichEditor.ListMarkerText(p.ListType, p.ListMarker, ordered));
-            _body.Append(@"\tab ");
+            int gutter = RtfDocumentFormatter.ListGutterTwips(p.ListLevel);
+            _body.Append($@"\fi-360\li{indentTwips + gutter}\tx{gutter}");
         }
+        else if (indentTwips > 0) _body.Append($@"\li{indentTwips}");
+        _body.Append(' ');
+    }
+
+    // A list item's marker. It used to go out as BARE TEXT followed by \tab — the comment here called that
+    // a deliberate trade-off ("our parser treats it as text"), but the cost was not only cosmetic: the
+    // glyph became part of the document's CONTENT on the way back in. A bulleted item reopened as the
+    // plain text "•\t항목", list gone, bullet now part of what the user typed, and saving again kept it.
+    //
+    // No round-trip test could see it, because the result is PERFECTLY IDEMPOTENT: cycle 2 reads back
+    // exactly what cycle 1 produced, since the marker is only written for a paragraph that still has a
+    // ListType and this one no longer has one.
+    //
+    // The fix keeps the literal text — that is what every other reader renders, and the standard
+    // {\pntext}{\*\pn} pair is NOT a substitute: HWP skips both and then shows no marker at all (measured
+    // on the WinUI peer against a real HWP paste). Instead an ignorable tag in front of it says "the text
+    // up to the next \tab is the marker, not content", which only this reader acts on. The tag's parameter
+    // carries the exact marker style, and {\*\arlvl} carries the nesting level — so ListLevel, which RTF
+    // has no standard place for, survives too.
+    private void WriteListMarker(Paragraph p, int ordered)
+    {
+        _body.Append(@"{\*\arlvl").Append(Math.Clamp(p.ListLevel, 0, 8)).Append('}');
+        _body.Append(p.ListType == ListKind.Bullet ? @"{\*\armkb" : @"{\*\armkn")
+             .Append(RtfDocumentFormatter.MarkerCode(p.ListMarker)).Append('}');
+        WriteEscaped(Controls.RichEditor.ListMarkerText(p.ListType, p.ListMarker, ordered));
+        _body.Append(@"\tab ");
+    }
+
+    private void WriteParagraph(Paragraph p, int ordered)
+    {
+        WriteParagraphProps(p);
+
+        if (p.ListType != ListKind.None) WriteListMarker(p, ordered);
 
         bool heading = p.HeadingLevel is >= 1 and <= 6;
         double headingSize = heading ? HeadingSize(p.HeadingLevel) : 0;
@@ -1010,11 +1133,11 @@ internal sealed class RtfWriter
             {
                 if (!first) _body.Append(@"\par ");
                 first = false;
-                if (cpara.ListType != ListKind.None)
-                {
-                    WriteEscaped(Controls.RichEditor.ListMarkerText(cpara.ListType, cpara.ListMarker, 1));
-                    _body.Append(@"\tab ");
-                }
+                // This paragraph's OWN alignment and indent. The cell prelude opens with `\pard\intbl` and
+                // wrote none of them, so every cell paragraph exported as left-aligned and un-indented no
+                // matter what it was — while the identical paragraph at the top level exported correctly.
+                WriteParagraphPropsBody(cpara);
+                if (cpara.ListType != ListKind.None) WriteListMarker(cpara, 1);
                 bool heading = cpara.HeadingLevel is >= 1 and <= 6;
                 double headingSize = heading ? HeadingSize(cpara.HeadingLevel) : 0;
                 foreach (var inline in cpara.Inlines)

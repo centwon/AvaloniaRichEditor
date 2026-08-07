@@ -304,21 +304,30 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     // Container with nested block/media content -> recurse to preserve structure.
                     Flush();
-                    WalkBlocks(child, flow, childLink);
+                    // A paragraph element whose only block-or-media content is MEDIA is still a paragraph.
+                    // This branch runs before the BlockLeaf one below, so `<p style="…">text<img/></p>` was
+                    // walked as a mere container and the element's own paragraph formatting — alignment,
+                    // indent, fill, heading level, quote — was dropped on the way in. Every picture with a
+                    // caption line lost it, in a cell or not.
+                    //
+                    // A container with real BLOCK children (a <div> wrapping <p>s) is deliberately left as
+                    // it was: whether formatting should inherit down to them is a separate question, and
+                    // foreign HTML depends on today's answer.
+                    if (BlockLeaf.Contains(name) && !HasBlockChild(child))
+                    {
+                        int at = flow.Blocks.Count;
+                        WalkBlocks(child, flow, childLink);
+                        for (int i = at; i < flow.Blocks.Count; i++)
+                            if (flow.Blocks[i] is Paragraph made) ApplyBlockLeafFormat(child, name, made);
+                    }
+                    else WalkBlocks(child, flow, childLink);
                 }
                 else if (BlockLeaf.Contains(name))
                 {
                     // Block-level element with only inline content -> its own paragraph.
                     Flush();
-                    int hl = (name.Length == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') ? name[1] - '0' : 0;
-                    var p = new Paragraph
-                    {
-                        HeadingLevel = hl,
-                        Background = ReadBackground(child),
-                        Indent = ReadIndentPx(child),
-                        IsQuote = name == "blockquote",
-                        TextAlignment = ReadAlign(child)
-                    };
+                    var p = new Paragraph();
+                    ApplyBlockLeafFormat(child, name, p);
                     double size = HeadingSize(name, out var headingWeight);
                     ParseInlines(child, p, headingWeight, FontStyle.Normal, null, childLink, size, hasLink);
                     // Empty elements are dropped — foreign HTML uses them for spacing — unless this export
@@ -428,6 +437,40 @@ namespace AvaloniaRichEditor.Formatters
         }
 
         private static bool HasBlockOrMedia(HtmlNode n) => n.Descendants().Any(d => BlockOrMedia.Contains(d.Name));
+
+        // Block-level content only — BlockOrMedia without <img>. The distinction is what separates "this
+        // element is a container of paragraphs" from "this element IS a paragraph that happens to hold a
+        // picture", and only the second can carry its formatting onto what the walk produces.
+        private static bool HasBlockChild(HtmlNode n) => n.Descendants()
+            .Any(d => BlockOrMedia.Contains(d.Name) && !d.Name.Equals("img", StringComparison.OrdinalIgnoreCase));
+
+        // The paragraph-level formatting an element carries. Only values the element actually states are
+        // written, so applying this to a paragraph the walk already produced cannot clobber that
+        // paragraph's own formatting with defaults.
+        private static void ApplyBlockLeafFormat(HtmlNode node, string name, Paragraph p)
+        {
+            if (name.Length == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') p.HeadingLevel = name[1] - '0';
+            if (ReadBackground(node) is { } bg) p.Background = bg;
+            if (ReadIndentPx(node) is > 0 and var ind) p.Indent = ind;
+            if (name == "blockquote") p.IsQuote = true;
+            if (ReadAlign(node) is var al && al != TextAlignment.Left) p.TextAlignment = al;
+            ApplyMarginMarker(node, p);
+        }
+
+        // Paragraph spacing, read ONLY from this library's own marker (see EmitParagraphElement). Foreign
+        // margin-top/bottom is deliberately ignored: reading it would give every web paste that page's
+        // vertical rhythm.
+        private static void ApplyMarginMarker(HtmlNode node, Paragraph p)
+        {
+            var v = node.GetAttributeValue("data-are-m", "");
+            if (string.IsNullOrEmpty(v)) return;
+            var parts = v.Split(',');
+            if (parts.Length != 3) return;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            if (double.TryParse(parts[0], System.Globalization.NumberStyles.Float, inv, out double t)) p.MarginTop = t;
+            if (double.TryParse(parts[1], System.Globalization.NumberStyles.Float, inv, out double b)) p.MarginBottom = b;
+            if (double.TryParse(parts[2], System.Globalization.NumberStyles.Float, inv, out double r)) p.MarginRight = r;
+        }
 
         // HTML collapses runs of COLLAPSIBLE whitespace to one space. A non-breaking space is not
         // collapsible — that is the whole point of it, and the export relies on it to carry the editor's
@@ -860,27 +903,7 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     if (p.IsListItem) SyncList(p.ListType, p.ListMarker, p.ListLevel);
                     else CloseAll();
-
-                    string tag = p.IsListItem ? "li"
-                        : p.IsQuote ? "blockquote"
-                        : (p.HeadingLevel >= 1 && p.HeadingLevel <= 6 ? $"h{p.HeadingLevel}" : "p");
-                    string align = p.TextAlignment switch { TextAlignment.Center => "center", TextAlignment.Right => "right", TextAlignment.Justify => "justify", _ => "left" };
-                    string pStyle = $"text-align:{align};";
-                    if (p.Background is ISolidColorBrush pbg) pStyle += $"background-color:{CssColor(pbg.Color)};";
-                    if (p.Indent > 0) pStyle += $"margin-left:{p.Indent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;";
-                    // A paragraph can be a list item AND a heading, but the tag can only be one of
-                    // <li>/<h1..6>, and <li> wins because the list structure is what HTML cannot
-                    // otherwise express. The heading level would then be dropped outright, so it rides
-                    // along as a marker. An empty paragraph is likewise a blank LINE the author typed,
-                    // and the importer drops elements with no inline content (foreign HTML is full of
-                    // empty <p>/<div> used for spacing) — so it is marked too.
-                    string extraAttr = p.IsListItem && p.HeadingLevel >= 1 && p.HeadingLevel <= 6
-                        ? $" data-are-h=\"{p.HeadingLevel}\"" : "";
-                    if (p.Inlines.Count == 0) extraAttr += " data-are-empty=\"1\"";
-                    sb.Append($"<{tag}{extraAttr} style=\"{pStyle}\">");
-                    for (int i = 0; i < p.Inlines.Count; i++)
-                        EmitInline(sb, p.Inlines[i], i == 0, i == p.Inlines.Count - 1);
-                    sb.Append($"</{tag}>\n");
+                    EmitParagraphElement(sb, p, newlineAfter: true);
                 }
                 else if (block is DividerBlock)
                 {
@@ -902,6 +925,101 @@ namespace AvaloniaRichEditor.Formatters
             CloseAll();
             return sb.ToString();
         }
+
+        // Block.MarginBottom's default. Only a paragraph that DIFFERS from it carries spacing worth
+        // writing — emitting the default on every paragraph would change nothing and bloat every export.
+        private const double DefaultMarginBottom = 10;
+
+        // Opens and closes the <ul>/<ol> nesting around a run of list-item paragraphs. One instance per
+        // block list — the document's top level has its own, and so does each <td>, because a list inside
+        // a cell has to open and close inside that cell.
+        private sealed class ListNesting
+        {
+            private readonly StringBuilder _sb;
+            private readonly System.Collections.Generic.List<ListKind> _open = new();
+            // Inside a <td> the pretty-printing newlines are not decoration: the cell's content is parsed
+            // as inline, so each one becomes a whitespace text node and comes back as content.
+            private readonly string _nl;
+
+            public ListNesting(StringBuilder sb, bool tight = false) { _sb = sb; _nl = tight ? "" : "\n"; }
+
+            private void CloseOne()
+            {
+                _sb.Append(_open[^1] == ListKind.Ordered ? "</ol>" : "</ul>").Append(_nl);
+                _open.RemoveAt(_open.Count - 1);
+            }
+
+            public void CloseAll() { while (_open.Count > 0) CloseOne(); }
+
+            public void Sync(ListKind kind, ListMarkerStyle marker, int level)
+            {
+                while (_open.Count > level + 1) CloseOne();
+                if (_open.Count == level + 1 && _open[^1] != kind) CloseOne();
+                while (_open.Count < level + 1)
+                {
+                    string lst = CssListStyle(kind, marker);
+                    _sb.Append(kind == ListKind.Ordered ? $"<ol style=\"list-style-type:{lst}\">" : $"<ul style=\"list-style-type:{lst}\">").Append(_nl);
+                    _open.Add(kind);
+                }
+            }
+        }
+
+        // One paragraph as its own HTML element, carrying the paragraph-level formatting the reader knows
+        // how to read back. Shared by the document's top level and by table cells, which is the point: a
+        // cell paragraph used to go out as bare inlines, and bare inlines can express NOTHING
+        // paragraph-level, so a bulleted / centred / indented / shaded / heading cell paragraph lost all of
+        // it on export — including into the clipboard's HTML flavour. The reader has always handled the
+        // element form inside a <td> (foreign Word tables with bulleted cells parse correctly); only the
+        // writer could not produce it.
+        //
+        // newlineAfter is false inside a <td>, where a pretty-printing newline is not decoration: the
+        // cell's content is parsed as inline, so it becomes a whitespace text node and comes back as content.
+        private static void EmitParagraphElement(StringBuilder sb, Paragraph p, bool newlineAfter)
+        {
+            string tag = p.IsListItem ? "li"
+                : p.IsQuote ? "blockquote"
+                : (p.HeadingLevel >= 1 && p.HeadingLevel <= 6 ? $"h{p.HeadingLevel}" : "p");
+            string align = p.TextAlignment switch { TextAlignment.Center => "center", TextAlignment.Right => "right", TextAlignment.Justify => "justify", _ => "left" };
+            string pStyle = $"text-align:{align};";
+            if (p.Background is ISolidColorBrush pbg) pStyle += $"background-color:{CssColor(pbg.Color)};";
+            if (p.Indent > 0) pStyle += $"margin-left:{p.Indent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;";
+            // A paragraph can be a list item AND a heading, but the tag can only be one of
+            // <li>/<h1..6>, and <li> wins because the list structure is what HTML cannot
+            // otherwise express. The heading level would then be dropped outright, so it rides
+            // along as a marker. An empty paragraph is likewise a blank LINE the author typed,
+            // and the importer drops elements with no inline content (foreign HTML is full of
+            // empty <p>/<div> used for spacing) — so it is marked too.
+            string extraAttr = p.IsListItem && p.HeadingLevel >= 1 && p.HeadingLevel <= 6
+                ? $" data-are-h=\"{p.HeadingLevel}\"" : "";
+            // Paragraph spacing went out as nothing at all and came back as the defaults. It goes out
+            // TWICE on purpose: as real CSS so a browser or Word shows the spacing, and as a marker
+            // because only the marker is read back. Reading foreign margin-top/bottom would give every
+            // web paste that page's vertical rhythm — the same reason data-are-empty exists. margin-left
+            // is not here: it is Indent, and reading that from foreign HTML is long-standing behaviour.
+            string Px(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            if (p.MarginTop != 0) pStyle += $"margin-top:{Px(p.MarginTop)}px;";
+            if (p.MarginBottom != DefaultMarginBottom) pStyle += $"margin-bottom:{Px(p.MarginBottom)}px;";
+            if (p.MarginRight != 0) pStyle += $"margin-right:{Px(p.MarginRight)}px;";
+            if (p.MarginTop != 0 || p.MarginBottom != DefaultMarginBottom || p.MarginRight != 0)
+                extraAttr += $" data-are-m=\"{Px(p.MarginTop)},{Px(p.MarginBottom)},{Px(p.MarginRight)}\"";
+            if (p.Inlines.Count == 0) extraAttr += " data-are-empty=\"1\"";
+            sb.Append($"<{tag}{extraAttr} style=\"{pStyle}\">");
+            for (int i = 0; i < p.Inlines.Count; i++)
+                EmitInline(sb, p.Inlines[i], i == 0, i == p.Inlines.Count - 1);
+            sb.Append($"</{tag}>");
+            if (newlineAfter) sb.Append('\n');
+        }
+
+        // Whether a cell paragraph has to go out as its own element. The bare-inline form is kept for plain
+        // cell text — it is what makes a one-line cell come back as one line — so only a paragraph carrying
+        // something the bare form cannot express is promoted.
+        private static bool NeedsOwnElement(Paragraph p)
+            => p.IsListItem || p.IsQuote
+               || (p.HeadingLevel >= 1 && p.HeadingLevel <= 6)
+               || p.TextAlignment != TextAlignment.Left
+               || p.Background != null
+               || p.Indent > 0
+               || p.MarginTop != 0 || p.MarginBottom != DefaultMarginBottom || p.MarginRight != 0;
 
         // Emits a table as an HTML <table>. Shared by block tables and inline tables (milestone B). Cell
         // content emits every paragraph (separated by <br>), block images, and nested tables (recursing),
@@ -954,25 +1072,52 @@ namespace AvaloniaRichEditor.Formatters
                         sb.Append($"<td{span} style=\"background-color:{CssColor(cbg.Color)}\">");
                     else
                         sb.Append($"<td{span}>");
-                    bool firstCellPara = true;
+                    // <br> separates two CONSECUTIVE paragraphs emitted in the bare form. After a block
+                    // element (an element-form paragraph, a nested table, an image, a rule) the paragraph
+                    // boundary already exists, and an extra <br> there is not a separator at all — it
+                    // parses back as a newline INSIDE the next paragraph and grows by one on every cycle.
+                    // So the flag has to mean "the previous block was a BARE paragraph", not "some
+                    // paragraph has been emitted".
+                    bool prevWasBareParagraph = false;
+                    // A cell can hold list items, so it needs its own nesting — opened and closed inside
+                    // this <td>, never spanning cells, and tight because a newline here becomes content.
+                    var cellLists = new ListNesting(sb, tight: true);
+                    // <br> is not a paragraph boundary to the reader, so two plain paragraphs in one cell
+                    // came back as ONE on every cycle — and the collapse is idempotent, which is exactly
+                    // why a round-trip test never saw it. So a paragraph goes out as an ELEMENT whenever
+                    // the bare form cannot represent it: more than one paragraph in the cell, or
+                    // formatting on this one. A lone plain paragraph keeps the bare form, so the common
+                    // cell's bytes do not change and the whitespace rules earned there still stand.
+                    bool manyParagraphs = cell.Blocks.Count(b => b is Paragraph) > 1;
                     foreach (var cblk in cell.Blocks)
                     {
-                        if (cblk is Paragraph cpara)
+                        if (cblk is Paragraph styled && (manyParagraphs || NeedsOwnElement(styled)))
                         {
-                            if (!firstCellPara) sb.Append("<br>");
-                            firstCellPara = false;
+                            // Element form: the paragraph's own formatting survives. It is block-level, so
+                            // it is its own boundary and takes no <br> on either side.
+                            if (styled.IsListItem) cellLists.Sync(styled.ListType, styled.ListMarker, styled.ListLevel);
+                            else cellLists.CloseAll();
+                            EmitParagraphElement(sb, styled, newlineAfter: false);
+                            prevWasBareParagraph = false;
+                        }
+                        else if (cblk is Paragraph cpara)
+                        {
+                            cellLists.CloseAll();
+                            if (prevWasBareParagraph) sb.Append("<br>");
+                            prevWasBareParagraph = true;
                             // Same boundary rule as a top-level paragraph: a <td>'s content is parsed as
                             // inline, so a space at its end is dropped unless it goes out non-breaking.
                             for (int i = 0; i < cpara.Inlines.Count; i++)
                                 EmitInline(sb, cpara.Inlines[i], i == 0, i == cpara.Inlines.Count - 1);
                         }
                         else if (cblk is ImageBlock cib && (cib.RawBytes != null || cib.Image != null))
-                            sb.Append(ImgTag(cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height));
+                        { cellLists.CloseAll(); sb.Append(ImgTag(cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height)); prevWasBareParagraph = false; }
                         else if (cblk is TableBlock nt)
-                            EmitTable(sb, nt); // nested table
+                        { cellLists.CloseAll(); EmitTable(sb, nt); prevWasBareParagraph = false; } // nested table
                         else if (cblk is DividerBlock)
-                            sb.Append("<hr/>");
+                        { cellLists.CloseAll(); sb.Append("<hr/>"); prevWasBareParagraph = false; }
                     }
+                    cellLists.CloseAll();
                     sb.Append("</td>\n");
                 }
                 sb.Append("</tr>\n");
