@@ -111,14 +111,15 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 - [x] `CHANGELOG.md` `[Unreleased]` → `[1.0.0] - 2026-07-31` (API 동결 선언 추가)
 - [x] `README.md` 상태 배지 → `1.0.0`, SemVer 동결 문구로 교체
 - [x] **`v1.0.0` 태그 push** → nuget.org 게시 완료
-- [ ] 첫 PR에서 **macOS CI 실제 그린** 확인(P1 이후 미검증) — 1.1.0 PR에서 확인할 것
+- [x] **macOS CI 실제 그린 확인 완료(2026-08-08, PR #12)** — P1 이후 열려 있던 항목. 스킵이 아니라
+      **실측**: macOS 잡에서 유닛 727 + 렌더 17(real Skia) 전부 통과, 빌드 0 error. Linux/Windows도 동일.
 
 **1.1.0 릴리스 (2026-08-08 준비 완료)** — 라운드4~9의 상호운용 수정 22커밋. 상세는 `CHANGELOG.md`.
 - [x] `<Version>` `1.0.0` → `1.1.0` (공개 API 14건 추가, 제거·시그니처 변경 없음 → minor)
 - [x] `PublicAPI.Unshipped.txt` → `Shipped.txt` 이관 (510 → 524줄, Unshipped 비움)
 - [x] `CHANGELOG.md` `[Unreleased]` → `[1.1.0] - 2026-08-08` (나가는 바이트 변경 경고 포함)
 - [x] `README.md`/`README.ko.md` 상태 배지 → `1.1.0`
-- [ ] **PR로 3-OS CI 그린 확인** (macOS 포함 — 위 미체크 항목을 여기서 닫는다)
+- [x] **PR로 3-OS CI 그린 확인** ([PR #12](https://github.com/centwon/AvaloniaRichEditor/pull/12), 2026-08-08)
 - [ ] **`v1.1.0` 태그 push** → CI `pack` 잡이 Trusted Publishing으로 게시 (**사람이 실행**)
 우선순위는 라운드3의 실측이 정했다: 결함 24건 중 **11건이 GUI 육안검증에서만** 드러났고 전부
 포인터·포커스·키 조합 계열이라, 당시 446개 테스트가 구조적으로 못 보는 영역이었다. 그래서 P1이 최우선이었다.
