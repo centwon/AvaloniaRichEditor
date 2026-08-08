@@ -12,6 +12,17 @@
 
 *Read this in other languages: [English](README.md)*
 
+<!-- 스크린샷 — docs/images/screenshot.png 를 넣고 이 주석 표시만 지우면 된다.
+     이 파일은 패키지에 들어가지 않으므로(영어판만 포함) 상대 경로로 둔다.
+     무엇을 찍을지는 docs/images/README.md 참고.
+<p align="center">
+  <img src="docs/images/screenshot.png"
+       alt="중첩 표·인라인 표·툴바가 보이는 AvaloniaRichEditor 화면"
+       width="900">
+</p>
+-->
+
+
 > 공개 API는 고정되었으며 [SemVer](https://semver.org)를 따릅니다: 주 버전(Major) 변경 없이는 호환성을 깨는
 > 변경(Breaking change)이 없습니다. [`CHANGELOG.md`](CHANGELOG.md)와
 > [`Project_Roadmap.md`](Project_Roadmap.md)를 참고하세요.

@@ -11,6 +11,18 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 
 *Read this in other languages: [한국어](https://github.com/centwon/AvaloniaRichEditor/blob/main/README.ko.md)*
 
+<!-- SCREENSHOT — drop docs/images/screenshot.png in place and delete these comment markers.
+     The URL must stay ABSOLUTE: this file is the package README (PackageReadmeFile) and nuget.org
+     does not resolve repo-relative paths, so a relative image renders broken on the package page.
+     See docs/images/README.md for what to capture.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/screenshot.png"
+       alt="AvaloniaRichEditor showing a document with a nested table, an inline table, and the toolbar"
+       width="900">
+</p>
+-->
+
+
 > The public API is frozen and follows [SemVer](https://semver.org): no breaking change without a major
 > bump. See the
 > [changelog](https://github.com/centwon/AvaloniaRichEditor/blob/main/CHANGELOG.md) and the
