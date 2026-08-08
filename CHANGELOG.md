@@ -23,7 +23,7 @@ before; clicking a picture already selected it, so the gesture is the one users 
 
 The six cell-image resize tests now select first, which is what they were always about; the drag
 arithmetic they pin is unchanged. `AResizeHandleAppearsOnlyOnceThePictureIsSelected` clicks for real and
-fails against the previous behaviour.
+fails against the previous behaviour. The README screenshots were retaken after the change.
 
 
 ## [1.1.0] - 2026-08-08
