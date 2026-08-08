@@ -2,7 +2,7 @@
 
 [Avalonia](https://avaloniaui.net)를 위한 처음부터 새로 작성된 리치 텍스트 에디터 컨트롤입니다. WPF의 `RichTextBox`/`FlowDocument` 아이디어를 순수 C#으로 포팅했으며, 전적으로 Avalonia의 `TextLayout` 엔진 위에 구축되었습니다(PTS나 비관리형 종속성 없음). 렌더링, 레이아웃, 히트 테스트, 텍스트 선택 및 IME가 직접 구현되었습니다.
 
-> **상태: `1.0.0`** — [NuGet](https://www.nuget.org/packages/AvaloniaRichEditor)에 배포되었습니다.
+> **상태: `1.1.0`** — [NuGet](https://www.nuget.org/packages/AvaloniaRichEditor)에 배포되었습니다.
 > 공개 API는 고정되었으며 [SemVer](https://semver.org)를 따릅니다: 주 버전(Major) 변경 없이는 호환성을 깨는 변경(Breaking change)이 없습니다. [`CHANGELOG.md`](CHANGELOG.md)와 [`Project_Roadmap.md`](Project_Roadmap.md)를 참고하세요.
 
 ## 설치 (Install)

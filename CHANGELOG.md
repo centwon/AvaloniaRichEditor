@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-08
+
+Interoperability. Everything below is a document that survived a round trip through this project and was
+still wrong for Word, HWP or a browser — the reader is lenient about exactly what the writer emits, so a
+self round trip agrees with itself and sees nothing. Rounds 4-6 and 8 came from the WinUI peer's audits,
+each confirmed present here before being changed; round 9 came from running the OUTPUT through the other
+programs and **measuring** it there. If you export to `.rtf` or `.html`, or paste into Word or HWP, this
+release is worth taking.
+
+Two of these lost data outright: a truncated `.rtf` silently blanked the open document, and opening a Word
+file with a header inserted that header as the document's first paragraph.
+
+**Additions** are backward compatible (`RichEditorDiagnostics`, `RtfDocumentFormatter.TryParse`,
+`RichEditorToolbar.FontSizes`/`Palette`) — 14 API entries, no removals, no signature changes.
+
+> ⚠️ **The bytes this writes have changed** in HTML (`&nbsp;` runs, `data-are-*` markers, `<br>` in a blank
+> paragraph) and RTF (list markers, cell paragraph properties, horizontal merges as geometry, paper size,
+> header/footer). Documents written by 1.0.0 still open correctly — every reader change is additive — but
+> a byte-for-byte comparison against 1.0.0's output will differ.
+
 ### Fixed — RTF carried no paper size at all (round 9)
 
 Round 6 wrote the header/footer half of the page setup and left the paper out: nothing emitted
