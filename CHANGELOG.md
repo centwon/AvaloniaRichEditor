@@ -23,6 +23,12 @@ follow. `Continuous` states nothing, since it has no paper to state.
 > are rounded DIPs (11910 x 16845 twips) rather than the exact A4 twips (11906 x 16838), and Word snaps
 > that to A4 on its own — so the DIP table stays the single source instead of gaining an RTF-only twin.
 
+The paper goes out at **both** levels: `\paperw`/`\paperh`/`\landscape` for the document and
+`\sectd\pgwsxn`/`\pghsxn`/`\lndscpsxn` for the section. Word reads the first pair, **HWP reads only the
+second** — with just the document-level words an A4 document still opened in HWP as Letter, which a human
+found by opening the file after the Word harness had passed it. Both are read as well, so a file from
+either program arrives complete.
+
 Found by re-reading a generated file four times and watching `PageSize` change; the round 6 chrome tests
 could not see it because they only ever asserted the header and footer.
 

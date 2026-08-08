@@ -139,12 +139,38 @@ public class RtfPageChromeTests
         }
     }
 
+    // The paper goes out at BOTH levels. Word reads the document-level pair and HWP reads only the
+    // section-level one — an A4 document opened in HWP as Letter until \pgwsxn/\pghsxn were there
+    // (found by a human opening the generated file, since the Word harness was happy).
+    [Fact]
+    public void ThePaperIsStatedAtDocumentAndSectionLevel()
+    {
+        string rtf = RtfDocumentFormatter.Write(Doc(new PageSetup
+        {
+            PageSize = RichEditorPageSize.A4, Orientation = RichEditorPageOrientation.Landscape,
+        }));
+
+        Assert.Contains(@"\paperw", rtf);
+        Assert.Contains(@"\pgwsxn", rtf);
+        Assert.Contains(@"\landscape", rtf);
+        Assert.Contains(@"\lndscpsxn", rtf);
+    }
+
+    // A file that states ONLY the section-level paper (HWP's own output) has to arrive complete.
+    [Fact]
+    public void ASectionOnlyPaper_IsStillRead()
+    {
+        var doc = RtfDocumentFormatter.Parse(@"{\rtf1\ansi\sectd\pgwsxn11910\pghsxn16845 x\par}");
+        Assert.Equal(RichEditorPageSize.A4, doc.PageSetup?.PageSize);
+    }
+
     // Continuous is "no paper": it states nothing and leaves the reader on its own default.
     [Fact]
     public void AContinuousDocument_StatesNoPaper()
     {
         string rtf = RtfDocumentFormatter.Write(Doc(new PageSetup { PageSize = RichEditorPageSize.Continuous }));
         Assert.DoesNotContain(@"\paperw", rtf);
+        Assert.DoesNotContain(@"\pgwsxn", rtf);
         Assert.DoesNotContain(@"\landscape", rtf);
     }
 

@@ -445,9 +445,14 @@ internal sealed class RtfParser
             // Paper size. Only the dimensions are in the file, so the page size is recovered by matching
             // them against the table the control lays out with — an unrecognised paper (a reader's own
             // default, or a size this control has no name for) leaves PageSize alone rather than guessing.
-            case "paperw": if (_st.Dest == Dest.Normal && p is int pw) { _paperW = pw; MatchPaper(); } break;
-            case "paperh": if (_st.Dest == Dest.Normal && p is int ph) { _paperH = ph; MatchPaper(); } break;
-            case "landscape": if (_st.Dest == Dest.Normal) { _landscape = true; MatchPaper(); } break;
+            // Document level and section level carry the same paper. Word writes and reads the first
+            // pair, HWP the second, so both are read too — a file from either one arrives complete.
+            case "paperw": case "pgwsxn":
+                if (_st.Dest == Dest.Normal && p is int pw) { _paperW = pw; MatchPaper(); } break;
+            case "paperh": case "pghsxn":
+                if (_st.Dest == Dest.Normal && p is int ph) { _paperH = ph; MatchPaper(); } break;
+            case "landscape": case "lndscpsxn":
+                if (_st.Dest == Dest.Normal) { _landscape = true; MatchPaper(); } break;
 
             case "fonttbl": case "stylesheet": case "info": case "pntext": case "themedata":
             case "datastore": case "xmlnstbl": case "rsidtbl": case "generator": case "listtable":
@@ -1120,6 +1125,12 @@ internal sealed class RtfWriter
             // \landscape is the document-level flag; PaperDips has already swapped the dimensions, so
             // this only tells the reader how to present the page setup it was given.
             if (ps.Orientation == Controls.RichEditorPageOrientation.Landscape) sb.Append(@"\landscape");
+            // The same numbers again at SECTION level. Word reads the document-level ones above
+            // (measured: PaperSize comes back wdPaperA4), but HWP reads only these — an A4 document
+            // opened in HWP as Letter until they were here. Both are the same values by construction,
+            // so there is nothing to keep in sync beyond this line.
+            sb.Append($@"\sectd\pgwsxn{(int)Math.Round(w * 15)}\pghsxn{(int)Math.Round(h * 15)}");
+            if (ps.Orientation == Controls.RichEditorPageOrientation.Landscape) sb.Append(@"\lndscpsxn");
             sb.Append('\n');
         }
 
