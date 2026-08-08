@@ -113,8 +113,10 @@ internal static class SampleDocument
         withIcon.Inlines.Add(Icon());
         withIcon.Inlines.Add(Text(" — the caret steps over it as one. A larger one becomes its own block:"));
         b.Add(withIcon);
-        b.Add(Picture());
+        // The caption goes ABOVE the picture. Below it, a page break can land between the two and strand
+        // the caption at the top of the next page, away from what it describes.
         b.Add(Caption("Drag the corner handles to resize; right-click to replace or save it."));
+        b.Add(Picture());
 
         // ---- 5. tables ---------------------------------------------------------------------------
         b.Add(Head("5. Tables", 2, 16));
@@ -189,9 +191,20 @@ internal static class SampleDocument
 
     // ---- tables ----------------------------------------------------------------------------------
 
+    // `new TableBlock(r, c) { ColumnWidths = { … } }` does NOT work: that is collection-initializer
+    // syntax, so it APPENDS to the widths the constructor already filled in (100 per column) and the
+    // declared numbers land past the end where nothing reads them. Every column stays 100 wide — which
+    // is how a nested table ended up wider than the cell holding it. Replace, don't append.
+    private static TableBlock Widths(TableBlock t, params double[] widths)
+    {
+        t.ColumnWidths.Clear();
+        t.ColumnWidths.AddRange(widths);
+        return t;
+    }
+
     private static TableBlock FeatureTable()
     {
-        var t = new TableBlock(4, 3) { ColumnWidths = { 150, 200, 160 } };
+        var t = Widths(new TableBlock(4, 3), 150, 200, 160);
 
         // A merged, shaded header spanning the first two columns.
         Cell(t, 0, 0, "Feature tour", bold: true);
@@ -225,7 +238,7 @@ internal static class SampleDocument
 
     private static TableBlock MiniTable()
     {
-        var t = new TableBlock(2, 2) { ColumnWidths = { 46, 46 } };
+        var t = Widths(new TableBlock(2, 2), 46, 46);
         Cell(t, 0, 0, "A", size: 9);
         Cell(t, 0, 1, "B", size: 9);
         Cell(t, 1, 0, "C", size: 9);

@@ -1,4 +1,4 @@
-using Avalonia.Media;
+﻿using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using AvaloniaRichEditor.Controls;
 using AvaloniaRichEditor.Documents;
@@ -229,7 +229,7 @@ internal static class Program
 
         // --- 9. borders + merges + cell background -------------------------------
         b.Add(Section("9. 테두리 · 병합 · 셀 배경"));
-        var t = new TableBlock(3, 4) { ColumnWidths = { 120, 120, 120, 120 } };
+        var t = Widths(new TableBlock(3, 4), 120, 120, 120, 120);
         t.Cells[0][0].Para.Inlines[0] = T("가로 병합 2칸");
         t.MergeCells(0, 0, 0, 1);
         t.Cells[1][3].Para.Inlines[0] = T("세로 병합 2칸");
@@ -248,7 +248,7 @@ internal static class Program
 
         // --- 10. paragraph properties inside a cell ------------------------------
         b.Add(Section("10. 셀 안 문단 서식"));
-        var t2 = new TableBlock(1, 4) { ColumnWidths = { 130, 130, 130, 130 } };
+        var t2 = Widths(new TableBlock(1, 4), 130, 130, 130, 130);
         t2.Cells[0][0].Blocks[0] = P("가운데", p => p.TextAlignment = TextAlignment.Center);
         t2.Cells[0][1].Blocks[0] = P("오른쪽", p => p.TextAlignment = TextAlignment.Right);
         t2.Cells[0][2].Blocks[0] = P("글머리 항목", p => p.ListType = ListKind.Bullet);
@@ -258,7 +258,7 @@ internal static class Program
 
         // --- 11. multiple paragraphs in one cell ---------------------------------
         b.Add(Section("11. 셀 안 여러 문단"));
-        var t3 = new TableBlock(1, 2) { ColumnWidths = { 240, 240 } };
+        var t3 = Widths(new TableBlock(1, 2), 240, 240);
         t3.Cells[0][0].Blocks.Clear();
         t3.Cells[0][0].Blocks.Add(P("첫 번째 문단."));
         t3.Cells[0][0].Blocks.Add(P("두 번째 문단 — 위와 합쳐져 한 줄이 되면 실패."));
@@ -271,7 +271,7 @@ internal static class Program
 
         // --- 12. nested table ----------------------------------------------------
         b.Add(Section("12. 중첩 표"));
-        var outer = new TableBlock(1, 2) { ColumnWidths = { 260, 260 } };
+        var outer = Widths(new TableBlock(1, 2), 260, 260);
         outer.Cells[0][0].Blocks.Clear();
         outer.Cells[0][0].Blocks.Add(P("중첩 표 앞 문단"));
         outer.Cells[0][0].Blocks.Add(Grid2x2("중1", "중2", "중3", "중4"));
@@ -322,9 +322,19 @@ internal static class Program
         return doc;
     }
 
+    /// <summary>Replaces a table's column widths. `new TableBlock(r, c) { ColumnWidths = { … } }` is
+    /// collection-initializer syntax: it APPENDS to the widths the constructor already filled in (100 per
+    /// column), so the declared numbers land past the end and every column silently stays 100 wide.</summary>
+    static TableBlock Widths(TableBlock t, params double[] widths)
+    {
+        t.ColumnWidths.Clear();
+        t.ColumnWidths.AddRange(widths);
+        return t;
+    }
+
     static TableBlock Grid2x2(string a, string b, string c, string d)
     {
-        var t = new TableBlock(2, 2) { ColumnWidths = { 70, 70 } };
+        var t = Widths(new TableBlock(2, 2), 70, 70);
         t.Cells[0][0].Para.Inlines[0] = T(a, 10);
         t.Cells[0][1].Para.Inlines[0] = T(b, 10);
         t.Cells[1][0].Para.Inlines[0] = T(c, 10);

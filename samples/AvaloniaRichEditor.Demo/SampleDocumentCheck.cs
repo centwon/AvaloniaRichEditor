@@ -56,6 +56,25 @@ internal static class SampleDocumentCheck
                                   .Any(t => t.Cells.SelectMany(r => r).Any(c => c.Blocks.OfType<TableBlock>().Any())));
         Check("CJK text", inlines.OfType<Run>().Any(r => r.Text?.Any(ch => ch >= 0xAC00 && ch <= 0xD7A3) == true));
 
+        // Column widths, because the first version of this document got them wrong in a way no structural
+        // assertion could see: `new TableBlock(r, c) { ColumnWidths = { … } }` APPENDS to the widths the
+        // constructor already set, so every column stayed 100 and a nested table rendered wider than the
+        // cell containing it. Only the screen showed it. These two checks would have.
+        foreach (var t in Walk(doc.Blocks).OfType<TableBlock>())
+            Check($"table {t.Rows}x{t.Columns} declares exactly {t.Columns} widths " +
+                  $"[{string.Join(",", t.ColumnWidths)}]", t.ColumnWidths.Count == t.Columns);
+
+        foreach (var outer in Walk(doc.Blocks).OfType<TableBlock>())
+            foreach (var (r, c, cell) in outer.LogicalCells())
+                foreach (var inner in cell.Blocks.OfType<TableBlock>())
+                {
+                    double cellWidth = 0;
+                    var (cs, _) = outer.SpanOf(r, c);
+                    for (int i = c; i < c + cs && i < outer.ColumnWidths.Count; i++) cellWidth += outer.ColumnWidths[i];
+                    double innerWidth = inner.ColumnWidths.Sum();
+                    Check($"nested table ({innerWidth:0}) fits its cell ({cellWidth:0})", innerWidth <= cellWidth);
+                }
+
         // Every export path, on the document a user will actually have open.
         Console.WriteLine($"html={HtmlDocumentFormatter.ToHtml(doc).Length}B " +
                           $"rtf={RtfDocumentFormatter.Write(doc).Length}B " +
