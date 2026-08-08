@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using Avalonia.Media;
 using AvaloniaRichEditor.Documents;
 using AvaloniaRichEditor.Formatters;
@@ -35,18 +35,25 @@ public class RtfTableExportTests
 
     // ---- merged cells -------------------------------------------------------
 
+    // A horizontal merge is spelled by GEOMETRY, not by \clmgf/\clmrg: the merged cell gets one \cellx
+    // at the right edge of the span and the covered column gets no boundary at all.
+    //
+    // The flags were what this asserted before, and they are wrong for the consumer that matters.
+    // Measured against Word 16 with minimal one-merge documents: given \clmgf/\clmrg, Word does not
+    // merge — it collapses the \clmgf cell to ZERO width and leaves the visible cell empty, so the
+    // merged cell's text vanished. Given the geometry, Word builds exactly the intended table. Neither
+    // this project's own round trip nor any flag assertion could see that, because the reader
+    // understood the flags its writer emitted.
     [Fact]
-    public void HorizontallyMergedCells_EmitTheMergeFlags()
+    public void HorizontallyMergedCells_AreSpelledByGeometry()
     {
-        var plain = Write(DocOf(Grid(1, 3)));
         var merged = Grid(1, 3);
         merged.MergeCells(0, 0, 0, 1);
 
         string rtf = Write(DocOf(merged));
 
-        Assert.DoesNotContain(@"\clmgf", plain); // the flags only appear when something is merged
-        Assert.Contains(@"\clmgf", rtf);         // the anchor opens the range
-        Assert.Contains(@"\clmrg", rtf);         // the column it covers continues it
+        Assert.DoesNotContain(@"\clmgf", rtf);
+        Assert.DoesNotContain(@"\clmrg", rtf);
     }
 
     [Fact]
@@ -61,16 +68,43 @@ public class RtfTableExportTests
         Assert.Contains(@"\clvmrg", rtf);
     }
 
+    // The merged row has one boundary FEWER, and the surviving one sits at the right edge of the span.
+    // That missing boundary is the merge: it is what a reader (Word, and now this one) measures.
     [Fact]
-    public void MergingKeepsTheCellCountPerRow()
+    public void AMergedRowDropsTheCoveredColumnsBoundary()
     {
-        // RTF wants a \cellx for every column even when merged, so the row geometry stays intact.
+        var plain = Grid(1, 3);
         var merged = Grid(1, 3);
         merged.MergeCells(0, 0, 0, 1);
 
+        int Boundaries(string rtf) =>
+            System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx").Count;
+        int[] Edges(string rtf) =>
+            System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx(\d+)")
+                .Select(m => int.Parse(m.Groups[1].Value)).ToArray();
+
+        string plainRtf = Write(DocOf(plain));
+        string mergedRtf = Write(DocOf(merged));
+
+        Assert.Equal(3, Boundaries(plainRtf));
+        Assert.Equal(2, Boundaries(mergedRtf));
+        // The surviving boundary is the second column's edge — the span's right edge, not the first's.
+        Assert.Equal(Edges(plainRtf)[1], Edges(mergedRtf)[0]);
+        // The row still reaches the same total width.
+        Assert.Equal(Edges(plainRtf)[2], Edges(mergedRtf)[1]);
+    }
+
+    // A vertical merge writes a cell in BOTH rows (the lower one carries \clvmrg), so the covered
+    // column keeps its boundary there. Only horizontal coverage removes one.
+    [Fact]
+    public void AVerticallyMergedRowKeepsItsBoundaries()
+    {
+        var merged = Grid(2, 2);
+        merged.MergeCells(0, 0, 1, 0);
+
         string rtf = Write(DocOf(merged));
 
-        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx").Count);
+        Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx").Count);
     }
 
     // ---- cell shading -------------------------------------------------------

@@ -332,7 +332,12 @@ namespace AvaloniaRichEditor.Formatters
                     ParseInlines(child, p, headingWeight, FontStyle.Normal, null, childLink, size, hasLink);
                     // Empty elements are dropped — foreign HTML uses them for spacing — unless this export
                     // marked one as a blank line the author actually typed (see data-are-empty).
-                    if (p.Inlines.Count > 0 || child.GetAttributeValue("data-are-empty", "") == "1")
+                    bool markedEmpty = child.GetAttributeValue("data-are-empty", "") == "1";
+                    // A marked paragraph carries a <br> so a browser gives it a line; that <br> is the
+                    // blank line's rendering, not its content, and reading it back would make every
+                    // save/load turn one blank line into two.
+                    if (markedEmpty) p.Inlines.Clear();
+                    if (p.Inlines.Count > 0 || markedEmpty)
                         flow.Blocks.Add(p);
                 }
                 else
@@ -1006,6 +1011,13 @@ namespace AvaloniaRichEditor.Formatters
             sb.Append($"<{tag}{extraAttr} style=\"{pStyle}\">");
             for (int i = 0; i < p.Inlines.Count; i++)
                 EmitInline(sb, p.Inlines[i], i == 0, i == p.Inlines.Count - 1);
+            // The marker alone told only THIS reader about the blank line. An element with no content has
+            // zero height, so in a browser the author's blank line was invisible — measured: the gap
+            // across it was the same 16px as between any two adjacent paragraphs. The <br> is what gives
+            // it a line everywhere else (it is what contenteditable editors emit for the same reason);
+            // the marker still carries it back here, and the reader drops this <br> so one blank line
+            // does not become two. Same both-ways rule as the paragraph spacing above.
+            if (p.Inlines.Count == 0) sb.Append("<br>");
             sb.Append($"</{tag}>");
             if (newlineAfter) sb.Append('\n');
         }
@@ -1088,10 +1100,15 @@ namespace AvaloniaRichEditor.Formatters
                     // the bare form cannot represent it: more than one paragraph in the cell, or
                     // formatting on this one. A lone plain paragraph keeps the bare form, so the common
                     // cell's bytes do not change and the whitespace rules earned there still stand.
-                    bool manyParagraphs = cell.Blocks.Count(b => b is Paragraph) > 1;
+                    // An <img> is INLINE, so a bare paragraph followed by a block image in the same cell
+                    // shared the image's line — the picture sat beside the text instead of under it.
+                    // Counting paragraphs alone missed this: the cell has only ONE. <hr> and <table> are
+                    // block-level and break the line by themselves, so only an image forces the issue.
+                    bool needsElementForm = cell.Blocks.Count(b => b is Paragraph) > 1
+                                            || cell.Blocks.Any(b => b is ImageBlock);
                     foreach (var cblk in cell.Blocks)
                     {
-                        if (cblk is Paragraph styled && (manyParagraphs || NeedsOwnElement(styled)))
+                        if (cblk is Paragraph styled && (needsElementForm || NeedsOwnElement(styled)))
                         {
                             // Element form: the paragraph's own formatting survives. It is block-level, so
                             // it is its own boundary and takes no <br> on either side.

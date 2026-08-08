@@ -6,6 +6,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — RTF carried no paper size at all (round 9)
+
+Round 6 wrote the header/footer half of the page setup and left the paper out: nothing emitted
+`\paperw`/`\paperh`/`\landscape` and nothing read them. A document set to A4 therefore arrived on
+whatever paper the reader defaults to — Letter in a US install, which reflows every page — and came back
+from **this project's own reader as `Continuous`**, losing the setting on every save. JSON and `.flow`
+had carried it correctly the whole time, which is what made the gap easy to miss.
+
+The size is recovered by matching the dimensions against `PageSetup.PaperDips`, the same table the
+control lays out with, so there is no second copy of the paper list to drift. An unrecognised paper
+leaves `PageSize` alone rather than snapping to the nearest name — the rule foreign margins already
+follow. `Continuous` states nothing, since it has no paper to state.
+
+> Measured in Word after the change: `PageSetup.PaperSize` = 7 (`wdPaperA4`). The dimensions this writes
+> are rounded DIPs (11910 x 16845 twips) rather than the exact A4 twips (11906 x 16838), and Word snaps
+> that to A4 on its own — so the DIP table stays the single source instead of gaining an RTF-only twin.
+
+Found by re-reading a generated file four times and watching `PageSize` change; the round 6 chrome tests
+could not see it because they only ever asserted the header and footer.
+
+### Fixed — a horizontal cell merge was invisible in Word (round 9)
+
+Vertical merges worked; horizontal ones did not, and the symptom was worse than "not merged". Measured by
+opening minimal one-merge documents with Word 16 and asking Word what it built: given `\clmgf`/`\clmrg`,
+Word does not merge — it collapses the `\clmgf` cell to **zero width** and leaves the visible neighbour
+empty, so a merged heading's text was in a cell nobody can see. Given the same merge spelled as
+**geometry** — one `\cellx` at the right edge of the span, no boundary and no `\cell` for the columns it
+covers — Word builds exactly the intended table. The measurement, on this project's own table document:
+Word saw 12 cells where 10 were intended, with `'가로 병합 2칸'` in a zero-width cell; it now sees 10.
+
+Both halves had to change, because the two spellings are read by different code:
+
+- **The reader learned the geometry.** The column grid is now the **union of every row's `\cellx`**, and a
+  row that skips a boundary has a cell spanning it. Previously only the first row's boundaries were kept
+  and short rows were padded at the end, so a geometry-merged table came back ragged — cells shifted left
+  and a phantom empty one appeared at the end. `\clmgf`/`\clmrg` is still read, so files that use it (and
+  every file this project wrote before today) still open correctly.
+- **The writer emits the geometry** and no longer emits `\clmgf`/`\clmrg`. Vertical merges keep
+  `\clvmgf`/`\clvmrg` untouched: Word honours those, and a vertical continuation still writes a real cell
+  in its row, which is why only horizontal coverage removes a boundary.
+
+> ⚠️ Two existing tests asserted the old spelling — `HorizontallyMergedCells_EmitTheMergeFlags` and
+> `MergingKeepsTheCellCountPerRow`. They passed for the same reason the defect survived: this reader
+> understood the flags its writer emitted, so the pair agreed with each other and with nothing else.
+> They now assert what the bytes have to say to an outside reader.
+
+### Fixed — two HTML defects that only a browser could show (round 9)
+
+Round 8 changed what goes OUT in HTML and RTF, and the roadmap's standing lesson says self round trips
+cannot judge that: this reader is lenient about this writer, so both defects below round-tripped through
+this project perfectly while rendering wrong everywhere else. Both were found by opening the exported
+HTML in a browser and MEASURING it, not by reading it.
+
+- **An author's blank line was invisible outside this editor.** It went out as
+  `<p data-are-empty="1"></p>`; an element with no content has zero height, so the gap across the blank
+  line was the same 16px as between any two adjacent paragraphs — the blank line the user typed simply
+  was not there. It now also carries a `<br>`, which is what gives it a line in a browser (and what every
+  contenteditable editor emits for the same reason). This is the **both-ways rule** paragraph spacing
+  already followed — real markup for outside renderers, the marker for this reader — and the blank line
+  had only ever had the marker half.
+  > The reader drops that `<br>` when the marker is present. Without that, one blank line becomes two on
+  > every save/load — the same accumulating shape as the RTF footer separator and the blank paragraph
+  > under an image, and, like both of those, invisible after a single round trip.
+- **A picture in a table cell sat beside the caption instead of under it.** A cell paragraph keeps the
+  bare-inline form when that form can represent it, and the rule counted PARAGRAPHS to decide — a cell
+  holding one paragraph and a block image has only one, so the paragraph went out bare and the `<img>`,
+  being inline, landed on its line. `<hr>` and `<table>` are block-level and break the line themselves,
+  so an image was the only sibling that could do this.
+
+`HtmlExternalRenderingTests` has 7 tests; reverting each fix fails exactly one of them. The remaining five
+pin what must NOT change: a foreign empty `<p>` is still dropped, a foreign `<p><br></p>` is still a blank
+line, a plain one-paragraph cell still keeps its bare form, and the promoted cell still reads back as two
+blocks.
+
 ### Fixed — RTF lost headers and footers in BOTH directions (round 6, from the WinUI port)
 
 The model has carried `PageSetup.Header`/`Footer`/`ShowPageNumbers` since page setup existed, and

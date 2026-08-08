@@ -115,4 +115,51 @@ public class RtfPageChromeTests
             Assert.Equal("본문", string.Concat(cur.Blocks.OfType<Paragraph>().Select(Plain)));
         }
     }
+
+    // ---- paper size ----------------------------------------------------------------------------
+
+    // Round 6 wrote the header/footer half of the page setup and left the paper out entirely: nothing
+    // emitted \paperw/\paperh, so a document set to A4 arrived on whatever paper the reader defaults to
+    // (Letter in a US install) and came back from our OWN reader as Continuous. The chrome assertions
+    // above could not see it — they only ever looked at the header and footer.
+    [Theory]
+    [InlineData(RichEditorPageSize.A4, RichEditorPageOrientation.Portrait)]
+    [InlineData(RichEditorPageSize.A4, RichEditorPageOrientation.Landscape)]
+    [InlineData(RichEditorPageSize.Letter, RichEditorPageOrientation.Portrait)]
+    [InlineData(RichEditorPageSize.B5, RichEditorPageOrientation.Landscape)]
+    public void Rtf_RoundTripsThePaperSize(RichEditorPageSize size, RichEditorPageOrientation orientation)
+    {
+        var cur = Doc(new PageSetup { PageSize = size, Orientation = orientation });
+
+        for (int cycle = 1; cycle <= 2; cycle++)
+        {
+            cur = RtfDocumentFormatter.Parse(RtfDocumentFormatter.Write(cur));
+            Assert.Equal(size, cur.PageSetup?.PageSize);
+            Assert.Equal(orientation, cur.PageSetup?.Orientation);
+        }
+    }
+
+    // Continuous is "no paper": it states nothing and leaves the reader on its own default.
+    [Fact]
+    public void AContinuousDocument_StatesNoPaper()
+    {
+        string rtf = RtfDocumentFormatter.Write(Doc(new PageSetup { PageSize = RichEditorPageSize.Continuous }));
+        Assert.DoesNotContain(@"\paperw", rtf);
+        Assert.DoesNotContain(@"\landscape", rtf);
+    }
+
+    // A paper this control has no name for must not be forced onto the nearest one — an unmatched size
+    // leaves PageSize alone rather than guessing, the same rule foreign margins follow. The second half
+    // keeps that honest: a size it DOES know is matched from the very same shape, so the first assertion
+    // is about the size being unknown and not about \paperw being ignored altogether.
+    [Fact]
+    public void AnUnknownPaper_LeavesThePageSizeAlone()
+    {
+        var unknown = RtfDocumentFormatter.Parse(@"{\rtf1\ansi\paperw9999\paperh12345 x\par}");
+        Assert.Equal("x", string.Concat(unknown.Blocks.OfType<Paragraph>().Select(Plain)));
+        Assert.True(unknown.PageSetup == null || unknown.PageSetup.PageSize == RichEditorPageSize.Continuous);
+
+        var a4 = RtfDocumentFormatter.Parse(@"{\rtf1\ansi\paperw11910\paperh16845 x\par}");
+        Assert.Equal(RichEditorPageSize.A4, a4.PageSetup?.PageSize);
+    }
 }

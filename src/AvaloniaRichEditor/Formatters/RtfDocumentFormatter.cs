@@ -202,7 +202,12 @@ internal sealed class RtfParser
     // \cellx<N> = cumulative right boundary (twips) per column. Captured from the first row so the
     // pasted table keeps the source column widths instead of a uniform default.
     private List<int> _curCellx = new();
-    private List<int>? _tableCellx;
+    // Every row's boundaries, not just the first row's. A horizontally merged cell is spelled in RTF by
+    // that row simply having FEWER boundaries — the merged cell's \cellx is the right edge of the whole
+    // span — so the grid is the union of all rows' boundaries and a row's span is read off it. Word
+    // writes merges this way and does not honour \clmgf/\clmrg (measured: it collapses the \clmgf cell
+    // to zero width), so a reader that only understood the flags saw a ragged table.
+    private List<List<int>>? _tableCellxRows;
 
     // Per-cell properties from the row definition. In RTF these precede each \cellx, one group per
     // column, so they accumulate here and commit when that column's boundary arrives. Merged cells
@@ -437,6 +442,13 @@ internal sealed class RtfParser
                 if (_st.Dest == Dest.PageChrome) { FlushRun(); _chromeNumbers = true; _chromeTextClosed = true; }
                 break;
 
+            // Paper size. Only the dimensions are in the file, so the page size is recovered by matching
+            // them against the table the control lays out with — an unrecognised paper (a reader's own
+            // default, or a size this control has no name for) leaves PageSize alone rather than guessing.
+            case "paperw": if (_st.Dest == Dest.Normal && p is int pw) { _paperW = pw; MatchPaper(); } break;
+            case "paperh": if (_st.Dest == Dest.Normal && p is int ph) { _paperH = ph; MatchPaper(); } break;
+            case "landscape": if (_st.Dest == Dest.Normal) { _landscape = true; MatchPaper(); } break;
+
             case "fonttbl": case "stylesheet": case "info": case "pntext": case "themedata":
             case "datastore": case "xmlnstbl": case "rsidtbl": case "generator": case "listtable":
             case "listoverridetable": case "revtbl":
@@ -551,6 +563,34 @@ internal sealed class RtfParser
         _chromeDepth = _stack.Count;
         _chromeText.Clear();
         _chromeTextClosed = false;
+    }
+
+    // \paperw/\paperh in twips, and whether \landscape was seen. Held until both dimensions are known,
+    // since they arrive as separate control words and either order is legal.
+    private int _paperW, _paperH;
+    private bool _landscape;
+
+    // Turns the paper dimensions back into a named page size by asking PaperDips for each candidate —
+    // the same table the control lays out with, so a document written by this project comes back exactly.
+    // Tolerance is 2 twips: the dimensions are rounded DIPs on the way out.
+    private void MatchPaper()
+    {
+        if (_paperW <= 0 || _paperH <= 0) return;
+        foreach (Controls.RichEditorPageSize size in Enum.GetValues<Controls.RichEditorPageSize>())
+        {
+            if (size == Controls.RichEditorPageSize.Continuous) continue;
+            var orientation = _landscape
+                ? Controls.RichEditorPageOrientation.Landscape
+                : Controls.RichEditorPageOrientation.Portrait;
+            var (w, h) = PageSetup.PaperDips(size, orientation);
+            if (Math.Abs((int)Math.Round(w * 15) - _paperW) <= 2 && Math.Abs((int)Math.Round(h * 15) - _paperH) <= 2)
+            {
+                _doc.PageSetup ??= new PageSetup();
+                _doc.PageSetup.PageSize = size;
+                _doc.PageSetup.Orientation = orientation;
+                return;
+            }
+        }
     }
 
     // Takes the text the chrome group accumulated and puts it on the document's PageSetup instead of into
@@ -762,22 +802,22 @@ internal sealed class RtfParser
         _tableRows.Add(_curRow);
         _curRow = null;
         (_tableCellProps ??= new List<List<CellProps>>()).Add(_curCellProps);
-        if (_tableCellx == null && _curCellx.Count > 0) _tableCellx = _curCellx; // keep the first row's columns
+        (_tableCellxRows ??= new List<List<int>>()).Add(_curCellx);
     }
 
     private void FinalizeTable()
     {
         var rows = _tableRows;
-        var cellx = _tableCellx;
+        var cellxRows = _tableCellxRows;
         var props = _tableCellProps;
         _tableRows = null;
         _curRow = null;
-        _tableCellx = null;
+        _tableCellxRows = null;
         _tableCellProps = null;
         bool inline = _nextTableInline;
         _nextTableInline = false;
-        if (BuildTable(rows, cellx) is not { } table) return;
-        ApplyMerges(table, props);
+        if (BuildTable(rows, cellxRows) is not { } table) return;
+        ApplyMerges(table, props, cellxRows);
 
         // Marked as an inline table by our own writer: put it back on the preceding paragraph's line
         // and continue that paragraph, so "text, table, more text" is one line again instead of three
@@ -804,8 +844,32 @@ internal sealed class RtfParser
     // Rebuilds the merge spans from the row definitions' \clmgf/\clmrg and \clvmgf/\clvmrg flags.
     // A merged region is an anchor cell followed by continuation cells to its right and/or below;
     // MergeCells folds the (empty) covered cells into it and stamps the spans.
-    private static void ApplyMerges(TableBlock tb, List<List<CellProps>>? props)
+    private static void ApplyMerges(TableBlock tb, List<List<CellProps>>? props, List<List<int>>? cellxRows)
     {
+        // Geometry first: a row whose \cellx skips grid boundaries has a cell spanning them. This is how
+        // Word spells a horizontal merge, and the only spelling it renders correctly.
+        var grid = UnionGrid(cellxRows);
+        if (grid != null && cellxRows != null)
+        {
+            for (int r = 0; r < tb.Rows && r < cellxRows.Count; r++)
+            {
+                var bounds = cellxRows[r];
+                int prev = 0;
+                foreach (int right in bounds)
+                {
+                    int start = prev == 0 ? 0 : grid.IndexOf(prev) + 1;
+                    int end = grid.IndexOf(right);
+                    prev = right;
+                    if (start < 0 || end < 0 || end <= start || start >= tb.Columns) continue;
+                    if (end >= tb.Columns) end = tb.Columns - 1;
+                    // Re-merging a cell already covered by a vertical merge above would fight that one;
+                    // the covered-in-pairs contract says leave it to the flag pass.
+                    if (tb.IsCovered(r, start)) continue;
+                    tb.MergeCells(r, start, r, end);
+                }
+            }
+        }
+
         if (props == null) return;
         for (int r = 0; r < tb.Rows && r < props.Count; r++)
         {
@@ -828,34 +892,70 @@ internal sealed class RtfParser
         }
     }
 
-    // Rows of cells -> a TableBlock, padding short rows. Shared by the top-level table and the nested
-    // ones, so both get the same shape (spans reset to 1, widths from \cellx when available).
-    private static TableBlock? BuildTable(List<List<TableCell>>? rows, List<int>? cellx)
+    // The union of every row's \cellx boundaries: the column grid the rows are laid onto. A row with
+    // fewer boundaries than the union has horizontally merged cells, and which boundaries it SKIPS says
+    // where. Null when no row declared any, which is how a nested table arrives.
+    private static List<int>? UnionGrid(List<List<int>>? cellxRows)
+    {
+        if (cellxRows == null) return null;
+        var all = new SortedSet<int>();
+        foreach (var row in cellxRows)
+            foreach (int x in row)
+                if (x > 0) all.Add(x);
+        return all.Count > 0 ? new List<int>(all) : null;
+    }
+
+    // Rows of cells -> a TableBlock. Shared by the top-level table and the nested ones, so both get the
+    // same shape (spans reset to 1 here — ApplyMerges stamps them — and widths from the union grid).
+    private static TableBlock? BuildTable(List<List<TableCell>>? rows, List<List<int>>? cellxRows)
     {
         if (rows == null || rows.Count == 0) return null;
 
-        int cols = 0;
+        var grid = UnionGrid(cellxRows);
+        int cols = grid?.Count ?? 0;
+        // Without boundaries (nested tables, damaged input) fall back to the widest row, which is what
+        // this did before merges could be read off the geometry at all.
         foreach (var r in rows) if (r.Count > cols) cols = r.Count;
         if (cols == 0) return null;
 
         var tb = new TableBlock(rows.Count, cols);
         tb.Cells.Clear();
-        foreach (var r in rows)
+        for (int r = 0; r < rows.Count; r++)
         {
+            var src = rows[r];
             var cells = new List<TableCell>(cols);
-            for (int c = 0; c < cols; c++) cells.Add(c < r.Count ? r[c] : new TableCell());
+            for (int c = 0; c < cols; c++) cells.Add(new TableCell());
+
+            // Place each cell at the grid column its LEFT edge falls on. Cells that span several grid
+            // columns leave the covered ones as the empty placeholders above; ApplyMerges folds them in.
+            var bounds = cellxRows != null && r < cellxRows.Count ? cellxRows[r] : null;
+            if (grid != null && bounds != null && bounds.Count > 0)
+            {
+                int prev = 0;
+                for (int i = 0; i < src.Count && i < bounds.Count; i++)
+                {
+                    int at = grid.IndexOf(prev);          // prev is the boundary to this cell's left
+                    at = prev == 0 ? 0 : (at < 0 ? -1 : at + 1);
+                    if (at >= 0 && at < cols) cells[at] = src[i];
+                    prev = bounds[i];
+                }
+            }
+            else
+            {
+                for (int c = 0; c < cols && c < src.Count; c++) cells[c] = src[c];
+            }
             tb.Cells.Add(cells);
         }
         tb.Rows = rows.Count;
         tb.Columns = cols;
-        // Source column widths from \cellx (cumulative right boundaries in twips → px /15).
-        if (cellx != null && cellx.Count > 0)
+        // Column widths from the union grid (cumulative right boundaries in twips → px /15).
+        if (grid != null)
         {
             tb.ColumnWidths.Clear();
             int prev = 0;
             for (int c = 0; c < cols; c++)
             {
-                int boundary = c < cellx.Count ? cellx[c] : prev + 1500;
+                int boundary = c < grid.Count ? grid[c] : prev + 1500;
                 double wpx = (boundary - prev) / 15.0;
                 tb.ColumnWidths.Add(wpx >= 16 ? wpx : 100); // floor out 0/negative/garbage boundaries
                 prev = boundary;
@@ -1006,6 +1106,23 @@ internal sealed class RtfWriter
         if (ps == null) return;
         bool hasHeader = !string.IsNullOrEmpty(ps.Header);
         bool hasFooter = !string.IsNullOrEmpty(ps.Footer) || ps.ShowPageNumbers;
+
+        // Paper size and margins. Round 6 wrote the header/footer half of the page setup and left this
+        // one out, so a document set to A4 arrived on whatever paper the reader defaults to (Letter in a
+        // US install) and came back from our own reader as Continuous. Continuous has no paper to state,
+        // so it says nothing and the reader keeps its default.
+        if (ps.PageSize != Controls.RichEditorPageSize.Continuous)
+        {
+            var (w, h) = PageSetup.PaperDips(ps.PageSize, ps.Orientation);
+            sb.Append($@"\paperw{(int)Math.Round(w * 15)}\paperh{(int)Math.Round(h * 15)}");
+            sb.Append($@"\margl{(int)Math.Round(PageSetup.MarginX * 15)}\margr{(int)Math.Round(PageSetup.MarginX * 15)}");
+            sb.Append($@"\margt{(int)Math.Round(PageSetup.MarginY * 15)}\margb{(int)Math.Round(PageSetup.MarginY * 15)}");
+            // \landscape is the document-level flag; PaperDips has already swapped the dimensions, so
+            // this only tells the reader how to present the page setup it was given.
+            if (ps.Orientation == Controls.RichEditorPageOrientation.Landscape) sb.Append(@"\landscape");
+            sb.Append('\n');
+        }
+
         if (!hasHeader && !hasFooter) return;
 
         // The writer emits into _body; borrow it so WriteEscaped can be reused, then move the result.
@@ -1163,18 +1280,32 @@ internal sealed class RtfWriter
             var rowDef = new StringBuilder();
             rowDef.Append(@"\trowd");
             if (depth > 1) rowDef.Append($@"\itap{depth}");
-            // Cumulative right cell boundaries in twips (px*15), from the column widths. Each boundary is
-            // preceded by that cell's own properties: merge flags and shading.
-            int x = 0;
+            // Cumulative right cell boundaries in twips (px*15), from the column widths.
+            var edge = new int[tb.Columns];
+            int running = 0;
             for (int col = 0; col < tb.Columns; col++)
             {
-                var (cs, rs) = tb.SpanOf(row, col);
+                running += (col < tb.ColumnWidths.Count ? (int)tb.ColumnWidths[col] : 100) * 15;
+                edge[col] = running;
+            }
+
+            // A horizontal merge is spelled by GEOMETRY: the merged cell gets one \cellx at the right
+            // edge of the whole span and the columns it covers get no boundary and no \cell of their
+            // own. \clmgf/\clmrg was the other spelling and Word does not honour it — measured against
+            // Word 16, it collapses the \clmgf cell to zero width and leaves the visible cell EMPTY, so
+            // a merged heading disappeared. Vertical merges keep their flags: those Word does honour.
+            var written = new List<int>();
+            for (int col = 0; col < tb.Columns; col++)
+            {
                 bool covered = tb.IsCovered(row, col);
                 var (ar, ac) = tb.AnchorOf(row, col);
-                // Horizontal merge: the anchor opens the range, the columns it covers continue it.
-                if (cs > 1 && !covered) rowDef.Append(@"\clmgf");
-                else if (covered && ar == row) rowDef.Append(@"\clmrg");
-                // Vertical merge: same, down the rows.
+                // Every column the merge covers except the one it starts at in THIS row: no boundary.
+                // A vertical continuation still writes its cell (its anchor is in a row above), which is
+                // why the test is the anchor's COLUMN, not its row.
+                if (covered && ac != col) continue;
+                written.Add(col);
+
+                var (cs, rs) = tb.SpanOf(ar, ac);   // the anchor's spans govern this cell
                 if (rs > 1 && !covered) rowDef.Append(@"\clvmgf");
                 else if (covered && ar != row) rowDef.Append(@"\clvmrg");
                 // Cell shading uses the colour table, like text colour.
@@ -1186,15 +1317,13 @@ internal sealed class RtfWriter
                 rowDef.Append(@"\clbrdrt\brdrs\brdrw10\clbrdrl\brdrs\brdrw10")
                       .Append(@"\clbrdrb\brdrs\brdrw10\clbrdrr\brdrs\brdrw10");
 
-                int wpx = col < tb.ColumnWidths.Count ? (int)tb.ColumnWidths[col] : 100;
-                x += wpx * 15;
-                rowDef.Append($@"\cellx{x}");
+                rowDef.Append($@"\cellx{edge[Math.Min(col + Math.Max(cs, 1) - 1, tb.Columns - 1)]}");
             }
 
             // A nested row's definition follows its cells, wrapped in an ignorable group; a top-level
             // row's precedes them.
             if (depth == 1) _body.Append(rowDef);
-            for (int col = 0; col < tb.Columns; col++)
+            foreach (int col in written)
             {
                 _body.Append(@"\pard\intbl");
                 if (depth > 1) _body.Append($@"\itap{depth}");
