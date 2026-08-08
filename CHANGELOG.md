@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — an image's resize handle appears only when it is selected
+
+The corner handle was drawn on every picture at all times, which put a solid accent square on each one:
+in a **read-only viewer**, which cannot resize anything, and in any screenshot of the document. Word and
+HWP show it on selection; this now matches them. A picture still carries its faint outline when
+unselected, so it is still visibly an object.
+
+The hit area moved with the drawing rather than staying behind — a grabbable region with nothing visible
+to explain it is worse than either state. Resizing is therefore click-then-drag, one gesture more than
+before; clicking a picture already selected it, so the gesture is the one users make anyway.
+
+> `_cellImageRects` is deliberately NOT gated the same way: that registry is what click-selection and the
+> context menu look a cell's picture up in, so gating it on selection would leave a cell picture
+> permanently unselectable — nothing could select it, so nothing could ever register it.
+
+The six cell-image resize tests now select first, which is what they were always about; the drag
+arithmetic they pin is unchanged. `AResizeHandleAppearsOnlyOnceThePictureIsSelected` clicks for real and
+fails against the previous behaviour.
+
+
 ## [1.1.0] - 2026-08-08
 
 Interoperability. Everything below is a document that survived a round trip through this project and was

@@ -103,6 +103,12 @@ internal sealed class InteractionHost : IDisposable
     public IReadOnlyList<(Rect rect, Paragraph p, InlineImage img)> InlineImageHandles
         => Field<List<(Rect, Paragraph, InlineImage)>>("_inlineHandles");
 
+    // Where a cell's pictures were painted. Unlike the handles this is recorded whether or not anything
+    // is selected — it is what click-selection and the context menu look a picture up in — so it is how
+    // a test aims a click at a picture it has not selected yet.
+    public IReadOnlyList<(Rect rect, ImageBlock img)> CellImageRects
+        => Field<List<(Rect, ImageBlock)>>("_cellImageRects");
+
     // ---- coordinates --------------------------------------------------------
     //
     // Tests speak the editor's document space, the same space GetPositionFromPoint and the hit-testing
@@ -197,6 +203,16 @@ internal sealed class InteractionHost : IDisposable
     public TextPointer Caret => Field<TextPointer>("_caretPosition");
 
     public Block? SelectedBlock => Field<Block?>("_selectedBlock");
+
+    // Selects a block and repaints, for tests whose subject is what happens AFTER selection — a resize
+    // handle is only drawn (and only registered) for the selected picture, so those tests would otherwise
+    // spend their setup re-testing click-to-select. Tests that ARE about selection click for real.
+    public void Select(Block? block)
+    {
+        typeof(RichEditor).GetField("_selectedBlock", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(Editor, block);
+        Render();
+    }
 
     public Block? CaretBlock => Field<Block?>("_caretBlock");
 

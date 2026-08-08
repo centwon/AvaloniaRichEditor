@@ -24,11 +24,15 @@ public class CellImageResizeInteractionTests
         return img;
     }
 
-    private static InteractionHost Host(FlowDocument doc)
+    // `select` is the picture these tests are about. A resize handle exists only for the SELECTED
+    // picture, so without this every test here would be measuring the absence of a handle rather than
+    // the resize arithmetic it was written for. Click-to-select has its own test below.
+    private static InteractionHost Host(FlowDocument doc, ImageBlock? select = null)
     {
         var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
         var host = InteractionHost.Create(ed);
         host.Render(); // handles are recorded while painting
+        if (select != null) host.Select(select);
         return host;
     }
 
@@ -63,7 +67,31 @@ public class CellImageResizeInteractionTests
     public void AnImageInACell_HasAResizeHandle()
     {
         var (doc, img) = CellImageDoc();
-        var host = Host(doc);
+        var host = Host(doc, img);
+        Assert.Contains(host.ImageHandles, h => ReferenceEquals(h.img, img));
+    }
+
+    // The handle belongs to the SELECTED picture only (2026-08-08). It used to be drawn on every
+    // picture all the time, which put a solid accent square on each one — including in a read-only
+    // viewer, which cannot resize anything, and in every screenshot of the document. Word and HWP show
+    // it on selection; this now matches. The hit area is registered with the drawing, so there is never
+    // a grabbable region with nothing visible to explain it.
+    //
+    // This one clicks for real, so it also covers the click that makes the handle appear.
+    [AvaloniaFact]
+    public void AResizeHandleAppearsOnlyOnceThePictureIsSelected()
+    {
+        var (doc, img) = CellImageDoc();
+        var host = Host(doc);   // deliberately NOT selected
+
+        Assert.DoesNotContain(host.ImageHandles, h => ReferenceEquals(h.img, img));
+
+        // Click the picture where it was actually painted — that is what selects it.
+        var rect = host.CellImageRects.First(ci => ReferenceEquals(ci.img, img)).rect;
+        host.Click(rect.Center);
+        host.Render();
+
+        Assert.Same(img, host.SelectedBlock);
         Assert.Contains(host.ImageHandles, h => ReferenceEquals(h.img, img));
     }
 
@@ -71,7 +99,7 @@ public class CellImageResizeInteractionTests
     public void DraggingTheHandleOfAnImageInACell_ResizesIt()
     {
         var (doc, img) = CellImageDoc();
-        var host = Host(doc);
+        var host = Host(doc, img);
         double before = img.Width;
 
         var handle = host.ImageHandles.First(h => ReferenceEquals(h.img, img));
@@ -84,7 +112,7 @@ public class CellImageResizeInteractionTests
     public void DraggingTheHandleOfAnImageInANestedCell_ResizesIt()
     {
         var (doc, img) = NestedCellImageDoc();
-        var host = Host(doc);
+        var host = Host(doc, img);
         double before = img.Width;
 
         var handle = host.ImageHandles.First(h => ReferenceEquals(h.img, img));
@@ -108,7 +136,7 @@ public class CellImageResizeInteractionTests
         var img = Image(w: 900, h: 600);   // far wider than the 200px column, as an inserted photo is
         tb.Cells[0][0].Blocks.Add(img);
         doc.Blocks.Add(tb);
-        var host = Host(doc);
+        var host = Host(doc, img);
 
         var handle = host.ImageHandles.First(h => ReferenceEquals(h.img, img));
         double drawnBefore = handle.rect.Right - 9; // the handle sits at the drawn right edge
@@ -139,7 +167,7 @@ public class CellImageResizeInteractionTests
         var img = Image(w: 150, h: 100);
         tb.Cells[0][0].Blocks.Add(img);
         doc.Blocks.Add(tb);
-        var host = Host(doc);
+        var host = Host(doc, img);
 
         // The cell's content box is its column less the cell padding the render walk applies.
         const double cellInner = 200 - 10;
@@ -173,7 +201,7 @@ public class CellImageResizeInteractionTests
     public void ResizingAnImageInACell_GrowsTheRowOnTheSameFrame()
     {
         var (doc, img) = CellImageDoc();
-        var host = Host(doc);
+        var host = Host(doc, img);
         double heightBefore = host.Editor.DesiredSize.Height;
 
         // The corner handle drives off horizontal movement and keeps the aspect ratio, so a wider

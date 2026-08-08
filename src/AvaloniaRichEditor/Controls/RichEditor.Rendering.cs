@@ -523,12 +523,19 @@ public partial class RichEditor
                             context.FillRectangle(AccentFill60, imgRect);
                             context.DrawRectangle(null, AccentPen2, imgRect);
                         }
-                        // Thin border + bottom-right resize handle.
+                        // A faint outline marks the picture as an object at all times; the resize handle
+                        // appears only once it is SELECTED, the way Word and HWP do it. An always-on
+                        // handle put a solid accent square on every picture — in a read-only viewer that
+                        // cannot resize anything, and in any screenshot of the document.
                         context.DrawRectangle(null, AccentBorderPen, imgRect);
-                        var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
-                        context.FillRectangle(AccentHandleFill, handle);
-                        // Slightly larger hit area than the visual handle for easier grabbing.
-                        _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img, width, height));
+                        if (imgSelected)
+                        {
+                            var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
+                            context.FillRectangle(AccentHandleFill, handle);
+                            // Registered with the drawn handle so there is never a grabbable area with
+                            // nothing under the pointer to explain it. Slightly larger for easy grabbing.
+                            _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img, width, height));
+                        }
                     }
 
                     yOffset += height + img.MarginBottom;
@@ -642,9 +649,15 @@ public partial class RichEditor
                             context.DrawRectangle(null, AccentPen2, ir);
                         }
                         context.DrawRectangle(null, AccentBorderPen, ir);
-                        var handle = new Rect(ox + iw - 6, blkY + ih - 6, 12, 12);
-                        context.FillRectangle(AccentHandleFill, handle);
-                        _imageHandles.Add((new Rect(ox + iw - 9, blkY + ih - 9, 18, 18), cimg, iw, ih));
+                        if (ReferenceEquals(cimg, _selectedBlock))   // handle on selection only
+                        {
+                            var handle = new Rect(ox + iw - 6, blkY + ih - 6, 12, 12);
+                            context.FillRectangle(AccentHandleFill, handle);
+                            _imageHandles.Add((new Rect(ox + iw - 9, blkY + ih - 9, 18, 18), cimg, iw, ih));
+                        }
+                        // NOT gated: this is what click-selection and the context menu look the picture
+                        // up in. Gating it on selection would make a cell picture unselectable — nothing
+                        // could ever select it, so nothing could ever register it.
                         _cellImageRects.Add((ir, cimg));
                     }
                 }
