@@ -1,4 +1,4 @@
-# AvaloniaRichEditor
+﻿# AvaloniaRichEditor
 
 [![NuGet](https://img.shields.io/nuget/v/AvaloniaRichEditor.svg)](https://www.nuget.org/packages/AvaloniaRichEditor)
 [![Downloads](https://img.shields.io/nuget/dt/AvaloniaRichEditor.svg)](https://www.nuget.org/packages/AvaloniaRichEditor)
@@ -12,15 +12,14 @@
 
 *Read this in other languages: [English](README.md)*
 
-<!-- 스크린샷 — docs/images/screenshot.png 를 넣고 이 주석 표시만 지우면 된다.
-     이 파일은 패키지에 들어가지 않으므로(영어판만 포함) 상대 경로로 둔다.
-     무엇을 찍을지는 docs/images/README.md 참고.
 <p align="center">
   <img src="docs/images/screenshot.png"
-       alt="중첩 표·인라인 표·툴바가 보이는 AvaloniaRichEditor 화면"
-       width="900">
+       alt="블록 이미지, 병합 헤더와 중첩 표, 문장 안에 흐르는 인라인 표가 보이는 데모 화면"
+       width="620">
 </p>
--->
+
+<p align="center"><em>데모의 샘플 문서 — 병합된 음영 헤더, 중첩 표, 문장 안에 흐르는 인라인 표.
+머리글·바닥글·쪽번호가 있는 A4 페이지입니다.</em></p>
 
 
 > 공개 API는 고정되었으며 [SemVer](https://semver.org)를 따릅니다: 주 버전(Major) 변경 없이는 호환성을 깨는
@@ -85,6 +84,12 @@ Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // �
 참고하세요.
 
 ## 기능 (Features)
+
+<p align="center">
+  <img src="docs/images/screenshot-text.png"
+       alt="인라인 서식, 정렬 4종, 중첩된 글머리·번호 목록이 보이는 같은 문서"
+       width="620">
+</p>
 
 ### 텍스트와 문단
 
