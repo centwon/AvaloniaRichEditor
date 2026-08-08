@@ -508,3 +508,17 @@ static readonly AvaloniaRichEditor.Controls.RichEditor.AllowRemoteImagesOnPasteP
 static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtml(string! html, bool allowLocalFileImages = true, bool allowRemoteImages = true) -> AvaloniaRichEditor.Documents.FlowDocument!
 static AvaloniaRichEditor.Formatters.HtmlDocumentFormatter.ParseHtmlAsync(string! html, bool allowLocalFileImages = true, bool allowRemoteImages = true) -> System.Threading.Tasks.Task<AvaloniaRichEditor.Documents.FlowDocument!>!
 AvaloniaRichEditor.Documents.Paragraph.CopyFormatFrom(AvaloniaRichEditor.Documents.Paragraph! source) -> void
+AvaloniaRichEditor.RichEditorDiagnostics
+AvaloniaRichEditor.RichEditorFaultEventArgs
+AvaloniaRichEditor.RichEditorFaultEventArgs.Exception.get -> System.Exception!
+AvaloniaRichEditor.RichEditorFaultEventArgs.File.get -> string!
+AvaloniaRichEditor.RichEditorFaultEventArgs.Line.get -> int
+AvaloniaRichEditor.RichEditorFaultEventArgs.Member.get -> string!
+override AvaloniaRichEditor.RichEditorFaultEventArgs.ToString() -> string!
+static AvaloniaRichEditor.Controls.RichEditorToolbar.FontSizes.get -> double[]!
+static AvaloniaRichEditor.Controls.RichEditorToolbar.FontSizes.set -> void
+static AvaloniaRichEditor.Controls.RichEditorToolbar.Palette.get -> string![]!
+static AvaloniaRichEditor.Controls.RichEditorToolbar.Palette.set -> void
+static AvaloniaRichEditor.Formatters.RtfDocumentFormatter.TryParse(string! rtf, out AvaloniaRichEditor.Documents.FlowDocument! document, out string? error) -> bool
+static AvaloniaRichEditor.RichEditorDiagnostics.Fault -> System.EventHandler<AvaloniaRichEditor.RichEditorFaultEventArgs!>?
+static AvaloniaRichEditor.RichEditorDiagnostics.Reset() -> void
