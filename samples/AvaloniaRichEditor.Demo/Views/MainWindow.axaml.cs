@@ -1,8 +1,6 @@
 using System;
 using Avalonia.Controls;
-using Avalonia.Media;
 using AvaloniaRichEditor.Controls;
-using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Demo.Views;
 
@@ -19,7 +17,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         Editor.ShowPageNumbers = true;
-        Editor.Document = BuildSampleDocument();
+        Editor.Document = SampleDocument.Build();
 
         // Print is platform-specific; the view raises this and the app drives its own preview/printing.
         EditorView.PrintRequested += (_, _) => new PrintPreviewWindow(Editor).Show(this);
@@ -29,24 +27,5 @@ public partial class MainWindow : Window
     {
         base.OnOpened(e);
         Editor.FocusDocumentEnd();
-    }
-
-    private static FlowDocument BuildSampleDocument()
-    {
-        var doc = new FlowDocument();
-
-        var p1 = new Paragraph();
-        p1.Inlines.Add(new Run { Text = "Hello, Avalonia! ", Foreground = Brushes.Blue, FontWeight = FontWeight.Bold });
-        p1.Inlines.Add(new Run { Text = "This is a custom RichTextBox built from scratch. " });
-        p1.Inlines.Add(new Run { Text = "It supports multiple styles in a single paragraph.", Foreground = Brushes.Red });
-        doc.Blocks.Add(p1);
-
-        var p2 = new Paragraph();
-        p2.Inlines.Add(new Run { Text = "This is the second paragraph. " });
-        p2.Inlines.Add(new Run { Text = "As you can see, our custom TextLayout engine wraps lines and spaces paragraphs correctly. ", FontWeight = FontWeight.SemiBold });
-        p2.Inlines.Add(new Run { Text = "It's just the beginning!", Foreground = Brushes.Green });
-        doc.Blocks.Add(p2);
-
-        return doc;
     }
 }

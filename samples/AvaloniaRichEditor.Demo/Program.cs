@@ -19,6 +19,17 @@ sealed class Program
             return;
         }
 
+        // Builds the demo's sample document and prints what it contains, without opening a window.
+        // The document is the demo's front page and the thing the README screenshots, so it is worth
+        // being able to check that it still constructs, still decodes its pictures, and still survives
+        // the formatters — none of which a successful compile tells you.
+        if (args.Length >= 1 && args[0] == "--sample-check")
+        {
+            BuildAvaloniaApp().SetupWithoutStarting();
+            SampleDocumentCheck.Run();
+            return;
+        }
+
         // Performance measurement harness: AvaloniaRichEditor.Demo.exe --bench (image-heavy, N6-6),
         // --bench-text (large text documents, gate ③) or --bench-table (nested/inline tables + the IME
         // composition path, P4). Opens a real window, runs scripted scenarios, writes the results file,
