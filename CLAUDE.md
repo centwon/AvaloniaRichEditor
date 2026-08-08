@@ -55,6 +55,11 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 - `RoundTripHarness`(`--roundtrip` HTML 왕복 검증)·`BenchHarness`(`--bench`/`--bench-text`/`--bench-table` 성능 실측) — 개발 도구라 라이브러리가 아니라 여기 있다.
 - `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(웹 에디터 호환 래퍼)는 데모 전용.
 
+**상호운용 재현 도구** `tools/rtfgen/` — **솔루션에 없다**(빌드·CI 대상 아님, 손으로 돌리는 개발 도구).
+Word·HWP·브라우저가 우리 출력을 어떻게 보는지 재현한다. 자체 왕복 테스트가 구조적으로 못 보는 영역이라
+따로 있다(라운드9 결함 5건이 전부 여기서 나왔다). `dotnet run --project tools/rtfgen`으로 문서 생성,
+`Verify-Word.ps1`이 Word COM으로 28항목 자동 측정. 자세한 사용법·함정은 [`tools/rtfgen/README.md`](tools/rtfgen/README.md).
+
 **테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off) 355개 + `tests/AvaloniaRichEditor.Tests.Render/`(real Skia 픽셀) 9개.
 
 > NuGet 배포 준비(N0~N5)와 진행 상황은 [`Project_Roadmap.md`](Project_Roadmap.md)의 **"📦 NuGet 배포 계획"** 절 참고.
