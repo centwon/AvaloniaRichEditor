@@ -7,14 +7,8 @@ PTS(비관리형 C++) 엔진을 못 쓰므로 렌더링/레이아웃/히트테�
 
 ## 기술 기반 (Tech Stack)
 
-- **런타임/언어**: .NET 10, C# (`Nullable` enable). 출력 `WinExe`(Windows 데스크톱), `PublishAot`(Native AOT), 컴파일된 바인딩 기본(`AvaloniaUseCompiledBindingsByDefault`).
-- **UI 프레임워크**: Avalonia **12.0.1** — `Avalonia`, `Avalonia.Desktop`, `Avalonia.Themes.Fluent`, `Avalonia.Fonts.Inter`. 디버그 전용 `AvaloniaUI.DiagnosticsSupport`.
-- **NuGet 의존성**:
-  | 패키지 | 버전 | 용도 |
-  |---|---|---|
-  | Avalonia(.Desktop/.Themes.Fluent/.Fonts.Inter) | 12.0.1 | UI·렌더링·텍스트 레이아웃 |
-  | CommunityToolkit.Mvvm | 8.4.1 | ViewModel(`ViewModelBase` 등) |
-  | HtmlAgilityPack | 1.12.4 | 외부 HTML 붙여넣기 파싱(`HtmlDocumentFormatter`) |
+> 대상 프레임워크·Avalonia 버전·의존성은 `.csproj`가 단일 출처다. 여기 옮겨 적지 말 것 — 코드가 앞서가면
+> 이 문서만 틀린 채로 남는다.
 
 - **핵심 Avalonia API 사용처** (직접 구현 엔진이라 의존도가 높음):
   - `Avalonia.Media.TextFormatting`: `TextLayout`(+ `ITextSource`), `TextCharacters`, `DrawableTextRun`(인라인 이미지), `GenericTextRunProperties`/`GenericTextParagraphProperties`. → 렌더·커서·히트테스트·선택의 단일 출처.
@@ -40,7 +34,6 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
   (빌드 에러 MSB3027/잠김 메시지가 나오면 컴파일은 성공했고 복사만 실패한 것.)
 - GUI 동작 검증은 직접 못 하므로, 백그라운드로 `dotnet run` 후 사용자에게 테스트를 요청한다.
 - 커밋 메시지 끝에 `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
-- `bin/`,`obj/`,`.vs/`는 `.gitignore` 처리됨(커밋에 넣지 말 것).
 
 ## 구조
 
@@ -48,7 +41,7 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 - `Documents/` — 문서 모델. `FlowDocument.Blocks`(AvaloniaList<Block>)에 `Paragraph`/`TableBlock`/`ImageBlock`이 **형제(sibling)**로 들어감.
   - `Paragraph.Inlines`: `Run`(텍스트) 또는 `InlineImage`(인라인 아이콘).
   - `TextPointer`(Paragraph+Offset), `TextRange`(삭제/복사/서식/구조).
-- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`, 본체 ~1,270줄: 속성/이벤트·undo·편집 코어·`BuildTextLayout` 레이아웃 캐시). 부분 클래스 분리: `Input`(포인터·키보드·IME·블록 횡단 캐럿), `HitTesting`(GetPositionFromPoint 등 + `LayoutTable` 공유 표 기하), `Formatting`(서식 명령·리스트·하이퍼링크·포맷 페인터), `DocumentApi`(HTML/JSON/.flow 입출력), `Tables`(셀 탐색·Tab·행/열 연산), `Images`(크기/교체/블록↔인라인 변환), `FindReplace`, `ContextMenu`(우클릭 메뉴), `Clipboard`(붙여넣기·드래그드롭), `Rendering`(Measure/Render/AutomationPeer), `Modes`(`IsReadOnly`·`Allow*` 기능 플래그·이미지 소프트 제한 — `EditorMode` enum은 제거됨), `Pagination`(페이지 브레이크·용지 DP·`FlowDocument.PageSetup` 동기화, 기본 용지 `Continuous`). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal), `RichEditorShortcuts`(Word 표준 중앙 단축키 테이블: 키핸들러·컨텍스트 메뉴 힌트·툴바 툴팁 단일 출처). 접근성 `RichEditorAutomationPeer`(IValueProvider). 호스트 교체용 아이콘 훅 `RichEditorIcons`(전역 Provider). 툴바 `RichEditorToolbar`(+`.PageFile`: `ToolbarLevel` 밀도·페이지/줌·Export/Import/Print 내장, 줌은 호스트 훅), 드롭인 `RichEditorView`가 위임.
+- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`, 본체는 속성/이벤트·undo·편집 코어·`BuildTextLayout` 레이아웃 캐시). 부분 클래스 분리: `Input`(포인터·키보드·IME·블록 횡단 캐럿), `HitTesting`(GetPositionFromPoint 등 + `LayoutTable` 공유 표 기하), `Formatting`(서식 명령·리스트·하이퍼링크·포맷 페인터), `DocumentApi`(HTML/JSON/.flow 입출력), `Tables`(셀 탐색·Tab·행/열 연산), `Images`(크기/교체/블록↔인라인 변환), `FindReplace`, `ContextMenu`(우클릭 메뉴), `Clipboard`(붙여넣기·드래그드롭), `Rendering`(Measure/Render/AutomationPeer), `Modes`(`IsReadOnly`·`Allow*` 기능 플래그·이미지 소프트 제한 — `EditorMode` enum은 제거됨), `Pagination`(페이지 브레이크·용지 DP·`FlowDocument.PageSetup` 동기화, 기본 용지 `Continuous`). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal), `RichEditorShortcuts`(Word 표준 중앙 단축키 테이블: 키핸들러·컨텍스트 메뉴 힌트·툴바 툴팁 단일 출처). 접근성 `RichEditorAutomationPeer`(IValueProvider). 호스트 교체용 아이콘 훅 `RichEditorIcons`(전역 Provider). 툴바 `RichEditorToolbar`(+`.PageFile`: `ToolbarLevel` 밀도·페이지/줌·Export/Import/Print 내장, 줌은 호스트 훅), 드롭인 `RichEditorView`가 위임.
 - `Formatters/` — `DocumentSerializer`(JSON), `HtmlDocumentFormatter`(HTML 입출력 파서), `RtfDocumentFormatter`(RTF), `PdfWriter`(래스터 PDF), `DocumentPackage`(`.flow` zip).
 
 **데모/테스트 앱** `samples/AvaloniaRichEditor.Demo/` (네임스페이스 `AvaloniaRichEditor.Demo.*`):
@@ -56,11 +49,10 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 - `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(웹 에디터 호환 래퍼)는 데모 전용.
 
 **상호운용 재현 도구** `tools/rtfgen/` — **솔루션에 없다**(빌드·CI 대상 아님, 손으로 돌리는 개발 도구).
-Word·HWP·브라우저가 우리 출력을 어떻게 보는지 재현한다. 자체 왕복 테스트가 구조적으로 못 보는 영역이라
-따로 있다(라운드9 결함 5건이 전부 여기서 나왔다). `dotnet run --project tools/rtfgen`으로 문서 생성,
-`Verify-Word.ps1`이 Word COM으로 28항목 자동 측정. 자세한 사용법·함정은 [`tools/rtfgen/README.md`](tools/rtfgen/README.md).
+Word·HWP·브라우저가 우리 출력을 어떻게 보는지 재현한다. 사용법·함정은 그 폴더의
+[`CLAUDE.md`](tools/rtfgen/CLAUDE.md)와 [`README.md`](tools/rtfgen/README.md)에 있다.
 
-**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off) 355개 + `tests/AvaloniaRichEditor.Tests.Render/`(real Skia 픽셀) 9개.
+**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off). 픽셀 검증은 `tests/AvaloniaRichEditor.Tests.Render/`(real Skia)가 따로 맡는다.
 
 > NuGet 배포 준비(N0~N5)와 진행 상황은 [`Project_Roadmap.md`](Project_Roadmap.md)의 **"📦 NuGet 배포 계획"** 절 참고.
 
