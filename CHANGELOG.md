@@ -6,6 +6,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+An external tool audited the whole of `src/` and reported 25 defects. Each was checked against the code
+before anything was touched: **17 held, 8 did not** — one quoted a "before" block that is not in the file,
+two missed that `ResetCaretBlink` already routes through `InvalidateMeasure`, and one would have broken a
+re-entrancy guard if applied. The report is not kept in the repo; what it claimed and how each claim was
+judged is in `Project_Roadmap.md` (round 10). No API was added, removed or changed.
+
+> ⚠️ **The bytes this writes have changed** in HTML: a soft line break now goes out as `<br/>` instead of
+> being dropped, and an `<img>` with only one of width/height declared now imports at the aspect ratio
+> rather than the other axis's natural size. Documents written by 1.1.0 still open correctly.
+
+> ⚠️ **What counts as a damaged `.rtf` has changed.** An oversized control-word parameter is tolerated now
+> rather than aborting the parse, so `RtfDocumentFormatter.TryParse` returns `true` for a file it used to
+> reject and `LoadRtf` will replace the open document with it. Truncation — the damage files actually
+> suffer — is still detected and still refused.
+
+### Fixed — a soft line break was lost on every HTML export
+
+A soft break (Shift+Enter) lives as `\n` inside a `Run`. HTML collapses a bare newline to a single space,
+so every one of them disappeared on export — while the reader has always turned `<br>` back into `\n`. The
+round trip was lopsided in the direction that loses lines: save, reopen, and the document is missing every
+break the user typed with Shift.
+
+This is a regression rather than a gap. `PreserveDroppableSpaces` exists to rescue the space that sits in
+front of a soft break, and its comment is written around a `t.Replace("\n", "<br/>")` — the call the
+comment describes was not in the file. The replacement runs after that function, so the space is still
+found while the newline is a character rather than a tag.
+
+> No test covered it: nothing in the suite asserted a soft break survives an export. Three do now, one of
+> them the space-before-a-break case the surrounding code was already built for.
+
+### Fixed — `<img width="200">` stretched the picture
+
+Only one of `width`/`height` declared is the ordinary shape of foreign HTML, and it means "scale to this".
+The undeclared axis was filled in from the bitmap's natural size instead, so a 200-wide thumbnail of a
+1000-tall photo arrived as 200x1000. The missing axis now follows the aspect ratio; both declared still
+wins outright, since an explicit non-uniform size is the author's choice.
+
+### Fixed — merging cells destroyed a cell holding only a picture or a table
+
+The merge asked whether a covered cell had **text**. A cell whose paragraph holds only an `InlineImage` or
+an `InlineTable` has no non-empty `Run`, so its inlines were left behind in the covered cell — which
+`LogicalCells()` skips. Invisible to render, navigation and extraction, and destroyed outright by the next
+unmerge. (An earlier round fixed the neighbouring case, a covered cell's *extra blocks*; this is the
+leading paragraph itself.)
+
+### Fixed — RTF silently dropped a picture built from a `Bitmap`
+
+`ImageBlock.Image` and `InlineImage.Image` are public setters, and assigning one **clears `RawBytes`** —
+that is the documented contract. The RTF writer gated every picture on `RawBytes != null`, so an image set
+that way vanished from the export with no error and no placeholder. All three sites (block, inline, and
+inside a table cell) now PNG-encode the bitmap, the same fallback HTML and JSON export already had. An
+image with neither bytes nor a bitmap is still dropped — the fallback does not invent one.
+
+### Fixed — one oversized number aborted an entire RTF parse
+
+A control-word parameter wider than `int` — `\cellx99999999999999999`, which truncated clipboard RTF really
+does carry — threw `OverflowException` and took the whole document with it. One bad number cost a
+fifty-page file. The parameter is read as absent now, which every keyword already handles; the format caps
+parameters at 32 bits, so nothing valid is lost. Word tolerates these too.
+
+> This is why the damage contract moved. `DamagedRtfTests` used that exception as its damaged-file
+> fixture — the file's own comment noted the fixture was "the other kind of damage", not the kind files
+> suffer. It now uses a truncated (unclosed-group) document. The four tests that exercise the diagnostics
+> channel rather than RTF moved to a failed image decode: after this change the parser has no throwing
+> input left to offer them.
+
+### Fixed — `TextRange.Delete()` could leave a paragraph with no runs
+
+A paragraph always holds at least one `Run`; the offset model, caret placement and formatting at an empty
+caret all assume it. The editor's own delete paths restored that afterwards, so the invariant held in
+practice — but `TextRange.Delete()` is public API, and called directly on a range covering a paragraph's
+entire content it removed every inline and left nothing.
+
+### Fixed — table row/column edits and image size presets left the scrollbar stale
+
+Both change the document's height and both called only `InvalidateVisual()`, which repaints without
+re-measuring, so the hosting `ScrollViewer` kept the extent from before the edit: added content sat past
+the bottom of the scrollable range until some later, unrelated edit happened to re-measure. Every other
+structural edit gets this for free by ending in `ResetCaretBlink()` → `NotifyStatus()` →
+`InvalidateMeasure()`; these eight were the ones that reach neither. (The image resize **drag** was never
+affected — it invalidates on release.)
+
+The audit also asked for `InvalidateTableChain` here. That is not needed: these operations all go through
+`PushUndo()`, which sets `_textChangedPending`, which turns off `_trustLayoutCache` for the next pass — the
+table geometry cache is already dropped.
+
+> Measured while writing the tests: `TableInsertColumn` does **not** move the height. Columns keep their
+> own widths and measure reports the *available* width, never the content's. The invalidation is for the
+> cases where a column does move height — deleting the column that holds the tall cell, and page-break
+> recomputation, which runs inside `MeasureOverride`. The test records the no-change case explicitly so it
+> does not read as a missing assertion.
+
+### Fixed — the selection highlight could belong to the wrong thread
+
+`SelectionBrushProperty` defaulted to a mutable `SolidColorBrush`. That is an `AvaloniaObject`, so it takes
+the thread affinity of whoever runs the static initializer — and as a **property default** it is one object
+shared by every editor in the process. A second UI thread painting a selection threw "the calling thread
+cannot access this object". `FindMatchBrush` had the same shape. Both are immutable now.
+
+The engine rule that documents this (`CLAUDE.md` #8) was written for the document model, where the
+serializer has always used `ImmutableSolidColorBrush`; the control's own property defaults were outside its
+scope. Found as a 1-in-4 flake across seven interaction tests, not by reading.
+
 ### Changed — an image's resize handle appears only when it is selected
 
 The corner handle was drawn on every picture at all times, which put a solid accent square on each one:
