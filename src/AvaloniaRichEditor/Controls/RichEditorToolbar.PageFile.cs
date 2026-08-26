@@ -325,25 +325,46 @@ public partial class RichEditorToolbar
         ms.Position = 0;
         // Sniff the content: ZIP magic ("PK") = .flow package, "{\rtf" = RTF, "<" = HTML, else JSON.
         // Faults land in ImportAsync's guard; the RTF branch reports through TryParse before that.
-        if (ms.Length >= 2 && ms.GetBuffer()[0] == (byte)'P' && ms.GetBuffer()[1] == (byte)'K')
+        // Every sniff reads the BUFFER: deciding the format used to decode the whole file BOTH ways
+        // first (and copy it out twice to do so), so importing a 20 MB document built two 20 MB strings
+        // and threw one away. The format is known from the first few bytes.
+        byte[] buf = ms.GetBuffer();
+        int len = (int)ms.Length;
+        if (len >= 2 && buf[0] == (byte)'P' && buf[1] == (byte)'K')
         {
             await Target.LoadPackageAsync(ms);
             return;
         }
 
-        string latin1 = System.Text.Encoding.Latin1.GetString(ms.ToArray());
-        string utf8 = System.Text.Encoding.UTF8.GetString(ms.ToArray());
         // RTF is parsed here rather than through LoadRtf so a damaged file reports on the same channel
         // as every other import fault: LoadRtf deliberately keeps the open document and stays silent,
         // which on a file-open reads as "nothing happened".
-        if (RtfDocumentFormatter.LooksLikeRtf(latin1))
+        if (LooksLikeRtf(buf, len))
         {
+            string latin1 = System.Text.Encoding.Latin1.GetString(buf, 0, len);
             if (RtfDocumentFormatter.TryParse(latin1, out var rtfDoc, out var rtfError))
                 Target.LoadDocument(rtfDoc);
             else
                 System.Diagnostics.Debug.WriteLine($"Import failed: {rtfError}");
+            return;
         }
-        else if (utf8.TrimStart().StartsWith("<", StringComparison.Ordinal)) Target.LoadHtml(utf8);
+
+        string utf8 = System.Text.Encoding.UTF8.GetString(buf, 0, len);
+        if (utf8.TrimStart().StartsWith("<", StringComparison.Ordinal)) Target.LoadHtml(utf8);
         else await Target.LoadJsonAsync(utf8);
+    }
+
+    // RtfDocumentFormatter.LooksLikeRtf on the raw bytes, so the file is not decoded just to be
+    // classified. Both the signature and the whitespace that may precede it are single bytes under
+    // Latin1, and the skipped set is exactly the one string.TrimStart() removes from a Latin1-decoded
+    // string — HT/LF/VT/FF/CR, space, NEL (0x85) and NBSP (0xA0) are the only chars below U+0100 that
+    // char.IsWhiteSpace accepts. So this answers what LooksLikeRtf(latin1) answered, without the string.
+    private static bool LooksLikeRtf(byte[] buf, int len)
+    {
+        int i = 0;
+        while (i < len && buf[i] is 0x09 or 0x0A or 0x0B or 0x0C or 0x0D or 0x20 or 0x85 or 0xA0) i++;
+        return len - i >= 5
+            && buf[i] == (byte)'{' && buf[i + 1] == (byte)'\\'
+            && buf[i + 2] == (byte)'r' && buf[i + 3] == (byte)'t' && buf[i + 4] == (byte)'f';
     }
 }

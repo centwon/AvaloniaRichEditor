@@ -21,6 +21,28 @@ judged is in `Project_Roadmap.md` (round 10). No API was added, removed or chang
 > reject and `LoadRtf` will replace the open document with it. Truncation — the damage files actually
 > suffer — is still detected and still refused.
 
+### Changed — two allocation hot spots, with no change to what is written or read
+
+The audit's performance findings were checked the same way as its defects; these two were the ones worth
+acting on. Neither changes a byte or a routing decision, which is what their tests assert.
+
+- **Writing a picture to RTF allocated one string per byte.** `b.ToString("x2")` in the hex loop put five
+  million short-lived strings through Gen0 for a 5 MB image, in an export that is otherwise
+  allocation-light. It converts a chunk at a time into a stack buffer now — no per-byte string, and no
+  single 10 MB char array either, which is what converting the whole picture in one call would cost. The
+  hex is still lowercase, so the bytes are identical.
+- **Import decoded the whole file twice to find out what it was.** It built a Latin1 string *and* a UTF-8
+  string — each from its own `ToArray()` copy — before looking at either, so opening a 20 MB document
+  materialised two 20 MB strings and discarded one. The format is decided from the buffer now (the RTF
+  signature and the whitespace that may precede it are single bytes under Latin1), and only the chosen
+  encoding runs. Where the old code decoded twice and copied twice, it decodes once and copies never.
+
+> The byte-level RTF sniff has to answer exactly what `LooksLikeRtf(string)` answered — misclassifying is
+> silent and total, since an RTF file would be handed to the JSON loader. The two are compared directly in
+> the tests rather than the byte one being trusted on its own, including the two non-obvious members of the
+> set `TrimStart()` removes: NEL (U+0085) and NBSP (U+00A0). A BOM is deliberately *not* skipped, matching
+> the string version and keeping a BOM'd file on the UTF-8 branch where the BOM belongs.
+
 ### Fixed — a soft line break was lost on every HTML export
 
 A soft break (Shift+Enter) lives as `\n` inside a `Run`. HTML collapses a bare newline to a single space,

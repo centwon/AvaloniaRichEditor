@@ -1465,9 +1465,22 @@ internal sealed class RtfWriter
         if (w > 0) _body.Append($@"\picwgoal{(int)(w * 15)}");
         if (h > 0) _body.Append($@"\pichgoal{(int)(h * 15)}");
         _body.Append(' ');
-        foreach (byte b in bytes) _body.Append(b.ToString("x2", CultureInfo.InvariantCulture));
+        // Byte-at-a-time `b.ToString("x2")` allocated one string PER BYTE — a 5 MB picture put five
+        // million of them through Gen0 for an export that is otherwise allocation-light. Converted a
+        // chunk at a time into a stack buffer instead: no per-byte string, and no single 10 MB char
+        // array either (which is what converting the whole thing at once would cost). Same lowercase
+        // hex, so the bytes written are identical.
+        Span<char> hex = stackalloc char[2 * HexChunk];
+        for (int off = 0; off < bytes.Length; off += HexChunk)
+        {
+            int n = Math.Min(HexChunk, bytes.Length - off);
+            Convert.TryToHexStringLower(bytes.AsSpan(off, n), hex, out int written);
+            _body.Append(hex[..written]);
+        }
         _body.Append("}}");
     }
+
+    private const int HexChunk = 512; // bytes per conversion pass (1 KB of stack for the chars)
 
     private int FontIndex(string? family)
     {
