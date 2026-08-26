@@ -305,7 +305,12 @@ internal sealed class RtfParser
             int ns = _i;
             if (_s[_i] == '-') _i++;
             while (_i < _s.Length && char.IsDigit(_s[_i])) _i++;
-            param = int.Parse(_s.Substring(ns, _i - ns), CultureInfo.InvariantCulture);
+            // TryParse, not Parse: a damaged file can carry a parameter wider than int (\cellx99999999999
+            // is a real thing in truncated clipboard RTF) and an OverflowException there aborted the whole
+            // document. An unrepresentable parameter is treated as absent, which every keyword already
+            // handles — the spec itself caps parameters at 32 bits, so nothing valid is lost.
+            if (int.TryParse(_s.AsSpan(ns, _i - ns), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+                param = parsed;
         }
         if (_i < _s.Length && _s[_i] == ' ') _i++; // a single trailing space is part of the keyword
 
@@ -1089,9 +1094,9 @@ internal sealed class RtfWriter
         {
             case Paragraph p: WriteParagraph(p, ordered); break;
             case TableBlock tb: WriteTable(tb); break;
-            case ImageBlock ib when ib.RawBytes != null:
+            case ImageBlock ib when ib.RawBytes != null || ib.Image != null:
                 _body.Append(@"\pard ");
-                WritePict(ib.RawBytes, ib.MimeType, ib.Width, ib.Height);
+                WritePict(ib.RawBytes, ib.MimeType, ib.Image, ib.Width, ib.Height);
                 _body.Append(@"\par").Append('\n');
                 break;
             case DividerBlock:
@@ -1260,7 +1265,8 @@ internal sealed class RtfWriter
     private void WriteInline(Inline inline, bool heading, double headingSize)
     {
         if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, heading, headingSize);
-        else if (inline is InlineImage img && img.RawBytes != null) WritePict(img.RawBytes, img.MimeType, img.Width, img.Height);
+        else if (inline is InlineImage img && (img.RawBytes != null || img.Image != null))
+            WritePict(img.RawBytes, img.MimeType, img.Image, img.Width, img.Height);
     }
 
     private void WriteRun(Run r, bool heading, double headingSize)
@@ -1420,11 +1426,11 @@ internal sealed class RtfWriter
                 wroteNested = true;
                 ReopenCell();
             }
-            else if (blk is ImageBlock cib && cib.RawBytes != null)
+            else if (blk is ImageBlock cib && (cib.RawBytes != null || cib.Image != null))
             {
                 if (!first) _body.Append(@"\par ");
                 first = false;
-                WritePict(cib.RawBytes, cib.MimeType, cib.Width, cib.Height);
+                WritePict(cib.RawBytes, cib.MimeType, cib.Image, cib.Width, cib.Height);
             }
             else if (blk is DividerBlock)
             {
@@ -1437,8 +1443,23 @@ internal sealed class RtfWriter
     }
 
     // {\*\shppict{\pict ...}} — the modern wrapper our parser un-skips; bytes go out as hex, size in twips.
-    private void WritePict(byte[] bytes, string? mime, double w, double h)
+    // `bmp` is the fallback for an image built from a Bitmap rather than from encoded bytes (the public
+    // ImageBlock.Image / InlineImage.Image setter clears RawBytes): such a picture used to be dropped
+    // from the RTF without a word. PNG-encoded here, the same way HTML and JSON export handle it.
+    private void WritePict(byte[]? bytes, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h)
     {
+        if (bytes == null)
+        {
+            if (bmp == null) return;
+            try
+            {
+                using var ms = new System.IO.MemoryStream();
+                bmp.Save(ms);
+                bytes = ms.ToArray();
+            }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
+            mime = "image/png";
+        }
         _body.Append(@"{\*\shppict{\pict");
         _body.Append(mime != null && mime.Contains("jpeg", StringComparison.OrdinalIgnoreCase) ? @"\jpegblip" : @"\pngblip");
         if (w > 0) _body.Append($@"\picwgoal{(int)(w * 15)}");

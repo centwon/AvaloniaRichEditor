@@ -634,8 +634,16 @@ namespace AvaloniaRichEditor.Formatters
                 if (bytes == null) return (null, null, 0, 0);
                 using var ms = new System.IO.MemoryStream(bytes);
                 var bitmap = new Avalonia.Media.Imaging.Bitmap(ms);
-                double w = (!double.IsNaN(declW) && declW > 0) ? declW : bitmap.Size.Width;
-                double h = (!double.IsNaN(declH) && declH > 0) ? declH : bitmap.Size.Height;
+                // Only ONE of width/height declared is the common case in foreign HTML, and it means
+                // "scale to this" — the other axis follows the aspect ratio. Taking the natural size for
+                // the missing axis stretched a 200-wide thumbnail of a 1000-tall photo to 200x1000.
+                bool hasW = !double.IsNaN(declW) && declW > 0;
+                bool hasH = !double.IsNaN(declH) && declH > 0;
+                double natW = bitmap.Size.Width, natH = bitmap.Size.Height;
+                double w = natW, h = natH;
+                if (hasW && hasH) { w = declW; h = declH; }
+                else if (hasW) { w = declW; if (natW > 0) h = declW * (natH / natW); }
+                else if (hasH) { h = declH; if (natH > 0) w = declH * (natW / natH); }
                 return (bytes, bitmap, w, h);
             }
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (null, null, 0, 0); }
@@ -1168,6 +1176,12 @@ namespace AvaloniaRichEditor.Formatters
             string t = HtmlEntity.Entitize(r.Text);
             t = PreserveRunsOfSpaces(t);
             t = PreserveDroppableSpaces(t, closesParagraph);
+            // A soft break (Shift+Enter) lives INSIDE a run as `\n`. HTML collapses that to a single
+            // space, so without this the line break was lost on every export — while the reader turns
+            // `<br>` back into `\n` (see the "br" branch in the parser), leaving the round trip lopsided.
+            // Must run after PreserveDroppableSpaces, which finds the space in front of a `\n` while the
+            // newline is still a character rather than a tag.
+            t = t.Replace("\n", "<br/>", StringComparison.Ordinal);
 
             var styles = new System.Collections.Generic.List<string>();
             // Quote the family name: a multi-word value (e.g. Times New Roman) unquoted is invalid CSS,

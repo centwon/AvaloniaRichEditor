@@ -322,6 +322,11 @@ public class TextRange
             currentLeft += len;
         }
         foreach (var item in toRemove) p.Inlines.Remove(item);
+        // A paragraph always holds at least one Run — the whole offset model (BuildPlain, caret placement,
+        // formatting at an empty caret) assumes it. The editor's own delete paths restore it afterwards,
+        // but TextRange.Delete() is public API: called directly on a range covering everything, it left a
+        // paragraph with no inlines at all.
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "", Parent = p });
         CoalesceRuns(p); // removing a run can leave its former neighbours adjacent with equal formatting
     }
 

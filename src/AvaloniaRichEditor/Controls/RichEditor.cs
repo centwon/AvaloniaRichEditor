@@ -124,9 +124,13 @@ public partial class RichEditor : Control
     }
 
     /// <inheritdoc cref="SelectionBrush"/>
+    // Immutable, like the static pens in the render file: a plain SolidColorBrush is an AvaloniaObject
+    // and takes the thread affinity of whoever runs this static initializer. As a PROPERTY DEFAULT that
+    // is one object shared by every editor in the process, so a second UI thread painting a selection
+    // hit "the calling thread cannot access this object" — the same rule the document model follows.
     public static readonly StyledProperty<IBrush> SelectionBrushProperty =
         AvaloniaProperty.Register<RichEditor, IBrush>(
-            nameof(SelectionBrush), new SolidColorBrush(Color.FromArgb(80, 0, 120, 215)));
+            nameof(SelectionBrush), new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(80, 0, 120, 215)));
 
     /// <summary>Fill brush for the text/cell selection highlight.</summary>
     public IBrush SelectionBrush
@@ -1999,7 +2003,8 @@ public partial class RichEditor : Control
 
     // Amber tint painted under every occurrence of the find-highlight query (screen chrome only, never
     // printed). Cheap no-op unless a find UI has set FindHighlightQuery.
-    private static readonly IBrush FindMatchBrush = new SolidColorBrush(Color.FromArgb(70, 255, 190, 0));
+    private static readonly IBrush FindMatchBrush =
+        new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromArgb(70, 255, 190, 0)); // see SelectionBrushProperty
 
     private void DrawFindHighlights(DrawingContext context, Paragraph p, Avalonia.Media.TextFormatting.TextLayout layout,
         double originX, double originY)

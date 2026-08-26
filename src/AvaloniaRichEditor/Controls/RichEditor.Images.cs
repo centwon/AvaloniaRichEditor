@@ -25,6 +25,11 @@ public partial class RichEditor
         PushUndo();
         img.Width = img.Image.Size.Width;
         img.Height = img.Image.Size.Height;
+        // A size preset changes the block's height, so the document's total height changed. The presets
+        // reach neither ResetCaretBlink nor any other re-measuring path (the resize DRAG does — see
+        // OnPointerReleased), so the ScrollViewer kept the old extent: a picture reset to natural size
+        // could grow past the bottom of the scrollable range.
+        InvalidateMeasure();
         InvalidateVisual();
     }
 
@@ -38,6 +43,7 @@ public partial class RichEditor
         double baseH = img.Height > 0 ? img.Height : img.Image.Size.Height;
         img.Width = Math.Max(1, baseW * factor);
         img.Height = Math.Max(1, baseH * factor);
+        InvalidateMeasure(); // see ResetImageSize
         InvalidateVisual();
     }
 
@@ -166,6 +172,7 @@ public partial class RichEditor
         PushUndo();
         img.Width = img.Image.Size.Width;
         img.Height = img.Image.Size.Height;
+        InvalidateMeasure(); // see ResetImageSize — a taller inline image grows its line box
         InvalidateVisual();
     }
 
@@ -179,6 +186,7 @@ public partial class RichEditor
         double baseH = img.Height > 0 ? img.Height : img.Image.Size.Height;
         img.Width = Math.Max(1, baseW * factor);
         img.Height = Math.Max(1, baseH * factor);
+        InvalidateMeasure(); // see ResetImageSize
         InvalidateVisual();
     }
 

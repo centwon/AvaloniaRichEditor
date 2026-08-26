@@ -15,11 +15,13 @@ namespace AvaloniaRichEditor.Tests;
 // says a damaged file is REPORTED rather than read as an empty document — and RTF was simply left out of
 // it. TryParse separates "damaged" from "genuinely empty"; LoadRtf keeps what is open.
 //
-// A control word's parameter is int.Parse'd, so a digit run too long for int aborts the parse mid-way.
-// That is the fixture used throughout: valid RTF envelope, one unparseable value.
+// The fixture used to be an oversized control-word parameter, which aborted the parse with an
+// OverflowException. That is no longer damage: a parameter too wide for int is now read as absent, so
+// one bad number in an otherwise fine file no longer costs the whole document (Word tolerates it too).
+// TRUNCATION — unclosed groups — is what the fixture is now, and it is the damage files actually suffer.
 public class DamagedRtfTests
 {
-    private const string Damaged = @"{\rtf1\ansi\fs99999999999999999999 x\par}";
+    private const string Damaged = @"{\rtf1\ansi {\*\broken";
     private const string Valid = @"{\rtf1\ansi hello\par}";
 
     private static string AllText(FlowDocument d)
@@ -52,17 +54,22 @@ public class DamagedRtfTests
         Assert.Null(error);
     }
 
-    // The old contract stays: paste depends on it (an empty result falls through to HTML/plain text),
-    // so changing Parse would reroute a working path.
+    // An oversized control-word parameter is TOLERATED now, not fatal: the keyword reads as
+    // parameterless and the rest of the document still arrives. It used to abort the parse outright,
+    // which cost a whole readable file for one bad number.
     [Fact]
-    public void Parse_StillReturnsEmptyOnDamagedInput()
-        => Assert.Empty(RtfDocumentFormatter.Parse(Damaged).Blocks);
+    public void Parse_OversizedParameter_KeepsTheRestOfTheDocument()
+        => Assert.Contains("x", AllText(RtfDocumentFormatter.Parse(@"{\rtf1\ansi\fs99999999999999999999 x\par}")),
+                           StringComparison.Ordinal);
+
+    [Fact]
+    public void TryParse_OversizedParameter_IsNotDamage()
+        => Assert.True(RtfDocumentFormatter.TryParse(@"{\rtf1\ansi\fs99999999999999999999 x\par}", out _, out _));
 
     // TRUNCATION is the damage that actually happens to files — a half-copied document, a download cut
     // short — and it does NOT abort the parse: the reader runs out of input and finalizes what it has,
     // which is indistinguishable from cleanly reading a SHORTER document. TryParse reported success and
-    // LoadRtf replaced the open document with the remains. The `Damaged` fixture above never caught this
-    // because it is the other kind of damage, the kind that throws.
+    // LoadRtf replaced the open document with the remains.
     //
     // RTF is brace-balanced, so groups still open at the end are the giveaway.
     [Theory]
@@ -164,11 +171,26 @@ public class DamagedRtfTests
         return seen;
     }
 
-    [Fact]
-    public void Diagnostics_ReportsTheSwallowedParseFault()
+    // These four are about the diagnostics CHANNEL, not about RTF: report-once, Reset re-arms, a
+    // throwing handler is survivable, no subscriber costs nothing. They need any live swallow site, and
+    // the RTF parser no longer has one (it tolerates every fault it used to abort on). A failed image
+    // decode is the stable stand-in: these are plain [Fact]s, so there is no Avalonia platform and
+    // `new Bitmap` genuinely throws — see ImageRawBytesTests, which relies on the same thing.
+    private static byte[] Undecodable() => new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02, 0x03, 0x04 };
+
+    // A fresh block each time: ImageBlock latches _decodeFailed so one instance only ever faults once.
+    private static void FailADecode()
     {
-        var faults = CaptureFaults(() => RtfDocumentFormatter.Parse(Damaged));
-        var f = Assert.Single(faults, e => e.File == "RtfDocumentFormatter.cs");
+        var ib = new ImageBlock();
+        ib.SetImageData(Undecodable(), "image/jpeg");
+        Assert.Null(ib.Image);
+    }
+
+    [Fact]
+    public void Diagnostics_ReportsTheSwallowedFault()
+    {
+        var faults = CaptureFaults(FailADecode);
+        var f = Assert.Single(faults, e => e.File == "ImageBlock.cs");
         Assert.NotNull(f.Exception);
         Assert.True(f.Line > 0);
         Assert.Contains(f.Exception.GetType().Name, f.ToString(), StringComparison.Ordinal);
@@ -179,13 +201,8 @@ public class DamagedRtfTests
     [Fact]
     public void Diagnostics_ReportsEachDistinctFaultOnce()
     {
-        var faults = CaptureFaults(() =>
-        {
-            RtfDocumentFormatter.Parse(Damaged);
-            RtfDocumentFormatter.Parse(Damaged);
-            RtfDocumentFormatter.Parse(Damaged);
-        });
-        Assert.Single(faults, e => e.File == "RtfDocumentFormatter.cs");
+        var faults = CaptureFaults(() => { FailADecode(); FailADecode(); FailADecode(); });
+        Assert.Single(faults, e => e.File == "ImageBlock.cs");
     }
 
     [Fact]
@@ -193,11 +210,11 @@ public class DamagedRtfTests
     {
         var faults = CaptureFaults(() =>
         {
-            RtfDocumentFormatter.Parse(Damaged);
+            FailADecode();
             RichEditorDiagnostics.Reset();
-            RtfDocumentFormatter.Parse(Damaged);
+            FailADecode();
         });
-        Assert.Equal(2, faults.Count(e => e.File == "RtfDocumentFormatter.cs"));
+        Assert.Equal(2, faults.Count(e => e.File == "ImageBlock.cs"));
     }
 
     // The fallback has already run by the time the event fires; letting a handler's exception escape
@@ -208,7 +225,7 @@ public class DamagedRtfTests
         void Bad(object? _, RichEditorFaultEventArgs e) => throw new InvalidOperationException("boom");
         RichEditorDiagnostics.Reset();
         RichEditorDiagnostics.Fault += Bad;
-        try { Assert.Empty(RtfDocumentFormatter.Parse(Damaged).Blocks); }
+        try { FailADecode(); }
         finally { RichEditorDiagnostics.Fault -= Bad; RichEditorDiagnostics.Reset(); }
     }
 
@@ -216,6 +233,6 @@ public class DamagedRtfTests
     public void Diagnostics_IsInertWithoutSubscribers()
     {
         RichEditorDiagnostics.Reset();
-        Assert.Empty(RtfDocumentFormatter.Parse(Damaged).Blocks);
+        FailADecode();
     }
 }

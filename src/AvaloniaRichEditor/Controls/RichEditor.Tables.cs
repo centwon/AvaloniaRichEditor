@@ -487,6 +487,11 @@ public partial class RichEditor
         int ar = Math.Clamp(at, 0, tb.Rows - 1);
         _caretPosition = new TextPointer(tb.Cells[ar][0].Para, 0);
         CollapseSelectionToCaret();
+        // A row/column changes the table's own height, so the document is taller/shorter than the last
+        // measure said. These four take neither ResetCaretBlink nor any other path that re-measures
+        // (unlike every other structural edit), so the ScrollViewer kept the pre-edit extent until some
+        // later, unrelated edit happened to invalidate it.
+        InvalidateMeasure();
         InvalidateVisual();
     }
 
@@ -499,6 +504,7 @@ public partial class RichEditor
         int nr = Math.Clamp(at, 0, tb.Rows - 1);
         _caretPosition = new TextPointer(tb.Cells[nr][0].Para, 0);
         CollapseSelectionToCaret();
+        InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
     }
 
@@ -511,6 +517,10 @@ public partial class RichEditor
         int ac = Math.Clamp(at, 0, tb.Columns - 1);
         _caretPosition = new TextPointer(tb.Cells[0][ac].Para, 0);
         CollapseSelectionToCaret();
+        // See TableInsertRow. A column keeps its own width, so this one usually leaves the height alone
+        // (measure reports the AVAILABLE width, not the content's) — but paged mode recomputes the page
+        // breaks inside MeasureOverride, so it still has to run.
+        InvalidateMeasure();
         InvalidateVisual();
     }
 
@@ -523,6 +533,7 @@ public partial class RichEditor
         int nc = Math.Clamp(at, 0, tb.Columns - 1);
         _caretPosition = new TextPointer(tb.Cells[0][nc].Para, 0);
         CollapseSelectionToCaret();
+        InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
     }
 }

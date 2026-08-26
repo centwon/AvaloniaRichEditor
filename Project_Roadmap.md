@@ -331,6 +331,39 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 >     `Open`도 False다. 다만 **HWP 창에는 파일이 열렸다** — HWP가 우리 RTF를 못 읽는 게 아니라
 >     자동화 경로가 막힌 것이다. → HWP는 사람이 직접 열어 보는 수밖에 없다(체크리스트 그대로 사용).
 
+> - **라운드10 · 외부 감사 보고서 검증(2026-08-26)** — 외부 도구가 쓴 감사 보고서(2026-08-17자, 결함 25건
+>   주장)를 코드와 전수 대조. 보고서 자체는 리포에 남기지 않았다. **17건 유효 / 8건 오진**. 오진 중 BUG-12는 존재하지 않는
+>   "Before" 코드를 인용했고, BUG-09/07은 `ResetCaretBlink()`→`NotifyStatus()`→`InvalidateMeasure()`를
+>   놓쳤으며, BUG-06/07의 `InvalidateTableChain` 요구는 `PushUndo()`가 `_textChangedPending`을 세워
+>   `_trustLayoutCache=false`로 만드는 걸 몰라서 나왔다. PERF-09의 `ToArray()`는 성능 실수가 아니라
+>   **재진입 방어**라 제안대로 고치면 깨진다. → 보고서는 참고 자료지 작업 지시서가 아니다.
+>   - **수정 완료(우선순위 1~4)**: ⓐ HTML 내보내기에서 `Run` 안 소프트 개행(`\n`)이 `<br/>`로 나가지
+>     않던 회귀 — 임포트는 `<br>`→`\n`으로 받고 있었고 `PreserveDroppableSpaces` 주석이 이 Replace를
+>     **전제로** 쓰여 있었는데 코드에는 없었다(테스트도 없었다). ⓑ 인라인 객체만 있는 셀이 병합에서
+>     유실(텍스트 유무로만 판정) — 라운드3이 고친 "추가 블록 유실"과 다른 케이스. ⓒ RTF가 `RawBytes==null
+>     && Image!=null`인 그림을 조용히 누락(공개 `Image` 세터가 `RawBytes`를 비운다) → `WritePict`에 PNG
+>     인코딩 폴백. ⓓ HTML `<img width=200>`처럼 한 축만 선언되면 다른 축이 원본 크기로 남아 종횡비 파괴.
+>     ⓔ RTF 파라미터 `int.Parse` → `TryParse`. ⓕ `TextRange.Delete()` 단독 호출이 빈 `Inlines` 문단을 남김.
+>   - **계약 변경**: ⓔ로 "거대 파라미터 = 손상"이 아니게 됐다. `DamagedRtfTests`가 그 예외를 손상 픽스처로
+>     쓰고 있어서 **절단(unclosed group)** 픽스처로 교체했고, 진단 채널 테스트 4개는 파서에 남은 throw가
+>     없어 **이미지 디코드 실패**로 옮겼다.
+>   - ⓖ **덤으로 잡은 플레이키 테스트** — `SelectionBrushProperty`의 기본값이 mutable `SolidColorBrush`라
+>     정적 초기화를 실행한 스레드에 귀속됐다. 헤드리스 세션 스레드가 바뀌면 상호작용 테스트 7개가
+>     "calling thread cannot access this object"로 죽었다(수정 전 실측 1/4 확률, 수정 후 11회 연속 그린).
+>     `ImmutableSolidColorBrush`로 교체 — CLAUDE.md 규칙 #8이 문서 모델에 요구하는 것을 **속성 기본값**이
+>     빠뜨리고 있었다. `FindMatchBrush`도 같이. ⚠️ `RichEditorToolbar`의 static brush 3개는 **미수정**
+>     (같은 계열이지만 현재 아무 데도 안 걸린다).
+>   - **후속: BUG-08 + BUG-06(2026-08-26)** — 문서 높이를 바꾸는데 `InvalidateMeasure()`를 안 부르던
+>     두 계열. 표 행/열 4개(`TableInsert/DeleteRow/Column`)와 이미지 크기 프리셋 4개
+>     (`Reset/ScaleImageSize`, 인라인판)가 `InvalidateVisual()`만 불러 ScrollViewer가 편집 전 extent를
+>     유지했다. 나머지 구조 편집은 `ResetCaretBlink()`→`NotifyStatus()`로 우연히 커버되고 있었고,
+>     이 8개만 그 경로를 안 탄다(리사이즈 **드래그**는 release에서 무효화하므로 처음부터 무관).
+>     보고서가 함께 요구한 `InvalidateTableChain`은 **넣지 않았다** — `PushUndo()`가 이미 캐시를 버린다.
+>     > **측정 노트**: `TableInsertColumn`은 높이가 안 변한다. 열은 자기 폭을 유지하고
+>     > `MeasureOverride`는 content width가 아니라 **available width**를 돌려주기 때문. 무효화는
+>     > 높이가 실제로 움직이는 경우(키 큰 열 삭제, 페이지드 모드의 `ComputePageBreaks`)를 위한 것이고,
+>     > 테스트도 이 케이스만 플래그를 단정하고 높이 불변을 명시적으로 기록해 둔다.
+
 ## 🔵 백로그 (착수 미정)
 
 - **표 행/열 조작의 에디터 레벨 공개 API** — `TableInsertRow`/`TableDeleteColumn` 등이 private이라 호스트가

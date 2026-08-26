@@ -334,10 +334,13 @@ public class TableBlock : Block
                 var src = srcCell.Blocks.Count > 0 ? srcCell.Blocks[0] as Paragraph : null;
                 if (src != null)
                 {
-                    bool hasText = false;
+                    // "Has content" is not "has text": an InlineImage or InlineTable is content too, and
+                    // testing only for a non-empty Run left an image-only cell's inlines behind in a
+                    // covered cell — invisible to LogicalCells() and destroyed by the next UnmergeCell.
+                    bool hasContent = false;
                     foreach (var inl in src.Inlines)
-                        if (inl is Run run && !string.IsNullOrEmpty(run.Text)) { hasText = true; break; }
-                    if (hasText)
+                        if (inl is not Run run || !string.IsNullOrEmpty(run.Text)) { hasContent = true; break; }
+                    if (hasContent)
                     {
                         anchor.Inlines.Add(new Run { Text = " " });
                         foreach (var inl in src.Inlines) { inl.Parent = anchor; anchor.Inlines.Add(inl); }
