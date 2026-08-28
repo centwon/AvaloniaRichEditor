@@ -831,15 +831,39 @@ namespace AvaloniaRichEditor.Formatters
             return string.IsNullOrEmpty(bg) ? null : ParseCssColor(bg.Trim());
         }
 
+        // One rgb() channel: "200" is absolute, "78%" is a fraction of 255. False when the token is not a
+        // number at all (the regex lets a bare "." through) or does not fit — never throws.
+        private static bool TryChannel(string s, out byte value)
+        {
+            bool percent = s.EndsWith("%", StringComparison.Ordinal);
+            value = 0;
+            if (!double.TryParse(percent ? s.Substring(0, s.Length - 1) : s,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double n))
+                return false;
+            value = (byte)Math.Clamp((int)Math.Round(percent ? n * 2.55 : n), 0, 255);
+            return true;
+        }
+
         private static IBrush? ParseCssColor(string value)
         {
             value = value.Trim();
-            var rgb = System.Text.RegularExpressions.Regex.Match(value, "rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)");
-            if (rgb.Success)
+            // Channels accept CSS's two spellings — 0..255 numbers and 0%..100% percentages. Percentages
+            // are legal in the same position and rare from browsers (they serialize computed styles as
+            // integers) but normal in hand-written CSS; `rgb(100%, 0%, 0%)` used to fail the match and
+            // the colour was silently dropped.
+            //
+            // And the channels are TryParse'd, not Parse'd: `\d+` puts no ceiling on the digit run, so
+            // `rgb(99999999999, 0, 0)` threw OverflowException — out of ParseCssColor, out of the walk,
+            // out of ParseHtml itself. A malformed colour in pasted HTML must cost that colour, not the
+            // paste. (Ported from the WinUI peer, which carries this in ColorUtil.)
+            var rgb = System.Text.RegularExpressions.Regex.Match(
+                value, "rgba?\\(\\s*([0-9]*\\.?[0-9]+%?)\\s*,\\s*([0-9]*\\.?[0-9]+%?)\\s*,\\s*([0-9]*\\.?[0-9]+%?)");
+            if (rgb.Success
+                && TryChannel(rgb.Groups[1].Value, out byte r)
+                && TryChannel(rgb.Groups[2].Value, out byte g)
+                && TryChannel(rgb.Groups[3].Value, out byte b))
             {
-                byte r = (byte)Math.Clamp(int.Parse(rgb.Groups[1].Value), 0, 255);
-                byte g = (byte)Math.Clamp(int.Parse(rgb.Groups[2].Value), 0, 255);
-                byte b = (byte)Math.Clamp(int.Parse(rgb.Groups[3].Value), 0, 255);
                 return new SolidColorBrush(Color.FromRgb(r, g, b));
             }
             if (value.StartsWith("#"))

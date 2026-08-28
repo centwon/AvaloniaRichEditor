@@ -300,7 +300,13 @@ internal sealed class RtfParser
         while (_i < _s.Length && char.IsLetter(_s[_i])) _i++;
         string word = _s.Substring(start, _i - start);
         int? param = null;
-        if (_i < _s.Length && (_s[_i] == '-' || char.IsDigit(_s[_i])))
+        // A parameter is an optional '-' followed by DIGITS. A '-' with NO digit after it is not a
+        // parameter at all: the control word ends there and the '-' is literal text. Consuming it anyway
+        // ate the character — `{\rtf1\ansi\fs-x hello}` came out as "x hello", losing the sign, where
+        // Word reads `\fs` followed by the text "-x hello". (Ported from the WinUI peer.)
+        bool hasParam = _i < _s.Length &&
+            (char.IsDigit(_s[_i]) || (_s[_i] == '-' && _i + 1 < _s.Length && char.IsDigit(_s[_i + 1])));
+        if (hasParam)
         {
             int ns = _i;
             if (_s[_i] == '-') _i++;
@@ -1465,9 +1471,22 @@ internal sealed class RtfWriter
         if (w > 0) _body.Append($@"\picwgoal{(int)(w * 15)}");
         if (h > 0) _body.Append($@"\pichgoal{(int)(h * 15)}");
         _body.Append(' ');
-        foreach (byte b in bytes) _body.Append(b.ToString("x2", CultureInfo.InvariantCulture));
+        // Byte-at-a-time `b.ToString("x2")` allocated one string PER BYTE — a 5 MB picture put five
+        // million of them through Gen0 for an export that is otherwise allocation-light. Converted a
+        // chunk at a time into a stack buffer instead: no per-byte string, and no single 10 MB char
+        // array either (which is what converting the whole thing at once would cost). Same lowercase
+        // hex, so the bytes written are identical.
+        Span<char> hex = stackalloc char[2 * HexChunk];
+        for (int off = 0; off < bytes.Length; off += HexChunk)
+        {
+            int n = Math.Min(HexChunk, bytes.Length - off);
+            Convert.TryToHexStringLower(bytes.AsSpan(off, n), hex, out int written);
+            _body.Append(hex[..written]);
+        }
         _body.Append("}}");
     }
+
+    private const int HexChunk = 512; // bytes per conversion pass (1 KB of stack for the chars)
 
     private int FontIndex(string? family)
     {
