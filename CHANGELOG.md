@@ -21,6 +21,25 @@ judged is in `Project_Roadmap.md` (round 10). No API was added, removed or chang
 > reject and `LoadRtf` will replace the open document with it. Truncation — the damage files actually
 > suffer — is still detected and still refused.
 
+### Fixed — two defects backported from the WinUI peer's audit round
+
+Both were **confirmed by running them here**, not by reading the source — which matters, because a third
+candidate did not survive that check (see below).
+
+- **A lone `-` in a control word was eaten.** A parameter is an optional `-` followed by *digits*; the
+  reader consumed the sign on its own, so `{\rtf1\ansi\fs-x hello}` came out as `"x hello"`. The document
+  is brace-balanced and complete, and Word reads it as `\fs` followed by the literal text `"-x hello"`.
+- **A malformed CSS colour could kill the whole paste.** `rgb(100%, 0%, 0%)` failed the `\d+` match and
+  the colour was silently dropped, and — worse — `\d+` puts no ceiling on the digit run while the channels
+  were `int.Parse`d, so `rgb(99999999999, 0, 0)` threw `OverflowException` out of `ParseCssColor`, out of
+  the walk, and out of `ParseHtml` itself. Percentages are accepted now and channels clamp instead of
+  throwing. A bad colour costs that colour, not the paste.
+
+> **The candidate that did not hold: surrogate pairs.** It was reported here as missing on the strength of
+> a grep for `IsSurrogatePair`, which finds nothing in this project. Backspace, Delete, ← and → have all
+> handled surrogate pairs all along, through `PrevCharBoundary`/`NextCharBoundary`, which spell it
+> `IsHighSurrogate`/`IsLowSurrogate`. Nothing to port. One token in one grep is not a source comparison.
+
 ### Changed — two allocation hot spots, with no change to what is written or read
 
 The audit's performance findings were checked the same way as its defects; these two were the ones worth

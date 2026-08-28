@@ -300,7 +300,13 @@ internal sealed class RtfParser
         while (_i < _s.Length && char.IsLetter(_s[_i])) _i++;
         string word = _s.Substring(start, _i - start);
         int? param = null;
-        if (_i < _s.Length && (_s[_i] == '-' || char.IsDigit(_s[_i])))
+        // A parameter is an optional '-' followed by DIGITS. A '-' with NO digit after it is not a
+        // parameter at all: the control word ends there and the '-' is literal text. Consuming it anyway
+        // ate the character — `{\rtf1\ansi\fs-x hello}` came out as "x hello", losing the sign, where
+        // Word reads `\fs` followed by the text "-x hello". (Ported from the WinUI peer.)
+        bool hasParam = _i < _s.Length &&
+            (char.IsDigit(_s[_i]) || (_s[_i] == '-' && _i + 1 < _s.Length && char.IsDigit(_s[_i + 1])));
+        if (hasParam)
         {
             int ns = _i;
             if (_s[_i] == '-') _i++;
