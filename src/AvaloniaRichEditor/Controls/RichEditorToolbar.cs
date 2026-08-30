@@ -50,7 +50,11 @@ public partial class RichEditorToolbar : UserControl
     /// <summary>Host controls shown at the end of the strip, after the formatting buttons (e.g. zoom).</summary>
     public AvaloniaList<Control> TrailingItems { get; } = new();
 
-    private static readonly IBrush ActiveBrush = new SolidColorBrush(Color.Parse("#90CAF9"));
+    // Immutable, like the editor's SelectionBrush default: a plain SolidColorBrush is an AvaloniaObject
+    // and takes the thread affinity of whoever runs this static initializer, so one shared across every
+    // toolbar in the process throws "the calling thread cannot access this object" the moment a second
+    // UI thread paints with it. Nothing here mutates or binds these, so the immutable form is a drop-in.
+    private static readonly IBrush ActiveBrush = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#90CAF9"));
 
     // Controls that reflect caret state (assigned in Build).
     private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _bulletBtn, _numberBtn, _undoBtn, _redoBtn;
@@ -98,8 +102,9 @@ public partial class RichEditorToolbar : UserControl
     private Border? _colorSwatch, _highlightSwatch;
     private ContentControl? _colorIconHost, _highlightIconHost;
 
-    private static readonly IBrush NoColorBrush = new SolidColorBrush(Color.Parse("#DDDDDD"));
-    private static readonly IBrush DimInk = new SolidColorBrush(Color.Parse("#BFC3C7")); // inactive list marker
+    // Immutable for the same reason as ActiveBrush — see the note there.
+    private static readonly IBrush NoColorBrush = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#DDDDDD"));
+    private static readonly IBrush DimInk = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#BFC3C7")); // inactive list marker
 
     // Shows `brush` as the picker's current colour, whichever face style is in use.
     private void ReflectPickerColor(bool highlight, IBrush brush)

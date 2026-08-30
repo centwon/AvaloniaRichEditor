@@ -351,8 +351,13 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 >     정적 초기화를 실행한 스레드에 귀속됐다. 헤드리스 세션 스레드가 바뀌면 상호작용 테스트 7개가
 >     "calling thread cannot access this object"로 죽었다(수정 전 실측 1/4 확률, 수정 후 11회 연속 그린).
 >     `ImmutableSolidColorBrush`로 교체 — CLAUDE.md 규칙 #8이 문서 모델에 요구하는 것을 **속성 기본값**이
->     빠뜨리고 있었다. `FindMatchBrush`도 같이. ⚠️ `RichEditorToolbar`의 static brush 3개는 **미수정**
->     (같은 계열이지만 현재 아무 데도 안 걸린다).
+>     빠뜨리고 있었다. `FindMatchBrush`도 같이. `RichEditorToolbar`의 static brush 3개
+>     (`ActiveBrush`·`NoColorBrush`·`DimInk`)는 처음엔 "안 걸린다"고 미뤘다가 **2026-08-27에 수정** —
+>     `SelectionBrush`도 터지기 전까지는 정확히 그 상태였다.
+>     > **회귀 방어**: 프로세스 전역으로 공유되는 두 형태(`static readonly` 브러시/펜 필드 +
+>     > 브러시 타입 속성 기본값)를 라이브러리 전체에서 훑는 테스트를 넣었다. 고친 자리를 이름으로
+>     > 박지 않고 쓸어담으므로 **다음 것은 추가되는 날 잡힌다**. 수정을 되돌리면 셋을 이름으로
+>     > 지목하며 실패하는 것까지 확인했다. 호스트가 지정한 브러시는 그대로 이긴다(기본값만 바뀜).
 >   - **후속: BUG-08 + BUG-06(2026-08-26)** — 문서 높이를 바꾸는데 `InvalidateMeasure()`를 안 부르던
 >     두 계열. 표 행/열 4개(`TableInsert/DeleteRow/Column`)와 이미지 크기 프리셋 4개
 >     (`Reset/ScaleImageSize`, 인라인판)가 `InvalidateVisual()`만 불러 ScrollViewer가 편집 전 extent를

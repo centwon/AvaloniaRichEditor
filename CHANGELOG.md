@@ -150,6 +150,15 @@ The engine rule that documents this (`CLAUDE.md` #8) was written for the documen
 serializer has always used `ImmutableSolidColorBrush`; the control's own property defaults were outside its
 scope. Found as a 1-in-4 flake across seven interaction tests, not by reading.
 
+The toolbar's three shared brushes (`ActiveBrush`, `NoColorBrush`, `DimInk`) had the same shape and are
+immutable too. They were reported at the time and left alone because nothing was hitting them — which is
+exactly the state `SelectionBrush` was in until it started throwing.
+
+> A test now sweeps the whole library for the two shapes that are shared process-wide — `static readonly`
+> brush/pen fields, and brush-valued property defaults read off a fresh editor — so the next one is caught
+> when it is written rather than when a second UI thread exists. Removing the fix makes it name all three.
+> A brush the host sets is still honoured; only the defaults changed.
+
 ### Changed — an image's resize handle appears only when it is selected
 
 The corner handle was drawn on every picture at all times, which put a solid accent square on each one:
