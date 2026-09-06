@@ -21,6 +21,46 @@ judged is in `Project_Roadmap.md` (round 10). No API was added, removed or chang
 > reject and `LoadRtf` will replace the open document with it. Truncation — the damage files actually
 > suffer — is still detected and still refused.
 
+### Fixed — undo history is bounded by memory now, and the peer's way of measuring it was wrong
+
+The history was bounded by a step count (50) and nothing else, and every step is a full deep clone of
+the document. Measured: a 20000-paragraph document retains **12.1 MB per checkpoint**, so fifty steps
+is **592 MB** of history sitting behind an editor showing one document. There is a byte budget now
+(64 MB, never fewer than 3 steps), matching the WinUI peer.
+
+**Backporting it is what found the peer's mistake.** Its budget charged 2 bytes per character of text —
+and text costs a checkpoint *nothing*, because `Clone` shares the strings. A snapshot only adds the
+elements that point at them. The measurement is unambiguous:
+
+| document | elements | old model | **actually retained / checkpoint** | per element |
+|---|---|---|---|---|
+| 3000 paragraphs x 60 chars | 6000 | 0.60 MB | 1814 KB | 310 B |
+| 3000 paragraphs x **2 chars** | 6000 | 0.26 MB | **1814 KB (identical)** | 310 B |
+| 3000 paragraphs, 5 runs each | 18000 | 2.43 MB | 4814 KB | 274 B |
+| 300 paragraphs x 4000 chars | 600 | 2.31 MB | **182 KB** | 311 B |
+| 20000 paragraphs x 60 chars | 40000 | 3.97 MB | 12131 KB | 311 B |
+
+The same document at 2 and at 60 characters per paragraph retains **byte for byte the same**, while the
+old model put them 2.3x apart. So the budget was trimming history that cost nothing (text-heavy
+documents, overcharged ~13x) and keeping history that cost a lot (ordinary ones, undercharged ~3x).
+
+- The estimate counts **elements** (blocks + inlines at any depth, cells included) at a measured
+  **310 bytes each**. It now lands within a few percent of real retention; the inline-heavy case is 13%
+  conservative, which is the safe direction. The peer measures ~155 on its own model — same law,
+  different platform.
+- `UndoManager(long maxBytes)` is a test seam: filling the real budget needs a ~200,000-element
+  document, so without it the trimming policy could not be tested at all.
+- `UndoBudgetTests` (7) guards both bounds and both halves of the estimate; `UndoBudgetProbeTests` is
+  the measurement itself. Falsification: deleting the floor, the inline-table descent, or charging per
+  character each turns exactly the tests that cover it red.
+- ⚠️ **Behaviour**: on large documents the history is now shorter than 50 steps — that is the point. On
+  documents with long text it is *longer* than it would have been. No API change.
+
+> ⚠️ **The floor needs SIX pushes to be tested, not four.** `Trim` returns early while the stack is at
+> or below `MinSteps`, so a four-push run lands on three steps whether or not the budget loop honours
+> the floor — the peer's first version of this test passed with the floor deleted. Six pushes make the
+> loop the only thing that can keep the third step.
+
 ### Refactor — one list for a paragraph's format fields (backported from the WinUI peer)
 
 `Paragraph.Clone` kept a **second hand-written copy** of `CopyFormatFrom`'s thirteen fields — the two
