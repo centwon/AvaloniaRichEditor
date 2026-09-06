@@ -21,6 +21,30 @@ judged is in `Project_Roadmap.md` (round 10). No API was added, removed or chang
 > reject and `LoadRtf` will replace the open document with it. Truncation — the damage files actually
 > suffer — is still detected and still refused.
 
+### Refactor — one list for a paragraph's format fields (backported from the WinUI peer)
+
+`Paragraph.Clone` kept a **second hand-written copy** of `CopyFormatFrom`'s thirteen fields — the two
+lists were identical, character for character, and `CopyFormatFrom`'s own note said it "mirrors the field
+list in `Clone`", which is a rule only a person can keep. `Clone` calls it now. Behaviour and public API
+are unchanged.
+
+The weight is in the **failure shape**, not the duplication: a paragraph property added without updating
+`Clone`'s copy works perfectly while the user edits and then **disappears at the first Ctrl+Z**, because
+an undo state is a clone. This project has already paid for the same shape once — the note on
+`CopyFormatFrom` exists because the split paths each copied a hand-picked subset and dropped line
+spacing, the quote bar and the marker style.
+
+`ParagraphCloneFidelityTests` (3) guards both halves of the list **by reflection over the model's own
+properties**, not against a list a test maintains — a guard written as its own list is forgotten in
+exactly the edit that forgets the real one, and it fails loudly if the model gains a property type it
+does not know how to vary.
+
+> **Measured, not assumed: this list had no coverage here at all.** Removing one field (`Background`)
+> from the shared list left **all 764 existing tests green**. The fuzz calls `Undo`/`Redo` but only
+> checks structural invariants, and the round-trip suites go through the formatters, which never touch
+> `Clone`. The peer found the same hole on its side and reported the same measurement (there the guard is
+> a fuzz axis that undoes a random edit sequence step by step and compares each restored document).
+
 ### Fixed — two defects backported from the WinUI peer's audit round
 
 Both were **confirmed by running them here**, not by reading the source — which matters, because a third

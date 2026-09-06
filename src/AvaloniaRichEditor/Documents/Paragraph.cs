@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Avalonia.Media;
 
 namespace AvaloniaRichEditor.Documents;
@@ -83,8 +83,9 @@ public class Paragraph : Block
     /// inlines are not touched). Single source for the edit paths that derive a new paragraph from an
     /// existing one — Enter's split, the paste tail, list splitting — which each used to copy a
     /// hand-picked subset and silently dropped the rest (line spacing, quote bar, marker style…).
-    /// Mirrors the field list in <see cref="Clone"/>; a caller that must diverge (Enter resets the
-    /// heading level to body text) overrides the field afterwards.</summary>
+    /// <see cref="Clone"/> uses this list too — it used to mirror it by hand, which is a rule only a
+    /// person can keep. A caller that must diverge (Enter resets the heading level to body text)
+    /// overrides the field afterwards.</summary>
     public void CopyFormatFrom(Paragraph source)
     {
         MarginTop = source.MarginTop;
@@ -103,24 +104,14 @@ public class Paragraph : Block
     }
 
     /// <inheritdoc/>
+    /// <remarks>The format fields come from <see cref="CopyFormatFrom"/> — the ONE list — because this
+    /// used to be a second hand-written copy of it. A paragraph property added without updating both
+    /// lists survives normal editing and then disappears at the first undo, since an undo state is a
+    /// clone; that is the same failure CopyFormatFrom's own note records for the split paths.</remarks>
     public override TextElement Clone()
     {
-        var p = new Paragraph
-        {
-            MarginTop = this.MarginTop,
-            MarginBottom = this.MarginBottom,
-            MarginRight = this.MarginRight,
-            TextAlignment = this.TextAlignment,
-            LineHeight = this.LineHeight,
-            LineSpacing = this.LineSpacing,
-            ListType = this.ListType,
-            ListMarker = this.ListMarker,
-            HeadingLevel = this.HeadingLevel,
-            Background = this.Background,
-            Indent = this.Indent,
-            IsQuote = this.IsQuote,
-            ListLevel = this.ListLevel
-        };
+        var p = new Paragraph();
+        p.CopyFormatFrom(this);
         foreach (var inline in Inlines)
         {
             var inlineClone = inline.Clone() as Inline;
