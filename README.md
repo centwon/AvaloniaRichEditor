@@ -11,27 +11,20 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 
 *Read this in other languages: [한국어](https://github.com/centwon/AvaloniaRichEditor/blob/main/README.ko.md)*
 
-<!-- The URLs must stay ABSOLUTE: this file is the package README (PackageReadmeFile) and nuget.org does
-     not resolve repo-relative paths, so a relative image renders broken on the package page. -->
-<p align="center">
-  <img src="https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/screenshot.png"
-       alt="The demo showing a block picture, a table with a merged header and a nested table, and a table flowing inside a line of text"
-       width="620">
-</p>
+<!-- Plain Markdown images, NOT `<p align="center"><img>`: this file is the package README
+     (PackageReadmeFile) and nuget.org does not render raw HTML — it printed the tags as literal text, so
+     both pictures were broken on the package page while looking fine on GitHub. Centring is not worth a
+     broken image. The URLs must also stay ABSOLUTE: nuget.org does not resolve repo-relative paths. -->
+![The demo showing a block picture, a table with a merged header and a nested table, and a table flowing inside a line of text](https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/screenshot.png)
 
-<p align="center"><em>The demo's sample document — a merged, shaded table header, a nested table, and an
-inline table flowing inside a sentence, on an A4 page with a header, footer and page numbers.</em></p>
+*The demo's sample document — a merged, shaded table header, a nested table, and an inline table flowing
+inside a sentence, on an A4 page with a header, footer and page numbers.*
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/demo.gif"
-       alt="Typing a sentence, making part of it bold and blue, dragging a table column wider, typing into an empty cell so the row grows, and switching to the A4 page view"
-       width="700">
-</p>
+![Typing a sentence, making part of it bold and blue, dragging a table column wider, typing into an empty cell so the row grows, and switching to the A4 page view](https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/demo.gif)
 
-<p align="center"><em>Typing, formatting, dragging a column wider, filling a cell until its row grows,
-and switching to paper. Every frame is the control rendering real input — see
-<a href="https://github.com/centwon/AvaloniaRichEditor/tree/main/tools/readme-shots">tools/readme-shots</a>.</em></p>
-
+*Typing, formatting, dragging a column wider, filling a cell until its row grows, and switching to paper.
+Every frame is the control rendering real input — see
+[tools/readme-shots](https://github.com/centwon/AvaloniaRichEditor/tree/main/tools/readme-shots).*
 
 > The public API is frozen and follows [SemVer](https://semver.org): no breaking change without a major
 > bump. See the
@@ -97,11 +90,7 @@ for a full editor host.
 
 ## Features
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/screenshot-text.png"
-       alt="The same document showing inline formatting, the four paragraph alignments, and nested bullet and numbered lists"
-       width="620">
-</p>
+![The same document showing inline formatting, the four paragraph alignments, and nested bullet and numbered lists](https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/screenshot-text.png)
 
 ### Text and paragraphs
 
