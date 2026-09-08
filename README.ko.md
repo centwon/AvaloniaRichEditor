@@ -21,6 +21,15 @@
 <p align="center"><em>데모의 샘플 문서 — 병합된 음영 헤더, 중첩 표, 문장 안에 흐르는 인라인 표.
 머리글·바닥글·쪽번호가 있는 A4 페이지입니다.</em></p>
 
+<p align="center">
+  <img src="docs/images/demo.gif"
+       alt="문장을 입력하고, 일부를 굵은 파랑으로 바꾸고, 표 열을 끌어 넓히고, 빈 셀에 입력해 행이 늘어나고, A4 페이지 뷰로 전환하는 장면"
+       width="700">
+</p>
+
+<p align="center"><em>입력하고, 서식을 넣고, 표 열을 끌어 넓히고, 셀을 채워 행이 늘어나고, 종이로 전환합니다.
+모든 프레임은 컨트롤이 실제 입력을 받아 그린 것입니다 — <a href="tools/readme-shots">tools/readme-shots</a>.</em></p>
+
 
 > 공개 API는 고정되었으며 [SemVer](https://semver.org)를 따릅니다: 주 버전(Major) 변경 없이는 호환성을 깨는
 > 변경(Breaking change)이 없습니다. [`CHANGELOG.md`](CHANGELOG.md)와

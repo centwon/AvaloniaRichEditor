@@ -4,11 +4,25 @@
 |---|---|---|
 | `screenshot.png` | README 상단 (히어로) | 블록 이미지, 병합된 음영 헤더 표, 중첩 표, 문장 안에 흐르는 인라인 표, A4 머리글/바닥글/쪽번호 |
 | `screenshot-text.png` | README "기능" 절 머리 | 인라인 서식, 정렬 4종, 중첩 글머리·번호 목록 |
+| `demo.gif` | README 상단 (히어로 아래) | 입력 → 서식 → 열 드래그 → 셀 입력(행 성장) → A4 페이지 뷰 |
 
 둘 다 데모 앱의 샘플 문서([`samples/AvaloniaRichEditor.Demo/SampleDocument.cs`](../../samples/AvaloniaRichEditor.Demo/SampleDocument.cs))
 1페이지와 2페이지다. 문서가 곧 기능 투어라, 문서를 고치면 스크린샷도 같이 갱신하면 된다.
 
-## 다시 찍는 법
+## `demo.gif`는 찍는 게 아니라 만든다
+
+화면 녹화가 아니라 **렌더**다. [`tools/readme-shots`](../../tools/readme-shots)가 헤드리스 창에 실제
+입력을 넣고 Skia가 그린 프레임을 모아 Pillow로 묶는다. 다시 만들려면:
+
+```
+dotnet run --project tools/readme-shots/readme-shots.csproj -c Release -- C:/tmp/shots
+python tools/readme-shots/make-gif.py C:/tmp/shots docs/images/demo.gif 700
+```
+
+커서와 제목표시줄이 없는 것이 정상이다(녹화가 아니라서). 크기는 1.3 MB 선을 넘기지 않는 게 좋다 —
+GitHub가 README를 열 때마다 내려보낸다.
+
+## 정지 스크린샷을 다시 찍는 법
 
 ```
 dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csproj

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Not in the solution, like tools/rtfgen: a hand-run dev tool, not a build or CI target. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>readme-shots</AssemblyName>
+    <RootNamespace>ReadmeShots</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Real Skia on a headless window (UseHeadlessDrawing = false), the same setup the pixel render
+       tests use: glyphs are actually rasterized, so a captured frame is what a user would see. Inter
+       is bundled so the frames don't depend on which fonts the machine happens to have. -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AvaloniaRichEditor\AvaloniaRichEditor.csproj" />
+  </ItemGroup>
+
+</Project>
