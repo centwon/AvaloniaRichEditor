@@ -4,7 +4,7 @@ All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-09-08
 
 An external tool audited the whole of `src/` and reported 25 defects. Each was checked against the code
 before anything was touched: **17 held, 8 did not** — one quoted a "before" block that is not in the file,
@@ -1656,7 +1656,12 @@ editing on Windows; the public API may still change before `1.0`.
 - Word images exported as VML (not standard `<img>`) are not imported.
 - Precise pagination / PDF printing is not implemented (browser print fallback only).
 
-[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.9.0...v1.0.0
+[0.9.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.6.0-beta...v0.7.0
 [0.6.0-beta]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.5.0-alpha...v0.6.0-beta
