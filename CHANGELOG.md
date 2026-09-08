@@ -16,10 +16,114 @@ judged is in `Project_Roadmap.md` (round 10). No API was added, removed or chang
 > being dropped, and an `<img>` with only one of width/height declared now imports at the aspect ratio
 > rather than the other axis's natural size. Documents written by 1.1.0 still open correctly.
 
+> ⚠️ **Avalonia 12.1 is now the floor** (was 12.0.1). An app pinned to 12.0.x has to move up. This is not
+> housekeeping: on 12.0.x, two consecutive Shift+Enters freeze the editor and exhaust memory — see
+> *Changed — the Avalonia floor is 12.1* below.
+
 > ⚠️ **What counts as a damaged `.rtf` has changed.** An oversized control-word parameter is tolerated now
 > rather than aborting the parse, so `RtfDocumentFormatter.TryParse` returns `true` for a file it used to
 > reject and `LoadRtf` will replace the open document with it. Truncation — the damage files actually
 > suffer — is still detected and still refused.
+
+### Fixed — after a merge, a row/column edit parked the caret in a cell nothing can show
+
+Inserting or deleting a row or column puts the caret on a fixed slot — column 0 of the new row, row 0 of
+the new column — and did so without asking whether a merge covers it. A covered cell is absent from
+`LogicalCells()`, so it is not rendered, not clickable, not walked by any formatter and not reachable by
+navigation: the caret sat in a paragraph the document cannot show, and everything typed went there,
+invisible, until the next click moved the caret out. Inserting *inside* a merged span is the ordinary way
+to reach it — the span grows and the slot the operation aims at stays covered.
+
+`FocusCell` has always redirected a covered cell to its merge anchor; its comment says so. These four
+paths assign `_caretPosition` directly and so never reached it. They share the redirect now.
+
+> **How it was found, which is the part worth keeping.** The invariant fuzz checks the merge grid from
+> both directions — twenty-five lines written for round 8's orphan-cell defect, describing anchors and
+> covered slots in detail. Its generator never merged anything. So that quarter of the assertions had
+> never once run against a generated document, and this defect sat behind them. Adding a merge axis
+> (mirroring the context menu, `IsCleanRect` gate included, so anything it finds a user can reach) failed
+> **8 of the existing 20 seeds immediately**. 5000 seeds were then run by hand and are green, which is
+> what says the axis holds no second defect.
+>
+> Round 8 recorded this exact lesson — *a shape the generator does not produce is silently 0% covered* —
+> and the project walked into it again on the very axis that lesson was written about. The fuzz is now
+> the only suite that produces merges in combination with other edits; every other merge test is a single
+> clean operation from a clean document.
+
+### Added — round-trip tests that save and load more than once
+
+Every round-trip test in the suite saved and loaded exactly once, which cannot see a defect that only
+appears as accumulation. This project has shipped two of that shape — an empty paragraph that multiplied
+under a block image on every trip (round 8), and RTF carrying no paper size, found by re-reading a
+generated file four times and watching `PageSize` change (round 9). Both were caught by a person opening
+a file by hand; nothing guarded them.
+
+`FormatFixpointTests` runs thirteen documents through each of the four formats four times over. The
+contract is narrower than "nothing is lost", because RTF and HTML are asymmetric by design: **pass 1 may
+lose whatever the format cannot represent; pass 2 has nothing left to lose.** Pass 1 is the baseline and
+every later pass must equal it exactly, compared through `DocumentSerializer.Serialize` so the comparison
+covers everything the model persists rather than a hand-written field list. Cycling *across* formats is
+deliberately not tested — four sets of designed losses compound, and a difference at the end could not be
+attributed to a defect rather than to the asymmetry each format documents.
+
+All fifty-two cases pass. Four of them did not when the suite was written and were left failing-by-skip
+for one round, because the mechanism behind them was not established; it is now, and the two defects
+behind it are below. `ARE_FIXPOINT_DOC` runs one case alone, which is how a crashing one can be looked at
+without losing the whole run's report.
+
+### Fixed — an IME composition was drawn at the body size no matter what it was typed into
+
+The preedit text — the syllable an IME shows while it is still being composed — was laid out with a
+hardcoded body typeface at the body size. Compose inside a heading and the syllable appeared small and
+unstyled, then jumped to its real size the moment the composition committed; the same for any run with its
+own size, font or colour. It is shaped like the run it is about to join now (the one `TryInsertTextCore`
+extends on commit), keeping the composition underline, with a heading-aware fallback for a paragraph that
+has no run to read yet.
+
+> Found by eye in the demo while checking the Avalonia upgrade below — not by the upgrade, and not by the
+> 842 tests, which had never asserted anything about how the composition is *shaped*, only about the space
+> it takes. The first version of this test compared a heading's total height against a body paragraph's,
+> which is larger before anything is composed at all: it passed with the defect in place. What it measures
+> now is the height the paragraph GAINS when the preedit appears — 29 px either way with the old code.
+
+### Changed — the Avalonia floor is 12.1, because a blank soft line froze the editor on 12.0.x
+
+Type Shift+Enter twice and the paragraph holds `"a\n\nb"` — a line with nothing on it. Laying that out on
+Avalonia 12.0.x never returns: the wrapper loops in `PerformTextWrapping` creating empty lines, and memory
+climbs by hundreds of megabytes a second until the process dies. It is not this library's code — reduced,
+it is `new TextLayout("a\n\nb", …, textWrapping: Wrap)` and nothing else. `NoWrap` is fine. 12.0.2 and
+12.0.5 are not; 12.1 is.
+
+There was no way around it from here. Turning wrapping off is not an editor, and laying out one line at a
+time would break the rule that a single `TextLayout` is the source of rendering, caret geometry,
+hit-testing and selection alike — the thing that keeps them from disagreeing by a character. So the
+reference moved instead, to 12.1.2.
+
+Two consequences inside the repo, both done: the deprecated `Bitmap.Save(stream)` overload is replaced by
+`Save(stream, PngBitmapEncoderOptions.Default)` at all nine call sites, and the two column-drag tests now
+drive the pointer through a shown window (`InteractionHost`) instead of raising events at the control with
+a hand-made `Pointer`. That synthetic path stopped resizing anything under 12.1 while the real one kept
+working — it had been testing itself, not the control.
+
+### Fixed — a table cell grew one blank line every time an RTF file was opened and saved
+
+The writer closes a cell's own paragraph with `\par` before descending into a table nested in that cell.
+The reader turned that `\par` into a soft line break in the cell's text — but the `\itap` that follows
+closes the paragraph anyway, so the break was pure surplus. It survived into the model, the next save
+wrote it out as `\line` *and* still emitted the structural `\par`, and the cell gained another blank line.
+Every trip, without limit. A soft break the author actually typed arrives as `\line` and is untouched.
+
+### Fixed — importing the same file twice produced two different run lists
+
+An importer builds one `Run` per source node, so a line arrived split at every `&nbsp;`, every unstyled
+`<a>`, every table the parse had to flatten; exporting welds those neighbours back into one text node.
+Nothing was lost either way — the text and every offset were identical — but the run list a document had
+depended on how many times it had been through an importer. Both the HTML and the RTF reader now finish
+with `TextRange.CoalesceAll`, the whole-document form of the coalescing the editor already does after an
+edit.
+
+> Chasing this is what found the engine bug below: a run holding **nothing but** a line break — the shape
+> RTF's cell flattening produced — was what actually killed the test host.
 
 ### Fixed — undo history is bounded by memory now, and the peer's way of measuring it was wrong
 
