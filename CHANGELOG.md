@@ -16,7 +16,7 @@ judged is in `Project_Roadmap.md` (round 10). No API was added, removed or chang
 > being dropped, and an `<img>` with only one of width/height declared now imports at the aspect ratio
 > rather than the other axis's natural size. Documents written by 1.1.0 still open correctly.
 
-> ⚠️ **Avalonia 12.1 is now the floor** (was 12.0.1). An app pinned to 12.0.x has to move up. This is not
+> ⚠️ **Avalonia 12.1.0 is now the floor** (was 12.0.1). An app pinned to 12.0.x has to move up. This is not
 > housekeeping: on 12.0.x, two consecutive Shift+Enters freeze the editor and exhaust memory — see
 > *Changed — the Avalonia floor is 12.1* below.
 
@@ -97,7 +97,12 @@ it is `new TextLayout("a\n\nb", …, textWrapping: Wrap)` and nothing else. `NoW
 There was no way around it from here. Turning wrapping off is not an editor, and laying out one line at a
 time would break the rule that a single `TextLayout` is the source of rendering, caret geometry,
 hit-testing and selection alike — the thing that keeps them from disagreeing by a character. So the
-reference moved instead, to 12.1.2.
+reference moved instead.
+
+The floor is **12.1.0**, not the 12.1.2 this is built and tested against: a `PackageReference` becomes a
+`>=` dependency, so referencing the newest patch would have pushed everyone already on 12.1.0 or 12.1.1 up
+for no reason — and at the time of writing 12.1.2 was six days old. 12.1.0 is the earliest release measured
+free of the hang.
 
 Two consequences inside the repo, both done: the deprecated `Bitmap.Save(stream)` overload is replaced by
 `Save(stream, PngBitmapEncoderOptions.Default)` at all nine call sites, and the two column-drag tests now

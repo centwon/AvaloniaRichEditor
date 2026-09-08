@@ -19,6 +19,9 @@
     <Description>A from-scratch rich text editor control for Avalonia, built purely on the TextLayout engine. Supports inline formatting, paragraphs, lists, tables (cell merge, nested tables, and HWP-style inline "treat as character" tables), images, hyperlinks, HTML/JSON/RTF round-trip, find/replace, undo/redo, CJK IME, a Word-style page view (continuous or fixed paper), and print/PDF page rendering.</Description>
     <PackageTags>avalonia;richtextbox;editor;wysiwyg;rich-text;flowdocument;text</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <!-- Shown on the package page: the dependency floor moved, and a consumer pinned to Avalonia 12.0.x
+         will see a restore error rather than a silent problem. Say why in the place they look first. -->
+    <PackageReleaseNotes>Requires Avalonia 12.1 or later: 12.0.x hangs (and exhausts memory) laying out a paragraph that contains a blank soft line, which two Shift+Enters or a pasted &lt;br&gt;&lt;br&gt; produce. Full notes: https://github.com/centwon/AvaloniaRichEditor/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <Copyright>Copyright (c) 2026 centwon</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
@@ -41,7 +44,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.2" />
+    <!-- The FLOOR, not the version this is tested against: a PackageReference becomes a ">= "
+         dependency in the nuspec, so referencing 12.1.2 here would push consumers already on 12.1.0 or
+         12.1.1 up for no reason. 12.1.0 is the earliest release without the text-wrapping hang that
+         12.0.x has (measured, see CHANGELOG). The tests and the demo build against the current 12.1.x. -->
+    <PackageReference Include="Avalonia" Version="12.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

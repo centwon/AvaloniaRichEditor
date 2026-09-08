@@ -31,7 +31,7 @@
 | | |
 |---|---|
 | 대상 프레임워크 | .NET 10 (`net10.0`) |
-| Avalonia | 12.0.1 |
+| Avalonia | **12.1.0 이상** (12.0.x는 빈 소프트 줄 배치에서 멈춥니다; 12.1.2로 테스트) |
 | 의존성 | [Avalonia](https://github.com/AvaloniaUI/Avalonia), [HtmlAgilityPack](https://html-agility-pack.net/) — 이 둘뿐 |
 | 플랫폼 | Windows에서 개발·테스트, macOS/Linux는 best-effort ([자세히](#플랫폼-지원-platform-support)) |
 | Native AOT | 지원 (`IsAotCompatible`) |
