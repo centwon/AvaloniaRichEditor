@@ -4,6 +4,20 @@ All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-09-08
+
+### Fixed — the package page showed HTML tags where the pictures should be
+
+nuget.org does not render raw HTML in a README, so `<p align="center"><img …></p>` was printed as literal
+text: three pictures, including the new animation, were broken on the package page while looking right on
+GitHub. They are plain `![alt](url)` images now — no centring, no width, but visible on both. The README
+travels inside the `.nupkg`, so this could only be fixed by a release.
+
+It had been that way since 1.1.0. Nobody had opened the package page after publishing; **doing so is now
+part of the release routine** (`Project_Roadmap.md`, 작업 규칙).
+
+No code changed: the library in 1.2.1 is byte-for-byte the library in 1.2.0.
+
 ## [1.2.0] - 2026-09-08
 
 An external tool audited the whole of `src/` and reported 25 defects. Each was checked against the code
@@ -1656,7 +1670,8 @@ editing on Windows; the public API may still change before `1.0`.
 - Word images exported as VML (not standard `<img>`) are not imported.
 - Precise pagination / PDF printing is not implemented (browser print fallback only).
 
-[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/centwon/AvaloniaRichEditor/compare/v0.9.0...v1.0.0
