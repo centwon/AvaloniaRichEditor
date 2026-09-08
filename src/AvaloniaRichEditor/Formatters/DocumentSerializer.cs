@@ -484,7 +484,7 @@ public static class DocumentSerializer
         try
         {
             using var ms = new MemoryStream();
-            bmp.Save(ms);
+            bmp.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
             return ms.ToArray();
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }

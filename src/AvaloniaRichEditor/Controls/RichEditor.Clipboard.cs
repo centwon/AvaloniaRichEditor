@@ -224,7 +224,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         if (!ReferenceEquals(scaled, bmp))
         {
             using var ms = new System.IO.MemoryStream();
-            scaled.Save(ms);
+            scaled.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
             ib.SetImageData(ms.ToArray(), "image/png", scaled);
         }
         else
@@ -388,7 +388,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             try
             {
                 using var ms = new System.IO.MemoryStream();
-                bmp.Save(ms);
+                bmp.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
                 bytes = ms.ToArray();
             }
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }

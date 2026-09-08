@@ -1460,7 +1460,7 @@ internal sealed class RtfWriter
             try
             {
                 using var ms = new System.IO.MemoryStream();
-                bmp.Save(ms);
+                bmp.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
                 bytes = ms.ToArray();
             }
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }

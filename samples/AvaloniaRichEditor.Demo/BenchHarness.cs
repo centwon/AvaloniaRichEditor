@@ -601,7 +601,7 @@ internal class BenchWindow : Window
             }
         }
         using var ms = new MemoryStream();
-        wb.Save(ms);
+        wb.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
         return ms.ToArray();
     }
 }

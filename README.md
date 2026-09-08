@@ -33,7 +33,7 @@ inline table flowing inside a sentence, on an A4 page with a header, footer and 
 | | |
 |---|---|
 | Target framework | .NET 10 (`net10.0`) |
-| Avalonia | 12.0.1 |
+| Avalonia | 12.1.2 (12.1 is the floor — 12.0.x hangs laying out a blank soft line) |
 | Dependencies | [Avalonia](https://github.com/AvaloniaUI/Avalonia), [HtmlAgilityPack](https://html-agility-pack.net/) — that's all |
 | Platforms | Developed and tested on Windows; macOS/Linux are best-effort ([details](#platform-support)) |
 | Native AOT | Supported (`IsAotCompatible`) |

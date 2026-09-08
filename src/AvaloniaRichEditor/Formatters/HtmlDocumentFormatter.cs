@@ -1333,7 +1333,7 @@ namespace AvaloniaRichEditor.Formatters
                 try
                 {
                     using var ms = new System.IO.MemoryStream();
-                    bmp.Save(ms);
+                    bmp.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
                     b64 = System.Convert.ToBase64String(ms.ToArray());
                 }
                 catch (Exception ex) { RichEditorDiagnostics.Report(ex); return ""; }
