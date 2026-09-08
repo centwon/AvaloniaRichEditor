@@ -267,6 +267,13 @@ internal sealed class RtfParser
         // though it had been closed properly, which is why a truncated file looks like a clean parse.
         // See TryParse — a truncated file must not be allowed to replace an open document.
         UnclosedGroups = _stack.Count;
+        // The reader closes a run at every group and every control word, so unstyled text arrives split
+        // wherever the writer happened to put a brace — a cell's two paragraphs come back as
+        // "r1c1" + "\n" + "second para in cell" rather than one run. Same text either way, but a run
+        // holding nothing but the break is a shape the layout engine handles badly (see the round-15
+        // note in Project_Roadmap.md), and re-saving welds the pieces back together, so the run list a
+        // file produced depended on how many times it had been through here.
+        TextRange.CoalesceAll(_doc);
         return _doc;
     }
 
@@ -559,6 +566,7 @@ internal sealed class RtfParser
 
     private void FlushBytes()
     {
+        _cellParMark = -1; // the marked break is no longer at the tail of the pending bytes
         if (_bytes.Count == 0) return;
         _run.Append(Enc.GetString(_bytes.ToArray()));
         _bytes.Clear();
@@ -681,7 +689,7 @@ internal sealed class RtfParser
     private void EndParagraph()
     {
         // Inside a table cell, \par is an intra-cell line break, not a document paragraph.
-        if (_curRow != null) { _bytes.Add(10); return; }
+        if (_curRow != null) { _bytes.Add(10); _cellParMark = _bytes.Count; return; }
         FlushRun();
         FinalizeTable(); // a normal paragraph ends any table that was being built
 
@@ -708,6 +716,10 @@ internal sealed class RtfParser
         _doc.Blocks.Add(_para);
         _para = new Paragraph();
     }
+
+    // Byte count at the moment an intra-cell \par added its line break, so SetItap can tell that break
+    // (structure, see SetItap) from one that came from \line (content). -1 = no such break pending.
+    private int _cellParMark = -1;
 
     // True immediately after a block picture was added, while its terminating \par is still pending.
     private bool _imageOwnsNextPar;
@@ -798,6 +810,15 @@ internal sealed class RtfParser
         if (depth == _itap) return;
         if (depth > _itap)
         {
+            // The writer terminates the cell's own paragraph with \par before descending into a nested
+            // table (WriteCellContent.CloseBeforeNested), and this closes that paragraph anyway — so that
+            // break is structure, not content. Kept, it came back as a trailing soft break, which the next
+            // save wrote as \line AND still emitted its own \par: one more blank line inside the cell on
+            // every round trip, without limit. Only the break that \par itself just added is dropped (the
+            // mark is the byte count at that moment), so a soft break the author typed — written as \line
+            // and followed by the structural \par — survives.
+            if (_cellParMark == _bytes.Count && _bytes.Count > 0 && _bytes[^1] == 10)
+                _bytes.RemoveAt(_bytes.Count - 1);
             FlushRun();
             if (_para.Inlines.Count > 0)
             {

@@ -111,6 +111,11 @@ namespace AvaloniaRichEditor.Formatters
                 if (!wasMarkup) p.Inlines.Add(new Run { Text = HtmlEntity.DeEntitize(html) });
                 flowDoc.Blocks.Add(p);
             }
+            // One run per source node fragments a line that the model would otherwise hold as one run —
+            // an &nbsp;, an <a> that carries no formatting, the text of a table this parse flattened. The
+            // export then welds those neighbours back into a single text node, so importing our own export
+            // twice gave two different run lists for the same text.
+            TextRange.CoalesceAll(flowDoc);
             return flowDoc;
         }
 
