@@ -31,6 +31,18 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 창을 1000x1600 정도로 두고 각 페이지가 온전히 보이게 스크롤한 뒤 **창만** 캡처한다
 (바탕화면·작업 표시줄이 들어가지 않게). 폭 1000~1800 px, 500 KB 이하.
 
+## 이미지 문법 — 바꾸지 말 것 (둘 다 실제로 당한 것)
+
+**`README.md`(패키지 README)에서는 raw HTML을 쓰지 말 것.** `<p align="center"><img …></p>`는 GitHub에서는
+가운데 정렬되고 폭도 지정되지만, **nuget.org는 HTML을 렌더하지 않고 태그를 글자 그대로 찍는다** — 1.2.0
+패키지 페이지에 `<p align="center"> <img src="…"` 가 본문으로 노출됐다. 그림 두 장이 다 깨진 채로.
+그래서 `![alt](url)` 순수 Markdown만 쓴다. 가운데 정렬과 폭 지정을 잃지만, 한쪽에서 깨지는 것보다 낫다.
+
+`README.ko.md`는 패키지에 안 들어가고 GitHub만 보므로 HTML을 써도 된다.
+
+⚠️ **패키지 페이지는 새 버전을 내야 고쳐진다.** README는 `.nupkg` 안에 들어가므로, 이미 올라간 버전의
+페이지는 손댈 수 없다.
+
 ## 링크 형식 — 바꾸지 말 것
 
 `README.md`의 이미지 URL은 **절대 경로(raw.githubusercontent.com)** 다. 이 파일은 패키지 README
