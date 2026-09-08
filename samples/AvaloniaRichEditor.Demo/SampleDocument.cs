@@ -302,7 +302,7 @@ internal static class SampleDocument
         var rtb = new RenderTargetBitmap(new PixelSize(w, h), new Vector(96, 96));
         using (var ctx = rtb.CreateDrawingContext()) draw(ctx);
         using var ms = new MemoryStream();
-        rtb.Save(ms);
+        rtb.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
         return ms.ToArray();
     }
 }

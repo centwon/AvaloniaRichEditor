@@ -5,6 +5,7 @@ using System.Reflection;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using AvaloniaRichEditor.Controls;
 using AvaloniaRichEditor.Documents;
 using Xunit;
@@ -206,6 +207,9 @@ public class DocumentInvariantFuzzTests
 
     public static TheoryData<int> Seeds
     {
+        // Twenty in CI. The merge axis was added in round 14 and eight of these twenty caught the defect
+        // it found, so this width defends the regression; 5000 were run once by hand at that time and were
+        // green, which is what says the axis has no second defect rather than that CI is cheap.
         get { var d = new TheoryData<int>(); for (int i = 1; i <= 20; i++) d.Add(i); return d; }
     }
 
@@ -257,10 +261,115 @@ public class DocumentInvariantFuzzTests
         return method;
     }
 
+    // Merging was the one table operation the generator never produced, even though the invariants above
+    // check the merge grid from BOTH directions specifically because round 8's orphan-cell defect lives
+    // there — twenty-five lines of assertion that no generated document could ever reach. Mirrors the
+    // context menu exactly, IsCleanRect gate included, so anything this finds is reachable by a user.
+    private static string MergeOp(RichEditor ed, Random rng, bool unmerge)
+    {
+        var caret = Caret(ed);
+        if (caret.Paragraph == null) return "merge(no caret)";
+        var findCell = typeof(RichEditor).GetMethod("FindCell",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        var loc = findCell.Invoke(null, new object[] { caret.Paragraph });
+        if (loc == null) return "merge(not in a table)";
+
+        var t = loc.GetType();
+        var tb = (TableBlock)t.GetField("Item1")!.GetValue(loc)!;
+        int r = (int)t.GetField("Item2")!.GetValue(loc)!;
+        int c = (int)t.GetField("Item3")!.GetValue(loc)!;
+
+        if (unmerge)
+        {
+            var (cs, rs) = tb.SpanOf(r, c);
+            if (cs <= 1 && rs <= 1) return "unmerge(not merged)";
+            PushUndo(ed);
+            tb.UnmergeCell(r, c);
+            FinishMerge(ed, tb, r, c);
+            return "unmerge";
+        }
+
+        int r1 = rng.Next(r, tb.Rows);
+        int c1 = rng.Next(c, tb.Columns);
+        if (r1 == r && c1 == c) return "merge(single cell)";
+        var clean = typeof(RichEditor).GetMethod("IsCleanRect",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        if (!(bool)clean.Invoke(null, new object[] { tb, r, c, r1, c1 })!) return "merge(not a clean rect)";
+        PushUndo(ed);
+        tb.MergeCells(r, c, r1, c1);
+        FinishMerge(ed, tb, r, c);
+        return "merge";
+    }
+
+    // The rest of what the menu item does after touching the grid. PushUndo is part of it, so a merge
+    // lands on the undo stack and the fuzz's undo/redo steps can walk back across one.
+    private static void PushUndo(RichEditor ed)
+        => typeof(RichEditor).GetMethod("PushUndo", NP)!.Invoke(ed, null);
+
+    private static void FinishMerge(RichEditor ed, TableBlock tb, int r, int c)
+    {
+        var updateParents = typeof(RichEditor).GetMethod("UpdateParents",
+            BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!;
+        if (updateParents.IsStatic) updateParents.Invoke(null, new object?[] { ed.Document });
+        else updateParents.Invoke(ed, new object?[] { ed.Document });
+        typeof(RichEditor).GetMethod("FocusCell", NP)!.Invoke(ed, new object[] { tb.Cells[r][c].Para });
+    }
+
+    // Round 14, second axis. Character formatting was absent from the generator entirely: every run-level
+    // command splits and re-joins runs inside a paragraph, which is the layer the offset model sits on,
+    // and none of it had ever run in combination with a structural edit. Hyperlink goes through the same
+    // ApplyStyleToSelection but is private (the public way in is a modal dialog), so it is driven
+    // directly. Clipboard is not here — paste is async and wants a real clipboard.
+    private static readonly IBrush[] Brushes =
+    {
+        new ImmutableSolidColorBrush(Colors.Red),
+        new ImmutableSolidColorBrush(Colors.Green),
+        new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0, 0, 0xFF)),
+    };
+
+    private static string FormatOp(RichEditor ed, Random rng)
+    {
+        switch (rng.Next(12))
+        {
+            case 0: ed.ToggleBold(); return "bold";
+            case 1: ed.ToggleItalic(); return "italic";
+            case 2: ed.ToggleUnderline(); return "underline";
+            case 3: ed.ToggleStrikethrough(); return "strike";
+            case 4: ed.SetFontSize(new[] { 8.0, 12.0, 36.0 }[rng.Next(3)]); return "font-size";
+            case 5: ed.SetFontFamily(rng.Next(2) == 0 ? "Arial" : "맑은 고딕"); return "font-family";
+            case 6: ed.SetForeground(Brushes[rng.Next(Brushes.Length)]); return "foreground";
+            case 7: ed.SetHighlight(rng.Next(4) == 0 ? null : Brushes[rng.Next(Brushes.Length)]); return "highlight";
+            case 8: ed.IncreaseFontSize(); return "font-bigger";
+            case 9: ed.DecreaseFontSize(); return "font-smaller";
+            case 10: ed.SetLineSpacing(new[] { 1.0, 1.5, 2.0 }[rng.Next(3)]); return "line-spacing";
+            default:
+                typeof(RichEditor).GetMethod("SetHyperlink", NP)!
+                    .Invoke(ed, new object?[] { rng.Next(4) == 0 ? null : "https://example.com/", null });
+                return "hyperlink";
+        }
+    }
+
+    // Find/replace walks the document the same way the formatters do and rewrites runs in place.
+    private static string FindOp(RichEditor ed, Random rng)
+    {
+        string[] needles = { "abc", "한글", "a", "" };
+        string q = needles[rng.Next(needles.Length)];
+        switch (rng.Next(3))
+        {
+            case 0: ed.FindNext(q, rng.Next(2) == 0); return "find-next";
+            case 1: ed.ReplaceNext(q, "Z", rng.Next(2) == 0); return "replace-next";
+            default: ed.ReplaceAll(q, rng.Next(2) == 0 ? "" : "ZZ", rng.Next(2) == 0); return "replace-all";
+        }
+    }
+
     private static string Step(RichEditor ed, Random rng)
     {
-        switch (rng.Next(30))
+        switch (rng.Next(34))
         {
+            case 30: return MergeOp(ed, rng, unmerge: false);
+            case 31: return MergeOp(ed, rng, unmerge: true);
+            case 32: return FormatOp(ed, rng);
+            case 33: return FindOp(ed, rng);
             case 18: ed.InsertImageBytes(Png); return "insert-image";
             // Row/column structure has no editor-level public API (only the context menu reaches it),
             // so the fuzz drives the same private entry points the menu items call.

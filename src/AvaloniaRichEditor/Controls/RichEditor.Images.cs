@@ -90,7 +90,7 @@ public partial class RichEditor
         try
         {
             await using var s = await file.OpenWriteAsync();
-            bmp.Save(s);
+            bmp.Save(s, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }

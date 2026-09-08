@@ -370,6 +370,17 @@ public class TextRange
         }
     }
 
+    // CoalesceRuns for every paragraph in a document, at any depth. An importer builds one run per source
+    // node, so the same line can arrive as one run or as several depending on how the markup happened to
+    // be split — and re-exporting it welds those nodes together, so a second import produced a DIFFERENT
+    // run list from the same content. Text and offsets are untouched; only the run count changes.
+    internal static void CoalesceAll(FlowDocument doc)
+    {
+        var all = new List<Paragraph>();
+        CollectParagraphs(doc.Blocks, all);
+        foreach (var p in all) CoalesceRuns(p);
+    }
+
     private static bool RunFormatEquals(Run a, Run b)
         => a.FontWeight == b.FontWeight
         && a.FontStyle == b.FontStyle

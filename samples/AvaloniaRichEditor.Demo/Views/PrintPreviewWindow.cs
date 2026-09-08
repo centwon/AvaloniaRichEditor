@@ -114,7 +114,7 @@ internal class PrintPreviewWindow : Window
             // printer's hardware margins clip less than the page's own 48px (~0.5in) margins.
             using var av = _editor.RenderPrintPage(page, 300);
             using var ms = new MemoryStream();
-            av.Save(ms);
+            av.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
             ms.Position = 0;
             using var img = System.Drawing.Image.FromStream(ms);
             e.Graphics!.DrawImage(img, e.PageBounds);

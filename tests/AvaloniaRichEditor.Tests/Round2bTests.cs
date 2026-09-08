@@ -307,63 +307,50 @@ public class Round2bTests
     }
 
     // ---- 2. resize handles must not flip IsModified on a bare click ---------
-    private static readonly Avalonia.Input.Pointer TestPointer =
-        new(1, Avalonia.Input.PointerType.Mouse, true);
-
-    private static Avalonia.Input.PointerPointProperties LeftDown =>
-        new(Avalonia.Input.RawInputModifiers.LeftMouseButton, Avalonia.Input.PointerUpdateKind.LeftButtonPressed);
-
-    private static void Press(RichEditor ed, Point p) => ed.RaiseEvent(
-        new Avalonia.Input.PointerPressedEventArgs(ed, TestPointer, ed, p, 0, LeftDown, Avalonia.Input.KeyModifiers.None));
-
-    private static void Move(RichEditor ed, Point p) => ed.RaiseEvent(
-        new Avalonia.Input.PointerEventArgs(Avalonia.Input.InputElement.PointerMovedEvent, ed, TestPointer, ed, p, 0,
-            LeftDown, Avalonia.Input.KeyModifiers.None));
-
-    private static void Release(RichEditor ed, Point p) => ed.RaiseEvent(
-        new Avalonia.Input.PointerReleasedEventArgs(ed, TestPointer, ed, p, 0, LeftDown,
-            Avalonia.Input.KeyModifiers.None, Avalonia.Input.MouseButton.Left));
+    // These two drive the pointer through a shown window (InteractionHost) instead of raising events at
+    // the control with a hand-made Pointer. The hand-made way silently resized nothing under Avalonia
+    // 12.1 while the same drag through a real TopLevel still worked and the handles were still recorded
+    // where they always were — so what it had been testing was the synthetic path, not the product.
+    private static readonly Point ColumnHandle = new(110, 200);
 
     // A table tall enough that any y in the middle is inside it whatever the leading paragraph's
     // height is; its single internal column edge sits at x = 10 (block left) + 100 (column width).
-    private static (RichEditor ed, TableBlock tb) TallTableEditor()
+    private static InteractionHost TallTableHost(out TableBlock table)
     {
         var tb = new TableBlock(1, 2);
         tb.RowHeights.Add(300);
         var doc = new FlowDocument();
         doc.Blocks.Add(tb);
         var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
-        Realize(ed);
+        var host = InteractionHost.Create(ed);
+        host.Render();  // resize handles are recorded while painting
         ed.MarkSaved(); // assigning Document counts as a change; this is our clean baseline
-        return (ed, tb);
+        table = tb;
+        return host;
     }
-
-    private static readonly Point ColumnHandle = new(110, 200);
 
     [AvaloniaFact]
     public void ClickingAColumnHandle_WithoutDragging_LeavesTheDocumentUnmodified()
     {
-        var (ed, tb) = TallTableEditor();
+        using var host = TallTableHost(out var tb);
         double width = tb.ColumnWidths[0];
 
-        Press(ed, ColumnHandle);
-        Release(ed, ColumnHandle);
+        host.Press(ColumnHandle);
+        host.Release(ColumnHandle);
 
-        Assert.False(ed.IsModified, "a click that resized nothing must not mark the document modified");
+        Assert.False(host.Editor.IsModified, "a click that resized nothing must not mark the document modified");
         Assert.Equal(width, tb.ColumnWidths[0]);
     }
 
     [AvaloniaFact]
     public void DraggingAColumnHandle_ResizesAndMarksModified()
     {
-        var (ed, tb) = TallTableEditor();
+        using var host = TallTableHost(out var tb);
         double width = tb.ColumnWidths[0];
 
-        Press(ed, ColumnHandle);
-        Move(ed, ColumnHandle + new Vector(30, 0));
-        Release(ed, ColumnHandle + new Vector(30, 0));
+        host.Drag(ColumnHandle, ColumnHandle + new Vector(30, 0));
 
         Assert.True(tb.ColumnWidths[0] > width, "test setup: the drag should have widened the column");
-        Assert.True(ed.IsModified, "a real resize is an edit");
+        Assert.True(host.Editor.IsModified, "a real resize is an edit");
     }
 }
