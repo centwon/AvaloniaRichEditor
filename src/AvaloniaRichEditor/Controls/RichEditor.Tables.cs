@@ -478,6 +478,18 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
+    // Where the caret may land in cell (r,c). A covered cell is not in LogicalCells(), so nothing renders
+    // it, no click can reach it and no formatter walks it — a caret parked there types into a paragraph
+    // the document cannot show. FocusCell does this redirect for the navigation paths; the four row/column
+    // operations below set the caret directly and need it too, because inserting or deleting a row shifts
+    // the grid under an existing merge and column 0 of the "new" row is routinely a covered slot.
+    private static Paragraph CellCaretTarget(TableBlock tb, int r, int c)
+    {
+        if (!tb.IsCovered(r, c)) return tb.Cells[r][c].Para;
+        var (ar, ac) = tb.AnchorOf(r, c);
+        return tb.Cells[ar][ac].Para;
+    }
+
     private void TableInsertRow(TableBlock tb, int at)
     {
         if (Document == null || at < 0) return;
@@ -485,7 +497,7 @@ public partial class RichEditor
         tb.InsertRow(at);
         UpdateParents(Document);
         int ar = Math.Clamp(at, 0, tb.Rows - 1);
-        _caretPosition = new TextPointer(tb.Cells[ar][0].Para, 0);
+        _caretPosition = new TextPointer(CellCaretTarget(tb, ar, 0), 0);
         CollapseSelectionToCaret();
         // A row/column changes the table's own height, so the document is taller/shorter than the last
         // measure said. These four take neither ResetCaretBlink nor any other path that re-measures
@@ -502,7 +514,7 @@ public partial class RichEditor
         tb.DeleteRow(at);
         UpdateParents(Document);
         int nr = Math.Clamp(at, 0, tb.Rows - 1);
-        _caretPosition = new TextPointer(tb.Cells[nr][0].Para, 0);
+        _caretPosition = new TextPointer(CellCaretTarget(tb, nr, 0), 0);
         CollapseSelectionToCaret();
         InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
@@ -515,7 +527,7 @@ public partial class RichEditor
         tb.InsertColumn(at);
         UpdateParents(Document);
         int ac = Math.Clamp(at, 0, tb.Columns - 1);
-        _caretPosition = new TextPointer(tb.Cells[0][ac].Para, 0);
+        _caretPosition = new TextPointer(CellCaretTarget(tb, 0, ac), 0);
         CollapseSelectionToCaret();
         // See TableInsertRow. A column keeps its own width, so this one usually leaves the height alone
         // (measure reports the AVAILABLE width, not the content's) — but paged mode recomputes the page
@@ -531,7 +543,7 @@ public partial class RichEditor
         tb.DeleteColumn(at);
         UpdateParents(Document);
         int nc = Math.Clamp(at, 0, tb.Columns - 1);
-        _caretPosition = new TextPointer(tb.Cells[0][nc].Para, 0);
+        _caretPosition = new TextPointer(CellCaretTarget(tb, 0, nc), 0);
         CollapseSelectionToCaret();
         InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
