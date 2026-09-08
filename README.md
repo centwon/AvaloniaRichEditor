@@ -22,6 +22,16 @@ PTS/unmanaged dependency). Rendering, layout, hit-testing, selection, and IME ar
 <p align="center"><em>The demo's sample document — a merged, shaded table header, a nested table, and an
 inline table flowing inside a sentence, on an A4 page with a header, footer and page numbers.</em></p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/centwon/AvaloniaRichEditor/main/docs/images/demo.gif"
+       alt="Typing a sentence, making part of it bold and blue, dragging a table column wider, typing into an empty cell so the row grows, and switching to the A4 page view"
+       width="700">
+</p>
+
+<p align="center"><em>Typing, formatting, dragging a column wider, filling a cell until its row grows,
+and switching to paper. Every frame is the control rendering real input — see
+<a href="https://github.com/centwon/AvaloniaRichEditor/tree/main/tools/readme-shots">tools/readme-shots</a>.</em></p>
+
 
 > The public API is frozen and follows [SemVer](https://semver.org): no breaking change without a major
 > bump. See the
