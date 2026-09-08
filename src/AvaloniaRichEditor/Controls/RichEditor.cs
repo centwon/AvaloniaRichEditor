@@ -1350,8 +1350,19 @@ public partial class RichEditor : Control
 
         if (!string.IsNullOrEmpty(preeditText) && preeditOffset >= 0)
         {
+            // The composition is drawn with the formatting its committed text will get — the run it is
+            // about to join — plus the composition underline. It used to be hardcoded to the body face at
+            // the body size, so composing inside a heading (or in any run with its own size, font or
+            // colour) showed the syllable small and unstyled and then snapped to its real size the moment
+            // the IME committed. An empty paragraph has no run to read, hence the heading-aware fallback.
+            var fallback = heading
+                ? new Avalonia.Media.TextFormatting.GenericTextRunProperties(
+                    new Typeface(defaultFamily, FontStyle.Normal, FontWeight.Bold), PtToPx(headingSize), null, Brushes.Black)
+                : defaultProps;
+            var src = PreeditSourceProps(segs, preeditOffset, fallback);
             var preeditProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-                Typeface.Default, PtToPx(DefaultFontSize), TextDecorations.Underline, Brushes.Black);
+                src.Typeface, src.FontRenderingEmSize, TextDecorations.Underline,
+                src.ForegroundBrush ?? Brushes.Black, src.BackgroundBrush);
             SplicePreedit(segs, preeditOffset, preeditText!, preeditProps);
         }
 
@@ -1436,6 +1447,25 @@ public partial class RichEditor : Control
                     }
             }
         }
+    }
+
+    // The run whose formatting the composition should borrow: the text segment the caret sits inside, and
+    // at a segment boundary the one to the LEFT — which is the run TryInsertTextCore extends when the
+    // composition commits, so what is drawn while composing is what remains afterwards. `fallback` covers
+    // a paragraph with no text at all.
+    private static Avalonia.Media.TextFormatting.TextRunProperties PreeditSourceProps(
+        List<LayoutSeg> segs, int offset, Avalonia.Media.TextFormatting.TextRunProperties fallback)
+    {
+        int idx = 0;
+        foreach (var seg in segs)
+        {
+            int len = seg.Text != null ? seg.Text.Length : 1;
+            // Inside this segment, ending at it, or before any text segment (caret at the start, or right
+            // after an image or inline table, where the text to the right is what typing joins).
+            if (seg.Text != null && offset <= idx + len) return seg.Props;
+            idx += len;
+        }
+        return fallback;
     }
 
     // Inserts the IME preedit text at a character offset, splitting a text segment if needed.

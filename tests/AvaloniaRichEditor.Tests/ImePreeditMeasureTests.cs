@@ -134,6 +134,61 @@ public class ImePreeditMeasureTests
         Assert.Equal(Hit(composing: false), Hit(composing: true));
     }
 
+    // Round 15, found by eye in the demo: the composition was drawn at the BODY face and size whatever it
+    // was being typed into, so a syllable composed inside a heading appeared small and then jumped to its
+    // real size the instant the IME committed. The composed text must be laid out with the formatting of
+    // the run it is about to join.
+    //
+    // What is measured is the composition's OWN contribution — the height the paragraph gains when the
+    // preedit appears — not the paragraph's total. A big heading is taller than body text before anything
+    // is composed into it, so comparing totals passes whatever size the composition was shaped at (the
+    // first version of this test did exactly that and could not tell the defect from the fix). Growth
+    // isolates it: at a narrow wrap width the composition's advance becomes a line count.
+    private static double PreeditGrowth(Paragraph p, double width = 200)
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(p);
+        var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
+        Realize(ed, width);
+        PlaceCaret(ed, p, 2);
+        double plain = Measure(ed, width);
+        SetPreedit(ed, LongPreedit);
+        return Measure(ed, width) - plain;
+    }
+
+    [AvaloniaFact]
+    public void ComposingInAHeading_IsLaidOutAtTheHeadingSize()
+    {
+        static Paragraph Para(int headingLevel)
+        {
+            var p = new Paragraph { HeadingLevel = headingLevel };
+            p.Inlines.Add(new Run { Text = "제목" });
+            return p;
+        }
+
+        // h1 is 20 pt against the body's 10, so the same composition takes more lines in the heading —
+        // unless it is shaped at the body size regardless, which is what it used to do.
+        double heading = PreeditGrowth(Para(1)), body = PreeditGrowth(Para(0));
+        Assert.True(heading > body,
+            $"a composition in a heading must be shaped at the heading size ({heading} vs {body})");
+    }
+
+    // The same for a run that carries its own size: the composition joins that run, so it is shaped like it.
+    [AvaloniaFact]
+    public void ComposingInsideASizedRun_TakesThatRunsSize()
+    {
+        static Paragraph Para(double fontSize)
+        {
+            var p = new Paragraph();
+            p.Inlines.Add(new Run { Text = "가나", FontSize = fontSize });
+            return p;
+        }
+
+        double big = PreeditGrowth(Para(28)), small = PreeditGrowth(Para(10));
+        Assert.True(big > small,
+            $"a composition inside a 28 pt run must be shaped at 28 pt ({big} vs {small})");
+    }
+
     // A cell nested one level deeper must push its host row too.
     [AvaloniaFact]
     public void ComposingInANestedCell_GrowsTheOuterRowToo()
