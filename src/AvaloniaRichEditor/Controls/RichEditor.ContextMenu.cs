@@ -566,6 +566,28 @@ public partial class RichEditor
     // The table-structure operations (row/column insert-delete, cell merge, margin, delete table).
     // Used both as the body of the table-selection menu and as a "Table" submenu inside the cell-text
     // menu (right-clicking while editing inside a cell).
+    // Cell vertical alignment (HWP/Word's 세로 정렬). The alignment lives on the ANCHOR cell — a covered
+    // cell has no content of its own — and only shifts where the content sits inside the cell box, so
+    // nothing needs re-measuring: the table layout cache holds cell rects, and the offset is computed
+    // from the rect at draw and hit-test time.
+    private MenuItem BuildCellVAlignSub(TableBlock tb, int r, int c)
+    {
+        var (ar, ac) = tb.AnchorOf(r, c);
+        var target = tb.Cells[ar][ac];
+        MenuItem Opt(string key, CellVerticalAlignment va) =>
+            RadioItem(Loc(key), "ctxCellVAlign", target.VerticalAlignment == va, () =>
+            {
+                if (Document == null || IsReadOnly || target.VerticalAlignment == va) return;
+                PushUndo();
+                target.VerticalAlignment = va;
+                InvalidateVisual();
+            });
+        return Sub(Loc("CellVerticalAlign"),
+            Opt("VAlignTop", CellVerticalAlignment.Top),
+            Opt("VAlignCenter", CellVerticalAlignment.Center),
+            Opt("VAlignBottom", CellVerticalAlignment.Bottom));
+    }
+
     private void AddTableStructureItems(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
     {
         var loc = cell != null ? FindCell(cell) : null;
@@ -609,6 +631,7 @@ public partial class RichEditor
             InvalidateVisual();
         }, canUnmerge, RichEditorIcon.UnmergeCells));
         items.Add(new Separator());
+        if (r >= 0 && c >= 0) items.Add(BuildCellVAlignSub(tb, r, c));
         items.Add(MarginMenu(tb));
         // HWP-style "treat as character": a top-level block table can become inline; an inline table can
         // promote back to a block (only when its host paragraph is top-level).

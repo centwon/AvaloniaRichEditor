@@ -42,7 +42,7 @@ public partial class RichEditor
                 {
                     foreach (var (r, c, rect) in tl.AnchorRects)
                         if (rect.Contains(p))
-                            return LinkRunInBlockList(nt.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p);
+                            return LinkRunInBlockList(nt.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(nt.Cells[r][c], rect), Math.Max(10, rect.Width - 10), p);
                     return null;
                 }
                 by += tl.TotalHeight;
@@ -65,7 +65,7 @@ public partial class RichEditor
             {
                 foreach (var (r, c, rect) in t.AnchorRects)
                     if (rect.Contains(p))
-                        return LinkRunInBlockList(tb.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p);
+                        return LinkRunInBlockList(tb.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(tb.Cells[r][c], rect), Math.Max(10, rect.Width - 10), p);
             }
             else if (block is Paragraph paragraph && ft != null && p.Y >= top && p.Y <= top + h)
             {
@@ -113,6 +113,26 @@ public partial class RichEditor
     // add real multi-block cells (and the render side iterates the same list). Cells use their own
     // width convention (innerWidth directly), distinct from the document walk's ParaLeft/MarginRight
     // math, so this stays cell-specific rather than routing through BlockExtent.
+    // Extra Y offset placing a cell's content per its vertical alignment: 0 for Top, half or all of the
+    // slack (cell inner height − content height) for Center/Bottom.
+    //
+    // Every walk that positions cell content goes through here — draw, hit-test and link lookup — because
+    // they have to agree on where the content sits or the text is drawn in one place and clicked in
+    // another. That is rule #1 applied to the cell box, and the eight call sites used to share a
+    // hardcoded `rect.Y + 5` precisely because there was nothing to disagree about yet.
+    internal double CellContentOffsetY(TableCell cell, Rect rect)
+    {
+        if (cell.VerticalAlignment == CellVerticalAlignment.Top) return 0;
+        double innerW = Math.Max(10, rect.Width - 2 * CellInset);
+        double slack = rect.Height - 2 * CellInset - MeasureCellContentHeight(cell, innerW);
+        if (slack <= 0) return 0;
+        return cell.VerticalAlignment == CellVerticalAlignment.Center ? slack / 2 : slack;
+    }
+
+    // The padding between a cell's border and its content, on every side. Was written as a bare 5 at
+    // each of the eight places that place cell content.
+    internal const double CellInset = 5;
+
     private double MeasureCellContentHeight(TableCell cell, double innerWidth)
     {
         double h = 0;
@@ -511,7 +531,7 @@ public partial class RichEditor
                 if (p.Y <= blkTop + tl.TotalHeight)
                     foreach (var (r, c, rect) in tl.AnchorRects)
                         if (rect.Contains(p) &&
-                            HitTestBlockList(nt.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p) is { } nh)
+                            HitTestBlockList(nt.Cells[r][c].Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(nt.Cells[r][c], rect), Math.Max(10, rect.Width - 10), p) is { } nh)
                             return nh;
                 by += tl.TotalHeight;
             }
@@ -533,7 +553,7 @@ public partial class RichEditor
         if (InlineTableBoxAtPoint(host, ft, px, top, p) is not { } found) return null;
         foreach (var (rr, cc, rect) in found.box.AnchorRects)
             if (rect.Contains(p) &&
-                HitTestBlockList(found.it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p) is { } hit)
+                HitTestBlockList(found.it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(found.it.Table.Cells[rr][cc], rect), Math.Max(10, rect.Width - 10), p) is { } hit)
                 return hit;
         // Inside the box but in a border gap: snap to the first cell's first paragraph.
         return new TextPointer(found.it.Table.Cells[0][0].Para, 0);
@@ -547,7 +567,7 @@ public partial class RichEditor
         if (InlineTableBoxAtPoint(host, ft, px, top, p) is not { } found) return null;
         foreach (var (rr, cc, rect) in found.box.AnchorRects)
             if (rect.Contains(p))
-                return LinkRunInBlockList(found.it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), p);
+                return LinkRunInBlockList(found.it.Table.Cells[rr][cc].Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(found.it.Table.Cells[rr][cc], rect), Math.Max(10, rect.Width - 10), p);
         return null;
     }
 
@@ -608,7 +628,7 @@ public partial class RichEditor
                         // Descend into the cell's stacked block list (P3), recursing through nested tables
                         // (P4-2b), to the paragraph the point lands in (or the nearest one).
                         double innerW = Math.Max(10, rect.Width - 10);
-                        if (HitTestBlockList(tcell.Blocks, rect.X + 5, rect.Y + 5, innerW, p) is { } hit)
+                        if (HitTestBlockList(tcell.Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(tcell, rect), innerW, p) is { } hit)
                             return hit;
                     }
                 }

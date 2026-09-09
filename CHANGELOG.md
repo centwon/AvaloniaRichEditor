@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — cell vertical alignment (backported from the WinUI peer)
+
+`TableCell.VerticalAlignment` (Top/Center/Bottom): content sat at the top of every cell and nothing
+could move it. Right-click a cell ▸ **Cell Vertical Alignment**, and it round-trips through JSON/`.flow`
+(`VAlign`), HTML (`valign`) and RTF (`\clvertalc`/`\clvertalb`) — the same wire spellings the peer uses.
+
+The property is the small part. **Eight walks place cell content** — the render walk, the two hit-test
+walks and the link lookups, at top level and inside nested and inline tables — and each used a hardcoded
+`rect.Y + 5`. They now share one `CellContentOffsetY`, because a render walk that offsets content while
+a hit-test walk does not still "works" on both sides, on different geometry: the text is drawn in one
+place and clicked in another.
+
+- Foreign HTML is read from both spellings (`valign="middle"` and `style="vertical-align:…"`); anything
+  unrecognised, including `baseline`, is the default.
+- Top is never written, so documents saved before this are byte-identical.
+- The table layout cache is untouched: it holds cell RECTANGLES, and the offset is derived from the rect
+  at draw and hit-test time, so a cached layout stays valid.
+- `CellVerticalAlignmentTests` (22 cases). Falsification: dropping the offset from ONE hit-test site, or
+  the alignment from the RTF or JSON writer, turns exactly the tests covering it red.
+
+> ⚠️ **Paragraph identity could not test this, and the first version of the geometry test proved it.**
+> A click anywhere in a one-paragraph cell resolves to that paragraph by fallback, so top-aligned and
+> bottom-aligned cells reported the identical clickable band (26..234) and the test could not have
+> failed. The fixture now puts TWO paragraphs in the cell and measures where the boundary between them
+> moves to. Same family as the caret round's `AdjacentTopLevelParagraph` trap: the fallback answers
+> correctly for the wrong reason.
+
 ### Added — pictures can carry an accessibility description (backported from the WinUI peer)
 
 `ImageBlock.AltText` / `InlineImage.AltText`: the description a screen reader would announce, and what

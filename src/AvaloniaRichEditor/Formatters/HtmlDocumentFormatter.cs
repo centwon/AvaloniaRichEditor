@@ -411,6 +411,20 @@ namespace AvaloniaRichEditor.Formatters
 
         // The raw value of a CSS property from a node's style attribute (e.g. "list-style-type" -> "circle"),
         // or null if absent.
+        // A cell's vertical alignment from the valign attribute or CSS vertical-align. Foreign HTML
+        // uses both, and anything unrecognised (including "baseline") means the default.
+        private static CellVerticalAlignment ReadCellVAlign(HtmlNode td)
+        {
+            string v = td.GetAttributeValue("valign", "").ToLowerInvariant();
+            if (v.Length == 0) v = ReadStyleValue(td, "vertical-align")?.ToLowerInvariant() ?? "";
+            return v switch
+            {
+                "middle" or "center" => CellVerticalAlignment.Center,
+                "bottom" => CellVerticalAlignment.Bottom,
+                _ => CellVerticalAlignment.Top,
+            };
+        }
+
         private static string? ReadStyleValue(HtmlNode node, string prop)
         {
             var style = node.GetAttributeValue("style", "");
@@ -583,6 +597,7 @@ namespace AvaloniaRichEditor.Formatters
                     if (cs > 1 || rs > 1) tb.SetSpan(r, col, cs, rs);
                     var cell = tb.Cells[r][col];
                     cell.Background = ReadBackground(td); // cell-level background lives on the cell
+                    cell.VerticalAlignment = ReadCellVAlign(td);
                     // Parse the cell as blocks so nested tables / block images / multiple paragraphs survive
                     // the round-trip (mirrors the export's per-cell block emit). WalkBlocks yields the same
                     // block types as a top-level walk; a plain inline cell yields a single paragraph.
@@ -1120,6 +1135,10 @@ namespace AvaloniaRichEditor.Formatters
                     var cell = tb.Cells[r][c];
                     var (cs, rs) = tb.SpanOf(r, c);
                     var span = (cs > 1 ? $" colspan=\"{cs}\"" : "") + (rs > 1 ? $" rowspan=\"{rs}\"" : "");
+                    // The attribute form rather than CSS: it is what the peer writes (so the two produce
+                    // the same bytes) and what Word and HWP actually honour on import.
+                    if (cell.VerticalAlignment != CellVerticalAlignment.Top)
+                        span += $" valign=\"{(cell.VerticalAlignment == CellVerticalAlignment.Center ? "middle" : "bottom")}\"";
                     if (cell.Background is ISolidColorBrush cbg)
                         sb.Append($"<td{span} style=\"background-color:{CssColor(cbg.Color)}\">");
                     else

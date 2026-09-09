@@ -1,8 +1,19 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
 
 namespace AvaloniaRichEditor.Documents;
+
+/// <summary>Vertical alignment of a table cell's content within the cell box.</summary>
+public enum CellVerticalAlignment
+{
+    /// <summary>Content sits at the top of the cell (the default).</summary>
+    Top,
+    /// <summary>Content is centered vertically.</summary>
+    Center,
+    /// <summary>Content sits at the bottom of the cell.</summary>
+    Bottom,
+}
 
 /// <summary>The content of one table cell: a list of block-level elements (like the body of an HTML
 /// &lt;td&gt;) plus cell-level formatting (background). Milestone A introduces this so a cell can hold
@@ -16,6 +27,8 @@ public class TableCell : TextElement
     public List<Block> Blocks { get; set; } = new();
     /// <summary>The cell background fill brush (was previously stored on the cell's paragraph).</summary>
     public IBrush? Background { get; set; }
+    /// <summary>Vertical alignment of the content within the cell box. Default: Top.</summary>
+    public CellVerticalAlignment VerticalAlignment { get; set; } = CellVerticalAlignment.Top;
 
     /// <summary>Creates a cell containing a single empty paragraph.</summary>
     public TableCell()
@@ -66,7 +79,7 @@ public class TableCell : TextElement
     /// <inheritdoc/>
     public override TextElement Clone()
     {
-        var tc = new TableCell { Background = Background };
+        var tc = new TableCell { Background = Background, VerticalAlignment = VerticalAlignment };
         tc.Blocks.Clear();
         foreach (var b in Blocks)
         {
