@@ -220,6 +220,7 @@ internal sealed class RtfParser
         public bool VMergeFirst;  // \clvmgf — starts a vertical merge
         public bool VMergeCont;   // \clvmrg — continues the one above
         public int Shading;       // \clcbpat<N> — colour-table index, 0 = none
+        public CellVerticalAlignment VAlign; // \clvertalt/c/b — Top is the default and is not written
     }
     private CellProps _pendingCell;             // accumulating until the next \cellx
     private List<CellProps> _curCellProps = new();
@@ -421,6 +422,9 @@ internal sealed class RtfParser
             case "clvmgf": if (_st.Dest == Dest.Normal) _pendingCell.VMergeFirst = true; break;
             case "clvmrg": if (_st.Dest == Dest.Normal) _pendingCell.VMergeCont = true; break;
             case "clcbpat": if (_st.Dest == Dest.Normal) _pendingCell.Shading = p ?? 0; break;
+            case "clvertalt": if (_st.Dest == Dest.Normal) _pendingCell.VAlign = CellVerticalAlignment.Top; break;
+            case "clvertalc": if (_st.Dest == Dest.Normal) _pendingCell.VAlign = CellVerticalAlignment.Center; break;
+            case "clvertalb": if (_st.Dest == Dest.Normal) _pendingCell.VAlign = CellVerticalAlignment.Bottom; break;
 
             // A table inside a cell: the model nests (milestone A) and the writer emits these, so they
             // come back as a real nested TableBlock in the parent cell rather than flattened text.
@@ -749,6 +753,7 @@ internal sealed class RtfParser
             var bg = _colors[ci];
             if (bg.A != 0) cell.Background = new ImmutableSolidColorBrush(bg);
         }
+        if (col < _curCellProps.Count) cell.VerticalAlignment = _curCellProps[col].VAlign;
         _curRow.Add(cell);
     }
 
@@ -1352,6 +1357,12 @@ internal sealed class RtfWriter
                 var (cs, rs) = tb.SpanOf(ar, ac);   // the anchor's spans govern this cell
                 if (rs > 1 && !covered) rowDef.Append(@"\clvmgf");
                 else if (covered && ar != row) rowDef.Append(@"\clvmrg");
+                // Vertical alignment. Top is the RTF default, so it is left unwritten.
+                switch (tb.Cells[ar][ac].VerticalAlignment)
+                {
+                    case CellVerticalAlignment.Center: rowDef.Append(@"\clvertalc"); break;
+                    case CellVerticalAlignment.Bottom: rowDef.Append(@"\clvertalb"); break;
+                }
                 // Cell shading uses the colour table, like text colour.
                 int bg = ColorIndex(tb.Cells[ar][ac].Background);
                 if (bg > 0) rowDef.Append($@"\clcbpat{bg}");

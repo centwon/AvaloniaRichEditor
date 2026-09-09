@@ -199,6 +199,10 @@ public static class DocumentSerializer
                             foreach (var b in cell.Blocks) cdto.Blocks.Add(BlockToDto(b, pool));
                         }
                         cdto.Background = BrushToString(cell.Background);
+                        // Omit the default so documents without vertical alignment stay byte-identical.
+                        if (cell.VerticalAlignment != CellVerticalAlignment.Top)
+                            cdto.VAlign = cell.VerticalAlignment.ToString();
+                        // Omit the default so documents without vertical alignment stay byte-identical.
                         rd.Add(cdto);
                     }
                     td.Cells.Add(rd);
@@ -336,6 +340,9 @@ public static class DocumentSerializer
                                 cell = new TableCell(para) { Background = para.Background };
                                 para.Background = null;
                             }
+                            // Both cell encodings carry it; an unknown or absent value stays Top.
+                            if (cd.VAlign != null && Enum.TryParse<CellVerticalAlignment>(cd.VAlign, out var va))
+                                cell.VerticalAlignment = va;
                             row.Add(cell);
                         }
                         tb.Cells.Add(row);
@@ -559,6 +566,7 @@ internal class BlockDto
     // Image block
     public string? ImageRef { get; set; } // v2: key into FlowDocumentDto.Images
     public string? Alt { get; set; } // accessibility description; omitted when null (format unchanged)
+    public string? VAlign { get; set; } // cell vertical alignment; omitted when Top (the default)
     public string? ImageBase64 { get; set; } // v1 legacy: inline base64 (read fallback)
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }

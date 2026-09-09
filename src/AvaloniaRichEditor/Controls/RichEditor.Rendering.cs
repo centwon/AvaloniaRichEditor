@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -365,7 +365,7 @@ public partial class RichEditor
                     // Draw the cell's block list top-to-bottom via the recursive primitive (handles
                     // paragraphs, block images, dividers and nested tables — P4-2b). Chrome (highlight,
                     // caret, preedit, inline images) is keyed to the paragraph that holds the caret.
-                    DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, innerW, chrome,
+                    DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(cell, rect), innerW, chrome,
                         cellSelected, cellBlock != null, selectedParagraphs, selStart, selEnd,
                         ref caretPoint, ref caretHeight);
                 }
@@ -723,7 +723,7 @@ public partial class RichEditor
             context.DrawRectangle(null, GrayBorderPen, rect);
             bool inBlock = cellBlock is { } cb && r >= cb.r0 && r <= cb.r1 && c >= cb.c0 && c <= cb.c1;
             if (inBlock) context.FillRectangle(SelectionBrush, rect);
-            DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5, Math.Max(10, rect.Width - 10), chrome,
+            DrawCellBlockList(context, cell.Blocks, rect.X + 5, rect.Y + 5 + CellContentOffsetY(cell, rect), Math.Max(10, rect.Width - 10), chrome,
                 cellSelected: inBlock, cellRangeActive: cellBlock != null, selectedParagraphs, selStart, selEnd,
                 ref caretPoint, ref caretHeight);
         }
