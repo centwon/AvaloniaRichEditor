@@ -454,10 +454,44 @@ public partial class RichEditor
     // fresh unformatted run instead of continuing the run it was clicked after, so text typed there lost
     // the line's bold/colour. Clamping here rather than at the call sites keeps the guarantee in one
     // place — every caret placement, drag selection, link and cell hit-test funnels through this.
-    private int HitTestIndex(Avalonia.Media.TextFormatting.TextLayout layout, Point localPoint, Paragraph p)
+    // The trailing flag comes back with the index: clicking the RIGHT half of a glyph puts the caret
+    // after it, and at a soft wrap that position is also the next line's start. Carrying the flag is what
+    // lets the caret be drawn at the end of the line that was actually clicked. Off a wrap boundary it
+    // costs nothing — both edges are the same place — so it is set for any trailing-half click rather
+    // than only at boundaries (the WinUI peer does the same).
+    private (int Index, bool AtLineEnd) HitTestIndex(Avalonia.Media.TextFormatting.TextLayout layout, Point localPoint, Paragraph p)
     {
         var hit = layout.HitTestPoint(localPoint);
-        return Math.Clamp(hit.TextPosition + (hit.IsTrailing ? 1 : 0), 0, GetParagraphLength(p));
+        int idx = hit.TextPosition + (hit.IsTrailing ? 1 : 0);
+        // Affinity is set ONLY by the clamp below, not by every trailing-half click. Measured: zeroing a
+        // trailing-click flag changed no test, because the only click that reaches a wrap boundary is one
+        // the clamp handles — and a flag nothing can observe is a liability, not a feature (it is what
+        // makes a caret placed after a hard break need a guard at all).
+        bool atLineEnd = false;
+
+        // A click PAST a wrapped line's right edge answers with the next line's first offset — the same
+        // boundary ambiguity vertical movement meets, and the reason clicking to the right of a wrapped
+        // line put the caret one character into the line below (measured: off=379 where the line ends at
+        // 378). Clamp into the line that was actually clicked and mark the affinity, so the caret is
+        // drawn at that line's end.
+        var lines = layout.TextLines;
+        if (lines.Count > 1)
+        {
+            double y = 0;
+            int li = lines.Count - 1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                double h = lines[i].Height;
+                if (localPoint.Y < y + h) { li = i; break; }
+                y += h;
+            }
+            if (li + 1 < lines.Count)
+            {
+                int nextStart = lines[li + 1].FirstTextSourceIndex;
+                if (idx >= nextStart) { idx = nextStart; atLineEnd = true; }
+            }
+        }
+        return (Math.Clamp(idx, 0, GetParagraphLength(p)), atLineEnd);
     }
 
     // The height a paragraph is DRAWN at: its layout height, plus whatever an active IME composition
@@ -476,7 +510,7 @@ public partial class RichEditor
     // layout instead and convert its DISPLAY index back: before the composition maps straight through,
     // after it shifts back by its length, and inside it resolves to its start (it is one pending unit,
     // not addressable positions).
-    private int HitTestLogicalIndex(Paragraph p, double width,
+    private (int Index, bool AtLineEnd) HitTestLogicalIndex(Paragraph p, double width,
         Avalonia.Media.TextFormatting.TextLayout plain, Point localPoint)
     {
         if (string.IsNullOrEmpty(_preeditText) || !ReferenceEquals(_caretPosition.Paragraph, p))
@@ -489,7 +523,7 @@ public partial class RichEditor
         int logical = display <= at ? display
                     : display >= at + len ? display - len
                     : at;
-        return Math.Clamp(logical, 0, GetParagraphLength(p));
+        return (Math.Clamp(logical, 0, GetParagraphLength(p)), hit.IsTrailing);
     }
 
     // Recursive hit-test of a block list laid out at (ox,oy) of width innerW (a cell content box, mirror
@@ -519,7 +553,8 @@ public partial class RichEditor
                     // click stopped at the host paragraph's ObjChar — the table rendered but its cells
                     // could not be entered or drag-selected.
                     if (InlineTableHitDescent(bp, bl, ox + pl, blkTop, p) is { } descended) return descended;
-                    return new TextPointer(bp, HitTestLogicalIndex(bp, bw, bl, new Point(p.X - ox - pl, p.Y - blkTop)));
+                    var cellHit = HitTestLogicalIndex(bp, bw, bl, new Point(p.X - ox - pl, p.Y - blkTop));
+                    return new TextPointer(bp, cellHit.Index) { AtLineEnd = cellHit.AtLineEnd };
                 }
                 by += bh;
             }
@@ -537,9 +572,9 @@ public partial class RichEditor
             }
         }
         // Below all blocks (or in a nested table's border gap): snap to the last paragraph seen.
-        return lastPara != null && lastLayout != null
-            ? new TextPointer(lastPara, HitTestLogicalIndex(lastPara, lastWidth, lastLayout, new Point(p.X - lastLeft, p.Y - lastTop)))
-            : null;
+        if (lastPara == null || lastLayout == null) return null;
+        var snapped = HitTestLogicalIndex(lastPara, lastWidth, lastLayout, new Point(p.X - lastLeft, p.Y - lastTop));
+        return new TextPointer(lastPara, snapped.Index) { AtLineEnd = snapped.AtLineEnd };
     }
 
     // Milestone B P3: a point landing on an inline table's drawn box descends into its cells (mirror of
@@ -608,6 +643,7 @@ public partial class RichEditor
         double bestDistY = double.MaxValue;
         Paragraph? bestPara = null;
         int bestLocalIndex = 0;
+        bool bestAtLineEnd = false; // affinity of the winning candidate; reset with it below
 
         foreach (var block in Document.Blocks)
         {
@@ -640,7 +676,7 @@ public partial class RichEditor
                     {
                         bestDistY = distY;
                         bestPara = tb.Cells[r][c].Para;
-                        bestLocalIndex = GetParagraphLength(bestPara);
+                        bestLocalIndex = GetParagraphLength(bestPara); bestAtLineEnd = false;
                     }
                 }
             }
@@ -649,7 +685,7 @@ public partial class RichEditor
                 if (ft == null) // empty paragraph: extent is a single line height
                 {
                     double dY = p.Y < top ? top - p.Y : (p.Y > top + h ? p.Y - (top + h) : 0);
-                    if (dY < bestDistY) { bestDistY = dY; bestPara = paragraph; bestLocalIndex = 0; }
+                    if (dY < bestDistY) { bestDistY = dY; bestPara = paragraph; bestLocalIndex = 0; bestAtLineEnd = false; }
                 }
                 else
                 {
@@ -663,12 +699,12 @@ public partial class RichEditor
                     {
                         bestDistY = distY2;
                         bestPara = paragraph;
-                        bestLocalIndex = HitTestLogicalIndex(paragraph, ParagraphWrapWidth(paragraph, maxWidth),
+                        (bestLocalIndex, bestAtLineEnd) = HitTestLogicalIndex(paragraph, ParagraphWrapWidth(paragraph, maxWidth),
                             ft, new Point(p.X - ppos, p.Y - top));
                     }
                 }
             }
         }
-        return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) : new TextPointer(Document.Blocks[0] as Paragraph, 0);
+        return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) { AtLineEnd = bestAtLineEnd } : new TextPointer(Document.Blocks[0] as Paragraph, 0);
     }
 }

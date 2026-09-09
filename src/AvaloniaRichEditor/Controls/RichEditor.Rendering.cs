@@ -478,7 +478,7 @@ public partial class RichEditor
                 if (chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph)
                 {
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
-                    var cr = CaretRectIn(layout, caretDisp, _caretPosition.AtLineEnd);
+                    var cr = CaretRectIn(layout, paragraph, caretDisp, _caretPosition.Offset, _caretPosition.AtLineEnd);
                     cr = FixCaretAfterTrailingImage(layout, paragraph, _caretPosition.Offset, caretDisp, cr);
                     double th = CaretTextHeight(paragraph, _caretPosition.Offset);
                     if (cr.Height > 0 && th > cr.Height) th = cr.Height;
@@ -568,9 +568,24 @@ public partial class RichEditor
     // draws the caret at the start of the next line. With affinity set, the position is taken from the
     // TRAILING edge of the previous glyph instead — the same thing DirectWrite's trailing-side caret
     // gives the WinUI peer. Off a boundary the two edges coincide, so this is harmless there.
-    private static Rect CaretRectIn(Avalonia.Media.TextFormatting.TextLayout layout, int displayIndex, bool atLineEnd)
+    //
+    // ⚠ EXCEPT after a hard break. A soft wrap is one position with two appearances; a newline is two
+    // genuinely different positions, and the trailing edge of the newline glyph itself sits at the end
+    // PREVIOUS line. Measured without this guard: a caret placed just after a Shift+Enter break drew at
+    // y=0, x=50 — back on the old line — instead of y=14.5, x=10. (The peer carries the same guard; its
+    // note records the same symptom, "after Shift+Enter the caret appeared back on the old line".)
+    // The check uses the LOGICAL offset, not the display one: while an IME composition is open the two
+    // differ, and it is the model's text that says where the break is.
+    private Rect CaretRectIn(Avalonia.Media.TextFormatting.TextLayout layout, Paragraph p,
+                             int displayIndex, int logicalOffset, bool atLineEnd)
     {
         if (!atLineEnd || displayIndex <= 0) return layout.HitTestTextPosition(displayIndex);
+        if (logicalOffset > 0)
+        {
+            string plain = BuildPlain(p);
+            if (logicalOffset - 1 < plain.Length && plain[logicalOffset - 1] == '\n')
+                return layout.HitTestTextPosition(displayIndex);
+        }
         var prev = layout.HitTestTextPosition(displayIndex - 1);
         return new Rect(prev.X + prev.Width, prev.Y, 0, prev.Height);
     }
@@ -628,7 +643,7 @@ public partial class RichEditor
                 if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
                 {
                     int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
-                    var cr = CaretRectIn(layout, caretDisp, _caretPosition.AtLineEnd);
+                    var cr = CaretRectIn(layout, para, caretDisp, _caretPosition.Offset, _caretPosition.AtLineEnd);
                     cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
                     double th = CaretTextHeight(para, _caretPosition.Offset);
                     if (cr.Height > 0 && th > cr.Height) th = cr.Height;

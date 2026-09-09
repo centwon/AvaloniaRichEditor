@@ -31,10 +31,21 @@ line they were on. After the fix it lands at **y=116.3, x=570**, the right edge 
 - `CaretLineAffinityTests` (6). Falsification: ignoring the affinity in the caret rectangle, not setting
   it on End, or dropping the clamp in vertical movement each turns the test covering it red.
 
-> **Not included: click affinity.** Clicking the trailing half of a wrapped line's last glyph still
-> places the caret on the next line, as it did before. That path returns a bare offset through
-> `HitTestLogicalIndex`/`HitTestIndex` and threading the affinity out of it is a separate change; the
-> peer does it there too. Nothing regresses — this release fixes the keyboard half.
+**The click path is included too.** Clicking past the right edge of a wrapped line used to answer with
+the next line's first offset — measured, a click there landed at offset 379 where the line ends at 378,
+one character INTO the line below. `HitTestIndex` now clamps into the line that was actually clicked and
+marks the affinity there, so the caret is drawn at that line's end (x=570, not x=23 on the row below).
+
+> **The affinity is set by the CLAMP, not by every trailing-half click** — which is where the peer sets
+> it. Measured: zeroing a trailing-click flag changed no test, because the only click that reaches a wrap
+> boundary is one the clamp handles. A flag nothing can observe is a liability rather than a feature; it
+> is exactly what makes a caret placed after a hard break need a guard at all. Falsification confirms the
+> narrower rule: removing the affinity from the clamp turns the click test red.
+
+> ⚠️ **A hard break needs no clamping and gets none.** Measured: clicking right of `abc` in
+> `abc<br/>def` already lands at offset 3, before the break, because the layout's own hit-test does not
+> push past a newline. The guard in the caret rectangle stays as a defence for `AtLineEnd` being a
+> PUBLIC property — a host can set it anywhere, including right after a break.
 
 ### Added — cell vertical alignment (backported from the WinUI peer)
 
