@@ -478,7 +478,7 @@ public partial class RichEditor
                 if (chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph)
                 {
                     int caretDisp = _caretPosition.Offset + (hasPreedit ? _preeditText!.Length : 0);
-                    var cr = layout.HitTestTextPosition(caretDisp);
+                    var cr = CaretRectIn(layout, caretDisp, _caretPosition.AtLineEnd);
                     cr = FixCaretAfterTrailingImage(layout, paragraph, _caretPosition.Offset, caretDisp, cr);
                     double th = CaretTextHeight(paragraph, _caretPosition.Offset);
                     if (cr.Height > 0 && th > cr.Height) th = cr.Height;
@@ -563,6 +563,18 @@ public partial class RichEditor
     // threaded by ref so a caret in a (possibly deeply nested) cell is reported to the render pass.
     // cellSelected = the containing cell is filled as a block (Tab/drag select) -> no caret/highlight;
     // cellRangeActive = a multi-cell drag is in progress on the containing table -> suppress text highlight.
+    // The caret rectangle for an offset, honouring line affinity. At a soft-wrap boundary the offset
+    // belongs to two visual positions; HitTestTextPosition always answers with the LEADING one, which
+    // draws the caret at the start of the next line. With affinity set, the position is taken from the
+    // TRAILING edge of the previous glyph instead — the same thing DirectWrite's trailing-side caret
+    // gives the WinUI peer. Off a boundary the two edges coincide, so this is harmless there.
+    private static Rect CaretRectIn(Avalonia.Media.TextFormatting.TextLayout layout, int displayIndex, bool atLineEnd)
+    {
+        if (!atLineEnd || displayIndex <= 0) return layout.HitTestTextPosition(displayIndex);
+        var prev = layout.HitTestTextPosition(displayIndex - 1);
+        return new Rect(prev.X + prev.Width, prev.Y, 0, prev.Height);
+    }
+
     private void DrawCellBlockList(
         DrawingContext context, System.Collections.Generic.IList<Block> blocks,
         double ox, double oy, double innerW, bool chrome,
@@ -616,7 +628,7 @@ public partial class RichEditor
                 if (chrome && _caretPosition != null && _caretPosition.Paragraph == para && (!cellSelected || blkPreedit))
                 {
                     int caretDisp = _caretPosition.Offset + (blkPreedit ? _preeditText!.Length : 0);
-                    var cr = layout.HitTestTextPosition(caretDisp);
+                    var cr = CaretRectIn(layout, caretDisp, _caretPosition.AtLineEnd);
                     cr = FixCaretAfterTrailingImage(layout, para, _caretPosition.Offset, caretDisp, cr);
                     double th = CaretTextHeight(para, _caretPosition.Offset);
                     if (cr.Height > 0 && th > cr.Height) th = cr.Height;

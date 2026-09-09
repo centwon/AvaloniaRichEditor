@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the caret jumped to the next line when a line wrapped mid-word (affinity, from the peer)
+
+At a soft wrap, "end of line k" and "start of line k+1" are the SAME offset, and a text layout always
+answers with the leading one. Where a line wraps at a SPACE that stayed invisible: End trims the space,
+so the caret sits before it and renders on the earlier line. Where a line wraps **mid-word** there is
+nothing to trim — and the caret went to the next line's left margin.
+
+Measured, on a paragraph of 400 unbroken characters: pressing End moved the caret from **y=116.3, x=10**
+to **y=130.8, x=10** — a line down and back to the left margin, when the user asked for the end of the
+line they were on. After the fix it lands at **y=116.3, x=570**, the right edge of that same line.
+
+- `TextPointer.AtLineEnd` carries the affinity. It is **display-only**: `Equals` and `CompareTo` ignore
+  it, so selection, ordering and every comparison behave exactly as before, and a pointer built anywhere
+  else defaults to false. (Same property, same name and same semantics as the WinUI peer's.)
+- The caret rectangle is taken from the TRAILING edge of the previous glyph when the affinity is set —
+  the equivalent of the trailing-side caret DirectWrite gives the peer.
+- End sets it, and only when the line really wraps on that offset (a trimmed space needs no affinity).
+- ⚠️ **Vertical movement needed a fix of its own, and the test found it.** Hit-testing at the right edge
+  of a wrapped line answers with the NEXT line's first offset — the same ambiguity, arriving from the
+  hit-test side. Moving up from the end of a mid-word wrap therefore landed one character INTO the line
+  it started on and drew the caret exactly where it already was (measured: idx 337, y 116.3 → 116.3).
+  The move now clamps into the line it actually moved to and marks the affinity there.
+- `CaretLineAffinityTests` (6). Falsification: ignoring the affinity in the caret rectangle, not setting
+  it on End, or dropping the clamp in vertical movement each turns the test covering it red.
+
+> **Not included: click affinity.** Clicking the trailing half of a wrapped line's last glyph still
+> places the caret on the next line, as it did before. That path returns a bare offset through
+> `HitTestLogicalIndex`/`HitTestIndex` and threading the affinity out of it is a separate change; the
+> peer does it there too. Nothing regresses — this release fixes the keyboard half.
+
 ### Added — cell vertical alignment (backported from the WinUI peer)
 
 `TableCell.VerticalAlignment` (Top/Center/Bottom): content sat at the top of every cell and nothing

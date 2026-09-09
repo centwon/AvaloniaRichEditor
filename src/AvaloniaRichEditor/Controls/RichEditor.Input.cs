@@ -1533,7 +1533,11 @@ public partial class RichEditor
             string plain = BuildPlain(p);
             int len = plain.Length;
             int off = Math.Clamp(_caretPosition.Offset, 0, len);
-            double caretY = layout.HitTestTextPosition(off).Y; // the caret's current visual line
+            bool atEnd = false;
+            // Which visual line the caret is ON. At a wrap boundary that depends on affinity: with it
+            // set the caret is at the END of the earlier line, and asking about `off` would answer with
+            // the next one — so End would jump a line down instead of staying put.
+            double caretY = CaretRectIn(layout, off, _caretPosition.AtLineEnd).Y;
             int target = toEnd ? len : 0;
             var lines = layout.TextLines;
             for (int i = 0; i < lines.Count; i++)
@@ -1550,11 +1554,16 @@ public partial class RichEditor
                         int e = Math.Min(s + lines[i].Length, len);
                         while (e > s && char.IsWhiteSpace(plain[e - 1])) e--; // soft-wrap/newline trailing ws
                         target = e;
+                        // A line that wraps with no whitespace to trim (a long unbroken word) ends ON the
+                        // boundary offset, which is also the next line's first offset. Without affinity the
+                        // caret is then drawn at the START OF THE NEXT LINE — measured: pressing End moved
+                        // it from y=116 to y=131 and back to x=10, the left margin.
+                        atEnd = i + 1 < lines.Count && target == lines[i + 1].FirstTextSourceIndex;
                     }
                     break;
                 }
             }
-            _caretPosition = new TextPointer(p, Math.Clamp(target, 0, len));
+            _caretPosition = new TextPointer(p, Math.Clamp(target, 0, len)) { AtLineEnd = atEnd };
         }
         ApplyCaretSelection(shift);
     }
@@ -1574,7 +1583,7 @@ public partial class RichEditor
         if (lines.Count <= 1) return false; // single visual line: nothing to move within
         int len = BuildPlain(p).Length;
         int off = Math.Clamp(_caretPosition.Offset, 0, len);
-        var cur = layout.HitTestTextPosition(off);
+        var cur = CaretRectIn(layout, off, _caretPosition.AtLineEnd);
         // The caret's current visual line = first line whose following line starts below the caret.
         int li = lines.Count - 1;
         for (int i = 0; i < lines.Count; i++)
@@ -1589,7 +1598,15 @@ public partial class RichEditor
         double targetY = layout.HitTestTextPosition(lines[targetLine].FirstTextSourceIndex).Y;
         var hit = layout.HitTestPoint(new Point(cur.X, targetY + 1)); // same X, one line over
         int idx = hit.TextPosition + (hit.IsTrailing ? 1 : 0);
-        _caretPosition = new TextPointer(p, Math.Clamp(idx, 0, len));
+        // Hit-testing at (or past) the right edge of a wrapped line answers with the NEXT line's first
+        // offset — the same boundary ambiguity the End key meets, arriving from the hit-test side. Moving
+        // up from the end of a mid-word wrap therefore landed one character INTO the line it started on
+        // and drew the caret exactly where it already was (measured: idx 337, y 116.3 -> 116.3).
+        // Clamp into the line actually moved to, and mark the affinity so it is drawn at that line's end.
+        int nextStart = targetLine + 1 < lines.Count ? lines[targetLine + 1].FirstTextSourceIndex : int.MaxValue;
+        bool landedAtLineEnd = idx >= nextStart;
+        if (landedAtLineEnd) idx = nextStart;
+        _caretPosition = new TextPointer(p, Math.Clamp(idx, 0, len)) { AtLineEnd = landedAtLineEnd };
         return true;
     }
 

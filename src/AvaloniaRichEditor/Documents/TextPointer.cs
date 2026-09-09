@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace AvaloniaRichEditor.Documents;
@@ -11,6 +11,13 @@ public class TextPointer : IComparable<TextPointer>
     public Paragraph? Paragraph { get; set; }
     /// <summary>The character offset within <see cref="Paragraph"/>. Inline images count as 1.</summary>
     public int Offset { get; set; }
+
+    /// <summary>Caret affinity at a soft-wrap boundary. At a wrap, "end of line k" and "start of line
+    /// k+1" are the SAME logical offset; when this is true the caret renders after the last glyph of the
+    /// earlier line instead of before the first glyph of the next one. Set by End (and, in the peer, by
+    /// clicking the trailing half of a line's last glyph). Display-only: equality and ordering ignore
+    /// it, and a pointer built anywhere else defaults to false.</summary>
+    public bool AtLineEnd { get; set; }
 
     /// <summary>Creates a new pointer at <paramref name="offset"/> inside <paramref name="paragraph"/>.</summary>
     public TextPointer(Paragraph? paragraph, int offset)

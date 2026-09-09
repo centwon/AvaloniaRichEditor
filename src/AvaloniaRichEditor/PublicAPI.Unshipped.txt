@@ -9,3 +9,5 @@ AvaloniaRichEditor.Documents.CellVerticalAlignment.Center = 1 -> AvaloniaRichEdi
 AvaloniaRichEditor.Documents.CellVerticalAlignment.Top = 0 -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.get -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.set -> void
+AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.get -> bool
+AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.set -> void
