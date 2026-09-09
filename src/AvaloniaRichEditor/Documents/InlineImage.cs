@@ -1,4 +1,4 @@
-using Avalonia.Media.Imaging;
+﻿using Avalonia.Media.Imaging;
 
 namespace AvaloniaRichEditor.Documents;
 
@@ -57,6 +57,9 @@ public class InlineImage : Inline
     /// <summary>Display height in device-independent pixels. Default: 16.</summary>
     public double Height { get; set; } = 16;
 
+    /// <summary>Accessibility description of the image (HTML <c>alt</c>). Null = none.</summary>
+    public string? AltText { get; set; }
+
     /// <inheritdoc/>
     public override TextElement Clone()
     {
@@ -64,7 +67,8 @@ public class InlineImage : Inline
         var c = new InlineImage
         {
             Width = this.Width,
-            Height = this.Height
+            Height = this.Height,
+            AltText = this.AltText
         };
         c.RawBytes = RawBytes;
         c.MimeType = MimeType;

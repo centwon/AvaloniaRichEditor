@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 
@@ -108,6 +108,7 @@ public static class RichEditorLocalization
             ["QuarterSize"] = "1/4 Size",
             ["ReplaceImage"] = "Replace Image...",
             ["SaveImageAs"] = "Save As...",
+            ["AltText"] = "Alt Text...",
             ["SelectImage"] = "Select Image",
             ["InlineWithText"] = "Inline with Text",
             ["SaveImage"] = "Save Image",
@@ -241,6 +242,7 @@ public static class RichEditorLocalization
             ["QuarterSize"] = "1/4 크기",
             ["ReplaceImage"] = "이미지 교체...",
             ["SaveImageAs"] = "다른 이름으로 저장...",
+            ["AltText"] = "대체 텍스트...",
             ["SelectImage"] = "이미지 선택",
             ["SaveImage"] = "이미지 저장",
             ["InlineWithText"] = "글자처럼 취급",

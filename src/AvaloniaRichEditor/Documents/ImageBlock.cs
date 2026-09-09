@@ -1,4 +1,4 @@
-using Avalonia.Media.Imaging;
+﻿using Avalonia.Media.Imaging;
 
 namespace AvaloniaRichEditor.Documents;
 
@@ -57,6 +57,9 @@ public class ImageBlock : Block
     /// <summary>Display height in device-independent pixels. <see cref="double.NaN"/> = natural size.</summary>
     public double Height { get; set; } = double.NaN;
 
+    /// <summary>Accessibility description of the image (HTML <c>alt</c>). Null = none.</summary>
+    public string? AltText { get; set; }
+
     /// <inheritdoc/>
     public override TextElement Clone()
     {
@@ -66,6 +69,7 @@ public class ImageBlock : Block
         {
             Width = this.Width,
             Height = this.Height,
+            AltText = this.AltText,
             Indent = this.Indent,
             MarginTop = this.MarginTop,
             MarginBottom = this.MarginBottom

@@ -4,6 +4,34 @@ All notable changes to **AvaloniaRichEditor** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — pictures can carry an accessibility description (backported from the WinUI peer)
+
+`ImageBlock.AltText` / `InlineImage.AltText`: the description a screen reader would announce, and what
+HTML calls `alt`. This editor had no way to hold one — a document arriving with `<img alt="…">` **lost
+it on import**, and nothing it wrote had one — while the WinUI peer has had it since 1.0. It is the half
+of image accessibility a document format can actually keep, so it now survives everything that is meant
+to be lossless.
+
+- **JSON / `.flow`**: written as `Alt`, the **same wire name the peer uses** — the two write the same
+  `.flow` package, so a document with descriptions moves between them unchanged. Omitted when null, so
+  existing files are byte-identical.
+- **HTML**: written as a standard `alt` attribute (so it also survives a paste into anything else that
+  understands one) and read back on import, entity-decoded. An empty `alt=""` is HTML for *decorative*,
+  and that comes in as no description rather than as an empty one.
+- **RTF**: unchanged — the format has no place for it, same as in the peer.
+- **Editing**: an "Alt Text..." item on both image context menus (block and inline), localized in en/ko,
+  read-only editors excluded. One undo checkpoint per edit.
+- `ImageAltTextTests` (10). Falsification: dropping the description from the clone, the JSON write, the
+  HTML write, or the HTML read turns 7 of them red.
+
+> **Two things the tests had to learn the hard way.** Reading an `<img>` **decodes** it, so an import
+> test must be an `[AvaloniaFact]` — as a plain `[Fact]` the decode throws, `LoadImage` swallows it, and
+> the picture never arrives at all (the assertion then looks like an alt-text failure). And the HTML
+> importer turns anything under 64px into an inline icon, so a "block image" fixture has to be bigger
+> than that or it comes back inline for reasons that have nothing to do with this feature.
+
 ## [1.2.1] - 2026-09-08
 
 ### Fixed — the package page showed HTML tags where the pictures should be
