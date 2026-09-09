@@ -1537,7 +1537,7 @@ public partial class RichEditor
             // Which visual line the caret is ON. At a wrap boundary that depends on affinity: with it
             // set the caret is at the END of the earlier line, and asking about `off` would answer with
             // the next one — so End would jump a line down instead of staying put.
-            double caretY = CaretRectIn(layout, off, _caretPosition.AtLineEnd).Y;
+            double caretY = CaretRectIn(layout, p, off, off, _caretPosition.AtLineEnd).Y;
             int target = toEnd ? len : 0;
             var lines = layout.TextLines;
             for (int i = 0; i < lines.Count; i++)
@@ -1583,7 +1583,7 @@ public partial class RichEditor
         if (lines.Count <= 1) return false; // single visual line: nothing to move within
         int len = BuildPlain(p).Length;
         int off = Math.Clamp(_caretPosition.Offset, 0, len);
-        var cur = CaretRectIn(layout, off, _caretPosition.AtLineEnd);
+        var cur = CaretRectIn(layout, p, off, off, _caretPosition.AtLineEnd);
         // The caret's current visual line = first line whose following line starts below the caret.
         int li = lines.Count - 1;
         for (int i = 0; i < lines.Count; i++)

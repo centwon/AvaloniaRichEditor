@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Headless.XUnit;
@@ -151,4 +151,56 @@ public class CaretLineAffinityTests
     {
         Assert.False(new TextPointer(new Paragraph(), 0).AtLineEnd);
     }
+
+    // ---- clicking ---------------------------------------------------------------------------------
+
+    // Clicking the trailing half of a wrapped line's last glyph means "the end of THIS line". Without the
+    // affinity travelling out of the hit-test the caret appeared at the start of the next one — the same
+    // defect the End key had, reached with the mouse.
+    [AvaloniaFact]
+    public void ClickingPastTheEndOfAWrappedLine_KeepsTheCaretOnIt()
+    {
+        var ed = WrappedWord();
+        double lineY = GoToMiddleLineStart(ed);      // a middle line, and its y in DOCUMENT space
+        double caretH = (double)typeof(RichEditor).GetField("_lastCaretHeight", NP)!.GetValue(ed)!;
+
+        // Click near the right edge, vertically inside that line.
+        // Past the last glyph's midpoint — the trailing half. At W-40 the click landed on the LEADING
+        // half of that glyph (measured: off=377, ate=False), which is a different position entirely.
+        Click(ed, new Point(W - 22, lineY + caretH / 2));
+        ForceLayout(ed);
+
+        Assert.Equal(lineY, Caret(ed).Y, 1);
+        Assert.True(Pos(ed).AtLineEnd, "the click did not carry the trailing affinity");
+        Assert.True(Caret(ed).X > W - 60, $"the caret is not at the line's right edge (x={Caret(ed).X:0})");
+    }
+
+    // The guard that makes the above safe: a hard break is NOT a wrap. Its two sides are genuinely
+    // different positions, and the trailing edge of the break itself sits at the end of the PREVIOUS
+    // line — measured without the guard, a caret just after a Shift+Enter drew at y=0, x=50 instead of
+    // y=14.5, x=10, i.e. back on the line above.
+    [AvaloniaFact]
+    public void AfterASoftBreak_TheAffinityDoesNotDragTheCaretBackUp()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<p>abc<br/>def</p>");
+        ForceLayout(ed);
+        var p = ed.Document!.Blocks.OfType<Paragraph>().First();
+        int afterBreak = p.Text().IndexOf('\n') + 1;
+
+        typeof(RichEditor).GetField("_caretPosition", NP)!
+            .SetValue(ed, new TextPointer(p, afterBreak) { AtLineEnd = true });
+        ForceLayout(ed);
+        double withAffinity = Caret(ed).Y;
+
+        typeof(RichEditor).GetField("_caretPosition", NP)!
+            .SetValue(ed, new TextPointer(p, afterBreak));
+        ForceLayout(ed);
+
+        Assert.Equal(Caret(ed).Y, withAffinity, 1); // the break's own side wins over the affinity
+    }
+
+    private static void Click(RichEditor ed, Point p)
+        => typeof(RichEditor).GetField("_caretPosition", NP)!
+            .SetValue(ed, typeof(RichEditor).GetMethod("GetPositionFromPoint", NP)!.Invoke(ed, new object?[] { p }));
 }
