@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using AvaloniaRichEditor.Documents;
@@ -45,6 +45,29 @@ public partial class RichEditor
         img.Height = Math.Max(1, baseH * factor);
         InvalidateMeasure(); // see ResetImageSize
         InvalidateVisual();
+    }
+
+    // Edits a picture's accessibility description (HTML `alt`). Backported from the WinUI peer, where
+    // it was the only half of image accessibility that existed — the description round-trips through
+    // JSON/.flow and HTML, so a document that carries it keeps carrying it.
+    //
+    // Exactly one of the two is non-null: the caller is a menu built for a block image or for an inline
+    // one. AltText affects neither layout nor rendering, so nothing is invalidated here.
+    private async Task EditImageAltTextAsync(ImageBlock? block, InlineImage? inline)
+    {
+        if (IsReadOnly || (block == null && inline == null)) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+
+        string current = block?.AltText ?? inline?.AltText ?? "";
+        // Null means "cancelled", and an empty string means "decorative" — the model spells that null
+        // too, which is why the two are distinguished here rather than in the dialog.
+        string? entered = await InputDialog.ShowAsync(owner, Loc("AltText").TrimEnd('…', '.'), current);
+        if (entered == null) return;
+
+        string? alt = string.IsNullOrWhiteSpace(entered) ? null : entered.Trim();
+        PushUndo();
+        if (block != null) block.AltText = alt;
+        else inline!.AltText = alt;
     }
 
     private async Task ReplaceImageAsync(ImageBlock img)

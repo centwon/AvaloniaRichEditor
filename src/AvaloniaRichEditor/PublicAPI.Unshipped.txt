@@ -1,1 +1,5 @@
 ﻿#nullable enable
+AvaloniaRichEditor.Documents.ImageBlock.AltText.get -> string?
+AvaloniaRichEditor.Documents.ImageBlock.AltText.set -> void
+AvaloniaRichEditor.Documents.InlineImage.AltText.get -> string?
+AvaloniaRichEditor.Documents.InlineImage.AltText.set -> void

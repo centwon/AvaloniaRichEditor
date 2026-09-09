@@ -226,13 +226,13 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (name == "img")
                 {
-                    var (bytes, bmp, w, h) = LoadImage(child);
+                    var (bytes, bmp, w, h, alt) = LoadImage(child);
                     if (bmp != null && bytes != null)
                     {
                         if (w < IconMaxSize && h < IconMaxSize)
                         {
                             // Small icon/logo -> keep on a text line rather than its own block.
-                            var icon = new InlineImage { Width = w, Height = h };
+                            var icon = new InlineImage { Width = w, Height = h, AltText = alt };
                             icon.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
                             TakeSpace();
                             // Same rule as an inline table: `data-are-opens` says the image began its own
@@ -255,7 +255,7 @@ namespace AvaloniaRichEditor.Formatters
                         else
                         {
                             Flush();
-                            var ib = new ImageBlock { Width = w, Height = h };
+                            var ib = new ImageBlock { Width = w, Height = h, AltText = alt };
                             ib.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
                             flow.Blocks.Add(ib);
                         }
@@ -603,10 +603,13 @@ namespace AvaloniaRichEditor.Formatters
         // Loads an <img> and returns the original encoded bytes, the decoded bitmap, and its
         // intended display size (declared px when present, otherwise natural size).
         // Returns (null,null,0,0) on failure/unsupported source.
-        private static (byte[]?, Avalonia.Media.Imaging.Bitmap?, double, double) LoadImage(HtmlNode node)
+        private static (byte[]?, Avalonia.Media.Imaging.Bitmap?, double, double, string?) LoadImage(HtmlNode node)
         {
             var src = node.GetAttributeValue("src", "");
-            if (string.IsNullOrEmpty(src)) return (null, null, 0, 0);
+            // Blank alt is "decorative" in HTML, and the model spells that as null.
+            var altAttr = node.GetAttributeValue("alt", "");
+            string? alt = string.IsNullOrWhiteSpace(altAttr) ? null : HtmlEntity.DeEntitize(altAttr);
+            if (string.IsNullOrEmpty(src)) return (null, null, 0, 0, null);
 
             double declW = ReadPx(node, "width", "width");
             double declH = ReadPx(node, "height", "height");
@@ -621,22 +624,22 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (src.StartsWith("http"))
                 {
-                    if (_blockRemoteImages) return (null, null, 0, 0); // remote images opted out
+                    if (_blockRemoteImages) return (null, null, 0, 0, null); // remote images opted out
                     // Only the async path fetches. The synchronous parse never touches the network:
                     // downloading on the calling thread froze the UI for up to the whole budget, and a
                     // hung UI is a worse failure than a missing image (ParseHtmlAsync loads them).
-                    if (_prefetchedRemoteImages == null) return (null, null, 0, 0);
+                    if (_prefetchedRemoteImages == null) return (null, null, 0, 0, null);
                     // ParseHtmlAsync already fetched these off the UI thread; null = failed/timed out.
                     _prefetchedRemoteImages.TryGetValue(src, out bytes);
-                    if (bytes == null) return (null, null, 0, 0);
+                    if (bytes == null) return (null, null, 0, 0, null);
                 }
                 else if (src.StartsWith("file:"))
                 {
-                    if (_blockLocalFileImages) return (null, null, 0, 0);
+                    if (_blockLocalFileImages) return (null, null, 0, 0, null);
                     var path = new Uri(src).LocalPath;
                     if (System.IO.File.Exists(path)) bytes = System.IO.File.ReadAllBytes(path);
                 }
-                if (bytes == null) return (null, null, 0, 0);
+                if (bytes == null) return (null, null, 0, 0, null);
                 using var ms = new System.IO.MemoryStream(bytes);
                 var bitmap = new Avalonia.Media.Imaging.Bitmap(ms);
                 // Only ONE of width/height declared is the common case in foreign HTML, and it means
@@ -649,9 +652,9 @@ namespace AvaloniaRichEditor.Formatters
                 if (hasW && hasH) { w = declW; h = declH; }
                 else if (hasW) { w = declW; if (natW > 0) h = declW * (natH / natW); }
                 else if (hasH) { h = declH; if (natH > 0) w = declH * (natW / natH); }
-                return (bytes, bitmap, w, h);
+                return (bytes, bitmap, w, h, alt);
             }
-            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (null, null, 0, 0); }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (null, null, 0, 0, null); }
         }
 
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
@@ -732,10 +735,10 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (name == "img")
                 {
-                    var (bytes, bmp, w, h) = LoadImage(child);
+                    var (bytes, bmp, w, h, alt) = LoadImage(child);
                     if (bmp != null && bytes != null)
                     {
-                        var im = new InlineImage { Width = w, Height = h };
+                        var im = new InlineImage { Width = w, Height = h, AltText = alt };
                         im.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
                         p.Inlines.Add(im);
                     }
@@ -961,7 +964,7 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     // RawBytes checked first so export doesn't force a lazy bitmap decode.
                     CloseAll();
-                    sb.Append($"<p>{ImgTag(ib.RawBytes, ib.MimeType, ib.RawBytes == null ? ib.Image : null, ib.Width, ib.Height)}</p>\n");
+                    sb.Append($"<p>{ImgTag(ib.RawBytes, ib.MimeType, ib.RawBytes == null ? ib.Image : null, ib.Width, ib.Height, ib.AltText)}</p>\n");
                 }
             }
             CloseAll();
@@ -1165,7 +1168,7 @@ namespace AvaloniaRichEditor.Formatters
                                 EmitInline(sb, cpara.Inlines[i], i == 0, i == cpara.Inlines.Count - 1);
                         }
                         else if (cblk is ImageBlock cib && (cib.RawBytes != null || cib.Image != null))
-                        { cellLists.CloseAll(); sb.Append(ImgTag(cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height)); prevWasBareParagraph = false; }
+                        { cellLists.CloseAll(); sb.Append(ImgTag(cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height, cib.AltText)); prevWasBareParagraph = false; }
                         else if (cblk is TableBlock nt)
                         { cellLists.CloseAll(); EmitTable(sb, nt); prevWasBareParagraph = false; } // nested table
                         else if (cblk is DividerBlock)
@@ -1190,7 +1193,7 @@ namespace AvaloniaRichEditor.Formatters
         {
             if (inline is InlineImage im && (im.RawBytes != null || im.Image != null))
             {
-                sb.Append(ImgTag(im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height, opensParagraph));
+                sb.Append(ImgTag(im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height, im.AltText, opensParagraph));
                 return;
             }
             // An inline table has no HTML inline equivalent; emit it as a <table> so its content survives
@@ -1325,7 +1328,7 @@ namespace AvaloniaRichEditor.Formatters
         // a bitmap set without bytes is PNG-encoded as before.
         // `opensParagraph` carries the same meaning as it does for an inline table: this image was the
         // FIRST thing in its paragraph, so on import there is no earlier paragraph of its own to rejoin.
-        private static string ImgTag(byte[]? raw, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, bool opensParagraph = false)
+        private static string ImgTag(byte[]? raw, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, string? alt = null, bool opensParagraph = false)
         {
             string b64, m;
             if (raw != null)
@@ -1348,6 +1351,9 @@ namespace AvaloniaRichEditor.Formatters
             string size = "";
             if (!double.IsNaN(w) && w > 0) size += $" width=\"{(int)w}\"";
             if (!double.IsNaN(h) && h > 0) size += $" height=\"{(int)h}\"";
+            // The accessibility description. Standard HTML, so it also survives a paste into anything
+            // else that understands <img alt>.
+            if (!string.IsNullOrEmpty(alt)) size += $" alt=\"{AttrEscape(alt)}\"";
             if (opensParagraph) size += " data-are-opens=\"1\"";
             return $"<img src=\"data:{m};base64,{b64}\"{size}/>";
         }

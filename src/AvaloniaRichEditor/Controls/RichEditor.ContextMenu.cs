@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -502,6 +502,8 @@ public partial class RichEditor
         // cell image doesn't have (mirrors the inline-image menu's guard inside cells).
         items.Add(CheckItem(Loc("InlineWithText"), false, () => ConvertImageBlockToInline(img), img.Parent is FlowDocument));
         items.Add(MarginMenu(img));
+        // Accessibility description (HTML alt). Round-trips through JSON/.flow and HTML.
+        items.Add(Mi(Loc("AltText"), () => { _ = EditImageAltTextAsync(img, null); }));
         // File ops: replace / save.
         items.Add(new Separator());
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
@@ -543,6 +545,8 @@ public partial class RichEditor
         // disabled inside table cells, which cannot host block siblings.
         bool canBlock = Document != null && Document.Blocks.IndexOf(p) >= 0;
         items.Add(CheckItem(Loc("InlineWithText"), true, () => ConvertInlineImageToBlock(p, img), canBlock));
+        // Accessibility description (HTML alt). Round-trips through JSON/.flow and HTML.
+        items.Add(Mi(Loc("AltText"), () => { _ = EditImageAltTextAsync(null, img); }));
         // File ops: replace / save.
         items.Add(new Separator());
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceInlineImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));

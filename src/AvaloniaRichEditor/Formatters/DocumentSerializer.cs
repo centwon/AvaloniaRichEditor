@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
@@ -152,6 +152,7 @@ public static class DocumentSerializer
                     ImageRef = PoolImage(pool, img.RawBytes, img.MimeType, img.RawBytes == null ? img.Image : null),
                     Width = NanToNull(img.Width),
                     Height = NanToNull(img.Height),
+                    Alt = img.AltText,
                     Indent = img.Indent,
                     MarginTop = img.MarginTop,
                     MarginBottom = img.MarginBottom
@@ -255,7 +256,8 @@ public static class DocumentSerializer
                     Type = "Image",
                     ImageRef = PoolImage(pool, im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null),
                     Width = NanToNull(im.Width),
-                    Height = NanToNull(im.Height)
+                    Height = NanToNull(im.Height),
+                    Alt = im.AltText
                 });
             else if (inline is InlineTable it)
                 d.Inlines.Add(new InlineDto { Type = "Table", Table = BlockToDto(it.Table, pool) });
@@ -284,6 +286,7 @@ public static class DocumentSerializer
                     {
                         Width = d.Width ?? double.NaN,
                         Height = d.Height ?? double.NaN,
+                        AltText = d.Alt,
                         Indent = d.Indent,
                         MarginTop = d.MarginTop ?? 0,
                         MarginBottom = d.MarginBottom ?? 10
@@ -395,7 +398,8 @@ public static class DocumentSerializer
                     var im = new InlineImage
                     {
                         Width = id.Width ?? 16,
-                        Height = id.Height ?? 16
+                        Height = id.Height ?? 16,
+                        AltText = id.Alt
                     };
                     if (ResolveImage(id.ImageRef, id.ImageBase64, id.MimeType, pool) is { } img)
                         im.SetImageData(img.Bytes, img.Mime);
@@ -554,6 +558,7 @@ internal class BlockDto
 
     // Image block
     public string? ImageRef { get; set; } // v2: key into FlowDocumentDto.Images
+    public string? Alt { get; set; } // accessibility description; omitted when null (format unchanged)
     public string? ImageBase64 { get; set; } // v1 legacy: inline base64 (read fallback)
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
@@ -592,6 +597,7 @@ internal class InlineDto
 
     // Inline image
     public string? ImageRef { get; set; } // v2: key into FlowDocumentDto.Images
+    public string? Alt { get; set; } // accessibility description; omitted when null
     public string? ImageBase64 { get; set; } // v1 legacy: inline base64 (read fallback)
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
