@@ -59,9 +59,34 @@ public partial class RichEditor
     }
 
     /// <summary>Toggles bold on the current selection (or the caret run).</summary>
-    public void ToggleBold() { ApplyStyleToSelection(r => r.FontWeight = r.FontWeight == FontWeight.Bold ? FontWeight.Normal : FontWeight.Bold); }
+    public void ToggleBold()
+    {
+        bool on = !SelectionAll(r => r.FontWeight == FontWeight.Bold, GetCaretFormat().Bold);
+        ApplyStyleToSelection(r => r.FontWeight = on ? FontWeight.Bold : FontWeight.Normal);
+    }
     /// <summary>Toggles italic on the current selection (or the caret run).</summary>
-    public void ToggleItalic() { ApplyStyleToSelection(r => r.FontStyle = r.FontStyle == FontStyle.Italic ? FontStyle.Normal : FontStyle.Italic); }
+    public void ToggleItalic()
+    {
+        bool on = !SelectionAll(r => r.FontStyle == FontStyle.Italic, GetCaretFormat().Italic);
+        ApplyStyleToSelection(r => r.FontStyle = on ? FontStyle.Italic : FontStyle.Normal);
+    }
+
+    // Word rule for the toggles: the selection as a WHOLE decides the direction — off only when every
+    // selected run already has it, otherwise on for all. Flipping run by run turned "normal BOLD normal"
+    // into "BOLD normal BOLD". With nothing selected the caret format decides.
+    private bool SelectionAll(Func<Run, bool> has, bool caretState)
+    {
+        List<Run> runs;
+        if (SelectedCellsBlock() is { } cells)
+            runs = CellBlockParagraphs(cells).SelectMany(p => p.Inlines.OfType<Run>()).ToList();
+        else if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
+            runs = new TextRange(_selectionStart, _selectionEnd).GetRichRuns();
+        else
+            return caretState;
+        // GetRichRuns stands in "\n" runs for paragraph breaks; they carry no formatting of their own.
+        runs.RemoveAll(r => string.IsNullOrEmpty(r.Text) || r.Text.All(ch => ch == '\n'));
+        return runs.Count > 0 && runs.All(has);
+    }
     /// <summary>Sets the font size of the current selection (or the caret run).</summary>
     public void SetFontSize(double size) { ApplyStyleToSelection(r => r.FontSize = size); }
 
@@ -322,11 +347,17 @@ public partial class RichEditor
 
     /// <summary>Sets the heading level of every selected paragraph (1–6 = h1–h6, 0 = body); the caret
     /// paragraph alone when nothing is selected.
-    /// The heading's larger, bold look is applied at layout time (to runs left at the body default),
-    /// not baked into the runs — so toggling a heading on and back off never overwrites or loses a
-    /// run's manually-set font size.</summary>
+    /// The heading's larger, bold look is applied at layout time to runs at the body default size, so
+    /// applying a heading (1–6) resets its runs to that default, like applying a Word style: a size
+    /// baked into the runs (an imported &lt;h1&gt;, an earlier manual size) would otherwise pin the text
+    /// and switching Heading 1 → Heading 2 would not change it. Reverting to body (0) touches no run.</summary>
     public void SetHeading(int level)
-        => ApplyToSelectedParagraphs(p => p.HeadingLevel = level);
+        => ApplyToSelectedParagraphs(p =>
+        {
+            p.HeadingLevel = level;
+            if (level is >= 1 and <= 6)
+                foreach (var inl in p.Inlines) if (inl is Run r) r.FontSize = BodyFontSizePt;
+        });
 
     /// <summary>Toggles blockquote styling (indented, with a quote bar) on every selected paragraph
     /// (the caret paragraph when nothing is selected).</summary>
@@ -340,23 +371,25 @@ public partial class RichEditor
     }
 
     /// <summary>Toggles strikethrough on the current selection (or the caret run).</summary>
-    public void ToggleStrikethrough() { ApplyStyleToSelection(r => r.TextDecorations = ToggleDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)); }
+    public void ToggleStrikethrough() => ToggleDecoration(TextDecorationLocation.Strikethrough, GetCaretFormat().Strike);
     /// <summary>Toggles underline on the current selection (or the caret run).</summary>
-    public void ToggleUnderline() { ApplyStyleToSelection(r => r.TextDecorations = ToggleDecoration(r.TextDecorations, TextDecorationLocation.Underline)); }
+    public void ToggleUnderline() => ToggleDecoration(TextDecorationLocation.Underline, GetCaretFormat().Underline);
 
-    // Toggles a single decoration (underline/strikethrough) while preserving the other, so the two
-    // can coexist on the same run instead of overwriting each other.
-    private static TextDecorationCollection? ToggleDecoration(TextDecorationCollection? current, TextDecorationLocation loc)
+    private void ToggleDecoration(TextDecorationLocation loc, bool caretState)
+    {
+        bool on = !SelectionAll(r => HasDeco(r, loc), caretState);
+        ApplyStyleToSelection(r => r.TextDecorations = SetDecoration(r.TextDecorations, loc, on));
+    }
+
+    // Sets or clears a single decoration (underline/strikethrough) while preserving the other, so the
+    // two can coexist on the same run instead of overwriting each other.
+    private static TextDecorationCollection? SetDecoration(TextDecorationCollection? current, TextDecorationLocation loc, bool on)
     {
         var result = new TextDecorationCollection();
-        bool had = false;
         if (current != null)
             foreach (var d in current)
-            {
-                if (d.Location == loc) { had = true; continue; }
-                result.Add(d);
-            }
-        if (!had) result.Add(new TextDecoration { Location = loc });
+                if (d.Location != loc) result.Add(d);
+        if (on) result.Add(new TextDecoration { Location = loc });
         return result.Count > 0 ? result : null;
     }
 
