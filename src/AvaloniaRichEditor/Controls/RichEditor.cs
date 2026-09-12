@@ -573,28 +573,96 @@ public partial class RichEditor : Control
         return false;
     }
 
+    // Where text typed at logical offset k goes, and whose character format it takes — the ONE rule for
+    // insertion (TryInsertTextCore) and for the caret report (CaretFormatRun), so the toolbar shows what
+    // typing will produce. Word's rule: the nearest text BEFORE the caret, skipping inline objects; with
+    // none before, the nearest after. Until 2026-09-12 insertion and report each had their own rule and
+    // disagreed beside images — measured at 6 caret positions: the report fell back to the paragraph's
+    // FIRST run, typing wrote a plain new run (or joined the run after the image).
+    //   Run  — the format source; null when the paragraph has no run at all.
+    //   Into — the typed text goes INTO Run at this local index; -1 = into a new run cloned from Run,
+    //          inserted at inline index At.
+    //   Link — the typed text continues Run's hyperlink. Only strictly inside a link (the characters on
+    //          both sides of the caret carry it): typing at a link's end or start writes plain text, as in
+    //          Word. It used to extend the link from either edge. (Backported from the WinUI port.)
+    private static (Run? Run, int Into, int At, bool Link) TypingSource(Paragraph p, int k)
+    {
+        var inls = p.Inlines;
+        int holdsPrev = -1, holdsPrevStart = 0; // the inline holding character k-1
+        int pos = 0;
+        for (int i = 0; i < inls.Count; i++)
+        {
+            int len = InlineLen(inls[i]);
+            if (pos < k && k <= pos + len) { holdsPrev = i; holdsPrevStart = pos; break; }
+            pos += len;
+        }
+        int at = holdsPrev + 1; // a new run goes right after the character before the caret (0 at the start)
+
+        // The run holding character k-1: the typed text joins it.
+        if (holdsPrev >= 0 && inls[holdsPrev] is Run t)
+        {
+            int end = holdsPrevStart + InlineLen(t);
+            bool link = !string.IsNullOrEmpty(t.NavigateUri)
+                && (k < end || NextTextRun(inls, holdsPrev)?.NavigateUri == t.NavigateUri);
+            bool into = link || string.IsNullOrEmpty(t.NavigateUri);
+            return (t, into ? k - holdsPrevStart : -1, at, link);
+        }
+        // Character k-1 is an object (or there is none): the nearest run before, skipping objects...
+        for (int i = holdsPrev - 1; i >= 0; i--)
+            if (inls[i] is Run b) return (b, -1, at, false);
+        // ...else the nearest after. Touching the caret (no object between), the text goes into it.
+        for (int i = at; i < inls.Count; i++)
+            if (inls[i] is Run a)
+            {
+                bool touching = i == at;
+                return (a, touching && string.IsNullOrEmpty(a.NavigateUri) ? 0 : -1, at, false);
+            }
+        return (null, -1, at, false);
+    }
+
+    // The first run after inline index i that holds a character (empty runs hold none), or null when an
+    // object or the paragraph's end comes first.
+    private static Run? NextTextRun(IList<Inline> inls, int i)
+    {
+        for (int j = i + 1; j < inls.Count; j++)
+        {
+            if (inls[j] is not Run r) return null;
+            if (!string.IsNullOrEmpty(r.Text)) return r;
+        }
+        return null;
+    }
+
+    // The run whose character format the caret shows — TypingSource's, so the toolbar shows what typing
+    // will produce — with any pending caret format (a toggle at an empty position) previewed on a clone so
+    // the document stays untouched. Shared with the character toggles.
+    private Run? CaretFormatRun()
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null) return null;
+        var (run, _, _, link) = TypingSource(p, _caretPosition.Offset);
+        bool dropLink = run != null && !link && !string.IsNullOrEmpty(run.NavigateUri);
+        bool pending = _pendingCaretStyles is { Count: > 0 };
+        if (!dropLink && !pending) return run;
+        // A clone: parented to the caret paragraph, so a style reading its paragraph (ClearFormatting's
+        // heading-aware size) previews what it will do to the typed run.
+        var probe = run != null ? (Run)run.Clone() : new Run();
+        probe.Parent = p;
+        if (dropLink) probe.NavigateUri = null;
+        if (pending) foreach (var a in _pendingCaretStyles!) a(probe);
+        return probe;
+    }
+
     /// <summary>Returns the formatting snapshot at the current caret position for toolbar state display.</summary>
     public CaretFormat GetCaretFormat()
     {
         var p = _caretPosition.Paragraph;
-        Run? run = null;
-        if (p != null)
-        {
-            run = RunAtOffset(p, _caretPosition.Offset > 0 ? _caretPosition.Offset - 1 : 0);
-            if (run == null) foreach (var inl in p.Inlines) if (inl is Run r0) { run = r0; break; }
-        }
-        // A pending caret format (toggle at an empty position) shows in the toolbar before any
-        // text is typed — preview it on a clone so the document stays untouched.
-        if (_pendingCaretStyles is { Count: > 0 } pend)
-        {
-            var probe = run != null ? (Run)run.Clone() : new Run();
-            foreach (var a in pend) a(probe);
-            run = probe;
-        }
+        var run = CaretFormatRun();
         bool heading = p is { HeadingLevel: >= 1 and <= 6 };
         double headingSize = heading ? HeadingFontSize(p!.HeadingLevel) : 0;
         return new CaretFormat(
-            run?.FontWeight == FontWeight.Bold,
+            // As DRAWN (DrawnBold): a heading is drawn bold whatever its runs say. The raw weight showed the
+            // bold button off over a bold heading. (Underline: HasDeco already applies the link rule.)
+            run != null ? DrawnBold(run, heading) : heading,
             run?.FontStyle == FontStyle.Italic,
             HasDeco(run, TextDecorationLocation.Underline),
             HasDeco(run, TextDecorationLocation.Strikethrough),
@@ -946,27 +1014,21 @@ public partial class RichEditor : Control
         TextRange.CoalesceRuns(p); // a removed run can leave equal-format neighbours adjacent
     }
 
+    // Inserts text at localIndex, formatted by TypingSource — the rule the caret report shows. Next to an
+    // image this used to write a plain new run (the formatting of the text around the image was lost).
     private void TryInsertTextCore(Paragraph p, string text, int localIndex)
     {
-        int currentIndex = 0;
-        for (int i = 0; i < p.Inlines.Count; i++)
+        var (src, into, at, link) = TypingSource(p, localIndex);
+        if (src != null && into >= 0)
         {
-            int len = InlineLen(p.Inlines[i]);
-            if (p.Inlines[i] is Run run && localIndex >= currentIndex && localIndex <= currentIndex + len)
-            {
-                run.Text = (run.Text ?? "").Insert(localIndex - currentIndex, text);
-                return;
-            }
-            // Insertion point sits exactly before an atomic object inline (image, table) -> insert a new
-            // run there (so typing right before a leading inline object lands in front of it, not appended).
-            if (p.Inlines[i] is not Run && localIndex == currentIndex)
-            {
-                p.Inlines.Insert(i, new Run { Text = text, Parent = p });
-                return;
-            }
-            currentIndex += len;
+            src.Text = (src.Text ?? "").Insert(into, text);
+            return;
         }
-        p.Inlines.Add(new Run { Text = text, Parent = p });
+        var run = src != null ? (Run)src.Clone() : new Run();
+        run.Text = text;
+        run.Parent = p;
+        if (!link) run.NavigateUri = null;
+        p.Inlines.Insert(at, run);
     }
 
     // Vertical space a horizontal-rule (DividerBlock) occupies when laid out.
@@ -1126,6 +1188,10 @@ public partial class RichEditor : Control
     // DefaultFontSize.
     private static double DrawnRunSize(Run r, bool heading, double headingSize, double defaultSize)
         => heading && RunSizeIsBodyDefault(r) ? headingSize : r.FontSize <= 0 ? defaultSize : r.FontSize;
+
+    // Whether a run is DRAWN bold — same pairing as DrawnRunSize: BuildTextLayout draws with it and
+    // GetCaretFormat reports it. A heading is drawn bold whatever its runs say.
+    private static bool DrawnBold(Run r, bool heading) => heading || r.FontWeight == FontWeight.Bold;
 
     // Width reserved to the left of list-item text for its bullet/number marker.
     private const double ListMarkerWidth = 22;
@@ -1348,7 +1414,7 @@ public partial class RichEditor : Control
             if (inline is Run r && !string.IsNullOrEmpty(r.Text))
             {
                 var family = string.IsNullOrEmpty(r.FontFamily) ? defaultFamily : new FontFamily(r.FontFamily);
-                var weight = heading ? FontWeight.Bold : r.FontWeight;
+                var weight = DrawnBold(r, heading) ? FontWeight.Bold : r.FontWeight;
                 var typeface = new Typeface(family, r.FontStyle, weight);
                 TextDecorationCollection? decos = r.TextDecorations;
                 if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
