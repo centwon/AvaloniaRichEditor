@@ -304,6 +304,7 @@ public partial class RichEditor : Control
         if (change.Property == PageSizeProperty || change.Property == ShowPageBoundariesProperty
             || change.Property == PageOrientationProperty)
         {
+            RecordHostPageSetup(change.Property); // a page property set by code is the host's default (see there)
             CapturePageSetupToDocument(); // persist the page change into the document model
             _pageBreaks = null;   // wrap width / paper changes between modes -> stale break positions
             _layoutCache.Clear(); // cached layouts were shaped at the other mode's width
@@ -314,6 +315,7 @@ public partial class RichEditor : Control
         if (change.Property == PageHeaderProperty || change.Property == PageFooterProperty
             || change.Property == ShowPageNumbersProperty)
         {
+            RecordHostPageSetup(change.Property); // a page property set by code is the host's default (see there)
             CapturePageSetupToDocument(); // persist the page change into the document model
             InvalidateVisual(); // margin-band chrome only — pagination is unaffected
         }
@@ -348,6 +350,10 @@ public partial class RichEditor : Control
         _cellSelMode = false;
         _cellSelTable = null;
         _pendingCaretStyles = null;
+        // An armed format painter belongs to the document it was armed in: carried across a swap it would
+        // paint the NEW document's next selection with the OLD one's format. (Backported 2026-09-12 from
+        // the WinUI port.)
+        _painterFmt = null;
 
         // A drag can only be in flight for a block of the old document.
         _isResizingColumn = false; _resizingTable = null;
@@ -585,12 +591,19 @@ public partial class RichEditor : Control
             foreach (var a in pend) a(probe);
             run = probe;
         }
+        bool heading = p is { HeadingLevel: >= 1 and <= 6 };
+        double headingSize = heading ? HeadingFontSize(p!.HeadingLevel) : 0;
         return new CaretFormat(
             run?.FontWeight == FontWeight.Bold,
             run?.FontStyle == FontStyle.Italic,
             HasDeco(run, TextDecorationLocation.Underline),
             HasDeco(run, TextDecorationLocation.Strikethrough),
-            run != null && run.FontSize > 0 ? run.FontSize : BodyFontSizePt,
+            // The size the text is DRAWN at, by the renderer's own rule (DrawnRunSize): the toolbar shows it
+            // and IncreaseFontSize steps from it. The raw run size read 10 for unset text drawn at the
+            // host's DefaultFontSize and for a heading's unstyled runs drawn at the heading size — and
+            // "larger" then SHRANK both to 10.5. (Backported 2026-09-12 from the WinUI port.)
+            run != null ? DrawnRunSize(run, heading, headingSize, DefaultFontSize)
+                        : heading ? headingSize : DefaultFontSize,
             run?.FontFamily,
             p?.TextAlignment ?? TextAlignment.Left,
             p?.ListType ?? ListKind.None,
@@ -830,6 +843,30 @@ public partial class RichEditor : Control
         set => SetValue(AutoLinkOnTypeProperty, value);
     }
 
+    // Sentence punctuation after a URL is not part of it — but a closing bracket that CLOSES one inside the
+    // URL is: Wikipedia's .../wiki/Foo_(bar). Trimming ')' unconditionally linked ".../Foo_(bar", a different
+    // page. A closer is dropped only while the token has more closers than openers, so
+    // "(see https://example.com)" still loses its ')'. (Backported 2026-09-12 from the WinUI port.)
+    internal static string TrimUrlTail(string token)
+    {
+        while (token.Length > 0)
+        {
+            char c = token[^1];
+            if (c is '.' or ',' or ';' or ':' or '!' or '?' or '"' or '\'') { token = token[..^1]; continue; }
+            if (c == ')' && Count(token, ')') > Count(token, '(')) { token = token[..^1]; continue; }
+            if (c == ']' && Count(token, ']') > Count(token, '[')) { token = token[..^1]; continue; }
+            break;
+        }
+        return token;
+
+        static int Count(string s, char ch)
+        {
+            int n = 0;
+            foreach (var x in s) if (x == ch) n++;
+            return n;
+        }
+    }
+
     // Called after a whitespace/Enter commit at `boundary` (the offset just past the token). Applies a
     // NavigateUri to a bare http(s):// or www. URL token, trimming trailing punctuation and validating the
     // result as an absolute http(s) URI with a dotted host. `www.` is prefixed with https://.
@@ -840,7 +877,7 @@ public partial class RichEditor : Control
         int start = end;
         while (start > 0 && !char.IsWhiteSpace(plain[start - 1]) && plain[start - 1] != ObjChar) start--;
         if (end - start < 8) return; // shortest sensible candidate ("http://x", "www.a.bc")
-        string token = plain.Substring(start, end - start).TrimEnd('.', ',', ';', ':', ')', ']', '!', '?', '"', '\'');
+        string token = TrimUrlTail(plain.Substring(start, end - start));
         if (token.Length < 8) return;
 
         bool www = token.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
@@ -1081,6 +1118,14 @@ public partial class RichEditor : Control
     // is unset (<=0) or the 10 pt model default. An explicitly-sized run keeps its own size.
     private static bool RunSizeIsBodyDefault(Run r) => r.FontSize <= 0 || Math.Abs(r.FontSize - BodyFontSizePt) < 0.01;
 
+    // The size (pt) a run is DRAWN at — the one rule, used by BuildTextLayout to draw it and by
+    // GetCaretFormat to report it, so the toolbar cannot show a size the text is not shown at (and
+    // IncreaseFontSize, which steps from the reported size, cannot shrink text it means to grow). In a
+    // heading an unstyled run takes the heading's size; otherwise an unset size (<= 0) falls back to
+    // DefaultFontSize.
+    private static double DrawnRunSize(Run r, bool heading, double headingSize, double defaultSize)
+        => heading && RunSizeIsBodyDefault(r) ? headingSize : r.FontSize <= 0 ? defaultSize : r.FontSize;
+
     // Width reserved to the left of list-item text for its bullet/number marker.
     private const double ListMarkerWidth = 22;
 
@@ -1306,8 +1351,7 @@ public partial class RichEditor : Control
                 var typeface = new Typeface(family, r.FontStyle, weight);
                 TextDecorationCollection? decos = r.TextDecorations;
                 if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
-                double size = r.FontSize <= 0 ? defaultSize : r.FontSize; // pt
-                if (heading && RunSizeIsBodyDefault(r)) size = headingSize;
+                double size = DrawnRunSize(r, heading, headingSize, defaultSize); // pt
                 if (size > maxRunPt) maxRunPt = size;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,

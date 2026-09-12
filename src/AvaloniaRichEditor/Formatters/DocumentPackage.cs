@@ -64,11 +64,10 @@ public static class DocumentPackage
 
     /// <summary>Reads a <c>.flow</c> package from <paramref name="source"/>. Image decoding is deferred
     /// to first render. The stream is left open.</summary>
-    /// <exception cref="InvalidDataException">The stream is not a readable <c>.flow</c> package (not a
-    /// zip, or damaged).</exception>
+    /// <exception cref="InvalidDataException">The stream is not a readable <c>.flow</c> package: not a zip,
+    /// damaged, or a zip with no <c>document.json</c> (a .docx, say — every package this library writes
+    /// has one).</exception>
     /// <exception cref="JsonException">The package's <c>document.json</c> is not valid JSON.</exception>
-    /// <remarks>A package with no <c>document.json</c> is not an error — it reads as an empty document,
-    /// so a container that carries only images still loads.</remarks>
     public static FlowDocument Load(Stream source)
     {
         var (dto, pool) = ReadPackage(source);
@@ -85,7 +84,11 @@ public static class DocumentPackage
         {
             using var zip = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: true);
             var docEntry = zip.GetEntry("document.json");
-            if (docEntry == null) return (null, pool);
+            // A zip without document.json is some other zip — a .docx is one. It used to read as an EMPTY
+            // document, which replaced whatever was open and marked it saved, so the next save wrote the
+            // blank over the original. Reported like any other unreadable package. (Backported 2026-09-12
+            // from the WinUI port, where it was a user decision.)
+            if (docEntry == null) throw new InvalidDataException("The zip has no document.json.");
             FlowDocumentDto? dto;
             using (var s = docEntry.Open())
                 dto = JsonSerializer.Deserialize(s, DocumentJsonContext.Default.FlowDocumentDto);

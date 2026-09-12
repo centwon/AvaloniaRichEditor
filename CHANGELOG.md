@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed / Changed — backported from the WinUI peer's four verification rounds (2026-09-12)
+
+Each item was first checked against this code and found identical — a shared defect, or a shared design the
+peer changed by user decision. `PortBackportBundleTests` (26) pins them; 18 falsification runs each failed
+only the intended test. Suite 889 → 915.
+
+- **Security-adjacent — rich content pasted into an editor with `AllowImages` / `AllowTables` off kept its
+  pictures and tables.** The paste paths checked only `AllowRichPaste` (the in-app inline path alone dropped
+  inline images). Now every rich paste (in-app, RTF, HTML) and `InsertHtml` is adapted first: pictures are
+  dropped, tables are **unwrapped into their cells' text** in reading order; content the flags remove
+  entirely inserts nothing (no empty undo step). Opening a document (`Load*`) is not an insert and is not
+  adapted. ⚠️ Behaviour change.
+- ⚠️ **`LoadJson` / `LoadJsonAsync` / `LoadPackageAsync` reject input that is not a document of this
+  library** instead of replacing the open document with an empty one (which marked it saved, so the next save
+  wrote the blank over the original): a JSON object with no `Blocks` (another application's settings file)
+  is a `JsonException`, a zip with no `document.json` (a .docx) an `InvalidDataException`. A literal `null`
+  still reads as an empty document; the public `DocumentSerializer.Deserialize` stays lenient.
+  `DocumentPackage.Load` rejects a zip with no `document.json` too — the test that pinned the old carve-out
+  ("not damaged, reads as empty") is reversed.
+- ⚠️ **A document with no page setup — and a new one (`Clear`) — starts from the host's page setup**, not
+  the previous document's. Opening an A5-landscape file and then a plain one turned the plain one A5
+  landscape with the first file's header, and saving wrote them in. Host values are recorded per property;
+  values applied from a document and the toolbar's paper/orientation pickers (an edit of the open
+  document) are not host values.
+- **The caret format reports the size the text is drawn at.** It reported the raw run size — "10" for unset
+  text drawn at the host's `DefaultFontSize`, and for a heading's unstyled runs drawn at the heading size —
+  and `IncreaseFontSize`, which steps from it, **shrank** both to 10.5. One rule (`DrawnRunSize`) now feeds
+  both the layout and the caret format. (Applying a heading resets run sizes to the body default here, so
+  this case was common.)
+- **An armed format painter is disarmed on a document swap** — it painted the new document's next selection
+  with the old one's format.
+- **Auto-link: the Tab key links the URL before it** (the contract names space, tab and Enter; Tab inserts
+  four spaces and never linked), and **a balanced closing bracket stays in the URL** — Wikipedia's
+  `…/Foo_(bar)` was linked as `…/Foo_(bar`.
+
 ### Fixed — three user-reported formatting/table defects
 
 - **Bold/italic/underline/strikethrough toggles decide from the whole selection** (Word rule): off only
