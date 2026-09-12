@@ -593,6 +593,16 @@ public partial class RichEditor
         var loc = cell != null ? FindCell(cell) : null;
         int r = loc?.r ?? -1;
         int c = loc?.c ?? -1;
+        // "Below"/"right" of a merged cell means past its whole merged area. At r+1 the new row fell
+        // INSIDE a vertical merge: the merge just grew over it and only the other columns got a row.
+        int rBelow = r + 1, cRight = c + 1;
+        if (loc is { } at)
+        {
+            var (ar, ac) = at.tb.AnchorOf(at.r, at.c);
+            var (cs, rs) = at.tb.SpanOf(ar, ac);
+            rBelow = ar + System.Math.Max(1, rs);
+            cRight = ac + System.Math.Max(1, cs);
+        }
         // Explicit way into cell-selection mode. Dragging across cells is the other one, but that can
         // never produce a ONE-cell block, so without this a single cell couldn't be selected as a unit.
         items.Add(Mi(Loc("SelectCell"), () =>
@@ -603,11 +613,11 @@ public partial class RichEditor
         }, loc != null));
         items.Add(new Separator());
         items.Add(Mi(Loc("InsertRowAbove"), () => TableInsertRow(tb, r), r >= 0, RichEditorIcon.InsertRowAbove));
-        items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, r + 1), r >= 0, RichEditorIcon.InsertRowBelow));
+        items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, rBelow), r >= 0, RichEditorIcon.InsertRowBelow));
         items.Add(Mi(Loc("DeleteRow"), () => TableDeleteRow(tb, r), r >= 0 && tb.Rows > 1, RichEditorIcon.DeleteRow));
         items.Add(new Separator());
         items.Add(Mi(Loc("InsertColumnLeft"), () => TableInsertColumn(tb, c), c >= 0, RichEditorIcon.InsertColumnLeft));
-        items.Add(Mi(Loc("InsertColumnRight"), () => TableInsertColumn(tb, c + 1), c >= 0, RichEditorIcon.InsertColumnRight));
+        items.Add(Mi(Loc("InsertColumnRight"), () => TableInsertColumn(tb, cRight), c >= 0, RichEditorIcon.InsertColumnRight));
         items.Add(Mi(Loc("DeleteColumn"), () => TableDeleteColumn(tb, c), c >= 0 && tb.Columns > 1, RichEditorIcon.DeleteColumn));
         items.Add(new Separator());
         var range = SelectedCellRange(tb);

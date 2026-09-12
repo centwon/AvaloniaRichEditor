@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — three user-reported formatting/table defects
+
+- **Bold/italic/underline/strikethrough toggles decide from the whole selection** (Word rule): off only
+  when every selected run already has the format, otherwise on for all. They flipped run by run, so
+  Ctrl+B over "normal **bold** normal" gave "**normal** bold **normal**".
+- ⚠️ **Behaviour change — applying a heading (1–6) resets its runs' font size to the body default**, like
+  applying a Word style. The heading size is applied at layout only to body-default runs, so a size baked
+  into the runs (an imported `<h1>`, the demo's headings, 11 pt body text) pinned the text: Heading 1 →
+  Heading 2 did not change the size. Reverting to body text (0) still touches no run; weights are kept.
+- **"Insert row below" / "Insert column right" on a merged cell insert past the whole merged area.** They
+  inserted at anchor+1 — inside a vertical merge, which grew over the new row, so only the neighbouring
+  columns seemed to get a row.
+
 ### Fixed — the caret jumped to the next line when a line wrapped mid-word (affinity, from the peer)
 
 At a soft wrap, "end of line k" and "start of line k+1" are the SAME offset, and a text layout always

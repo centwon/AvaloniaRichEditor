@@ -21,8 +21,10 @@ public class RichEditorHeadingTests
     }
 
     [AvaloniaFact]
-    public void SetHeading_DoesNotBakeRunSizesOrWeights()
+    public void SetHeading_ResetsRunSizesToBodyDefault_ButNotWeights()
     {
+        // Like applying a Word style: a size baked into the runs would pin the text, so the heading
+        // size (applied at layout to body-default runs) would never show. Weight is left alone.
         var p = TestHelpers.Para(
             new Run { Text = "a", FontSize = 14 },
             new Run { Text = "big", FontSize = 30 });
@@ -31,25 +33,40 @@ public class RichEditorHeadingTests
         ed.SetHeading(1);
 
         Assert.Equal(1, p.HeadingLevel);
-        // Runs are untouched — the heading look comes from layout, not from rewriting the model.
-        Assert.Equal(14, ((Run)p.Inlines[0]).FontSize, 3);
-        Assert.Equal(30, ((Run)p.Inlines[1]).FontSize, 3);
+        Assert.Equal(10, ((Run)p.Inlines[0]).FontSize, 3);
+        Assert.Equal(10, ((Run)p.Inlines[1]).FontSize, 3);
         Assert.Equal(FontWeight.Normal, ((Run)p.Inlines[0]).FontWeight);
     }
 
     [AvaloniaFact]
-    public void SetHeading_ThenRevertToBody_PreservesManualRunSize()
+    public void SetHeading_ToBody_LeavesRunSizes()
     {
-        var p = TestHelpers.Para(
-            new Run { Text = "a", FontSize = 14 },
-            new Run { Text = "big", FontSize = 30 });
+        var p = TestHelpers.Para(new Run { Text = "big", FontSize = 30 });
         var ed = EditorWithCaretIn(p);
 
-        ed.SetHeading(2);
-        ed.SetHeading(0); // back to body — the old code reset every run to 14/Normal here
+        ed.SetHeading(0);
 
-        Assert.Equal(0, p.HeadingLevel);
-        Assert.Equal(30, ((Run)p.Inlines[1]).FontSize, 3); // user's size survived the round trip
+        Assert.Equal(30, ((Run)p.Inlines[0]).FontSize, 3);
+    }
+
+    [AvaloniaFact]
+    public void Heading1ToHeading2_ChangesRenderedSize_EvenWhenSizeWasBaked()
+    {
+        // The reported bug: an <h1> imported from HTML (or the demo's headings) carried 20pt in its
+        // runs, so switching to Heading 2 left the text at Heading 1 size.
+        var p = TestHelpers.Para(new Run { Text = "Title", FontSize = 20 });
+        p.HeadingLevel = 1;
+        var ed = EditorWithCaretIn(p);
+        ed.PageSize = RichEditorPageSize.Continuous;
+
+        ed.SetHeading(1);
+        ed.Measure(new Size(800, double.PositiveInfinity));
+        double h1 = ed.DesiredSize.Height;
+        ed.SetHeading(2);
+        ed.Measure(new Size(800, double.PositiveInfinity));
+        double h2 = ed.DesiredSize.Height;
+
+        Assert.True(h2 < h1, $"Heading 2 should render smaller than Heading 1 ({h2} vs {h1})");
     }
 
     [AvaloniaFact]
