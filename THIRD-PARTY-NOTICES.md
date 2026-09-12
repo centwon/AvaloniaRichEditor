@@ -14,8 +14,22 @@ terms of its own license, reproduced or linked below.
 - **License:** MIT
 - **Copyright (c) AvaloniaUI OÜ**
 
-Includes the `Avalonia`, `Avalonia.Desktop`, `Avalonia.Themes.Fluent`, and
-`Avalonia.Fonts.Inter` packages.
+Includes the `Avalonia`, `Avalonia.Skia`, `Avalonia.Desktop`, `Avalonia.Themes.Fluent`,
+and `Avalonia.Fonts.Inter` packages.
+
+---
+
+## SkiaSharp and HarfBuzzSharp
+
+- **Project:** https://github.com/mono/SkiaSharp
+- **License:** MIT
+- **Copyright (c) 2015-2016 Xamarin, Inc.; Copyright (c) 2017-2018 Microsoft Corporation**
+
+Delivered with `Avalonia.Skia`. `SavePdf` writes its vector PDF through SkiaSharp's
+PDF backend and subsets the embedded fonts with the HarfBuzz native library that
+HarfBuzzSharp ships. The native libraries bundle Skia (BSD-3-Clause, Copyright (c)
+Google Inc.) and HarfBuzz ("Old MIT" license, Copyright (c) the HarfBuzz authors);
+their license texts ship inside the SkiaSharp and HarfBuzzSharp packages.
 
 ---
 
