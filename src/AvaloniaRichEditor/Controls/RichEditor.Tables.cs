@@ -269,7 +269,17 @@ public partial class RichEditor
         {
             if (shift) { ShiftTabOutsideTable(); return; }
             if (Document != null) PushUndo();
+            // Tab completes the token before it the way a typed space does — auto-link names space, tab
+            // and Enter. The key inserts four spaces and InsertText auto-links only a single typed
+            // whitespace, so Tab never linked. (Backported 2026-09-12 from the WinUI port.)
+            var tabPara = _caretPosition.Paragraph;
+            int tabAt = _caretPosition.Offset;
             InsertText("    ");
+            if (AutoLinkOnType && tabPara != null)
+            {
+                TryAutoLink(tabPara, tabAt);
+                InvalidateVisual(); // the link changes the paragraph's look (underline, colour)
+            }
             return;
         }
 
