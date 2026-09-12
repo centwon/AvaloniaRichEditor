@@ -1118,8 +1118,9 @@ public partial class RichEditor : Control
     // is unset (<=0) or the 10 pt model default. An explicitly-sized run keeps its own size.
     private static bool RunSizeIsBodyDefault(Run r) => r.FontSize <= 0 || Math.Abs(r.FontSize - BodyFontSizePt) < 0.01;
 
-    // The size (pt) a run is DRAWN at — the one rule, used by BuildTextLayout to draw it and by
-    // GetCaretFormat to report it, so the toolbar cannot show a size the text is not shown at (and
+    // The size (pt) a run is DRAWN at — the one rule, used by BuildTextLayout to draw it, by
+    // CaretTextHeight to size the caret, and by GetCaretFormat to report it, so the toolbar cannot show a
+    // size the text is not shown at (and
     // IncreaseFontSize, which steps from the reported size, cannot shrink text it means to grow). In a
     // heading an unstyled run takes the heading's size; otherwise an unset size (<= 0) falls back to
     // DefaultFontSize.

@@ -1353,10 +1353,17 @@ public partial class RichEditor
 
     // Caret bar height from the font size at the caret (not the line height), so the caret stays
     // glyph-sized and baseline-anchored next to tall inline content. 1.4 ≈ line height per em.
+    // The size is the one the text is DRAWN at (DrawnRunSize). The raw run size ignored headings: a
+    // heading's unstyled runs are stored at 10 pt and drawn at the heading size, so every heading got the
+    // same 10 pt caret — measured 19.0 in an H1 whose 20 pt text gets 29.1 in body text (and 19.0 in an H2,
+    // 23.3). Body text hid it: there the caret is clamped to the line box, which is shorter than 1.4 em.
     private double CaretTextHeight(Paragraph p, int offset)
     {
+        bool heading = p.HeadingLevel is >= 1 and <= 6;
+        double headingSize = heading ? HeadingFontSize(p.HeadingLevel) : 0;
         var run = RunAtOffset(p, offset > 0 ? offset - 1 : 0);
-        double fs = run != null && run.FontSize > 0 ? run.FontSize : DefaultFontSize; // pt
+        double fs = run != null ? DrawnRunSize(run, heading, headingSize, DefaultFontSize)
+                                : heading ? headingSize : DefaultFontSize; // pt
         return Math.Ceiling(PtToPx(fs) * 1.4);
     }
 
