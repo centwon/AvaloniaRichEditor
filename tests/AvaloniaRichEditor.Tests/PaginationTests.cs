@@ -211,9 +211,14 @@ public class PaginationTests
         string text = System.Text.Encoding.Latin1.GetString(bytes);
         Assert.StartsWith("%PDF-1.4", head);
         Assert.EndsWith("%%EOF\n", text);
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(text, "/Type /Page ").Count);
+        // Whitespace-tolerant: the raster writer puts a space after "/Page", Skia's vector writer (SavePdf's
+        // default path since 2026-09) a newline — both are one page object.
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(text, @"/Type\s*/Page\b(?!s)").Count);
         Assert.Contains("/Count 2", text);
-        Assert.Contains("/Filter /FlateDecode", text);
+        // Structure, not one writer's encoding: the raster writer always Flate-compresses its page images,
+        // Skia leaves a tiny content stream (these pages hold only empty paragraphs) uncompressed.
+        Assert.Contains("/Root", text);
+        Assert.Contains("startxref", text);
     }
 
     [AvaloniaFact]

@@ -49,6 +49,10 @@
          12.1.1 up for no reason. 12.1.0 is the earliest release without the text-wrapping hang that
          12.0.x has (measured, see CHANGELOG). The tests and the demo build against the current 12.1.x. -->
     <PackageReference Include="Avalonia" Version="12.1.0" />
+    <!-- SavePdf's vector path: pages are drawn into Skia's PDF backend through Avalonia's Skia bridge, and
+         the embedded fonts are cut down with the HarfBuzz native library Avalonia.Skia already ships. A
+         desktop Avalonia app renders with Skia anyway, so this adds no binaries to one. Same floor as above. -->
+    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
