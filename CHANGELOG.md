@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — right-clicking a table with a selection moved the caret away from it (2026-09-14)
+
+With text selected, a right-click in a table cell moved the caret to the clicked cell while the selection stayed
+where it was (measured): the caret was drawn in another cell and Shift+arrow extended from there. The caret now
+stays with the selection, as a right-click in plain text already did (and the WinUI port does). The menu's
+"Table" submenu acts on the caret's table accordingly — built for the table under the pointer, it would have
+addressed that table by the caret table's row/column.
+
 ### Fixed — found in the live check (2026-09-14)
 
 - **Copying a cell block copies the block**: F5's one cell pasted back as the cell's *text*, and a block of

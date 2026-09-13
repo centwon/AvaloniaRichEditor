@@ -262,8 +262,14 @@ public partial class RichEditor
         {
             _selectedBlock = null;
             var tp = GetPositionFromPoint(point);
-            _caretPosition = tp;
-            if (!hasSelection) CollapseSelectionToCaret();
+            // With a selection the right-click acts on it, so the caret stays with it (as the non-table branch and
+            // the WinUI port do). It moved to the clicked cell while the selection stayed where it was: the caret was
+            // drawn in another cell and Shift+arrow extended from there (measured 2026-09-14).
+            if (!hasSelection)
+            {
+                _caretPosition = tp;
+                CollapseSelectionToCaret();
+            }
             // A right-click on the border does what a click there does — the block caret, the table held as
             // a unit — so the menu is the table's own and its Copy takes the table. It opened the text menu,
             // or the table menu with Copy greyed out (live check, 2026-09-13).
@@ -284,7 +290,7 @@ public partial class RichEditor
                 // Editing inside a cell: same caret menu as a top-level paragraph, with the table ops in a
                 // submenu. Target the INNERMOST table the caret is in (a nested table — P4-2b), not the
                 // top-level one GetBlockAtPoint returned, so row/column/merge act on the right table.
-                BuildCaretMenu(items, point, hasSelection, ContextMenuTargetTable(point) ?? tbk);
+                BuildCaretMenu(items, point, hasSelection, MenuCellTable(point, hasSelection, tbk));
         }
         else
         {
@@ -293,7 +299,7 @@ public partial class RichEditor
             // inlines, so GetBlockAtPoint — top-level blocks only — never sees it and the menu used to
             // come up with no table operations at all. Resolving the target from the hit position covers
             // it, exactly as the block-table branch above does.
-            BuildCaretMenu(items, point, hasSelection, ContextMenuTargetTable(point));
+            BuildCaretMenu(items, point, hasSelection, MenuCellTable(point, hasSelection));
         }
 
         ResetCaretBlink();
@@ -321,6 +327,15 @@ public partial class RichEditor
             if (ci.rect.Contains(p)) return ci.img;
         return null;
     }
+
+    // The table whose "Table" submenu the text menu carries. Its row/column items take their cell from the CARET
+    // (AddTableStructureItems gets _caretPosition.Paragraph), so the table has to be the caret's too: with a
+    // selection the right-click keeps the caret, and the table under the pointer could be another one — its rows
+    // would be addressed by the caret table's indices. Without a selection the caret has just moved to the pointer.
+    private TableBlock? MenuCellTable(Point point, bool hasSelection, TableBlock? fallback = null)
+        => hasSelection
+            ? (_caretPosition.Paragraph is { } cp && FindCell(cp) is { } loc ? loc.tb : null)
+            : ContextMenuTargetTable(point) ?? fallback;
 
     // The caret-position menu (inline-image / hyperlink / text), shared by top-level paragraphs and
     // table cells so the two stay identical. `cellTable` non-null means the caret is inside that table's
