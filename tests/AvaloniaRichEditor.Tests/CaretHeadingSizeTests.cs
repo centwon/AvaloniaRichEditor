@@ -41,6 +41,30 @@ public class CaretHeadingSizeTests
         return (double)typeof(RichEditor).GetField("_lastCaretHeight", NP)!.GetValue(ed)!;
     }
 
+    // Before an image at a paragraph's start the caret is sized for the text typed there — the run AFTER
+    // the image (TypingSource). The character before the caret is none and the one after is the image, so
+    // the raw lookup found no run and sized the caret for the 10 pt default.
+    [AvaloniaFact]
+    public void TheCaretBeforeAnImage_IsSizedForTheTextTypedThere()
+    {
+        var ed = new RichEditor();
+        var doc = new FlowDocument();
+        var p = new Paragraph();
+        p.Inlines.Add(new InlineImage { Width = 10, Height = 10 });
+        p.Inlines.Add(new Run { Text = "Mxg", FontSize = 36 });
+        p.Inlines.Add(new Run { Text = "Mxg", FontSize = 12 });
+        doc.Blocks.Add(p);
+        ed.Document = doc;
+        typeof(RichEditor).GetField("_caretPosition", NP)!.SetValue(ed, new TextPointer(p, 0));
+        ed.Measure(new Size(W, double.PositiveInfinity));
+        ed.Arrange(new Rect(0, 0, W, H));
+        new RenderTargetBitmap(new PixelSize((int)W, (int)H)).Render(ed);
+        double beforeImage = (double)typeof(RichEditor).GetField("_lastCaretHeight", NP)!.GetValue(ed)!;
+        double reference = CaretHeight(0, 36);
+        Assert.True(Math.Abs(beforeImage - reference) < 0.5,
+            $"caret before the image {beforeImage:0.0}, a 36pt run's caret {reference:0.0}");
+    }
+
     // An unstyled run (unset, or at the 10 pt body default) in a heading is drawn at the heading's size.
     [AvaloniaTheory]
     [InlineData(1, 10.0, 20.0)]

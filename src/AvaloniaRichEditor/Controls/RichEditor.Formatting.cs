@@ -32,7 +32,7 @@ public partial class RichEditor
         var p = _selectionStart.Paragraph ?? _caretPosition.Paragraph;
         if (p == null) return;
         int off = _selectionStart.Paragraph != null ? _selectionStart.Offset : _caretPosition.Offset;
-        var src = RunAtOffset(p, off) ?? RunAtOffset(p, Math.Max(0, off - 1));
+        var src = RunAtOffset(p, off) ?? RunAtOffset(p, Math.Max(0, off - 1)) ?? TypingSource(p, off).Run;
         if (src == null) return;
         _painterFmt = (src.FontWeight, src.FontStyle, src.TextDecorations,
             src.FontSize, src.FontFamily, src.Foreground, src.Background);
@@ -59,33 +59,84 @@ public partial class RichEditor
     }
 
     /// <summary>Toggles bold on the current selection (or the caret run).</summary>
-    public void ToggleBold()
-    {
-        bool on = !SelectionAll(r => r.FontWeight == FontWeight.Bold, GetCaretFormat().Bold);
-        ApplyStyleToSelection(r => r.FontWeight = on ? FontWeight.Bold : FontWeight.Normal);
-    }
+    public void ToggleBold() => ToggleCharacterFormat(
+        r => r.FontWeight == FontWeight.Bold, (r, on) => r.FontWeight = on ? FontWeight.Bold : FontWeight.Normal,
+        forced: (_, p) => p.HeadingLevel is >= 1 and <= 6); // a heading is drawn bold (DrawnBold)
     /// <summary>Toggles italic on the current selection (or the caret run).</summary>
-    public void ToggleItalic()
+    public void ToggleItalic() => ToggleCharacterFormat(
+        r => r.FontStyle == FontStyle.Italic, (r, on) => r.FontStyle = on ? FontStyle.Italic : FontStyle.Normal);
+
+    // Word rule for the toggles: the target as a WHOLE decides the direction — off only when every
+    // character already has it, otherwise on for all. Flipping run by run turned "normal BOLD normal"
+    // into "BOLD normal BOLD".
+    //
+    // `forced`: where the renderer draws the format whatever the run says (a heading's bold, a plain
+    // link's underline). Such text counts as having it — the toggle judges what is SHOWN, as the toolbar
+    // reports it — and when every targeted character is forced the toggle does nothing and records no undo
+    // step: no change it could make would show. It used to flip a hidden flag in a heading (bold on, bold
+    // off, the screen unchanged), and push an empty undo step on a link. (Backported from the WinUI port.)
+    private void ToggleCharacterFormat(Func<Run, bool> has, Action<Run, bool> set, Func<Run, Paragraph, bool>? forced = null)
     {
-        bool on = !SelectionAll(r => r.FontStyle == FontStyle.Italic, GetCaretFormat().Italic);
-        ApplyStyleToSelection(r => r.FontStyle = on ? FontStyle.Italic : FontStyle.Normal);
+        if (IsReadOnly) return;
+        var targets = ToggleTargets();
+        if (forced != null && targets.Count > 0 && targets.All(x => forced(x.Run, x.Para))) return;
+        bool allOn = targets.Count > 0 && targets.All(x => has(x.Run) || (forced?.Invoke(x.Run, x.Para) ?? false));
+        ApplyStyleToSelection(r => set(r, !allOn));
     }
 
-    // Word rule for the toggles: the selection as a WHOLE decides the direction — off only when every
-    // selected run already has it, otherwise on for all. Flipping run by run turned "normal BOLD normal"
-    // into "BOLD normal BOLD". With nothing selected the caret format decides.
-    private bool SelectionAll(Func<Run, bool> has, bool caretState)
+    // What a toggle judges, read WITHOUT touching the document (ApplyPropertyValue would split runs before
+    // the undo checkpoint): the runs the command will style, with their paragraphs (a heading's bold is
+    // forced per paragraph) — a cell block's every run, a selection's covered runs, the caret word's runs —
+    // or, at an empty caret, the run the typed text will take its format from. A run whose covered part
+    // holds no visible character (empty, or only line breaks) gets no say.
+    private List<(Run Run, Paragraph Para)> ToggleTargets()
     {
-        List<Run> runs;
+        var list = new List<(Run Run, Paragraph Para)>();
+        void Covered(Paragraph p, int a, int b)
+        {
+            int pos = 0;
+            foreach (var inl in p.Inlines)
+            {
+                int len = InlineLen(inl);
+                if (inl is Run r && len > 0 && pos < b && pos + len > a)
+                {
+                    int from = Math.Max(a, pos) - pos, to = Math.Min(b, pos + len) - pos;
+                    if (r.Text!.AsSpan(from, to - from).Trim('\n').Length > 0) list.Add((r, p));
+                }
+                pos += len;
+            }
+        }
         if (SelectedCellsBlock() is { } cells)
-            runs = CellBlockParagraphs(cells).SelectMany(p => p.Inlines.OfType<Run>()).ToList();
+            foreach (var p in CellBlockParagraphs(cells)) Covered(p, 0, int.MaxValue);
         else if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
-            runs = new TextRange(_selectionStart, _selectionEnd).GetRichRuns();
-        else
-            return caretState;
-        // GetRichRuns stands in "\n" runs for paragraph breaks; they carry no formatting of their own.
-        runs.RemoveAll(r => string.IsNullOrEmpty(r.Text) || r.Text.All(ch => ch == '\n'));
-        return runs.Count > 0 && runs.All(has);
+        {
+            TextPointer s = _selectionStart, e = _selectionEnd;
+            if (s.CompareTo(e) > 0) (s, e) = (e, s);
+            bool inRange = false;
+            foreach (var p in GetAllParagraphsInOrder())
+            {
+                if (ReferenceEquals(p, s.Paragraph)) inRange = true;
+                if (inRange) Covered(p, ReferenceEquals(p, s.Paragraph) ? s.Offset : 0, ReferenceEquals(p, e.Paragraph) ? e.Offset : int.MaxValue);
+                if (ReferenceEquals(p, e.Paragraph)) break;
+            }
+        }
+        else if (_caretPosition.Paragraph is { } cp)
+        {
+            if (CaretWord(cp) is { } w) Covered(cp, w.Start, w.End);
+            else list.Add((CaretFormatRun() ?? new Run(), cp));
+        }
+        return list;
+    }
+
+    // The word the caret is in — Word: with nothing selected a caret inside a word styles that word — or
+    // null on a word boundary / empty line, where a style becomes pending for the next typed text.
+    private (int Start, int End)? CaretWord(Paragraph p)
+    {
+        string plain = BuildPlain(p);
+        int off = Math.Clamp(_caretPosition.Offset, 0, plain.Length);
+        static bool IsWord(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
+        bool inWord = (off < plain.Length && IsWord(plain[off])) || (off > 0 && IsWord(plain[off - 1]));
+        return inWord ? WordBoundsAt(plain, off) : null;
     }
     /// <summary>Sets the font size of the current selection (or the caret run).</summary>
     public void SetFontSize(double size) { ApplyStyleToSelection(r => r.FontSize = size); }
@@ -371,15 +422,16 @@ public partial class RichEditor
     }
 
     /// <summary>Toggles strikethrough on the current selection (or the caret run).</summary>
-    public void ToggleStrikethrough() => ToggleDecoration(TextDecorationLocation.Strikethrough, GetCaretFormat().Strike);
+    public void ToggleStrikethrough() => ToggleDecoration(TextDecorationLocation.Strikethrough);
     /// <summary>Toggles underline on the current selection (or the caret run).</summary>
-    public void ToggleUnderline() => ToggleDecoration(TextDecorationLocation.Underline, GetCaretFormat().Underline);
+    public void ToggleUnderline() => ToggleDecoration(TextDecorationLocation.Underline,
+        // A link with no decoration of its own is drawn underlined (BuildTextLayout), and clearing its
+        // underline flag leaves it so; only a link that carries another decoration shows the flag.
+        forced: (r, _) => !string.IsNullOrEmpty(r.NavigateUri)
+                          && (r.TextDecorations == null || r.TextDecorations.All(d => d.Location == TextDecorationLocation.Underline)));
 
-    private void ToggleDecoration(TextDecorationLocation loc, bool caretState)
-    {
-        bool on = !SelectionAll(r => HasDeco(r, loc), caretState);
-        ApplyStyleToSelection(r => r.TextDecorations = SetDecoration(r.TextDecorations, loc, on));
-    }
+    private void ToggleDecoration(TextDecorationLocation loc, Func<Run, Paragraph, bool>? forced = null)
+        => ToggleCharacterFormat(r => HasDeco(r, loc), (r, on) => r.TextDecorations = SetDecoration(r.TextDecorations, loc, on), forced);
 
     // Sets or clears a single decoration (underline/strikethrough) while preserving the other, so the
     // two can coexist on the same run instead of overwriting each other.
@@ -422,13 +474,8 @@ public partial class RichEditor
         {
             // No selection (Word behaviour): a caret inside a word styles that word; on a word
             // boundary / empty line the toggle becomes pending and applies to the next typed text.
-            string plain = BuildPlain(p);
-            int off = Math.Clamp(_caretPosition.Offset, 0, plain.Length);
-            static bool IsWord(char ch) => char.IsLetterOrDigit(ch) || ch == '_';
-            bool inWord = (off < plain.Length && IsWord(plain[off])) || (off > 0 && IsWord(plain[off - 1]));
-            if (inWord)
+            if (CaretWord(p) is (var ws, var we))
             {
-                var (ws, we) = WordBoundsAt(plain, off);
                 if (Document != null) PushUndo();
                 new TextRange(new TextPointer(p, ws), new TextPointer(p, we)).ApplyPropertyValue(styleAction);
             }
@@ -451,7 +498,10 @@ public partial class RichEditor
         {
             r.FontWeight = FontWeight.Normal;
             r.FontStyle = FontStyle.Normal;
-            r.FontSize = DefaultFontSize;
+            // "Unstyled": in a heading that is the body-default size, which draws at the heading's size
+            // (DrawnRunSize). DefaultFontSize there was an explicit size — with a host default of 14,
+            // clearing an H1 shrank it from 20 to 14. (Backported from the WinUI port.)
+            r.FontSize = r.Parent is Paragraph { HeadingLevel: >= 1 and <= 6 } ? BodyFontSizePt : DefaultFontSize;
             r.Foreground = Brushes.Black;
             r.Background = null;
             r.FontFamily = null;

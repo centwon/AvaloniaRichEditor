@@ -1361,7 +1361,9 @@ public partial class RichEditor
     {
         bool heading = p.HeadingLevel is >= 1 and <= 6;
         double headingSize = heading ? HeadingFontSize(p.HeadingLevel) : 0;
-        var run = RunAtOffset(p, offset > 0 ? offset - 1 : 0);
+        // The run the text typed here takes its format from (TypingSource) — beside an image the raw lookup
+        // found no run and fell back to the default size.
+        var run = TypingSource(p, offset).Run;
         double fs = run != null ? DrawnRunSize(run, heading, headingSize, DefaultFontSize)
                                 : heading ? headingSize : DefaultFontSize; // pt
         return Math.Ceiling(PtToPx(fs) * 1.4);

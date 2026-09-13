@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the caret format report says what the next keystroke writes, and what is on screen (2026-09-12)
+
+The toolbar's caret format (`GetCaretFormat`) disagreed with the typed text and with the screen. Found by
+measuring after the WinUI peer fixed the same root.
+
+- **Typing beside an image** — insertion and report had separate rules and disagreed at 6 caret positions: the
+  report fell back to the paragraph's first run, typing wrote a plain new run or joined the run after the image.
+  One rule now: the nearest text before the caret, skipping images; with none before, the nearest after.
+  ⚠️ Behaviour change — typing after an image inside bold text stays bold (Word).
+- **Heading bold** — a heading is drawn bold but was reported "not bold", and Ctrl+B flipped a hidden flag with
+  no visible change. Now reported as drawn; a toggle that cannot change what is shown (a heading's bold, a plain
+  link's underline) does nothing and records no undo step. Heading plus body text: the body changes.
+- **Link edges** — ⚠️ typing at a link's end or start no longer extends the link (Word). Inside it still does.
+- **ClearFormatting in a heading** wrote the host's `DefaultFontSize` as an explicit size (H1 20 → 14 with a host
+  default of 14). The caret beside an image is sized for the text typed there.
+
+No public surface change. `CaretFormatReportTests` (21) + one caret-height test. Suite 921 → 943.
+
 ### Fixed — the caret in a heading was sized for 10 pt text (2026-09-12)
 
 A heading's unstyled runs are stored at the 10 pt body default and drawn at the heading size, but the caret
