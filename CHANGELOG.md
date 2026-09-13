@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — SavePdf writes a vector PDF: text stays text (2026-09-12)
+
+`SavePdf` wrote one RGB image per page — a PDF with no text in it (not selectable, not searchable, soft
+when zoomed, and large). Pages are now drawn by the editor's own renderer into Skia's PDF backend through
+Avalonia's Skia bridge (`DrawingContextHelper.RenderAsync`), so text is written as text with embedded fonts
+and a ToUnicode map.
+
+- **Fonts are subset.** Skia embeds each TrueType font whole (the SkiaSharp native build carries no
+  subsetter): one page with a line of Korean was 7.7 MB, 7.45 MB of it Malgun Gothic. The fonts are now cut
+  to the glyphs the document uses with HarfBuzz's `hb_subset` — the native library Avalonia.Skia already
+  ships — keeping glyph ids, so the page content needs no remapping. The same page: **17.9 KB**.
+- **Page scale.** A PDF page is in points (1/72 in), the editor draws in DIPs (1/96 in); the page is drawn
+  at 72/96 by the page visual itself — the Skia bridge's dpi argument does not scale the drawing, and left
+  to it the first cut ran every line a third past the right edge (caught in a saved PDF, now pinned by a test
+  against the rasterized page).
+- **Fallback.** Where the vector path is unavailable (no Skia rendering backend, e.g. headless drawing), each
+  page is one FlateDecode RGB image at `dpi`, as before. Anything the subsetter does not recognise is left as
+  Skia wrote it — a larger file, never a broken one.
+- The library now references `Avalonia.Skia` (floor 12.1.0). A desktop Avalonia app renders with Skia
+  already, so this adds no binaries to one. No public surface change (`dpi` now applies to the fallback only).
+
 ### Changed — the caret format report says what the next keystroke writes, and what is on screen (2026-09-12)
 
 The toolbar's caret format (`GetCaretFormat`) disagreed with the typed text and with the screen. Found by

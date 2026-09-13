@@ -300,31 +300,47 @@ public partial class RichEditor
             (int)Math.Round(paperW * scale), (int)Math.Round(paperH * scale));
         var rtb = new Avalonia.Media.Imaging.RenderTargetBitmap(pixels, new Vector(dpi, dpi));
         using (var ctx = rtb.CreateDrawingContext())
-        {
-            ctx.FillRectangle(Avalonia.Media.Brushes.White, new Rect(0, 0, paperW, paperH));
-            if (Document != null)
-            {
-                double sliceTop = breaks[pageIndex];
-                double sliceBottom = pageIndex + 1 < breaks.Count ? breaks[pageIndex + 1] : double.PositiveInfinity;
-                // Same slice clip rule as the page-view render: end the clip where the slice ends.
-                var clip = new Rect(PagePadX, PagePadY, contentW,
-                    Math.Min(contentH, sliceBottom - sliceTop));
-                using (ctx.PushClip(clip))
-                using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
-                    DrawDocumentBlocks(ctx, contentW, sliceTop, sliceBottom, chrome: false);
-            }
-            DrawPageMarginChrome(ctx, new Rect(0, 0, paperW, paperH), pageIndex, breaks.Count);
-        }
+            DrawPrintPage(ctx, pageIndex, breaks);
         return rtb;
     }
 
-    /// <summary>Writes the document as a raster PDF (no external dependencies), one page per
-    /// <see cref="PageSize"/> sheet (Continuous falls back to A4). Each page is one FlateDecode RGB image at
-    /// the given DPI — 300 (default) is print quality; text-heavy pages compress well, photo-heavy
-    /// documents grow large. Text is not selectable (vector PDF would need a DrawingContext PDF backend
-    /// Avalonia doesn't expose). Must run on the UI thread.</summary>
+    // One page of the print layout in paper DIPs. The bitmap page (RenderPrintPage, the raster PDF) and the
+    // vector PDF page (PrintPageVisual) draw exactly this.
+    internal void DrawPrintPage(Avalonia.Media.DrawingContext ctx, int pageIndex, IReadOnlyList<double> breaks)
+    {
+        double paperW = PaperWidth, paperH = PaperHeight, contentW = PaperContentWidth, contentH = PaperContentHeight;
+        ctx.FillRectangle(Avalonia.Media.Brushes.White, new Rect(0, 0, paperW, paperH));
+        if (Document != null)
+        {
+            double sliceTop = breaks[pageIndex];
+            double sliceBottom = pageIndex + 1 < breaks.Count ? breaks[pageIndex + 1] : double.PositiveInfinity;
+            // Same slice clip rule as the page-view render: end the clip where the slice ends.
+            var clip = new Rect(PagePadX, PagePadY, contentW,
+                Math.Min(contentH, sliceBottom - sliceTop));
+            using (ctx.PushClip(clip))
+            using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
+                DrawDocumentBlocks(ctx, contentW, sliceTop, sliceBottom, chrome: false);
+        }
+        DrawPageMarginChrome(ctx, new Rect(0, 0, paperW, paperH), pageIndex, breaks.Count);
+    }
+
+    /// <summary>Writes the document as a PDF, one page per <see cref="PageSize"/> sheet (Continuous falls
+    /// back to A4). Pages are VECTOR: drawn by the editor's own renderer into Skia's PDF backend, so text
+    /// stays text — selectable, searchable, sharp at any zoom — with only the glyphs used embedded. Where
+    /// that path is unavailable (no Skia rendering backend) each page is instead one FlateDecode RGB image
+    /// at <paramref name="dpi"/> (300 default = print quality), as before 2026-09. Must run on the UI thread.</summary>
     public void SavePdf(System.IO.Stream stream, double dpi = 300)
     {
+        byte[]? vector = null;
+        try { vector = RenderVectorPdf(); }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
+        if (vector != null)
+        {
+            var bytes = Formatters.PdfFontSubsetter.Subset(vector);
+            stream.Write(bytes, 0, bytes.Length);
+            return;
+        }
+
         int pages = GetPrintPageCount();
         const double ptPerPx = 72.0 / 96.0;
         Formatters.PdfWriter.Write(stream, PaperWidth * ptPerPx, PaperHeight * ptPerPx, pages, i =>
@@ -333,6 +349,44 @@ public partial class RichEditor
             try { return BitmapToRgb24(bmp); }
             finally { (bmp as IDisposable)?.Dispose(); }
         });
+    }
+
+    // The vector path: each page drawn by DrawPrintPage onto a Skia PDF page, in points.
+    private byte[] RenderVectorPdf()
+    {
+        var breaks = ComputePageBreaks(PaperContentWidth, PaperContentHeight);
+        using var ms = new System.IO.MemoryStream();
+        using (var pdf = SkiaSharp.SKDocument.CreatePdf(ms)
+            ?? throw new InvalidOperationException("This SkiaSharp build has no PDF backend."))
+        {
+            for (int i = 0; i < breaks.Count; i++)
+            {
+                var canvas = pdf.BeginPage((float)(PaperWidth * 72.0 / 96.0), (float)(PaperHeight * 72.0 / 96.0));
+                DrawVectorPage(canvas, i, breaks);
+                pdf.EndPage();
+            }
+            pdf.Close();
+        }
+        return ms.ToArray();
+    }
+
+    // One print page onto a Skia canvas whose units are points (a PDF page, or a raster surface a test
+    // measures), through Avalonia's Skia bridge. The DIP → point scale is the visual's own transform: the
+    // bridge's dpi argument does not scale the drawing — passing 72 left every page drawn at 96 DIPs per
+    // inch on a 72-point page, a third past the right edge (seen in a saved PDF). RenderAsync renders
+    // synchronously today; blocking the UI thread on one that did not could deadlock, so that counts as
+    // "unavailable" and SavePdf falls back to the raster pages.
+    internal void DrawVectorPage(SkiaSharp.SKCanvas canvas, int pageIndex, IReadOnlyList<double> breaks)
+    {
+        double paperW = PaperWidth, paperH = PaperHeight;
+        var page = new PrintPageVisual(this, breaks) { PageIndex = pageIndex, Scale = 72.0 / 96.0, Width = paperW, Height = paperH };
+        page.Measure(new Size(paperW, paperH));
+        page.Arrange(new Rect(0, 0, paperW, paperH));
+        var render = Avalonia.Skia.Helpers.DrawingContextHelper.RenderAsync(
+            canvas, page, new Rect(0, 0, paperW, paperH), new Vector(96, 96));
+        if (!render.IsCompleted)
+            throw new InvalidOperationException("Avalonia's Skia bridge did not render synchronously.");
+        render.GetAwaiter().GetResult();
     }
 
     // BGRA8888 (RenderTargetBitmap's format) -> packed top-down RGB24. Alpha is always 255 here:
