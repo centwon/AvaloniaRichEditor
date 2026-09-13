@@ -9,14 +9,15 @@ using Xunit;
 
 namespace AvaloniaRichEditor.Tests;
 
-// CellBlockSelectionTests reproduces a cross-cell drag by writing _cellSelMode and the two endpoints
-// straight into the fields, so it can only check what the commands do with a selection that is already
-// correct. Round 3's defect was upstream of that: the drag itself produced a selection that disagreed
-// with what was painted. These drag with the pointer and read what the drag left behind.
+// CellBlockSelectionTests reproduces a cross-cell drag by writing the two endpoints straight into the
+// fields, so it can only check what the commands do with a selection that is already correct. Round 3's
+// defect was upstream of that: the drag itself produced a selection that disagreed with what was painted.
+// These drag with the pointer and read what the drag left behind.
 public class CellDragSelectionInteractionTests
 {
-    private static T Field<T>(RichEditor ed, string name)
-        => (T)typeof(RichEditor).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(ed)!;
+    // The table holding the active cell block (the one the renderer fills and the commands act on), or null.
+    private static TableBlock? BlockTable(RichEditor ed)
+        => (TableBlock?)typeof(RichEditor).GetMethod("CellBlockTable", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ed, null);
 
     private static List<TableCell>? SelectedCells(RichEditor ed)
         => (List<TableCell>?)typeof(RichEditor)
@@ -65,8 +66,22 @@ public class CellDragSelectionInteractionTests
 
         host.Drag(InCell(host, tb, 0, 0), InCell(host, tb, 0, 1), InCell(host, tb, 1, 1));
 
-        Assert.True(Field<bool>(host.Editor, "_cellSelMode"));
-        Assert.Same(tb, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+        Assert.Same(tb, BlockTable(host.Editor));
+    }
+
+    // A click after a cross-cell drag places a caret in the cell — no sticky mode making it select a cell (and
+    // a double-click to edit); unified with the WinUI port, 2026-09-13.
+    [AvaloniaFact]
+    public void AClickAfterACrossCellDrag_PlacesACaret()
+    {
+        var (host, tb) = Grid(2, 2);
+        host.Drag(InCell(host, tb, 0, 0), InCell(host, tb, 1, 1));
+        Assert.Same(tb, BlockTable(host.Editor));
+
+        host.Click(InCell(host, tb, 1, 0));
+
+        Assert.Null(BlockTable(host.Editor));
+        Assert.Null(SelectedCells(host.Editor));
     }
 
     // The selection the commands act on must be the rectangle the drag swept — whole cells, not the
@@ -123,7 +138,7 @@ public class CellDragSelectionInteractionTests
 
         host.Drag(p, p + new Point(20, 0));
 
-        Assert.False(Field<bool>(host.Editor, "_cellSelMode"));
+        Assert.Null(BlockTable(host.Editor));
         Assert.Null(SelectedCells(host.Editor));
     }
 }

@@ -23,6 +23,9 @@ public class ViewerTableCopyTests
 
     private static T Field<T>(RichEditor ed, string name) => (T)typeof(RichEditor).GetField(name, NP)!.GetValue(ed)!;
 
+    // The table holding the active cell block — what the renderer fills (the table shown selected) — or null.
+    private static TableBlock? BlockTable(RichEditor ed) => (TableBlock?)typeof(RichEditor).GetMethod("CellBlockTable", NP)!.Invoke(ed, null);
+
     private static FieldInfo CopiedBlocksField
         => typeof(RichEditor).GetField("_internalClipboardBlocks", BindingFlags.NonPublic | BindingFlags.Static)!;
 
@@ -126,8 +129,8 @@ public class ViewerTableCopyTests
         Assert.Equal(new[] { RichEditorLocalization.GetString("Copy"), RichEditorLocalization.GetString("SelectAll") },
                      items.Select(i => i.Header?.ToString()).ToArray());
         Assert.True(items[0].IsEnabled, "Copy is greyed out on a table with nothing selected");
-        Assert.True(Field<bool>(host.Editor, "_cellSelMode"));            // shown selected: the cell fill
-        Assert.Same(tb, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+        Assert.NotNull(BlockTable(host.Editor));            // shown selected: the cell fill
+        Assert.Same(tb, BlockTable(host.Editor));
 
         ClearClipboard();
         Invoke(items[0]);
@@ -147,7 +150,7 @@ public class ViewerTableCopyTests
         host.Click(new Point(10, 8), MouseButton.Right);
 
         Assert.False(MenuItems(host.Editor)[0].IsEnabled);
-        Assert.False(Field<bool>(host.Editor, "_cellSelMode"));
+        Assert.Null(BlockTable(host.Editor));
     }
 
     // Copying a whole-table selection takes that table — here a nested one. The block capture copies the
@@ -188,14 +191,14 @@ public class ViewerTableCopyTests
 
         if (readOnly)
         {
-            Assert.True(Field<bool>(host.Editor, "_cellSelMode"));
-            Assert.Same(tb, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+            Assert.NotNull(BlockTable(host.Editor));
+            Assert.Same(tb, BlockTable(host.Editor));
             Assert.Null(host.CaretBlock);
         }
         else
         {
             Assert.Same(tb, host.CaretBlock);
-            Assert.False(Field<bool>(host.Editor, "_cellSelMode"));
+            Assert.Null(BlockTable(host.Editor));
         }
     }
 
@@ -316,8 +319,8 @@ public class ViewerTableCopyTests
         host.Editor.IsReadOnly = readOnly;
 
         host.Click(OnInlineLeftBorder(r));
-        Assert.True(Field<bool>(host.Editor, "_cellSelMode"));
-        Assert.Same(inner, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+        Assert.NotNull(BlockTable(host.Editor));
+        Assert.Same(inner, BlockTable(host.Editor));
 
         ClearClipboard();
         host.Key(Key.C, RawInputModifiers.Control);
@@ -482,11 +485,11 @@ public class ViewerTableCopyTests
         var both = new Point(r.Left - 2, r.Top + 6); // 2 from the target's left edge, 3 from the one around it
 
         host.Click(both);
-        Assert.Same(target, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+        Assert.Same(target, BlockTable(host.Editor));
         Assert.Null(host.CaretBlock);
 
         host.Click(both, MouseButton.Right);
-        Assert.Same(target, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+        Assert.Same(target, BlockTable(host.Editor));
         Assert.Null(host.CaretBlock);
     }
 }

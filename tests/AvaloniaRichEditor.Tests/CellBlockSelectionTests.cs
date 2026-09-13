@@ -28,13 +28,11 @@ public class CellBlockSelectionTests
         => typeof(RichEditor).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
             .SetValue(ed, v);
 
-    // Reproduces what a drag across cells leaves behind: cell-selection mode on `tb`, with the two
-    // endpoints at partial offsets inside the corner cells (exactly the case that used to leak).
+    // Reproduces what a drag across cells leaves behind: the two endpoints at partial offsets inside the
+    // corner cells of `tb` (exactly the case that used to leak). That alone is the cell block.
     private static void DragAcrossCells(RichEditor ed, TableBlock tb,
         Paragraph from, int fromOff, Paragraph to, int toOff)
     {
-        SetField(ed, "_cellSelMode", true);
-        SetField(ed, "_cellSelTable", tb);
         SetField(ed, "_selectionStart", new TextPointer(from, fromOff));
         SetField(ed, "_selectionEnd", new TextPointer(to, toOff));
         SetField(ed, "_caretPosition", new TextPointer(to, toOff));
@@ -164,7 +162,7 @@ public class CellBlockSelectionTests
     // The "Select Cell" entry point (context menu, or a click while in cell mode).
     private static void SelectCellAsBlock(RichEditor ed, TableBlock tb, TableCell cell)
         => typeof(RichEditor).GetMethod("SelectCellAsBlock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-            .Invoke(ed, new object[] { tb, cell });
+            .Invoke(ed, new object[] { tb, cell, false });
 
     // Selecting a single cell is a real one-cell block: the commands treat it as a unit.
     // SelectedCellRange used to return null for a single cell outright, so nothing could act on one.
@@ -205,6 +203,139 @@ public class CellBlockSelectionTests
 
         // Back to ordinary text editing: one character, not the whole cell.
         Assert.NotEqual("", CellText(tb.Cells[0][0]));
+    }
+
+    // ---- unified cell block (with the WinUI port, 2026-09-13) — through the real key handler ----------
+
+    private static void Press(RichEditor ed, Key key, KeyModifiers mods = KeyModifiers.None)
+        => ed.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = mods });
+
+    private static void Caret(RichEditor ed, Paragraph p, int offset)
+    {
+        SetField(ed, "_caretPosition", new TextPointer(p, offset));
+        SetField(ed, "_selectionStart", new TextPointer(p, offset));
+        SetField(ed, "_selectionEnd", new TextPointer(p, offset));
+    }
+
+    // The block the renderer fills (SelectedCellRange), asserted together with the one the commands act on
+    // (SelectedCellsBlock): the two used to disagree.
+    private static void AssertBlock(RichEditor ed, TableBlock tb, (int r0, int c0, int r1, int c1)? expected)
+    {
+        var painted = ((int, int, int, int)?)typeof(RichEditor)
+            .GetMethod("SelectedCellRange", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(ed, new object[] { tb });
+        Assert.Equal(expected, painted);
+        var operated = typeof(RichEditor)
+            .GetMethod("SelectedCellsBlock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(ed, null);
+        Assert.Equal(expected != null, operated != null);
+    }
+
+    // The measured defect: Shift+arrow across a cell boundary turned the cell-selection mode OFF while the
+    // renderer still filled both cells, so Delete removed characters under a painted block ("a | 1b | a2b").
+    // The endpoints now make the block for the renderer and the commands alike, and Delete clears both cells.
+    [AvaloniaFact]
+    public void ShiftArrowAcrossACellBoundary_MakesABlock_ThatDeleteClearsWhole()
+    {
+        var (ed, tb) = Grid(1, 3);
+        Caret(ed, tb.Cells[0][0].Para, 1);
+
+        Press(ed, Key.Right, KeyModifiers.Shift); // to the cell's end
+        Press(ed, Key.Right, KeyModifiers.Shift); // into the next cell
+        AssertBlock(ed, tb, (0, 0, 0, 1));
+
+        Press(ed, Key.Delete);
+        Assert.Equal(new[] { "", "", "02" }, new[] { CellText(tb.Cells[0][0]), CellText(tb.Cells[0][1]), CellText(tb.Cells[0][2]) });
+    }
+
+    [AvaloniaFact]
+    public void F5_SelectsTheCaretsCell_AsAOneCellBlock()
+    {
+        var (ed, tb) = Grid(2, 2);
+        Caret(ed, tb.Cells[1][0].Para, 1);
+
+        Press(ed, Key.F5);
+        AssertBlock(ed, tb, (1, 0, 1, 0));
+
+        Press(ed, Key.Delete);
+        Assert.Equal("", CellText(tb.Cells[1][0]));
+        Assert.Equal(new[] { "00", "01", "11" }, new[] { CellText(tb.Cells[0][0]), CellText(tb.Cells[0][1]), CellText(tb.Cells[1][1]) });
+    }
+
+    // HWP: the anchor corner stays and the active corner steps a cell; back on the anchor it is one cell again,
+    // and at the table's edge nothing moves.
+    [AvaloniaFact]
+    public void ShiftArrows_GrowAndShrinkTheBlock_ByWholeCells()
+    {
+        var (ed, tb) = Grid(3, 3);
+        Caret(ed, tb.Cells[1][1].Para, 1);
+        Press(ed, Key.F5);
+
+        Press(ed, Key.Right, KeyModifiers.Shift);
+        AssertBlock(ed, tb, (1, 1, 1, 2));
+        Press(ed, Key.Down, KeyModifiers.Shift);
+        AssertBlock(ed, tb, (1, 1, 2, 2));
+        Press(ed, Key.Left, KeyModifiers.Shift);
+        Press(ed, Key.Left, KeyModifiers.Shift);
+        AssertBlock(ed, tb, (1, 0, 2, 1));
+        Press(ed, Key.Up, KeyModifiers.Shift);
+        AssertBlock(ed, tb, (1, 0, 1, 1));
+        Press(ed, Key.Right, KeyModifiers.Shift);
+        AssertBlock(ed, tb, (1, 1, 1, 1)); // back on the anchor: a one-cell block
+
+        Caret(ed, tb.Cells[1][2].Para, 1);
+        Press(ed, Key.F5);
+        Press(ed, Key.Right, KeyModifiers.Shift);
+        AssertBlock(ed, tb, (1, 2, 1, 2)); // the table's edge
+    }
+
+    // Any caret move ends a one-cell block — there is no mode to reset — and the SAME range selected again later
+    // (the staged Ctrl+A's cell stage) is a text selection: the marker cannot come back to life.
+    [AvaloniaFact]
+    public void ACaretMove_EndsAOneCellBlock_AndTheSameRangeLater_IsText()
+    {
+        var (ed, tb) = Grid(2, 2);
+        Caret(ed, tb.Cells[0][0].Para, 1);
+        Press(ed, Key.F5);
+        Press(ed, Key.Right);
+        AssertBlock(ed, tb, null);
+
+        Caret(ed, tb.Cells[0][0].Para, 1);
+        Press(ed, Key.A, KeyModifiers.Control); // stage 1: the cell's content — the very range F5 selected
+        AssertBlock(ed, tb, null);
+    }
+
+    // A merged cell is one cell: F5 takes its whole span, and Shift+arrow steps past the span, not into it.
+    [AvaloniaFact]
+    public void AMergedCell_IsOneCell_ForF5_AndForShiftArrow()
+    {
+        var tb = new TableBlock(2, 3);
+        for (int r = 0; r < 2; r++)
+            for (int c = 0; c < 3; c++)
+                ((Run)tb.Cells[r][c].Para.Inlines[0]).Text = $"{r}{c}";
+        tb.MergeCells(0, 0, 0, 1);
+        var doc = new FlowDocument();
+        doc.Blocks.Add(tb);
+        var ed = new RichEditor { Document = doc };
+        Realize(ed);
+        Caret(ed, tb.Cells[0][0].Blocks.OfType<Paragraph>().First(), 0);
+
+        Press(ed, Key.F5);
+        AssertBlock(ed, tb, (0, 0, 0, 1));
+        Press(ed, Key.Right, KeyModifiers.Shift);
+        AssertBlock(ed, tb, (0, 0, 0, 2));
+    }
+
+    // A viewer can select a cell too — Ctrl+C then copies it as a 1×1 table.
+    [AvaloniaFact]
+    public void F5_WorksInAViewer()
+    {
+        var (ed, tb) = Grid(2, 2);
+        ed.IsReadOnly = true;
+        Caret(ed, tb.Cells[0][1].Para, 1);
+
+        Press(ed, Key.F5);
+        AssertBlock(ed, tb, (0, 1, 0, 1));
     }
 
     // Guard: a plain text selection INSIDE one cell (not in cell mode) must stay a text edit.

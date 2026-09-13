@@ -70,7 +70,7 @@ public partial class RichEditor
 
         // A whole table is already selected -> climb to the table that contains it, if any; otherwise
         // let the caller take the last step and select the document.
-        if (_cellSelTable is { } cur && WholeTableSelected(cur))
+        if (TableSelectedWhole() is { } cur)
             return EnclosingTableOf(cur) is { } outer && SelectWholeTable(outer);
 
         if (FindCell(p) is not { } loc) return false;
@@ -115,8 +115,18 @@ public partial class RichEditor
     // capture copies the OUTERMOST block, so a nested table came out as the table around it, and a one-cell
     // table (whose "whole" is a single-cell block) as bare text.
     private TableBlock? SelectedWholeTable()
-        => _cellSelMode && _cellSelTable is { } tb
-           && (WholeTableSelected(tb) || (TableEnds(tb) == null && SelectedCellsBlock() != null)) ? tb : null;
+        => MarkedCell() is { } mk ? (mk.whole ? mk.tb : null) // a one-cell table's only cell, selected as the table
+         : TableSelectedWhole();
+
+    // The table the selection spans exactly — every cell, first to last — climbing from the start's own table
+    // through the tables around it (a cell's content may begin inside a nested table). Null for none.
+    private TableBlock? TableSelectedWhole()
+    {
+        if (_selectionStart.Paragraph is not { } sp || FindCell(sp) is not { } s) return null;
+        for (TableBlock? t = s.tb; t != null; t = EnclosingTableOf(t))
+            if (WholeTableSelected(t)) return t;
+        return null;
+    }
 
     // Selects all of `tb` so Copy takes it: the whole-table stage, or — for a one-cell table, which has no
     // separate table stage — its one cell as a block. False when there is nothing to select.
@@ -124,7 +134,7 @@ public partial class RichEditor
     {
         if (SelectWholeTable(tb)) return true;
         foreach (var (_, _, cell) in tb.LogicalCells())
-            return SelectCellAsBlock(tb, cell); // the first — and only — logical cell
+            return SelectCellAsBlock(tb, cell, wholeTable: true); // the first — and only — logical cell
         return false;
     }
 
@@ -141,7 +151,7 @@ public partial class RichEditor
             && _selectionStart.CompareTo(_selectionEnd) != 0;
         var tb = SelectedWholeTable() ?? (!textSelected ? _caretBlock as TableBlock : null);
         if (Document == null || tb == null) return false;
-        _cellSelMode = false; _cellSelTable = null; _caretBlock = null; _selectedBlock = null;
+        _caretBlock = null; _selectedBlock = null;
 
         if (tb.Parent is InlineTable it && it.Parent is Paragraph host)
         {
@@ -192,19 +202,16 @@ public partial class RichEditor
     private bool SelectCellContents(TableCell cell)
     {
         if (CellEnds(cell) is not { } e) return false;
-        _cellSelMode = false; _cellSelTable = null;
         SetSelection(e.first, e.last);
         return true;
     }
 
-    // Selects every cell of `tb`. Cell-selection mode makes the renderer fill the cells as a block
-    // (the same chrome a multi-cell drag produces). False for a single-cell table, where this would
-    // repeat the cell stage — the caller then moves on to the next level out.
+    // Selects every cell of `tb`. The endpoints in its first and last cells make that a cell block, which the
+    // renderer fills (the same chrome a multi-cell drag produces). False for a single-cell table, where this
+    // would repeat the cell stage — the caller then moves on to the next level out.
     private bool SelectWholeTable(TableBlock tb)
     {
         if (TableEnds(tb) is not { } e) return false;
-        _cellSelMode = true;
-        _cellSelTable = tb;
         SetSelection(e.first, e.last);
         return true;
     }
@@ -220,25 +227,82 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // Rectangular cell block (inclusive, span-aware) defined by the two selection *endpoints* — the
-    // cell the drag started in and the cell it ended in. Using the endpoints (not every cell the linear
-    // text selection passes through) makes a vertical drag select a vertical block, so up/down cells can
-    // be merged. Returns null unless both endpoints are cells of `tb` and they differ.
+    // The marked one-cell block, if it is still the selection (see _cellBlockMark).
+    private (TableBlock tb, int r, int c, bool whole)? MarkedCell()
+    {
+        if (_cellBlockMark is not { } m || !ReferenceEquals(_selectionStart, m.s) || !ReferenceEquals(_selectionEnd, m.e)) return null;
+        if (m.cell.Parent is not TableBlock tb || CellEnds(m.cell) is not { } ends) return null;
+        if (!ReferenceEquals(m.s.Paragraph, ends.first) || m.s.Offset != 0
+            || !ReferenceEquals(m.e.Paragraph, ends.last) || m.e.Offset != GetParagraphLength(ends.last)) return null;
+        foreach (var (r, c, cell) in tb.LogicalCells())
+            if (ReferenceEquals(cell, m.cell)) return (tb, r, c, m.whole);
+        return null;
+    }
+
+    private static (int r0, int c0, int r1, int c1) SpanRect(TableBlock tb, int r, int c)
+    {
+        var (cs, rs) = tb.SpanOf(r, c);
+        return (r, c, r + rs - 1, c + cs - 1);
+    }
+
+    // The table holding the active cell block — the marked cell's, or the one whose two different cells the
+    // selection endpoints are in — else null. The renderer's fill, the commands and the menu all read the block
+    // through SelectedCellRange of this table: one source, so the painted block is the operated-on one.
+    private TableBlock? CellBlockTable()
+    {
+        if (MarkedCell() is { } mk) return mk.tb;
+        if (_selectionStart.Paragraph is not { } sp || _selectionEnd.Paragraph is not { } ep) return null;
+        if (FindCell(sp) is not { } s || FindCell(ep) is not { } e || s.tb != e.tb) return null;
+        return SelectedCellRange(s.tb) != null ? s.tb : null;
+    }
+
+    // F5 (HWP): the caret's cell as a one-cell block. False outside a table.
+    private bool SelectCellAtCaret()
+    {
+        if (_caretPosition.Paragraph is not { } p || FindCell(p) is not { } loc) return false;
+        var (ar, ac) = loc.tb.AnchorOf(loc.r, loc.c);
+        return SelectCellAsBlock(loc.tb, loc.tb.Cells[ar][ac]);
+    }
+
+    // Shift+arrow on a cell block (HWP): the anchor corner stays, the active corner — the selection end's cell —
+    // steps one cell (dr, dc), past its own span. Back onto the anchor it is a one-cell block again; at the
+    // table's edge nothing moves.
+    private void ExtendCellBlock(TableBlock tb, int dr, int dc)
+    {
+        (int r, int c) anchor, active;
+        if (MarkedCell() is { } mk) anchor = active = (mk.r, mk.c);
+        else if (CellIn(tb, _selectionStart) is { } a && CellIn(tb, _selectionEnd) is { } b) (anchor, active) = (a, b);
+        else return;
+        var (cs, rs) = tb.SpanOf(active.r, active.c);
+        int nr = dr < 0 ? active.r - 1 : dr > 0 ? active.r + rs : active.r;
+        int nc = dc < 0 ? active.c - 1 : dc > 0 ? active.c + cs : active.c;
+        if (nr < 0 || nc < 0 || nr >= tb.Rows || nc >= tb.Columns) return;
+        (int r, int c) next = tb.AnchorOf(nr, nc);
+        if (next == anchor) { SelectCellAsBlock(tb, tb.Cells[anchor.r][anchor.c]); return; }
+        if (CellEnds(tb.Cells[anchor.r][anchor.c]) is not { } from
+            || CellEnds(tb.Cells[next.r][next.c]) is not { } to) return;
+        SetSelection(from.first, to.last);
+    }
+
+    // The anchor cell of `tb` holding pointer p directly, or null (another table, nested or outside).
+    private (int r, int c)? CellIn(TableBlock tb, TextPointer p)
+        => p.Paragraph is { } q && FindCell(q) is { } loc && ReferenceEquals(loc.tb, tb) ? tb.AnchorOf(loc.r, loc.c) : null;
+
+    // Rectangular cell block (inclusive, span-aware): the marked one-cell block (_cellBlockMark), or the block
+    // defined by the two selection *endpoints* — the cell the drag started in and the cell it ended in. Using
+    // the endpoints (not every cell the linear text selection passes through) makes a vertical drag select a
+    // vertical block, so up/down cells can be merged. Returns null unless `tb` holds the marked cell, or both
+    // endpoints are cells of `tb` and they differ.
     private (int r0, int c0, int r1, int c1)? SelectedCellRange(TableBlock tb)
     {
+        if (MarkedCell() is { } mk) return ReferenceEquals(mk.tb, tb) ? SpanRect(tb, mk.r, mk.c) : null;
         if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null) return null;
         if (FindCell(_selectionStart.Paragraph) is not { } s || s.tb != tb) return null;
         if (FindCell(_selectionEnd.Paragraph) is not { } e || e.tb != tb) return null;
-        // Both endpoints in the same cell = a caret/text selection inside one cell, NOT a cell block —
-        // unless cell-selection mode is on for this table, where a single click selects exactly that one
-        // cell as a block (HWP/Excel). (Must compare the cells directly: a merged cell spans rows/cols,
-        // so a span-expanded bounding box would otherwise look multi-cell even for a single merged cell.)
-        if (s.r == e.r && s.c == e.c)
-        {
-            if (!_cellSelMode || !ReferenceEquals(_cellSelTable, tb)) return null;
-            var (cs1, rs1) = tb.SpanOf(s.r, s.c);
-            return (s.r, s.c, s.r + rs1 - 1, s.c + cs1 - 1);
-        }
+        // Both endpoints in the same cell = a caret/text selection inside one cell, NOT a cell block (a one-cell
+        // block is the marker's, above). (Must compare the cells directly: a merged cell spans rows/cols, so a
+        // span-expanded bounding box would otherwise look multi-cell even for a single merged cell.)
+        if (s.r == e.r && s.c == e.c) return null;
         var (scs, srs) = tb.SpanOf(s.r, s.c);
         var (ecs, ers) = tb.SpanOf(e.r, e.c);
         int r0 = Math.Min(s.r, e.r), c0 = Math.Min(s.c, e.c);
@@ -259,7 +323,7 @@ public partial class RichEditor
     // right). Every command now consults this first.
     private List<TableCell>? SelectedCellsBlock()
     {
-        if (!_cellSelMode || _cellSelTable is not { } tb) return null;
+        if (CellBlockTable() is not { } tb) return null;
         if (SelectedCellRange(tb) is not { } rg) return null;
         var cells = new List<TableCell>();
         var seen = new HashSet<TableCell>();
@@ -281,15 +345,15 @@ public partial class RichEditor
         return result;
     }
 
-    // Selects exactly one cell as a block and enters cell-selection mode: a further single click picks
-    // another cell, a drag extends the block, a double-click drops back to a caret inside the cell.
-    // SelectCellContents is the text-editing counterpart (staged Ctrl+A) — same range, but out of mode.
-    private bool SelectCellAsBlock(TableBlock tb, TableCell cell)
+    // Selects exactly one cell as a block (_cellBlockMark): Delete clears it, formatting takes all of it, Copy
+    // takes it as a 1×1 table, Shift+arrow grows it by cells; any caret move ends it. SelectCellContents is the
+    // text counterpart (staged Ctrl+A) — the same range, as text. `wholeTable`: the cell is a one-cell table
+    // selected whole (SelectWholeTableForCopy), so Copy/Cut/Delete take the table itself (SelectedWholeTable).
+    private bool SelectCellAsBlock(TableBlock tb, TableCell cell, bool wholeTable = false)
     {
         if (CellEnds(cell) is not { } e) return false;
-        _cellSelMode = true;
-        _cellSelTable = tb;
         SetSelection(e.first, e.last);
+        _cellBlockMark = (cell, _selectionStart, _selectionEnd, wholeTable);
         return true;
     }
 
@@ -305,8 +369,6 @@ public partial class RichEditor
             cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
         }
         if (Document != null) UpdateParents(Document);
-        _cellSelMode = false;
-        _cellSelTable = null;
         _caretPosition = new TextPointer(cells[0].Para, 0);
         CollapseSelectionToCaret();
         MarkTextChanged();

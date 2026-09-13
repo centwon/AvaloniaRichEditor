@@ -251,43 +251,16 @@ public partial class RichEditor
                 // Block caret in front of the table (Space indents the whole table; Del deletes it).
                 _caretBlock = table; _caretBlockAfter = false;
                 _selectedBlock = null;
-                _cellSelMode = false; _cellSelTable = null;
                 _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
                 _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
                 ResetCaretBlink();
                 InvalidateVisual();
                 return;
             }
-            if (_cellSelMode && _cellSelTable == table)
-            {
-                if (e.ClickCount >= 2)
-                {
-                    // Cell-selection -> text editing: drop into the cell with a caret.
-                    _cellSelMode = false; _cellSelTable = null; _selectedBlock = null;
-                    _caretPosition = GetPositionFromPoint(point);
-                    _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                    _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-                    ResetCaretBlink();
-                    InvalidateVisual();
-                    e.Pointer.Capture(this);
-                    return;
-                }
-                // Single click selects exactly one cell as a block; a drag (OnPointerMoved) extends it.
-                _selectedBlock = null;
-                var tp = GetPositionFromPoint(point);
-                if (tp.Paragraph != null && FindCell(tp.Paragraph) is { } clickedCell)
-                {
-                    var (ar, ac) = clickedCell.tb.AnchorOf(clickedCell.r, clickedCell.c);
-                    SelectCellAsBlock(clickedCell.tb, clickedCell.tb.Cells[ar][ac]);
-                }
-                e.Pointer.Capture(this);
-                _isSelecting = true;
-                return;
-            }
-            // else: text-editing mode -> fall through to caret placement below.
+            // Otherwise the click places a caret in the cell (below) — right after a cross-cell drag too: the
+            // cell-selection mode that made such a click select a cell (and a double-click edit) is gone
+            // (unified with the WinUI port, 2026-09-13).
         }
-        // Any click that isn't on the active cell-selection table leaves cell-selection mode.
-        _cellSelMode = false; _cellSelTable = null;
         _selectedBlock = null;
 
         _caretPosition = GetPositionFromPoint(point);
@@ -367,14 +340,30 @@ public partial class RichEditor
         return i;
     }
 
+    // Cell-block keys (unified with the WinUI port, 2026-09-13). F5 (HWP) selects the caret's cell as a one-cell
+    // block. Shift+arrow on a cell block grows or shrinks it by whole cells (ExtendCellBlock). A plain arrow is
+    // not handled here: it ends the block like any caret move.
+    private bool TryCellBlockKey(Key key, bool shift, bool ctrl, bool alt)
+    {
+        if (ctrl || alt) return false;
+        if (key == Key.F5) return !shift && SelectCellAtCaret();
+        if (!shift || CellBlockTable() is not { } tb) return false;
+        switch (key)
+        {
+            case Key.Left: ExtendCellBlock(tb, 0, -1); return true;
+            case Key.Right: ExtendCellBlock(tb, 0, 1); return true;
+            case Key.Up: ExtendCellBlock(tb, -1, 0); return true;
+            case Key.Down: ExtendCellBlock(tb, 1, 0); return true;
+            default: return false;
+        }
+    }
+
     private void ApplyCaretSelection(bool shift)
     {
-        // Moving the caret ends any cell block: the selection collapses to a caret, and leaving the mode
-        // on would keep the renderer filling the cell while the edit commands (which now honour the
-        // block) operated on a single character — the very paint/operation mismatch the block selection
-        // is meant to remove. Matches the staged Ctrl+A, which also restarts on a click or an arrow.
-        _cellSelMode = false;
-        _cellSelTable = null;
+        // The new pointers below end a one-cell block by themselves (_cellBlockMark). A block of several cells is
+        // whatever the two endpoints make it: Shift+arrow across a cell boundary makes one, and the commands act on
+        // it just as the renderer fills it. This used to turn a cell-selection mode OFF here while the renderer
+        // still filled the block, so Delete removed characters under a painted cell block (measured 2026-09-13).
         if (!shift) _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         ResetCaretBlink();
@@ -601,15 +590,7 @@ public partial class RichEditor
             try { _selectionEnd = GetPositionFromPoint(point); }
             finally { _trustLayoutCache = false; }
             _caretPosition = new TextPointer(_selectionEnd.Paragraph, _selectionEnd.Offset);
-            // A drag spanning two different cells of one table is a cell-block selection: enter cell mode
-            // so subsequent single clicks select whole cells (HWP behaviour).
-            var sc = _selectionStart.Paragraph != null ? FindCell(_selectionStart.Paragraph) : null;
-            var ec = _selectionEnd.Paragraph != null ? FindCell(_selectionEnd.Paragraph) : null;
-            if (sc is { } s && ec is { } en && s.tb == en.tb && (s.r != en.r || s.c != en.c))
-            {
-                _cellSelMode = true;
-                _cellSelTable = s.tb;
-            }
+            // A drag spanning two cells of one table is a cell block by its endpoints alone (SelectedCellRange).
             InvalidateVisual();
             return;
         }
@@ -828,7 +809,8 @@ public partial class RichEditor
             // Allow caret movement and copy/select-all; block everything that edits.
             bool nav = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown;
             bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A);
-            if (!nav && !copyOrAll) { e.Handled = true; return; }
+            bool cellBlock = e.Key == Key.F5; // selects a cell, which Ctrl+C then copies as a 1×1 table
+            if (!nav && !copyOrAll && !cellBlock) { e.Handled = true; return; }
         }
 
         // Block caret in front of an image/table.
@@ -892,6 +874,8 @@ public partial class RichEditor
             _selectedInline = null;
             InvalidateVisual();
         }
+
+        if (TryCellBlockKey(e.Key, shift, ctrl, alt)) { e.Handled = true; return; }
 
         if (e.Key == Key.Z && ctrl && !shift)
         {

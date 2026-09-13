@@ -270,13 +270,12 @@ public partial class RichEditor
             if (ReferenceEquals(borderTable, tbk) && !hasSelection)
             {
                 _caretBlock = tbk; _caretBlockAfter = false;
-                _cellSelMode = false; _cellSelTable = null;
             }
-            // The table is "selected as a structure" when in cell-selection mode, when the whole table
+            // The table is "selected as a structure" when a one-cell block is on it, when the whole table
             // carries the block caret, or when the drag selection spans cells. In those cases show the
             // table-structure menu. Otherwise the user is editing inside a cell (bare caret or text within
             // one cell) -> text-formatting menu with the table ops tucked into a "Table" submenu.
-            bool tableStructureMode = (_cellSelMode && _cellSelTable == tbk)
+            bool tableStructureMode = ReferenceEquals(MarkedCell()?.tb, tbk)
                 || ReferenceEquals(_caretBlock, tbk)
                 || (hasSelection && SelectedCellRange(tbk) != null);
             if (tableStructureMode)
@@ -634,14 +633,14 @@ public partial class RichEditor
             rBelow = ar + System.Math.Max(1, rs);
             cRight = ac + System.Math.Max(1, cs);
         }
-        // Explicit way into cell-selection mode. Dragging across cells is the other one, but that can
-        // never produce a ONE-cell block, so without this a single cell couldn't be selected as a unit.
+        // A ONE-cell block (also F5). Dragging across cells can never produce one, so without this a single cell
+        // couldn't be selected as a unit.
         items.Add(Mi(Loc("SelectCell"), () =>
         {
             if (loc is not { } lc) return;
             var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
             SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
-        }, loc != null));
+        }, loc != null, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectCell)));
         items.Add(new Separator());
         items.Add(Mi(Loc("InsertRowAbove"), () => TableInsertRow(tb, r), r >= 0, RichEditorIcon.InsertRowAbove));
         items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, rBelow), r >= 0, RichEditorIcon.InsertRowBelow));

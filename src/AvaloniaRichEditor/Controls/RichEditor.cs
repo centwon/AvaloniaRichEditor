@@ -67,10 +67,17 @@ public partial class RichEditor : Control
     private double _initialMouseY;
     private double _initialRowHeight;
 
-    // Table interaction mode (HWP-style). In cell-selection mode a click selects whole cells (drag =
-    // a block); a double-click drops back into text-editing mode (a caret). Default = text editing.
-    private bool _cellSelMode;
-    private TableBlock? _cellSelTable;
+    // A ONE-cell block — F5, the menu's "셀 선택", a one-cell table selected whole (`whole`), Shift+arrow shrinking
+    // back to the anchor. Two selection endpoints in one cell are otherwise a text selection, so this is a
+    // marker: the cell plus the exact _selectionStart/_selectionEnd objects the block was made with, live only
+    // while those very objects are the selection and still span the cell (MarkedCell). Any caret move or
+    // selection change builds new pointers, so the block ends by itself, and a later selection of the same range
+    // cannot revive it. A block of several cells needs no state: it is derived from the two endpoints
+    // (SelectedCellRange). This replaced a cell-selection MODE flag (unified with the WinUI port, 2026-09-13):
+    // every entry point had to reset it, and Shift+arrow across cells turned it off while the renderer still
+    // filled the block — Delete then removed characters under a painted cell block (measured). The mode's
+    // sticky clicks (a click after a cross-cell drag selected a cell, a double-click to edit) went with it.
+    private (TableCell cell, TextPointer s, TextPointer e, bool whole)? _cellBlockMark;
 
     // Image resize state. The handle carries the size the image was DRAWN at, not just the block: inside
     // a table cell a picture is scaled down to fit the cell (CellImageSize), so the declared Width can be
@@ -351,8 +358,7 @@ public partial class RichEditor : Control
         _caretBlock = null;
         _caretBlockAfter = false;
         _selectedInline = null;
-        _cellSelMode = false;
-        _cellSelTable = null;
+        _cellBlockMark = null; // it holds a cell of the document being replaced
         _pendingCaretStyles = null;
         // An armed format painter belongs to the document it was armed in: carried across a swap it would
         // paint the NEW document's next selection with the OLD one's format. (Backported 2026-09-12 from
@@ -1947,7 +1953,6 @@ public partial class RichEditor : Control
         if (TrySelectAllStage()) return;
         var allParas = GetAllParagraphsInOrder();
         if (allParas.Count == 0) return;
-        _cellSelMode = false; _cellSelTable = null;
         _selectionStart = new TextPointer(allParas[0], 0);
         var lastPara = allParas[allParas.Count - 1];
         _selectionEnd = new TextPointer(lastPara, GetParagraphLength(lastPara));

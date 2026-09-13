@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — one cell block model, shared with the WinUI port (2026-09-13)
+
+The two repos selected table cells differently; they now follow one rule (user decision).
+
+- **F5** (HWP's key) selects the caret's cell as a **one-cell block** — as the menu's "Select Cell" does, now
+  with F5 shown. Delete clears it, formatting and the background take all of it, Copy takes it as a 1×1 table.
+  It works in a viewer too (Ctrl+C then copies the cell).
+- **Shift+arrow on a cell block grows or shrinks it by whole cells**: the corner it started from stays, the other
+  steps one cell — past a merged cell's span — and stops at the table's edge.
+- **Fixed**: Shift+arrow across a cell boundary filled both cells as a block while Delete and formatting acted on
+  the characters between the two ends — the text before the start in the first cell survived a Delete. The block
+  the renderer fills and the one the commands act on now come from one place, the selection's two ends.
+- **Changed**: after dragging across cells, a click in the table places a caret — it used to select the clicked
+  cell (and a double-click was needed to edit). A plain arrow or a click ends any cell block.
+
 ### Fixed — a viewer can copy a table (2026-09-13)
 
 In a read-only editor, right-clicking a table offered Copy greyed out — it acts on the text selection, which
