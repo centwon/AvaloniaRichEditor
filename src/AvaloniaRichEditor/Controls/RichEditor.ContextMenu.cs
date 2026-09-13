@@ -216,7 +216,7 @@ public partial class RichEditor
             // shows — so Copy takes the table, and the viewer can see that it will. Copy acts on the text
             // selection, which is empty after a right-click: it was greyed out, and a viewer had no way to
             // take a table. The border band (partly outside the grid) counts as the table. From the WinUI peer.
-            if (!hasSelection && (TableLeftOrTopBorderAtPoint(point) ?? InlineTableBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
+            if (!hasSelection && (NestedTableBorderAtPoint(point) ?? TableLeftOrTopBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
                 hasSelection = SelectWholeTableForCopy(roTable);
 
             var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)) };
@@ -230,14 +230,16 @@ public partial class RichEditor
         var items = new List<Control>();
         // The left/top border band lies partly OUTSIDE the grid, where GetBlockAtPoint finds the neighbouring
         // paragraph — so a border is looked for first, as the hover cursor does.
-        var borderTable = TableLeftOrTopBorderAtPoint(point);
+        // A nested table's border is asked first, as the click does (NestedTableBorderAtPoint).
+        var nestedEdge = NestedTableBorderAtPoint(point);
+        var borderTable = nestedEdge == null ? TableLeftOrTopBorderAtPoint(point) : null;
         var block = (Block?)borderTable ?? GetBlockAtPoint(point);
 
-        if (borderTable == null && InlineTableBorderAtPoint(point) is { } inlineEdge)
+        if (nestedEdge is { } inlineEdge)
         {
-            // An inline table's border: the table as a unit, as a click there selects it — the whole-table
-            // selection and the table's own menu (Copy takes it; 글자처럼 취급, 표 삭제). The band lies partly
-            // outside the grid, where the host paragraph's text menu came up.
+            // A nested table's border — inline, or in a cell: the table as a unit, as a click there selects it —
+            // the whole-table selection and the table's own menu (Copy takes it; 표 삭제, and 글자처럼 취급 for
+            // an inline one). The band lies partly outside the grid, where the surrounding text's menu came up.
             _selectedBlock = null;
             SelectWholeTableForCopy(inlineEdge);
             BuildTableMenu(items, inlineEdge, null, hasSelection: true);

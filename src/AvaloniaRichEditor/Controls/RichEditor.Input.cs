@@ -206,10 +206,11 @@ public partial class RichEditor
                 return;
             }
 
-        // An inline table's left/top border selects the whole table — the cell fill of a staged Ctrl+A — so
-        // Ctrl+C copies it (SelectedWholeTable). A top-level table's border places the block caret instead;
-        // an inline table has none. The move cursor over the border announces it (OnPointerMoved).
-        if (InlineTableBorderAtPoint(point) is { } inlineEdge && SelectWholeTableForCopy(inlineEdge))
+        // A nested table's left/top border — an inline table's, or one in a table cell — selects the whole
+        // table, the cell fill of a staged Ctrl+A, so Ctrl+C copies it (SelectedWholeTable). A top-level
+        // table's border places the block caret instead; a nested table has none (the block caret is
+        // top-level only). The move cursor over the border announces it (OnPointerMoved).
+        if (NestedTableBorderAtPoint(point) is { } inlineEdge && SelectWholeTableForCopy(inlineEdge))
         {
             _selectedBlock = null;
             return;
@@ -657,8 +658,8 @@ public partial class RichEditor
             // Outer left/top table border selects the whole table on click -> a move cursor signals that
             // the border is grabbable (vs the I-beam over cell text). One walk (was GetBlockAtPoint +
             // IsOnTableLeftOrTopBorder, which re-walked the document).
-            // An inline table's border too: a click there selects the whole table (OnPointerPressed).
-            if (TableLeftOrTopBorderAtPoint(point) != null || InlineTableBorderAtPoint(point) != null)
+            // A nested table's border too — inline, or in a cell: a click there selects the whole table.
+            if (TableLeftOrTopBorderAtPoint(point) != null || NestedTableBorderAtPoint(point) != null)
             {
                 Cursor = MoveCursor;
                 return;

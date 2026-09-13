@@ -226,10 +226,28 @@ public class ViewerTableCopyTests
         return h;
     }
 
-    // Where the last render drew the inline table's grid.
-    private static Rect InlineRect(RichEditor ed, TableBlock tb)
-        => ((List<(Rect rect, TableBlock tb)>)typeof(RichEditor).GetField("_inlineTableRects", NP)!.GetValue(ed)!)
-            .First(x => ReferenceEquals(x.tb, tb)).rect;
+    // A 2×2 table inside the first cell of a 1×2 table — the nested case, beside the inline one above.
+    private static InteractionHost HostWithCellTable(TableBlock inner)
+    {
+        var outer = new TableBlock(1, 2);
+        outer.Cells[0][0].Blocks.Clear();
+        outer.Cells[0][0].Blocks.Add(inner);
+        outer.Cells[0][0].Blocks.Add(new Paragraph { Inlines = { new Run { Text = "after" } } });
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "above" } } });
+        doc.Blocks.Add(outer);
+        var h = InteractionHost.Create(new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous });
+        h.Render();
+        return h;
+    }
+
+    private static InteractionHost HostWithNested(string where, TableBlock inner)
+        => where == "inline" ? HostWithInlineTable(inner) : HostWithCellTable(inner);
+
+    // Where the last render drew the nested table's grid.
+    private static Rect NestedRect(RichEditor ed, TableBlock tb)
+        => ((List<(Rect rect, TableBlock tb)>)typeof(RichEditor).GetField("_nestedTableRects", NP)!.GetValue(ed)!)
+            .Last(x => ReferenceEquals(x.tb, tb)).rect;
 
     // On the left border, inside the FIRST row. Halfway down a 2×2 table is exactly the line between its
     // rows, where the editor's row-resize handle wins (a viewer has none) — the first cut stood there and
@@ -241,12 +259,15 @@ public class ViewerTableCopyTests
 
     // An inline table's border shows the move cursor, as a top-level table's does; inside its cells it does
     // not. It showed the I-beam: the hover only looked for top-level tables.
-    [AvaloniaFact]
-    public void AnInlineTablesBorder_ShowsTheMoveCursor()
+    // (A table in a cell, too — it showed nothing either: only inline tables were recorded.)
+    [AvaloniaTheory]
+    [InlineData("inline")]
+    [InlineData("cell")]
+    public void ANestedTablesBorder_ShowsTheMoveCursor(string where)
     {
         var inner = Table(2, 2);
-        var host = HostWithInlineTable(inner);
-        var r = InlineRect(host.Editor, inner);
+        var host = HostWithNested(where, inner);
+        var r = NestedRect(host.Editor, inner);
 
         host.Move(OnInlineLeftBorder(r));
         Assert.Same(MoveCursor, host.Editor.Cursor);
@@ -257,13 +278,15 @@ public class ViewerTableCopyTests
     // A click on it selects the whole table — in the editor and in a viewer alike, since an inline table has
     // no block caret to place — and Ctrl+C copies that table.
     [AvaloniaTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ClickingAnInlineTablesBorder_SelectsItWhole_AndCtrlCCopiesIt(bool readOnly)
+    [InlineData("inline", false)]
+    [InlineData("inline", true)]
+    [InlineData("cell", false)]
+    [InlineData("cell", true)]
+    public void ClickingANestedTablesBorder_SelectsItWhole_AndCtrlCCopiesIt(string where, bool readOnly)
     {
         var inner = Table(2, 2);
-        var host = HostWithInlineTable(inner);
-        var r = InlineRect(host.Editor, inner);
+        var host = HostWithNested(where, inner);
+        var r = NestedRect(host.Editor, inner);
         host.Editor.IsReadOnly = readOnly;
 
         host.Click(OnInlineLeftBorder(r));
@@ -279,13 +302,15 @@ public class ViewerTableCopyTests
     // A right-click on it — on the top band just above the grid, where the host line's text menu came up —
     // offers an enabled Copy that takes the table: the viewer's short menu, the editor's table menu.
     [AvaloniaTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void RightClickingAnInlineTablesBorder_OffersCopy_AndCopyTakesTheTable(bool readOnly)
+    [InlineData("inline", false)]
+    [InlineData("inline", true)]
+    [InlineData("cell", false)]
+    [InlineData("cell", true)]
+    public void RightClickingANestedTablesBorder_OffersCopy_AndCopyTakesTheTable(string where, bool readOnly)
     {
         var inner = Table(2, 2);
-        var host = HostWithInlineTable(inner);
-        var r = InlineRect(host.Editor, inner);
+        var host = HostWithNested(where, inner);
+        var r = NestedRect(host.Editor, inner);
         host.Editor.IsReadOnly = readOnly;
 
         host.Click(new Point(r.Left + 20, r.Top - 2), MouseButton.Right);
@@ -298,5 +323,36 @@ public class ViewerTableCopyTests
         Invoke(copy);
         var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
         Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+    }
+
+    // Where a nested table's border band overlaps the one around it (a cell's padding apart), the INNER table
+    // is taken — by a click and a right-click alike. Two depths: a table in a top-level table's cell (the
+    // nested lookup is asked before the top-level one), and a table in a nested table's cell (the rects are
+    // walked innermost-first).
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WhereBordersOverlap_TheInnerTableIsTaken(bool twoDeep)
+    {
+        var inner = Table(2, 2);
+        var target = inner;
+        if (twoDeep)
+        {
+            target = Table(2, 2);
+            inner.Cells[0][0].Blocks.Clear();
+            inner.Cells[0][0].Blocks.Add(target);
+            inner.Cells[0][0].Blocks.Add(new Paragraph { Inlines = { new Run { Text = "x" } } });
+        }
+        var host = HostWithCellTable(inner);
+        var r = NestedRect(host.Editor, target);
+        var both = new Point(r.Left - 2, r.Top + 6); // 2 from the target's left edge, 3 from the one around it
+
+        host.Click(both);
+        Assert.Same(target, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+        Assert.Null(host.CaretBlock);
+
+        host.Click(both, MouseButton.Right);
+        Assert.Same(target, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+        Assert.Null(host.CaretBlock);
     }
 }

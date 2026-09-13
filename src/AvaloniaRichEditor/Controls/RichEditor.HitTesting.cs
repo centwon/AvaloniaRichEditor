@@ -346,15 +346,17 @@ public partial class RichEditor
 
     // True when the point sits on the table's outer left or top border (a thin band). The right/bottom
     // borders are reserved for resize handles, so only left/top trigger whole-table selection.
-    // The inline table whose outer left/top border the point sits on, else null — the inline twin of
-    // TableLeftOrTopBorderAtPoint (same band), from the rects the last render drew them at. Walked from the
-    // end: a table nested in an inline table's cell is drawn after it, so the innermost wins.
-    private TableBlock? InlineTableBorderAtPoint(Point p)
+    // The nested table — inline, or inside a table cell — whose outer left/top border the point sits on, else
+    // null: the twin of TableLeftOrTopBorderAtPoint (same band) for tables that are not top-level blocks, from
+    // the rects the last render drew them at. Walked from the end: a table is recorded before the tables in
+    // its cells, so the innermost wins — and callers ask this BEFORE the top-level lookup, so where a nested
+    // table's band overlaps its outer table's (a cell's padding apart), click, right-click and viewer agree.
+    private TableBlock? NestedTableBorderAtPoint(Point p)
     {
         const double m = 4;
-        for (int i = _inlineTableRects.Count - 1; i >= 0; i--)
+        for (int i = _nestedTableRects.Count - 1; i >= 0; i--)
         {
-            var (r, tb) = _inlineTableRects[i];
+            var (r, tb) = _nestedTableRects[i];
             bool inY = p.Y >= r.Top - m && p.Y <= r.Bottom + m;
             bool inX = p.X >= r.Left - m && p.X <= r.Right + m;
             if ((inY && Math.Abs(p.X - r.Left) <= m) || (inX && Math.Abs(p.Y - r.Top) <= m)) return tb;
