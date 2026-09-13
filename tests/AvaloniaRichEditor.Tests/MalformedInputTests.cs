@@ -175,16 +175,19 @@ public class MalformedInputTests
         Assert.Throws<InvalidDataException>(() => DocumentPackage.Load(ms));
     }
 
-    // A package carrying no document.json is NOT damaged — it reads as an empty document.
+    // A zip carrying no document.json is not a package of this library (a .docx is a zip too) and is
+    // reported like any other unreadable package. It used to read as an empty document — which, loaded into
+    // an editor, replaced the open one and marked it saved: the very loss the contract above exists to
+    // prevent, carved out without a reason. Reversed 2026-09-12 with the WinUI port (a user decision
+    // there); every package this library writes has document.json.
     [Fact]
-    public void FlowPackage_ZipWithoutDocument_ReturnsAnEmptyDocument()
+    public void FlowPackage_ZipWithoutDocument_Throws()
     {
         using var ms = new MemoryStream();
         using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
             zip.CreateEntry("unrelated.txt");
         ms.Position = 0;
-        var doc = DocumentPackage.Load(ms);
-        Assert.NotNull(doc);
+        Assert.Throws<InvalidDataException>(() => DocumentPackage.Load(ms));
     }
 
     [Fact]

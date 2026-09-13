@@ -29,11 +29,24 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         if (AllowRichPaste && _internalClipboardText != null && text == _internalClipboardText &&
             (_internalClipboardBlocks != null || _internalClipboard != null))
         {
+            // Adapted to AllowImages/AllowTables (see AdaptToCapabilities) on a COPY — the retained
+            // clipboard lists stay exactly as they were copied.
+            var incoming = new FlowDocument();
+            if (_internalClipboardBlocks != null)
+                foreach (var b in _internalClipboardBlocks) incoming.Blocks.Add((Block)b.Clone());
+            else
+            {
+                var line = new Paragraph();
+                foreach (var inl in _internalClipboard!) line.Inlines.Add((Inline)inl.Clone());
+                incoming.Blocks.Add(line);
+            }
+            incoming = AdaptToCapabilities(incoming, out bool emptied);
+            if (emptied) return; // everything it held is disallowed here: nothing to paste
             PushUndo();
             if (_internalClipboardBlocks != null)
-                InsertBlocks(_internalClipboardBlocks);
+                InsertBlocks(new System.Collections.Generic.List<Block>(incoming.Blocks));
             else
-                InsertInlines(_internalClipboard!);
+                InsertInlines(((Paragraph)incoming.Blocks[0]).Inlines);
             ResetCaretBlink(); // caret sits at the end of the pasted content — scroll it into view
             return;
         }
@@ -51,6 +64,8 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     || (parsedRtf.Blocks.Count == 1 && parsedRtf.Blocks[0] is Paragraph ep && ep.Inlines.Count == 0);
                 if (!empty)
                 {
+                    parsedRtf = AdaptToCapabilities(parsedRtf, out bool emptiedRtf);
+                    if (emptiedRtf) return;
                     PushUndo();
                     InsertParsedDocument(parsedRtf);
                     ResetCaretBlink();
@@ -74,6 +89,8 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 var parsed = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(fragment, AllowLocalFileImages, AllowRemoteImagesOnPaste);
                 if (parsed.Blocks.Count > 0)
                 {
+                    parsed = AdaptToCapabilities(parsed, out bool emptiedHtml);
+                    if (emptiedHtml) return;
                     PushUndo();
                     InsertParsedDocument(parsed);
                     ResetCaretBlink(); // caret sits at the end of the pasted content — scroll it into view

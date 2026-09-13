@@ -21,29 +21,65 @@ public partial class RichEditor
     // sync, guarded against the apply -> property-change -> capture feedback loop.
     private bool _syncingPageSetup;
 
+    // What the HOST asked for, as opposed to what the open document carries. A document with no page setup
+    // of its own — and a new one (Clear) — starts from this. It used to adopt whatever the properties held,
+    // which after opening an A5-landscape file was THAT file's setup: the next plain document opened as A5
+    // landscape with its header, and saving it wrote them in. A page property set by code counts as the
+    // host's; values applied from a document do not (_syncingPageSetup), and neither do the toolbar's
+    // paper/orientation pickers, which edit the open document (EditDocumentPageSetup). Recorded PER
+    // PROPERTY, from OnPropertyChanged. (Backported 2026-09-12 from the WinUI port, where it was a user
+    // decision.)
+    private readonly PageSetup _hostPageSetup = new(); // starts equal to the property defaults
+    private int _documentPageSetupEdit;
+
+    // Runs a page-setup change that edits the OPEN DOCUMENT (the toolbar's pickers), not the host defaults.
+    internal void EditDocumentPageSetup(System.Action change)
+    {
+        _documentPageSetupEdit++;
+        try { change(); }
+        finally { _documentPageSetupEdit--; }
+    }
+
+    private void RecordHostPageSetup(AvaloniaProperty changed)
+    {
+        if (_syncingPageSetup || _documentPageSetupEdit > 0) return;
+        if (changed == PageSizeProperty) _hostPageSetup.PageSize = PageSize;
+        else if (changed == PageOrientationProperty) _hostPageSetup.Orientation = PageOrientation;
+        else if (changed == ShowPageBoundariesProperty) _hostPageSetup.ShowPageBoundaries = ShowPageBoundaries;
+        else if (changed == PageHeaderProperty) _hostPageSetup.Header = PageHeader;
+        else if (changed == PageFooterProperty) _hostPageSetup.Footer = PageFooter;
+        else if (changed == ShowPageNumbersProperty) _hostPageSetup.ShowPageNumbers = ShowPageNumbers;
+    }
+
     // On Document change: a document that specifies a PageSetup drives the control's page properties
-    // (model -> control); a document without one adopts the control's current settings (control -> model)
-    // so a later save persists what's shown. Since the default paper is Continuous, adopting a plain
-    // document yields a default (omitted) setup, keeping its bytes unchanged.
+    // (model -> control); a document without one starts from the HOST's setup, which is then captured
+    // into it (control -> model) so a later save persists what's shown. With no host setup that is the
+    // defaults, and a default setup is omitted, keeping a plain document's bytes unchanged.
     private void SyncPageSetupOnDocumentChanged()
     {
         var doc = Document;
         if (doc == null) return;
-        if (doc.PageSetup is { } ps)
+        if (doc.PageSetup is { } ps) ApplyPageSetup(ps);
+        else
         {
-            _syncingPageSetup = true;
-            try
-            {
-                PageSize = ps.PageSize;
-                PageOrientation = ps.Orientation;
-                ShowPageBoundaries = ps.ShowPageBoundaries;
-                PageHeader = ps.Header;
-                PageFooter = ps.Footer;
-                ShowPageNumbers = ps.ShowPageNumbers;
-            }
-            finally { _syncingPageSetup = false; }
+            ApplyPageSetup(_hostPageSetup);
+            CapturePageSetupToDocument();
         }
-        else CapturePageSetupToDocument();
+    }
+
+    private void ApplyPageSetup(PageSetup ps)
+    {
+        _syncingPageSetup = true;
+        try
+        {
+            PageSize = ps.PageSize;
+            PageOrientation = ps.Orientation;
+            ShowPageBoundaries = ps.ShowPageBoundaries;
+            PageHeader = ps.Header;
+            PageFooter = ps.Footer;
+            ShowPageNumbers = ps.ShowPageNumbers;
+        }
+        finally { _syncingPageSetup = false; }
     }
 
     // Writes the control's current page properties into Document.PageSetup (control -> model) when the

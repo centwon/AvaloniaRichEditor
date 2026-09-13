@@ -57,7 +57,10 @@ public partial class RichEditor
     /// <exception cref="System.Text.Json.JsonException"><paramref name="json"/> is not valid JSON.
     /// A damaged file is reported rather than loaded as an empty document — catch this and tell the
     /// user, or the editor would show a blank page and a save would overwrite the original.</exception>
-    public void LoadJson(string json) => LoadDocument(Formatters.DocumentSerializer.Deserialize(json));
+    // Strict about the SHAPE too: valid JSON that is not a document of this library (an object with no
+    // "Blocks" — another application's settings file) is a JsonException, so the open document is left
+    // alone instead of being replaced by a blank one. A literal null still reads as an empty document.
+    public void LoadJson(string json) => LoadDocument(Formatters.DocumentSerializer.DeserializeDocument(json));
 
     /// <summary>Serializes the document to JSON on a background thread, keeping the UI responsive
     /// for large documents. The DTO (which reads thread-affine brush colors) is built on the calling
@@ -80,6 +83,7 @@ public partial class RichEditor
         // thread-affine and must be created here on the UI thread, or the compositor crashes on
         // first render ("the calling thread cannot access this object").
         var (dto, pool) = await Task.Run(() => Formatters.DocumentSerializer.ParseJson(json));
+        Formatters.DocumentSerializer.EnsureDocumentShape(dto); // not a document of this library -> JsonException (see LoadJson)
         LoadDocument(Formatters.DocumentSerializer.FromDto(dto, pool));
     }
 
@@ -104,6 +108,7 @@ public partial class RichEditor
         // Background: zip/JSON parsing + byte extraction only; model built on the UI thread
         // (model brushes/decorations are thread-affine — see LoadJsonAsync).
         var (dto, pool) = await Task.Run(() => Formatters.DocumentPackage.ReadPackage(source));
+        Formatters.DocumentSerializer.EnsureDocumentShape(dto); // a package whose document.json is not ours (see LoadJson)
         LoadDocument(Formatters.DocumentSerializer.FromDto(dto, pool));
     }
 
@@ -161,8 +166,12 @@ public partial class RichEditor
     public void InsertHtml(string html)
     {
         if (Document == null || IsReadOnly || string.IsNullOrEmpty(html)) return;
-        var parsed = Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages, AllowRemoteImagesOnPaste);
-        if (parsed.Blocks.Count == 0) return;
+        // Inserting is subject to AllowImages/AllowTables (see AdaptToCapabilities); LoadHtml, which opens
+        // a document rather than inserting into one, is not.
+        var parsed = AdaptToCapabilities(
+            Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages, AllowRemoteImagesOnPaste),
+            out bool emptied);
+        if (parsed.Blocks.Count == 0 || emptied) return;
         PushUndo();
         InsertParsedDocument(parsed);
         InvalidateVisual();

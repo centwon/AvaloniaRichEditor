@@ -121,8 +121,9 @@ public partial class RichEditorToolbar
         _orientCombo.Items.Add(new ComboBoxItem { Content = Loc("OrientLandscape"), Tag = RichEditorPageOrientation.Landscape });
         _orientCombo.SelectionChanged += (_, _) =>
         {
-            if (_suppress || Target == null || _orientCombo.SelectedItem is not ComboBoxItem { Tag: RichEditorPageOrientation o }) return;
-            Target.PageOrientation = o;
+            if (_suppress || Target is not { } t || _orientCombo.SelectedItem is not ComboBoxItem { Tag: RichEditorPageOrientation o }) return;
+            // The pickers edit the OPEN DOCUMENT's page setup, not the host's defaults (see EditDocumentPageSetup).
+            t.EditDocumentPageSetup(() => t.PageOrientation = o);
         };
         items.Add(_orientCombo);
     }
@@ -138,10 +139,13 @@ public partial class RichEditorToolbar
 
     private void OnPaperChanged()
     {
-        if (_suppress || Target == null || _paperCombo?.SelectedItem is not ComboBoxItem { Tag: RichEditorPageSize size }) return;
-        Target.PageSize = size;
-        // A concrete paper size shows the page outline (page view); Continuous reflows with no chrome.
-        Target.ShowPageBoundaries = size != RichEditorPageSize.Continuous;
+        if (_suppress || Target is not { } t || _paperCombo?.SelectedItem is not ComboBoxItem { Tag: RichEditorPageSize size }) return;
+        t.EditDocumentPageSetup(() => // an edit of the open document, not of the host's defaults
+        {
+            t.PageSize = size;
+            // A concrete paper size shows the page outline (page view); Continuous reflows with no chrome.
+            t.ShowPageBoundaries = size != RichEditorPageSize.Continuous;
+        });
         SyncPage();
     }
 
