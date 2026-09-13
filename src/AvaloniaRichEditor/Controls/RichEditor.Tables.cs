@@ -288,6 +288,53 @@ public partial class RichEditor
     private (int r, int c)? CellIn(TableBlock tb, TextPointer p)
         => p.Paragraph is { } q && FindCell(q) is { } loc && ReferenceEquals(loc.tb, tb) ? tb.AnchorOf(loc.r, loc.c) : null;
 
+    // A cell block as a table of its own — what Copy puts on the clipboard (CopySelectionToClipboard): the
+    // rectangle's cells cloned into place with their column widths, merges inside the rectangle kept; a covered
+    // cell whose merge reaches in from outside stays a plain cell, so the result is a consistent grid. The source
+    // is untouched. (The port has the same as TableBlock.Extract; kept private here — no public-API change.)
+    private static TableBlock CellBlockAsTable(TableBlock tb, (int r0, int c0, int r1, int c1) rg)
+    {
+        int rows = rg.r1 - rg.r0 + 1, cols = rg.c1 - rg.c0 + 1;
+        var sub = new TableBlock(rows, cols);
+        for (int c = 0; c < cols; c++)
+            if (rg.c0 + c < tb.ColumnWidths.Count) sub.ColumnWidths[c] = tb.ColumnWidths[rg.c0 + c];
+        if (tb.RowHeights.Count > rg.r1)
+            for (int r = rg.r0; r <= rg.r1; r++) sub.RowHeights.Add(tb.RowHeights[r]);
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+            {
+                var cell = (TableCell)tb.Cells[rg.r0 + r][rg.c0 + c].Clone();
+                cell.Parent = sub;
+                sub.Cells[r][c] = cell;
+            }
+        for (int r = rg.r0; r <= rg.r1; r++)
+            for (int c = rg.c0; c <= rg.c1; c++)
+            {
+                if (tb.IsCovered(r, c)) continue;
+                var (cs, rs) = tb.SpanOf(r, c);
+                if (cs > 1 || rs > 1) sub.SetSpan(r - rg.r0, c - rg.c0, cs, rs); // clamped to the sub-grid
+            }
+        return sub;
+    }
+
+    // A table's plain text: a tab between cells, a newline between rows, a cell's paragraphs joined by a space —
+    // what Excel and Notepad make of a copied cell block.
+    private static string TableText(TableBlock tb)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int r = 0; r < tb.Rows; r++)
+        {
+            if (r > 0) sb.Append('\n');
+            for (int c = 0; c < tb.Columns; c++)
+            {
+                if (c > 0) sb.Append('\t');
+                sb.Append(string.Join(" ", tb.Cells[r][c].Blocks.OfType<Paragraph>()
+                    .Select(p => string.Concat(p.Inlines.OfType<Run>().Select(x => x.Text)))));
+            }
+        }
+        return sb.ToString();
+    }
+
     // Rectangular cell block (inclusive, span-aware): the marked one-cell block (_cellBlockMark), or the block
     // defined by the two selection *endpoints* — the cell the drag started in and the cell it ended in. Using
     // the endpoints (not every cell the linear text selection passes through) makes a vertical drag select a

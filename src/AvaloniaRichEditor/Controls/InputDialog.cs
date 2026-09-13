@@ -25,6 +25,17 @@ internal static class InputDialog
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
 
+        // Ready to type: focus in the box with the caret after the address ("https://|"). It opened with no focus,
+        // so the address could not be typed until the box was clicked (live check, 2026-09-14).
+        dialog.Opened += (_, _) =>
+        {
+            box.Focus();
+            int end = box.Text?.Length ?? 0;
+            box.SelectionStart = end;
+            box.SelectionEnd = end;
+            box.CaretIndex = end;
+        };
+
         ok.Click += (_, _) => { result = box.Text; dialog.Close(); };
         cancel.Click += (_, _) => { result = null; dialog.Close(); };
 

@@ -2041,13 +2041,25 @@ public partial class RichEditor : Control
         // the paragraph it was pasted into (user decision, 2026-09-13).
         var whole = caretTable ?? SelectedWholeTable();
         var wholeInline = whole?.Parent as InlineTable;
+        // Any other cell block — F5's one cell, a drag or Shift+arrow rectangle — copies as the rectangle it paints,
+        // a table of its own, so a one-cell block pastes back as a cell. It came out as the cell's text, and a block
+        // of several cells as the WHOLE table around it (live check, 2026-09-14; the port extracts the same way).
+        TableBlock? blockCopy = whole == null && CellBlockTable() is { } cbt && SelectedCellRange(cbt) is { } rg
+            ? CellBlockAsTable(cbt, rg) : null;
+        if (blockCopy != null)
+        {
+            text = TableText(blockCopy).ReplaceLineEndings();
+            _internalClipboardText = text;
+        }
         if (wholeInline != null)
         {
             _internalClipboard = new List<Inline> { (Inline)wholeInline.Clone() };
             _internalClipboardBlocks = null;
         }
         else
-            _internalClipboardBlocks = whole != null ? new List<Block> { (Block)whole.Clone() } : CaptureBlockStructure(range);
+            _internalClipboardBlocks = whole != null ? new List<Block> { (Block)whole.Clone() }
+                : blockCopy != null ? new List<Block> { blockCopy }
+                : CaptureBlockStructure(range);
 
         // Rich HTML for other apps (Word, browsers). When the selection spans a table or block image,
         // use the captured top-level blocks so the HTML keeps the <table> structure; otherwise a trimmed

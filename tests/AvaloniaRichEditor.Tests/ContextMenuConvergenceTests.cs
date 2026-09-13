@@ -129,6 +129,36 @@ public class ContextMenuConvergenceTests
         Assert.Equal(ListKind.None, ed.GetCaretFormat().List);
     }
 
+    private static void ApplyFromDialog(RichEditor ed, string url)
+        => typeof(RichEditor).GetMethod("ApplyHyperlinkFromDialog", NP)!.Invoke(ed, new object?[] { url, null });
+
+    // The dialog's OK on a blank spot: the address goes in as the link's text (Word) — arming a link for the next
+    // typed text showed nothing, so the link looked lost (live check, 2026-09-14). One undo step takes it back.
+    [AvaloniaFact]
+    public void TheLinkDialog_OnABlankSpot_InsertsTheAddressAsTheLink()
+    {
+        var (ed, _) = Editor("", 0);
+
+        ApplyFromDialog(ed, " https://example.com/ ");
+
+        var runs = ed.Document!.Blocks.OfType<Paragraph>().First().Inlines.OfType<Run>().ToList();
+        Assert.Contains(runs, r => r.Text == "https://example.com/" && r.NavigateUri == "https://example.com/");
+        ed.Undo();
+        Assert.Equal("", string.Concat(ed.Document!.Blocks.OfType<Paragraph>().First().Inlines.OfType<Run>().Select(r => r.Text)));
+    }
+
+    [AvaloniaFact]
+    public void TheLinkDialog_InAWord_LinksTheWord_AndInsertsNothing()
+    {
+        var (ed, _) = Editor("hello world", 2);
+
+        ApplyFromDialog(ed, "https://example.com/");
+
+        var runs = ed.Document!.Blocks.OfType<Paragraph>().First().Inlines.OfType<Run>().ToList();
+        Assert.Equal("hello world", string.Concat(runs.Select(r => r.Text)));
+        Assert.Equal("https://example.com/", runs.Single(r => r.Text == "hello").NavigateUri);
+    }
+
     [AvaloniaFact]
     public void CtrlShift7_TogglesNumbering_AndTheMenuShowsIt()
     {

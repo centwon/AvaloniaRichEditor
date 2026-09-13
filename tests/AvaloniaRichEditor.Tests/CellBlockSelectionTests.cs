@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Headless.XUnit;
@@ -324,6 +325,43 @@ public class CellBlockSelectionTests
         AssertBlock(ed, tb, (0, 0, 0, 1));
         Press(ed, Key.Right, KeyModifiers.Shift);
         AssertBlock(ed, tb, (0, 0, 0, 2));
+    }
+
+    private static List<Block>? CopyNow(RichEditor ed)
+    {
+        var slot = typeof(RichEditor).GetField("_internalClipboardBlocks",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        slot.SetValue(null, null); // static: a previous test's copy must not pass for this one
+        typeof(RichEditor).GetMethod("CopySelectionToClipboard",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(ed, null);
+        return (List<Block>?)slot.GetValue(null);
+    }
+
+    // Copy takes a cell block as the rectangle it paints — a one-cell block as a 1×1 table, which pastes back as
+    // a cell. It came out as the cell's text (live check, 2026-09-14).
+    [AvaloniaFact]
+    public void Copy_OfAOneCellBlock_IsAOneByOneTable()
+    {
+        var (ed, tb) = Grid(2, 2);
+        Caret(ed, tb.Cells[0][1].Para, 1);
+        Press(ed, Key.F5);
+
+        var copied = Assert.IsType<TableBlock>(Assert.Single(CopyNow(ed)!));
+        Assert.Equal((1, 1), (copied.Rows, copied.Columns));
+        Assert.Equal("01", CellText(copied.Cells[0][0]));
+    }
+
+    // …and a block of several cells as that rectangle — it copied the WHOLE table around it.
+    [AvaloniaFact]
+    public void Copy_OfACellBlock_IsTheRectangle_NotTheWholeTable()
+    {
+        var (ed, tb) = Grid(3, 3);
+        DragAcrossCells(ed, tb, tb.Cells[0][1].Para, 1, tb.Cells[1][2].Para, 1);
+
+        var copied = Assert.IsType<TableBlock>(Assert.Single(CopyNow(ed)!));
+        Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+        Assert.Equal(new[] { "01", "02", "11", "12" },
+            new[] { CellText(copied.Cells[0][0]), CellText(copied.Cells[0][1]), CellText(copied.Cells[1][0]), CellText(copied.Cells[1][1]) });
     }
 
     // A viewer can select a cell too — Ctrl+C then copies it as a 1×1 table.

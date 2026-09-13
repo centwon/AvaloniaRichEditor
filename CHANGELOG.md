@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — found in the live check (2026-09-14)
+
+- **Copying a cell block copies the block**: F5's one cell pasted back as the cell's *text*, and a block of
+  several cells copied the *whole table* around it. Copy now takes the rectangle the block paints, as a table of
+  its own (merges inside it kept) — a one-cell block pastes back as a cell, as in the WinUI port. The plain text
+  on the clipboard is the block's cells, tab-separated.
+- **The link dialog opens ready to type**: focus in the box with the caret after `https://` (it opened unfocused),
+  and closing it returns to the caret.
+- **Insert Link on a blank spot inserts the address as the link** (as Word does) — with no selection and no word
+  at the caret, OK showed nothing: the link waited for the next typed text. One undo step takes it back.
+
 ### Changed — context-menu items converged with the WinUI port (2026-09-13)
 
 - **Bold / Italic / Underline / Strikethrough, Clear Formatting and Insert Link are enabled without a
