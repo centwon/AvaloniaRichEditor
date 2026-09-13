@@ -2015,8 +2015,7 @@ public partial class RichEditor : Control
 
     private async void CopySelectionToClipboard()
     {
-        bool textSelected = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
-            && _selectionStart.CompareTo(_selectionEnd) != 0;
+        bool textSelected = HasTextOrCellSelection;
         // The block caret on a table — its border clicked or right-clicked — holds the table as a unit: Del
         // deletes it, Space indents it. Copy takes it too. With no text selected there was nothing to copy:
         // the menu item was greyed out and Ctrl+C did nothing (live check, 2026-09-13).

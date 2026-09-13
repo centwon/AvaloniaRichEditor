@@ -115,18 +115,85 @@ public class ContextMenuConvergenceTests
         Assert.Equal(enabled, Item(Flatten(linkMenu), "OpenLink").IsEnabled);
     }
 
+    // "목록 제거" went (user decision, 2026-09-14): a list is turned off by its own toggle; the item was a second door.
     [AvaloniaFact]
-    public void RemoveList_IsOfferedInAList_AndTakesItAway()
+    public void TheListMenu_HasNoRemoveListItem()
     {
-        var (ed, p) = Editor("item", 2);
+        var (ed, _) = Editor("item", 2);
         ed.ShowFormattingMenu = true;
-        Assert.False(Item(TextMenu(ed), "RemoveList").IsEnabled);
-
         ed.ToggleBullet();
-        var remove = Item(TextMenu(ed), "RemoveList");
-        Assert.True(remove.IsEnabled);
-        remove.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
-        Assert.Equal(ListKind.None, ed.GetCaretFormat().List);
+        Assert.DoesNotContain(TextMenu(ed), i => (i.Header as string) is "목록 제거" or "Remove List");
+    }
+
+    // ---- the table menu — the same items in the same order as the WinUI port's (user decision, 2026-09-14) ----
+
+    // The expected sequence is written out identically in the port's ControlContextMenuTests; "—" is a separator.
+    private static string[] TableMenuLabels(bool inlineToggle)
+    {
+        var l = new List<string> { Loc("Cut"), Loc("Copy"), Loc("Paste"), Loc("Delete"), "—",
+            Loc("SelectCell"), "—",
+            Loc("InsertRowAbove"), Loc("InsertRowBelow"), Loc("DeleteRow"), "—",
+            Loc("InsertColumnLeft"), Loc("InsertColumnRight"), Loc("DeleteColumn"), "—",
+            Loc("MergeCells"), Loc("UnmergeCells"), "—",
+            Loc("CellVerticalAlign"), Loc("CellBackground"), Loc("Margin") };
+        if (inlineToggle) l.Add(Loc("InlineWithText"));
+        l.Add("—");
+        l.Add(Loc("DeleteTable"));
+        return l.ToArray();
+    }
+
+    private static (RichEditor ed, TableBlock tb) TableEditor(bool nested)
+    {
+        var tb = new TableBlock(2, 2);
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "above" } } });
+        if (nested)
+        {
+            var outer = new TableBlock(1, 1);
+            outer.Cells[0][0].Blocks.Insert(0, tb);
+            doc.Blocks.Add(outer);
+        }
+        else doc.Blocks.Add(tb);
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "below" } } });
+        return (new RichEditor { Document = doc }, tb);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheTableMenu_IsTheSameItemsInTheSameOrder_AsThePorts(bool nested)
+    {
+        var (ed, tb) = TableEditor(nested);
+        var items = new List<Control>();
+        typeof(RichEditor).GetMethod("BuildTableMenu", NP)!.Invoke(ed, new object?[] { items, tb, tb.Cells[0][0].Para, false });
+
+        var labels = items.Select(i => i is Separator ? "—" : (i as MenuItem)?.Header as string ?? i.GetType().Name).ToArray();
+        Assert.Equal(TableMenuLabels(inlineToggle: !nested), labels); // a table in a cell has no 글자처럼 취급
+    }
+
+    // 셀 배경 goes on the cell block when there is one — a one-cell block included — else on the clicked cell.
+    [AvaloniaFact]
+    public void CellBackground_TakesTheCellBlock_ElseTheClickedCell()
+    {
+        var (ed, tb) = TableEditor(nested: false);
+        foreach (var (_, _, cell) in tb.LogicalCells()) cell.Background = Avalonia.Media.Brushes.Red;
+        typeof(RichEditor).GetMethod("SelectCellAsBlock", NP)!.Invoke(ed, new object[] { tb, tb.Cells[0][1], false });
+
+        void ClickNone(int r, int c)
+        {
+            var sub = (MenuItem)typeof(RichEditor).GetMethod("BuildCellBackgroundSub", NP)!.Invoke(ed, new object[] { tb, r, c })!;
+            var panel = (StackPanel)((sub.ItemsSource ?? sub.Items)!.Cast<object>().Single());
+            var none = panel.Children.OfType<Button>().Single();
+            none.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        }
+
+        ClickNone(1, 1); // the right-click was on (1,1), but the block is (0,1)
+        Assert.True(tb.Cells[0][1].Background == null, "the block's cell kept its background");
+        Assert.True(tb.Cells[1][1].Background != null, "the clicked cell lost its background though a block was on");
+
+        ed.Undo(); // one step — it restores a snapshot, so read the table back from the document
+        var restored = ed.Document!.Blocks.OfType<TableBlock>().Single();
+        Assert.True(restored.Cells[0][1].Background != null, "one undo did not bring the background back");
     }
 
     private static void ApplyFromDialog(RichEditor ed, string url)

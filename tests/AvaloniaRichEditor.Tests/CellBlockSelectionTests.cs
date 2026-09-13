@@ -364,6 +364,20 @@ public class CellBlockSelectionTests
             new[] { CellText(copied.Cells[0][0]), CellText(copied.Cells[0][1]), CellText(copied.Cells[1][0]), CellText(copied.Cells[1][1]) });
     }
 
+    // An EMPTY cell's one-cell block is a zero-length range — it must still count as selected and copy as a 1×1
+    // table. It copied nothing ("is anything selected" compared the two ends).
+    [AvaloniaFact]
+    public void Copy_OfAnEmptyOneCellBlock_IsAOneByOneTable()
+    {
+        var (ed, tb) = Grid(2, 2);
+        ((Run)tb.Cells[0][0].Para.Inlines[0]).Text = "";
+        Caret(ed, tb.Cells[0][0].Para, 0);
+        Press(ed, Key.F5);
+
+        var copied = Assert.IsType<TableBlock>(Assert.Single(CopyNow(ed)!));
+        Assert.Equal((1, 1), (copied.Rows, copied.Columns));
+    }
+
     // A viewer can select a cell too — Ctrl+C then copies it as a 1×1 table.
     [AvaloniaFact]
     public void F5_WorksInAViewer()

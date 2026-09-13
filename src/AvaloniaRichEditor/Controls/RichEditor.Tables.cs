@@ -239,6 +239,13 @@ public partial class RichEditor
         return null;
     }
 
+    // A selection to act on: a non-empty text range, or a one-cell block — which spans an EMPTY cell as a zero-length
+    // range, so "is anything selected" read as no: a right-click dropped the block (it moved the caret) and Copy
+    // copied nothing. Found 2026-09-14 by the WinUI port's right-click test on an empty cell.
+    private bool HasTextOrCellSelection
+        => (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
+           || MarkedCell() != null;
+
     private static (int r0, int c0, int r1, int c1) SpanRect(TableBlock tb, int r, int c)
     {
         var (cs, rs) = tb.SpanOf(r, c);

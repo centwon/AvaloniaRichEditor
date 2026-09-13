@@ -17,6 +17,9 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         Editor.ShowPageNumbers = true;
+        // The full right-click menu (character · paragraph · list · heading groups) while editing, as the WinUI
+        // demo shows it — without it the two demos' menus differed and the list items could not be found here.
+        Editor.ShowFormattingMenu = true;
         Editor.Document = SampleDocument.Build();
 
         // Print is platform-specific; the view raises this and the app drives its own preview/printing.
@@ -24,7 +27,11 @@ public partial class MainWindow : Window
 
         // Viewer mode. The view has no switch for it, so without this the read-only behaviour (a table's
         // right-click Copy, the table-border click) could not be checked in the demo at all.
-        ReadOnlyToggle.IsCheckedChanged += (_, _) => Editor.IsReadOnly = ReadOnlyToggle.IsChecked == true;
+        ReadOnlyToggle.IsCheckedChanged += (_, _) =>
+        {
+            Editor.IsReadOnly = ReadOnlyToggle.IsChecked == true;
+            Editor.ShowFormattingMenu = !Editor.IsReadOnly;
+        };
     }
 
     protected override void OnOpened(EventArgs e)
