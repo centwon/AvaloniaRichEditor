@@ -235,6 +235,9 @@ public partial class RichEditor
             // already consumed above). Lets the table be deleted as a unit.
             if (IsOnTableLeftOrTopBorder(table, point))
             {
+                // A viewer has no use for the block caret (nothing to indent or delete): the border selects
+                // the whole table instead, which Ctrl+C then copies — as the read-only context menu does.
+                if (IsReadOnly && SelectWholeTableForCopy(table)) return;
                 // Block caret in front of the table (Space indents the whole table; Del deletes it).
                 _caretBlock = table; _caretBlockAfter = false;
                 _selectedBlock = null;

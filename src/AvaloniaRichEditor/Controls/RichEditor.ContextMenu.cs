@@ -212,6 +212,13 @@ public partial class RichEditor
                 return;
             }
 
+            // A TABLE right-clicked with nothing selected is selected whole — the cell fill a staged Ctrl+A
+            // shows — so Copy takes the table, and the viewer can see that it will. Copy acts on the text
+            // selection, which is empty after a right-click: it was greyed out, and a viewer had no way to
+            // take a table. The border band (partly outside the grid) counts as the table. From the WinUI peer.
+            if (!hasSelection && (TableLeftOrTopBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
+                hasSelection = SelectWholeTableForCopy(roTable);
+
             var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)) };
             var roMenu = NewContextMenu();
             roMenu.ItemsSource = roItems;

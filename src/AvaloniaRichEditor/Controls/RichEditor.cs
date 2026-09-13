@@ -2014,7 +2014,10 @@ public partial class RichEditor : Control
         // Capture the rich fragment synchronously (cloned) before any await / later edits.
         _internalClipboard = range.GetRichInlines();
         _internalClipboardText = text;
-        _internalClipboardBlocks = CaptureBlockStructure(range);
+        // A whole table selected (staged Ctrl+A, a viewer's right-click) copies THAT table — SelectedWholeTable.
+        _internalClipboardBlocks = SelectedWholeTable() is { } whole
+            ? new List<Block> { (Block)whole.Clone() }
+            : CaptureBlockStructure(range);
 
         // Rich HTML for other apps (Word, browsers). When the selection spans a table or block image,
         // use the captured top-level blocks so the HTML keeps the <table> structure; otherwise a trimmed

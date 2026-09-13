@@ -110,6 +110,24 @@ public partial class RichEditor
     private bool WholeTableSelected(TableBlock tb)
         => TableEnds(tb) is { } e && SelectionSpans(e.first, e.last);
 
+    // The table the selection covers exactly and whole — as the staged Ctrl+A or a viewer's right-click
+    // (SelectWholeTableForCopy) leaves it — else null. Copy takes that table itself: the top-level block
+    // capture copies the OUTERMOST block, so a nested table came out as the table around it, and a one-cell
+    // table (whose "whole" is a single-cell block) as bare text.
+    private TableBlock? SelectedWholeTable()
+        => _cellSelMode && _cellSelTable is { } tb
+           && (WholeTableSelected(tb) || (TableEnds(tb) == null && SelectedCellsBlock() != null)) ? tb : null;
+
+    // Selects all of `tb` so Copy takes it: the whole-table stage, or — for a one-cell table, which has no
+    // separate table stage — its one cell as a block. False when there is nothing to select.
+    private bool SelectWholeTableForCopy(TableBlock tb)
+    {
+        if (SelectWholeTable(tb)) return true;
+        foreach (var (_, _, cell) in tb.LogicalCells())
+            return SelectCellAsBlock(tb, cell); // the first — and only — logical cell
+        return false;
+    }
+
     // First/last paragraph of a whole table, taking the first and last LOGICAL (anchor) cells.
     private static (Paragraph first, Paragraph last)? TableEnds(TableBlock tb)
     {

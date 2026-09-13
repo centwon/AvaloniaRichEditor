@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a viewer can copy a table (2026-09-13)
+
+In a read-only editor, right-clicking a table offered Copy greyed out — it acts on the text selection, which
+is empty after a right-click — and nothing else took a table out of a viewer. Now:
+
+- Right-clicking a table with nothing selected **selects the whole table** (the cell fill of a staged
+  Ctrl+A), so Copy is enabled and takes it, and the fill shows what will be copied. The left/top border band
+  counts as the table.
+- Clicking a table's left/top border in a viewer selects the whole table too (the editor's block caret has
+  nothing to do there); Ctrl+C then copies it. The move cursor already showed on that border.
+- Copying a whole-table selection copies **that table**. The block capture took the outermost top-level block,
+  so a nested table came out as the table around it and a one-cell table as bare text — in the editable
+  editor too (staged Ctrl+A, then Ctrl+C).
+
+Ported from the WinUI peer. No public surface change.
+
 ### Changed — SavePdf writes a vector PDF: text stays text (2026-09-12)
 
 `SavePdf` wrote one RGB image per page — a PDF with no text in it (not selectable, not searchable, soft
