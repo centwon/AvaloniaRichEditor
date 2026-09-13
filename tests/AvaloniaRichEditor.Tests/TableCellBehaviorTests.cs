@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Avalonia;
@@ -550,16 +551,49 @@ public class TableCellBehaviorTests
     }
 
     [AvaloniaFact]
-    public void Paste_TableHtml_WithCaretInCell_StaysTopLevel()
+    public void Paste_TableHtml_WithCaretInCell_NestsInTheCell()
     {
-        // Nested tables aren't rendered in cells yet (P4-2b): a paste containing a table falls back to a
-        // top-level insert rather than dropping an invisible nested table into the cell.
+        // A pasted table nests in the caret's cell (P4-2b), like InsertTable there. It used to fall back
+        // to a top-level insert from before nested tables rendered — landing after the whole outer table.
         var ed = new RichEditor();
-        ed.LoadHtml("<table><tr><td>x</td></tr></table>");
-        PlaceCaret(ed, ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0].Para, 1);
+        ed.LoadHtml("<table><tr><td>xy</td></tr></table>");
+        var cell = ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        PlaceCaret(ed, cell.Para, 1); // between "x" and "y"
 
         ed.InsertHtml("<table><tr><td>nested</td></tr></table>");
 
-        Assert.Equal(2, ed.Document!.Blocks.OfType<TableBlock>().Count());
+        Assert.Single(ed.Document!.Blocks.OfType<TableBlock>()); // no second top-level table
+        AssertSplitAroundNestedTable(cell);
+    }
+
+    // The table lands AT the caret: "x" | table | "y" — not after the caret's paragraph ("xy" | table),
+    // which is what the after-block fallback would do.
+    private static TableBlock AssertSplitAroundNestedTable(TableCell cell)
+    {
+        int ti = cell.Blocks.FindIndex(b => b is TableBlock);
+        Assert.True(ti > 0, "no nested table in the cell");
+        var nested = (TableBlock)cell.Blocks[ti];
+        Assert.Same(cell, nested.Parent);
+        Assert.Equal("x", ((Paragraph)cell.Blocks[ti - 1]).Text());
+        Assert.Equal("y", ((Paragraph)cell.Blocks[ti + 1]).Text());
+        return nested;
+    }
+
+    // The in-app route (Ctrl+C on a table, Ctrl+V in a cell) goes through InsertBlocks — same rule.
+    [AvaloniaFact]
+    public void Paste_InternalTableBlocks_WithCaretInCell_NestsInTheCell()
+    {
+        var ed = new RichEditor();
+        ed.LoadHtml("<table><tr><td>xy</td></tr></table>");
+        var cell = ed.Document!.Blocks.OfType<TableBlock>().Single().Cells[0][0];
+        PlaceCaret(ed, cell.Para, 1);
+
+        var copied = new TableBlock(2, 2);
+        typeof(RichEditor).GetMethod("InsertBlocks", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(ed, new object[] { new List<Block> { copied } });
+
+        Assert.Single(ed.Document!.Blocks.OfType<TableBlock>());
+        var nested = AssertSplitAroundNestedTable(cell);
+        Assert.Equal((2, 2), (nested.Rows, nested.Columns));
     }
 }

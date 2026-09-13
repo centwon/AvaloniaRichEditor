@@ -157,6 +157,7 @@ public partial class RichEditor
         _rowBoundaries.Clear();
         _imageHandles.Clear();
         _cellImageRects.Clear();
+        _nestedTableRects.Clear();
         _inlineImageRects.Clear();
         _inlineHandles.Clear();
 
@@ -739,6 +740,9 @@ public partial class RichEditor
         ref Point? caretPoint, ref double caretHeight)
     {
         var tl = LayoutTable(tb, startX, top);
+        // Where this table's grid is — for its border (NestedTableBorderAtPoint). Recorded BEFORE the cells
+        // are drawn, so a table nested in one of them lands later in the list and is found first.
+        if (chrome) _nestedTableRects.Add((new Rect(startX, top, tl.TableWidth, tl.TotalHeight), tb));
         // A cell block spanning several of THIS table's cells is filled exactly as at the top level —
         // without this a nested (or inline) table never showed the cell-block chrome, so selecting one
         // (by drag, or by staged Ctrl+A) looked like nothing had happened in near-empty cells.

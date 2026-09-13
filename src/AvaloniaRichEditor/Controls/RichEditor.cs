@@ -67,10 +67,17 @@ public partial class RichEditor : Control
     private double _initialMouseY;
     private double _initialRowHeight;
 
-    // Table interaction mode (HWP-style). In cell-selection mode a click selects whole cells (drag =
-    // a block); a double-click drops back into text-editing mode (a caret). Default = text editing.
-    private bool _cellSelMode;
-    private TableBlock? _cellSelTable;
+    // A ONE-cell block — F5, the menu's "셀 선택", a one-cell table selected whole (`whole`), Shift+arrow shrinking
+    // back to the anchor. Two selection endpoints in one cell are otherwise a text selection, so this is a
+    // marker: the cell plus the exact _selectionStart/_selectionEnd objects the block was made with, live only
+    // while those very objects are the selection and still span the cell (MarkedCell). Any caret move or
+    // selection change builds new pointers, so the block ends by itself, and a later selection of the same range
+    // cannot revive it. A block of several cells needs no state: it is derived from the two endpoints
+    // (SelectedCellRange). This replaced a cell-selection MODE flag (unified with the WinUI port, 2026-09-13):
+    // every entry point had to reset it, and Shift+arrow across cells turned it off while the renderer still
+    // filled the block — Delete then removed characters under a painted cell block (measured). The mode's
+    // sticky clicks (a click after a cross-cell drag selected a cell, a double-click to edit) went with it.
+    private (TableCell cell, TextPointer s, TextPointer e, bool whole)? _cellBlockMark;
 
     // Image resize state. The handle carries the size the image was DRAWN at, not just the block: inside
     // a table cell a picture is scaled down to fit the cell (CellImageSize), so the declared Width can be
@@ -81,6 +88,10 @@ public partial class RichEditor : Control
     // Rendered rects of block images inside table cells (P4-2b), so a click can select one (top-level
     // block images are found via GetBlockAtPoint; cell images need this registry, like inline images).
     private List<(Avalonia.Rect rect, ImageBlock img)> _cellImageRects = new();
+    // Rendered grid rects of NESTED tables — inline ones and ones inside table cells, drawn by DrawNestedTable;
+    // their document position is known only while they are drawn — so a hover or a click can find such a
+    // table's border (NestedTableBorderAtPoint). Top-level tables are found from the block layout instead.
+    private List<(Avalonia.Rect rect, TableBlock tb)> _nestedTableRects = new();
     private bool _isResizingImage;
     private ImageBlock? _resizingImage;
     private double _initialImageWidth;
@@ -347,8 +358,7 @@ public partial class RichEditor : Control
         _caretBlock = null;
         _caretBlockAfter = false;
         _selectedInline = null;
-        _cellSelMode = false;
-        _cellSelTable = null;
+        _cellBlockMark = null; // it holds a cell of the document being replaced
         _pendingCaretStyles = null;
         // An armed format painter belongs to the document it was armed in: carried across a swap it would
         // paint the NEW document's next selection with the OLD one's format. (Backported 2026-09-12 from
@@ -368,6 +378,7 @@ public partial class RichEditor : Control
         _rowBoundaries.Clear();
         _imageHandles.Clear();
         _cellImageRects.Clear();
+        _nestedTableRects.Clear();
         _inlineImageRects.Clear();
         _inlineHandles.Clear();
     }
@@ -1641,8 +1652,9 @@ public partial class RichEditor : Control
     // Inserts a list of blocks at the caret, splitting the caret paragraph so the paste lands AT the
     // caret (Word/HWP behaviour): the first pasted paragraph continues the caret line, the last merges
     // with the text after the caret, and any blocks between become siblings. Works whether the caret is
-    // in a top-level paragraph or a table cell. Falls back to a plain after-block splice when the caret
-    // isn't in a normal paragraph, or when the paste carries a table that can't nest in a cell yet (P4-2b).
+    // in a top-level paragraph or a table cell — a pasted table nests in the cell (P4-2b), the same as
+    // InsertTable does there. Falls back to a plain after-block splice when the caret isn't in a normal
+    // paragraph.
     private void InsertBlocksAtCaret(System.Collections.Generic.IReadOnlyList<Block> blocks)
     {
         if (Document == null || blocks.Count == 0) return;
@@ -1657,7 +1669,7 @@ public partial class RichEditor : Control
         };
         bool inCell = p?.Parent is TableCell;
         int pi = container != null && p != null ? container.IndexOf(p) : -1;
-        if (container == null || p == null || pi < 0 || (inCell && blocks.Any(b => b is TableBlock)))
+        if (container == null || p == null || pi < 0)
         {
             InsertBlocksAfterCaretBlock(blocks);
             return;
@@ -1716,7 +1728,7 @@ public partial class RichEditor : Control
 
     // Plain after-block splice (the fallback): inserts cloned blocks after the caret's block — into the
     // enclosing cell when the caret is in one, else the document top level. Used when the caret isn't in
-    // a normal paragraph or the paste carries a table that can't nest in a cell.
+    // a normal paragraph.
     private void InsertBlocksAfterCaretBlock(System.Collections.Generic.IReadOnlyList<Block> blocks)
     {
         if (Document == null) return;
@@ -1741,11 +1753,11 @@ public partial class RichEditor : Control
 
     // The container + index for the after-block splice fallback: the enclosing cell's block list (after
     // the caret's paragraph) when the caret is in a cell, otherwise the document's top-level list (after
-    // the caret's top-level block). A paste containing a TableBlock can't nest in a cell yet (P4-2b), so
-    // it falls back to top level.
+    // the caret's top-level block). A pasted table nests in the cell (P4-2b) — it used to fall back to
+    // top level from before nested tables rendered, landing after the whole outer table.
     private (System.Collections.Generic.IList<Block> container, int at) BlockInsertTarget(System.Collections.Generic.IEnumerable<Block> blocks)
     {
-        if (Document != null && _caretPosition.Paragraph?.Parent is TableCell tc && !blocks.Any(b => b is TableBlock))
+        if (Document != null && _caretPosition.Paragraph?.Parent is TableCell tc)
         {
             int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
             return (tc.Blocks, pi >= 0 ? pi + 1 : tc.Blocks.Count);
@@ -1941,7 +1953,6 @@ public partial class RichEditor : Control
         if (TrySelectAllStage()) return;
         var allParas = GetAllParagraphsInOrder();
         if (allParas.Count == 0) return;
-        _cellSelMode = false; _cellSelTable = null;
         _selectionStart = new TextPointer(allParas[0], 0);
         var lastPara = allParas[allParas.Count - 1];
         _selectionEnd = new TextPointer(lastPara, GetParagraphLength(lastPara));
@@ -2004,8 +2015,18 @@ public partial class RichEditor : Control
 
     private async void CopySelectionToClipboard()
     {
-        if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null || _selectionStart.CompareTo(_selectionEnd) == 0) return;
-        var range = new TextRange(_selectionStart, _selectionEnd);
+        bool textSelected = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
+            && _selectionStart.CompareTo(_selectionEnd) != 0;
+        // The block caret on a table — its border clicked or right-clicked — holds the table as a unit: Del
+        // deletes it, Space indents it. Copy takes it too. With no text selected there was nothing to copy:
+        // the menu item was greyed out and Ctrl+C did nothing (live check, 2026-09-13).
+        var caretTable = !textSelected ? _caretBlock as TableBlock : null;
+        TextRange range;
+        if (caretTable != null && WholeTableEnds(caretTable) is { } ends)
+            range = new TextRange(new TextPointer(ends.first, 0), new TextPointer(ends.last, GetParagraphLength(ends.last)));
+        else if (textSelected)
+            range = new TextRange(_selectionStart, _selectionEnd);
+        else return;
         // GetText joins paragraphs with LF; LF-only shows as a single line in many Windows consumers
         // (Notepad, native text boxes), so put the platform newline on the system clipboard. Store the
         // SAME normalized form internally so the paste round-trip match (system text == what we copied)
@@ -2014,7 +2035,31 @@ public partial class RichEditor : Control
         // Capture the rich fragment synchronously (cloned) before any await / later edits.
         _internalClipboard = range.GetRichInlines();
         _internalClipboardText = text;
-        _internalClipboardBlocks = CaptureBlockStructure(range);
+        // A whole table — the block caret's, or one selected whole (staged Ctrl+A, a viewer's right-click) —
+        // copies THAT table; see SelectedWholeTable. An INLINE table copies as an inline table: the inline list
+        // alone, which paste puts at the caret (InsertInlines) as it was. It came back a block table, splitting
+        // the paragraph it was pasted into (user decision, 2026-09-13).
+        var whole = caretTable ?? SelectedWholeTable();
+        var wholeInline = whole?.Parent as InlineTable;
+        // Any other cell block — F5's one cell, a drag or Shift+arrow rectangle — copies as the rectangle it paints,
+        // a table of its own, so a one-cell block pastes back as a cell. It came out as the cell's text, and a block
+        // of several cells as the WHOLE table around it (live check, 2026-09-14; the port extracts the same way).
+        TableBlock? blockCopy = whole == null && CellBlockTable() is { } cbt && SelectedCellRange(cbt) is { } rg
+            ? CellBlockAsTable(cbt, rg) : null;
+        if (blockCopy != null)
+        {
+            text = TableText(blockCopy).ReplaceLineEndings();
+            _internalClipboardText = text;
+        }
+        if (wholeInline != null)
+        {
+            _internalClipboard = new List<Inline> { (Inline)wholeInline.Clone() };
+            _internalClipboardBlocks = null;
+        }
+        else
+            _internalClipboardBlocks = whole != null ? new List<Block> { (Block)whole.Clone() }
+                : blockCopy != null ? new List<Block> { blockCopy }
+                : CaptureBlockStructure(range);
 
         // Rich HTML for other apps (Word, browsers). When the selection spans a table or block image,
         // use the captured top-level blocks so the HTML keeps the <table> structure; otherwise a trimmed
@@ -2022,7 +2067,16 @@ public partial class RichEditor : Control
         // images — so formatting and pasted-back pictures survive, and an image-only selection still has
         // content even though its plain text is empty.
         FlowDocument? htmlDoc;
-        if (_internalClipboardBlocks is { } caps && caps.Exists(b => b is TableBlock || b is ImageBlock))
+        if (wholeInline != null)
+        {
+            // The inline table inside a line of its own — the HTML writer marks it inline, so a paste of the
+            // HTML into this editor keeps it inline too.
+            htmlDoc = new FlowDocument();
+            var line = new Paragraph();
+            line.Inlines.Add((Inline)wholeInline.Clone());
+            htmlDoc.Blocks.Add(line);
+        }
+        else if (_internalClipboardBlocks is { } caps && caps.Exists(b => b is TableBlock || b is ImageBlock))
         {
             htmlDoc = new FlowDocument();
             foreach (var b in caps) htmlDoc.Blocks.Add(b);

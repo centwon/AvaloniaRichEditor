@@ -6,6 +6,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — right-clicking a table with a selection moved the caret away from it (2026-09-14)
+
+With text selected, a right-click in a table cell moved the caret to the clicked cell while the selection stayed
+where it was (measured): the caret was drawn in another cell and Shift+arrow extended from there. The caret now
+stays with the selection, as a right-click in plain text already did (and the WinUI port does). The menu's
+"Table" submenu acts on the caret's table accordingly — built for the table under the pointer, it would have
+addressed that table by the caret table's row/column.
+
+### Fixed — found in the live check (2026-09-14)
+
+- **Copying a cell block copies the block**: F5's one cell pasted back as the cell's *text*, and a block of
+  several cells copied the *whole table* around it. Copy now takes the rectangle the block paints, as a table of
+  its own (merges inside it kept) — a one-cell block pastes back as a cell, as in the WinUI port. The plain text
+  on the clipboard is the block's cells, tab-separated.
+- **The link dialog opens ready to type**: focus in the box with the caret after `https://` (it opened unfocused),
+  and closing it returns to the caret.
+- **Insert Link on a blank spot inserts the address as the link** (as Word does) — with no selection and no word
+  at the caret, OK showed nothing: the link waited for the next typed text. One undo step takes it back.
+
+### Changed — context-menu items converged with the WinUI port (2026-09-13)
+
+- **Bold / Italic / Underline / Strikethrough, Clear Formatting and Insert Link are enabled without a
+  selection** — they act on the caret's word, or on the text typed next, exactly as their shortcuts do.
+- **Fixed**: Insert Link without a selection did nothing and left an empty undo step behind (the reason it had
+  been greyed out). It now links the caret's word, as one undo step.
+- **Open Link is disabled for a link it will not open** — only http/https links are launched; it used to do
+  nothing for the rest (mailto:, file:, …).
+- The List menu gains **Remove List**, and **Ctrl+Shift+7** toggles a numbered list (shown in the menu).
+
+### Changed — one cell block model, shared with the WinUI port (2026-09-13)
+
+The two repos selected table cells differently; they now follow one rule (user decision).
+
+- **F5** (HWP's key) selects the caret's cell as a **one-cell block** — as the menu's "Select Cell" does, now
+  with F5 shown. Delete clears it, formatting and the background take all of it, Copy takes it as a 1×1 table.
+  It works in a viewer too (Ctrl+C then copies the cell).
+- **Shift+arrow on a cell block grows or shrinks it by whole cells**: the corner it started from stays, the other
+  steps one cell — past a merged cell's span — and stops at the table's edge.
+- **Fixed**: Shift+arrow across a cell boundary filled both cells as a block while Delete and formatting acted on
+  the characters between the two ends — the text before the start in the first cell survived a Delete. The block
+  the renderer fills and the one the commands act on now come from one place, the selection's two ends.
+- **Changed**: after dragging across cells, a click in the table places a caret — it used to select the clicked
+  cell (and a double-click was needed to edit). A plain arrow or a click ends any cell block.
+
+### Fixed — a viewer can copy a table (2026-09-13)
+
+In a read-only editor, right-clicking a table offered Copy greyed out — it acts on the text selection, which
+is empty after a right-click — and nothing else took a table out of a viewer. Now:
+
+- Right-clicking a table with nothing selected **selects the whole table** (the cell fill of a staged
+  Ctrl+A), so Copy is enabled and takes it, and the fill shows what will be copied. The left/top border band
+  counts as the table.
+- Clicking a table's left/top border in a viewer selects the whole table too (the editor's block caret has
+  nothing to do there); Ctrl+C then copies it. The move cursor already showed on that border.
+- Copying a whole-table selection copies **that table**. The block capture took the outermost top-level block,
+  so a nested table came out as the table around it and a one-cell table as bare text — in the editable
+  editor too (staged Ctrl+A, then Ctrl+C).
+- In the editor, the table held by the **block caret** (its border clicked) is copied by Copy and Ctrl+C — with
+  no text selected there was nothing to copy. A right-click on the border now does what a click there does
+  (block caret, the table's own menu) with Copy enabled; it opened the text menu, or the table menu with Copy
+  greyed out.
+- **Cut and Delete** take a table held whole — by the block caret, or selected whole (a border click, a staged
+  Ctrl+A) — and remove it: Ctrl+X, Delete/Backspace, and the menu's Cut and Delete. Cut copied the table and
+  then cleared its cells and Delete emptied them the same way, leaving an empty grid behind; with the block
+  caret, Cut removed nothing. A block of SOME cells still has its cells emptied (Excel/HWP).
+- A **nested table's** left/top border — an inline table's, or a table's inside a cell — now shows the move
+  cursor, and a click there selects the whole table (in the editor and in a viewer, since the block caret is
+  top-level only), which Ctrl+C copies. A right-click there selects it too and offers Copy: a viewer's short
+  menu, the editor's table menu. It showed
+  the I-beam and the surrounding text's menu. Where a nested table's border overlaps its outer table's (a
+  cell's padding apart), the inner table wins — for the click, the right-click and a viewer alike.
+- An **inline table copies as an inline table**: the clipboard holds it as inline content, so paste puts it at
+  the caret — inside a line of text — where it came back a block table splitting the paragraph it was pasted
+  into. Its HTML carries the inline marker, so a paste of that into this editor stays inline too (Word/HWP
+  take a table). Top-level tables and tables in cells still copy as blocks.
+- A **table pasted into a table cell nests in that cell** — the in-app clipboard (a copied or cut table), HTML
+  and RTF alike — the same as inserting a table there. It landed after the whole outer table: the paste kept a
+  fallback from before nested tables rendered.
+
+Ported from the WinUI peer. No public surface change.
+
 ### Changed — SavePdf writes a vector PDF: text stays text (2026-09-12)
 
 `SavePdf` wrote one RGB image per page — a PDF with no text in it (not selectable, not searchable, soft

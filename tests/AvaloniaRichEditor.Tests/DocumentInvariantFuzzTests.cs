@@ -364,8 +364,14 @@ public class DocumentInvariantFuzzTests
 
     private static string Step(RichEditor ed, Random rng)
     {
-        switch (rng.Next(34))
+        switch (rng.Next(36))
         {
+            // Cell-block keys through the real key handler (unified with the WinUI port, 2026-09-13): they set
+            // up the block — one cell, or grown by cells — that the next Delete, format or merge acts on.
+            case 34: Press(ed, Key.F5); return "f5-cell-block";
+            case 35:
+                Press(ed, new[] { Key.Left, Key.Right, Key.Up, Key.Down }[rng.Next(4)], KeyModifiers.Shift);
+                return "shift-arrow";
             case 30: return MergeOp(ed, rng, unmerge: false);
             case 31: return MergeOp(ed, rng, unmerge: true);
             case 32: return FormatOp(ed, rng);

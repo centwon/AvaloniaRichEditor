@@ -515,24 +515,41 @@ public partial class RichEditor
     private void SetHyperlink(string? url, Run? targetRun)
     {
         if (Document == null || IsReadOnly) return;
-        PushUndo();
-        if (_selectionStart.CompareTo(_selectionEnd) != 0)
+        if (targetRun != null && _selectionStart.CompareTo(_selectionEnd) == 0)
         {
-            var range = new TextRange(_selectionStart, _selectionEnd);
-            range.ApplyPropertyValue(r => r.NavigateUri = url);
-        }
-        else if (targetRun != null)
-        {
+            PushUndo();
             targetRun.NavigateUri = url;
+            InvalidateVisual();
+            return;
         }
-        InvalidateVisual();
+        // The selection — or, with none, the caret's word (at a word boundary: the text typed next), like every
+        // other character format. Without a selection this used to do nothing but push an empty undo step, which
+        // is why Insert Link was offered only with a selection (converged with the WinUI port, 2026-09-13).
+        ApplyStyleToSelection(r => r.NavigateUri = url);
     }
 
     private async Task EditHyperlinkAsync(string? current, Run? targetRun)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
         string? url = await InputDialog.ShowAsync(owner, Loc("Hyperlink"), current ?? "https://");
+        Focus(); // back to the caret the dialog was opened from
         if (string.IsNullOrWhiteSpace(url)) return;
-        SetHyperlink(url, targetRun);
+        ApplyHyperlinkFromDialog(url, targetRun);
+    }
+
+    // The link dialog's OK: the selection, the caret's word, or the clicked link gets the link. With none — a blank
+    // spot — the address itself goes in as the link's text, as Word does: arming a link for "the next typed text"
+    // showed nothing at all, so the inserted link looked lost (live check, 2026-09-14; the port does the same).
+    private void ApplyHyperlinkFromDialog(string url, Run? targetRun)
+    {
+        url = url.Trim();
+        if (url.Length == 0) return;
+        bool blank = targetRun == null && _selectionStart.CompareTo(_selectionEnd) == 0
+            && _caretPosition.Paragraph is { } p && CaretWord(p) == null;
+        // InsertText is the typing primitive and pushes no checkpoint of its own (the key path coalesces them), so
+        // the inserted link is one undo step only with this one.
+        if (blank && Document != null) PushUndo();
+        SetHyperlink(url, targetRun); // blank: arms the link for the text typed next
+        if (blank) InsertText(url);   // …which is the address
     }
 }

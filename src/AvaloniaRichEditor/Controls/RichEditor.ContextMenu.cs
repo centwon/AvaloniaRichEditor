@@ -212,6 +212,13 @@ public partial class RichEditor
                 return;
             }
 
+            // A TABLE right-clicked with nothing selected is selected whole — the cell fill a staged Ctrl+A
+            // shows — so Copy takes the table, and the viewer can see that it will. Copy acts on the text
+            // selection, which is empty after a right-click: it was greyed out, and a viewer had no way to
+            // take a table. The border band (partly outside the grid) counts as the table. From the WinUI peer.
+            if (!hasSelection && (NestedTableBorderAtPoint(point) ?? TableLeftOrTopBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
+                hasSelection = SelectWholeTableForCopy(roTable);
+
             var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)) };
             var roMenu = NewContextMenu();
             roMenu.ItemsSource = roItems;
@@ -221,9 +228,23 @@ public partial class RichEditor
         }
 
         var items = new List<Control>();
-        var block = GetBlockAtPoint(point);
+        // The left/top border band lies partly OUTSIDE the grid, where GetBlockAtPoint finds the neighbouring
+        // paragraph — so a border is looked for first, as the hover cursor does.
+        // A nested table's border is asked first, as the click does (NestedTableBorderAtPoint).
+        var nestedEdge = NestedTableBorderAtPoint(point);
+        var borderTable = nestedEdge == null ? TableLeftOrTopBorderAtPoint(point) : null;
+        var block = (Block?)borderTable ?? GetBlockAtPoint(point);
 
-        if (block is ImageBlock ib)
+        if (nestedEdge is { } inlineEdge)
+        {
+            // A nested table's border — inline, or in a cell: the table as a unit, as a click there selects it —
+            // the whole-table selection and the table's own menu (Copy takes it; 표 삭제, and 글자처럼 취급 for
+            // an inline one). The band lies partly outside the grid, where the surrounding text's menu came up.
+            _selectedBlock = null;
+            SelectWholeTableForCopy(inlineEdge);
+            BuildTableMenu(items, inlineEdge, null, hasSelection: true);
+        }
+        else if (block is ImageBlock ib)
         {
             _selectedBlock = ib;
             CollapseSelectionToCaret();
@@ -241,13 +262,26 @@ public partial class RichEditor
         {
             _selectedBlock = null;
             var tp = GetPositionFromPoint(point);
-            _caretPosition = tp;
-            if (!hasSelection) CollapseSelectionToCaret();
-            // The table is "selected as a structure" when in cell-selection mode, when the whole table
+            // With a selection the right-click acts on it, so the caret stays with it (as the non-table branch and
+            // the WinUI port do). It moved to the clicked cell while the selection stayed where it was: the caret was
+            // drawn in another cell and Shift+arrow extended from there (measured 2026-09-14).
+            if (!hasSelection)
+            {
+                _caretPosition = tp;
+                CollapseSelectionToCaret();
+            }
+            // A right-click on the border does what a click there does — the block caret, the table held as
+            // a unit — so the menu is the table's own and its Copy takes the table. It opened the text menu,
+            // or the table menu with Copy greyed out (live check, 2026-09-13).
+            if (ReferenceEquals(borderTable, tbk) && !hasSelection)
+            {
+                _caretBlock = tbk; _caretBlockAfter = false;
+            }
+            // The table is "selected as a structure" when a one-cell block is on it, when the whole table
             // carries the block caret, or when the drag selection spans cells. In those cases show the
             // table-structure menu. Otherwise the user is editing inside a cell (bare caret or text within
             // one cell) -> text-formatting menu with the table ops tucked into a "Table" submenu.
-            bool tableStructureMode = (_cellSelMode && _cellSelTable == tbk)
+            bool tableStructureMode = ReferenceEquals(MarkedCell()?.tb, tbk)
                 || ReferenceEquals(_caretBlock, tbk)
                 || (hasSelection && SelectedCellRange(tbk) != null);
             if (tableStructureMode)
@@ -256,7 +290,7 @@ public partial class RichEditor
                 // Editing inside a cell: same caret menu as a top-level paragraph, with the table ops in a
                 // submenu. Target the INNERMOST table the caret is in (a nested table — P4-2b), not the
                 // top-level one GetBlockAtPoint returned, so row/column/merge act on the right table.
-                BuildCaretMenu(items, point, hasSelection, ContextMenuTargetTable(point) ?? tbk);
+                BuildCaretMenu(items, point, hasSelection, MenuCellTable(point, hasSelection, tbk));
         }
         else
         {
@@ -265,7 +299,7 @@ public partial class RichEditor
             // inlines, so GetBlockAtPoint — top-level blocks only — never sees it and the menu used to
             // come up with no table operations at all. Resolving the target from the hit position covers
             // it, exactly as the block-table branch above does.
-            BuildCaretMenu(items, point, hasSelection, ContextMenuTargetTable(point));
+            BuildCaretMenu(items, point, hasSelection, MenuCellTable(point, hasSelection));
         }
 
         ResetCaretBlink();
@@ -293,6 +327,15 @@ public partial class RichEditor
             if (ci.rect.Contains(p)) return ci.img;
         return null;
     }
+
+    // The table whose "Table" submenu the text menu carries. Its row/column items take their cell from the CARET
+    // (AddTableStructureItems gets _caretPosition.Paragraph), so the table has to be the caret's too: with a
+    // selection the right-click keeps the caret, and the table under the pointer could be another one — its rows
+    // would be addressed by the caret table's indices. Without a selection the caret has just moved to the pointer.
+    private TableBlock? MenuCellTable(Point point, bool hasSelection, TableBlock? fallback = null)
+        => hasSelection
+            ? (_caretPosition.Paragraph is { } cp && FindCell(cp) is { } loc ? loc.tb : null)
+            : ContextMenuTargetTable(point) ?? fallback;
 
     // The caret-position menu (inline-image / hyperlink / text), shared by top-level paragraphs and
     // table cells so the two stay identical. `cellTable` non-null means the caret is inside that table's
@@ -323,37 +366,42 @@ public partial class RichEditor
         }
     }
 
-    private void AddClipboardItems(List<Control> items, bool hasSelection)
+    // `canCopy`: Copy, Cut and Delete have something to act on without a text selection — the block caret's
+    // table (Cut and Delete remove it: RemoveTableHeldWhole).
+    private void AddClipboardItems(List<Control> items, bool hasSelection, bool canCopy = false)
     {
         items.Add(Mi(Loc("Cut"), () =>
         {
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
-            DeleteSelection();
+            if (!RemoveTableHeldWhole()) DeleteSelection(); // the menu's cut: a table held whole goes whole
             InvalidateVisual();
-        }, hasSelection, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(ShortcutId.Cut)));
-        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        }, hasSelection || canCopy, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(ShortcutId.Cut)));
+        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection || canCopy, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
         items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste, gesture: RichEditorShortcuts.Gesture(ShortcutId.Paste)));
         items.Add(Mi(Loc("Delete"), () =>
         {
             if (Document != null) PushUndo();
-            DeleteSelection();
+            if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole is deleted, not emptied
             InvalidateVisual();
-        }, hasSelection, RichEditorIcon.Delete));
+        }, hasSelection || canCopy, RichEditorIcon.Delete));
     }
 
     // ── 글자 모양 (character shape) ── quick toggles (checked) + font larger/smaller + clear. The precise
     // pickers (specific size, text color, highlight, font family) are toolbar-only, HWP-style.
-    private MenuItem CharacterFormatSub(CaretFormat fmt, bool hasSelection) => Sub(Loc("CharacterFormat"),
-        CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Bold)),
-        CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Italic)),
-        CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Underline)),
-        CheckItem(Loc("Strikethrough"), fmt.Strike, ToggleStrikethrough, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Strikethrough)),
+    // Always enabled: without a selection a toggle acts on the caret's word or arms the format for the next typed
+    // text, as Ctrl+B does — greying them out without a selection hid a command that works (converged with the
+    // WinUI port, 2026-09-13). The same for ClearFormatting.
+    private MenuItem CharacterFormatSub(CaretFormat fmt) => Sub(Loc("CharacterFormat"),
+        CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(ShortcutId.Bold)),
+        CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(ShortcutId.Italic)),
+        CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(ShortcutId.Underline)),
+        CheckItem(Loc("Strikethrough"), fmt.Strike, ToggleStrikethrough, true, RichEditorShortcuts.Gesture(ShortcutId.Strikethrough)),
         new Separator(),
         Mi(Loc("FontSizeIncrease"), IncreaseFontSize, true, RichEditorIcon.FontSizeIncrease, RichEditorShortcuts.Gesture(ShortcutId.FontLarger)),
         Mi(Loc("FontSizeDecrease"), DecreaseFontSize, true, RichEditorIcon.FontSizeDecrease, RichEditorShortcuts.Gesture(ShortcutId.FontSmaller)),
         new Separator(),
-        Mi(Loc("ClearFormatting"), ClearFormatting, hasSelection, RichEditorIcon.ClearFormatting));
+        Mi(Loc("ClearFormatting"), ClearFormatting, true, RichEditorIcon.ClearFormatting));
 
     // 문단 모양 (paragraph shape): alignment as a radio group (current value checked) + indent + margin,
     // flattened into one level (HWP-style — no nested 정렬/여백 submenus).
@@ -386,13 +434,16 @@ public partial class RichEditor
             Mi("◦", () => SetListStyle(ListMarkerStyle.Circle)),
             Mi("▪", () => SetListStyle(ListMarkerStyle.Square)),
             Mi("–", () => SetListStyle(ListMarkerStyle.Dash))),
-        CheckItem(Loc("NumberedList"), fmt.List == ListKind.Ordered, ToggleNumbering),
+        CheckItem(Loc("NumberedList"), fmt.List == ListKind.Ordered, ToggleNumbering, gesture: RichEditorShortcuts.Gesture(ShortcutId.NumberedList)),
         Sub(Loc("NumberStyle"),
             Mi("1.", () => SetListStyle(ListMarkerStyle.Decimal)),
             Mi("1)", () => SetListStyle(ListMarkerStyle.DecimalParen)),
             Mi("a)", () => SetListStyle(ListMarkerStyle.LowerAlpha)),
             Mi("A)", () => SetListStyle(ListMarkerStyle.UpperAlpha)),
             Mi("i)", () => SetListStyle(ListMarkerStyle.LowerRoman))),
+        new Separator(),
+        // A labelled way out of any list (the toggles above turn off only their own kind). From the WinUI port.
+        Mi(Loc("RemoveList"), RemoveList, fmt.List != ListKind.None),
         new Separator(),
         CheckItem(Loc("Quote"), fmt.Quote, ToggleQuote));
 
@@ -434,7 +485,7 @@ public partial class RichEditor
         {
             // HWP-style: 글자 모양 / 문단 모양 / 목록 / 제목 grouping submenus (flattened — alignment and
             // margin under 문단 모양, list/heading promoted to top level). Full formatting opt-in.
-            items.Add(CharacterFormatSub(fmt, hasSelection));
+            items.Add(CharacterFormatSub(fmt));
             items.Add(BuildParagraphFormatSub(fmt));
             items.Add(ListSub(fmt));
             items.Add(HeadingSub(fmt));
@@ -443,21 +494,23 @@ public partial class RichEditor
         {
             // Slim (default): just the quick character toggles, checked to reflect the caret. The rich
             // formatting groups live on the toolbar; opt in with ShowFormattingMenu for a toolbar-less host.
-            items.Add(CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Bold)));
-            items.Add(CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Italic)));
-            items.Add(CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Underline)));
+            // Always enabled — see CharacterFormatSub.
+            items.Add(CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(ShortcutId.Bold)));
+            items.Add(CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(ShortcutId.Italic)));
+            items.Add(CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(ShortcutId.Underline)));
         }
 
         items.Add(new Separator());
         if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
         {
-            items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), icon: RichEditorIcon.OpenLink));
+            items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), IsOpenableUrl(link.NavigateUri), RichEditorIcon.OpenLink));
             items.Add(Mi(Loc("EditLink"), () => { _ = EditHyperlinkAsync(link.NavigateUri, link); }, icon: RichEditorIcon.EditLink));
             items.Add(Mi(Loc("RemoveLink"), () => SetHyperlink(null, link), icon: RichEditorIcon.RemoveLink));
         }
         else
         {
-            items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, hasSelection, RichEditorIcon.InsertLink));
+            // Enabled without a selection too: the link goes on the caret's word (SetHyperlink).
+            items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, true, RichEditorIcon.InsertLink));
         }
         items.Add(new Separator());
         items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)));
@@ -516,7 +569,7 @@ public partial class RichEditor
     // Concise menu shown when right-clicking a hyperlink: link actions + copy, no formatting clutter.
     private void BuildLinkMenu(List<Control> items, bool hasSelection, Run link)
     {
-        items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), icon: RichEditorIcon.OpenLink));
+        items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), IsOpenableUrl(link.NavigateUri), RichEditorIcon.OpenLink));
         items.Add(Mi(Loc("EditLink"), () => { _ = EditHyperlinkAsync(link.NavigateUri, link); }, icon: RichEditorIcon.EditLink));
         items.Add(Mi(Loc("RemoveLink"), () => SetHyperlink(null, link), icon: RichEditorIcon.RemoveLink));
         items.Add(Mi(Loc("CopyLink"), () =>
@@ -558,7 +611,7 @@ public partial class RichEditor
 
     private void BuildTableMenu(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
     {
-        AddClipboardItems(items, hasSelection);
+        AddClipboardItems(items, hasSelection, canCopy: ReferenceEquals(_caretBlock, tb));
         items.Add(new Separator());
         AddTableStructureItems(items, tb, cell, hasSelection);
     }
@@ -603,14 +656,14 @@ public partial class RichEditor
             rBelow = ar + System.Math.Max(1, rs);
             cRight = ac + System.Math.Max(1, cs);
         }
-        // Explicit way into cell-selection mode. Dragging across cells is the other one, but that can
-        // never produce a ONE-cell block, so without this a single cell couldn't be selected as a unit.
+        // A ONE-cell block (also F5). Dragging across cells can never produce one, so without this a single cell
+        // couldn't be selected as a unit.
         items.Add(Mi(Loc("SelectCell"), () =>
         {
             if (loc is not { } lc) return;
             var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
             SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
-        }, loc != null));
+        }, loc != null, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectCell)));
         items.Add(new Separator());
         items.Add(Mi(Loc("InsertRowAbove"), () => TableInsertRow(tb, r), r >= 0, RichEditorIcon.InsertRowAbove));
         items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, rBelow), r >= 0, RichEditorIcon.InsertRowBelow));

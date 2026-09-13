@@ -81,22 +81,21 @@ public class LifetimeAndStateTests
         Assert.Null(typeof(RichEditor).GetField("_selectedInline", NP)!.GetValue(ed));
     }
 
-    // Cell-selection mode holds the table it belongs to.
+    // A one-cell block's marker holds the cell it belongs to.
     [AvaloniaFact]
-    public void ReplacingTheDocument_LeavesCellSelectionMode()
+    public void ReplacingTheDocument_DropsTheOneCellBlock()
     {
         var ed = new RichEditor();
         var doc = new FlowDocument();
         var tb = new TableBlock(2, 2);
         doc.Blocks.Add(tb);
         ed.Document = doc;
-        SetField(ed, "_cellSelMode", true);
-        SetField(ed, "_cellSelTable", tb);
+        typeof(RichEditor).GetMethod("SelectCellAsBlock", NP)!.Invoke(ed, new object[] { tb, tb.Cells[0][0], false });
+        Assert.NotNull(typeof(RichEditor).GetField("_cellBlockMark", NP)!.GetValue(ed));
 
         ed.Document = new FlowDocument();
 
-        Assert.False(Field<bool>(ed, "_cellSelMode"));
-        Assert.Null(Field<TableBlock?>(ed, "_cellSelTable"));
+        Assert.Null(typeof(RichEditor).GetField("_cellBlockMark", NP)!.GetValue(ed));
     }
 
     // Pressing Delete with a stale selection must not damage the new document.

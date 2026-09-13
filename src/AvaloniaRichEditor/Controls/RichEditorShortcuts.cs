@@ -12,7 +12,8 @@ internal enum ShortcutId
     IndentIncrease, IndentDecrease,
     AlignLeft, AlignCenter, AlignRight, AlignJustify,
     Heading1, Heading2, Heading3, Heading4, Heading5, Heading6, BodyText,
-    BulletList, LineSpacingSingle, LineSpacingOneHalf, LineSpacingDouble,
+    BulletList, NumberedList, LineSpacingSingle, LineSpacingOneHalf, LineSpacingDouble,
+    SelectCell,
 }
 
 internal readonly record struct ShortcutSpec(ShortcutId Id, bool Ctrl, bool Shift, bool Alt, Key Key, string Display);
@@ -52,9 +53,13 @@ internal static class RichEditorShortcuts
         new(ShortcutId.Heading6,      true, false, true,  Key.D6, "Ctrl+Alt+6"),
         new(ShortcutId.BodyText,      true, true,  false, Key.N, "Ctrl+Shift+N"),
         new(ShortcutId.BulletList,    true, true,  false, Key.L, "Ctrl+Shift+L"),
+        new(ShortcutId.NumberedList,  true, true,  false, Key.D7, "Ctrl+Shift+7"), // Docs convention; Word has no standard binding (as the WinUI port)
         new(ShortcutId.LineSpacingSingle,  true, false, false, Key.D1, "Ctrl+1"),
         new(ShortcutId.LineSpacingOneHalf, true, false, false, Key.D5, "Ctrl+5"),
         new(ShortcutId.LineSpacingDouble,  true, false, false, Key.D2, "Ctrl+2"),
+        // Not Ctrl-modified, so TryMatch (reached only with Ctrl) never runs it: OnKeyDown routes F5 through
+        // TryCellBlockKey. Listed for the menu hint (HWP's cell block key; the WinUI port lists it the same).
+        new(ShortcutId.SelectCell,         false, false, false, Key.F5, "F5"),
     };
 
     private static readonly Dictionary<ShortcutId, string> DisplayMap = BuildDisplayMap();
