@@ -128,6 +128,15 @@ public partial class RichEditor
         return false;
     }
 
+    // First and last paragraph of all of `tb`: TableEnds, or for a one-cell table its cell's.
+    private static (Paragraph first, Paragraph last)? WholeTableEnds(TableBlock tb)
+    {
+        if (TableEnds(tb) is { } e) return e;
+        foreach (var (_, _, cell) in tb.LogicalCells())
+            return CellEnds(cell);
+        return null;
+    }
+
     // First/last paragraph of a whole table, taking the first and last LOGICAL (anchor) cells.
     private static (Paragraph first, Paragraph last)? TableEnds(TableBlock tb)
     {

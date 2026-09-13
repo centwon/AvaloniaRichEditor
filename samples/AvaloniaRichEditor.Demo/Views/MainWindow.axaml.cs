@@ -21,6 +21,10 @@ public partial class MainWindow : Window
 
         // Print is platform-specific; the view raises this and the app drives its own preview/printing.
         EditorView.PrintRequested += (_, _) => new PrintPreviewWindow(Editor).Show(this);
+
+        // Viewer mode. The view has no switch for it, so without this the read-only behaviour (a table's
+        // right-click Copy, the table-border click) could not be checked in the demo at all.
+        ReadOnlyToggle.IsCheckedChanged += (_, _) => Editor.IsReadOnly = ReadOnlyToggle.IsChecked == true;
     }
 
     protected override void OnOpened(EventArgs e)

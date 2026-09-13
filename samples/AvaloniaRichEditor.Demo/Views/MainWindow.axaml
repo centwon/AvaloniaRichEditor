@@ -9,9 +9,15 @@
         Width="1180" Height="720"
         Title="AvaloniaRichEditor.Demo">
 
-    <!-- The demo is nothing but the library's RichEditorView: toolbar (formatting + page/zoom +
-         export/import/print), scrolling document, and status bar are all built into the view. The only
-         app-specific wiring is Print (platform-specific), handled via RichEditorView.PrintRequested. -->
-    <controls:RichEditorView x:Name="EditorView"/>
+    <!-- The demo is the library's RichEditorView: toolbar (formatting + page/zoom + export/import/print),
+         scrolling document, and status bar are all built into the view. App-specific: Print (platform-
+         specific, via RichEditorView.PrintRequested) and a read-only switch — the view has none, and viewer
+         behaviour (right-click Copy on a table, the table-border click) can only be checked in a viewer. -->
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Padding="8,2" BorderThickness="0,0,0,1" BorderBrush="#DDDDDD">
+            <CheckBox x:Name="ReadOnlyToggle" Content="읽기 전용 (IsReadOnly)"/>
+        </Border>
+        <controls:RichEditorView x:Name="EditorView"/>
+    </DockPanel>
 
 </Window>

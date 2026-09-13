@@ -228,7 +228,10 @@ public partial class RichEditor
         }
 
         var items = new List<Control>();
-        var block = GetBlockAtPoint(point);
+        // The left/top border band lies partly OUTSIDE the grid, where GetBlockAtPoint finds the neighbouring
+        // paragraph — so a border is looked for first, as the hover cursor does.
+        var borderTable = TableLeftOrTopBorderAtPoint(point);
+        var block = (Block?)borderTable ?? GetBlockAtPoint(point);
 
         if (block is ImageBlock ib)
         {
@@ -250,6 +253,14 @@ public partial class RichEditor
             var tp = GetPositionFromPoint(point);
             _caretPosition = tp;
             if (!hasSelection) CollapseSelectionToCaret();
+            // A right-click on the border does what a click there does — the block caret, the table held as
+            // a unit — so the menu is the table's own and its Copy takes the table. It opened the text menu,
+            // or the table menu with Copy greyed out (live check, 2026-09-13).
+            if (ReferenceEquals(borderTable, tbk) && !hasSelection)
+            {
+                _caretBlock = tbk; _caretBlockAfter = false;
+                _cellSelMode = false; _cellSelTable = null;
+            }
             // The table is "selected as a structure" when in cell-selection mode, when the whole table
             // carries the block caret, or when the drag selection spans cells. In those cases show the
             // table-structure menu. Otherwise the user is editing inside a cell (bare caret or text within
@@ -330,7 +341,9 @@ public partial class RichEditor
         }
     }
 
-    private void AddClipboardItems(List<Control> items, bool hasSelection)
+    // `canCopy`: Copy has something to take without a text selection — the block caret's table. Cut and
+    // Delete stay on the selection (the table's own menu carries "delete table").
+    private void AddClipboardItems(List<Control> items, bool hasSelection, bool canCopy = false)
     {
         items.Add(Mi(Loc("Cut"), () =>
         {
@@ -339,7 +352,7 @@ public partial class RichEditor
             DeleteSelection();
             InvalidateVisual();
         }, hasSelection, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(ShortcutId.Cut)));
-        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection || canCopy, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
         items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste, gesture: RichEditorShortcuts.Gesture(ShortcutId.Paste)));
         items.Add(Mi(Loc("Delete"), () =>
         {
@@ -565,7 +578,7 @@ public partial class RichEditor
 
     private void BuildTableMenu(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
     {
-        AddClipboardItems(items, hasSelection);
+        AddClipboardItems(items, hasSelection, canCopy: ReferenceEquals(_caretBlock, tb));
         items.Add(new Separator());
         AddTableStructureItems(items, tb, cell, hasSelection);
     }

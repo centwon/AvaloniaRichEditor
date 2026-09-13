@@ -2004,8 +2004,18 @@ public partial class RichEditor : Control
 
     private async void CopySelectionToClipboard()
     {
-        if (_selectionStart.Paragraph == null || _selectionEnd.Paragraph == null || _selectionStart.CompareTo(_selectionEnd) == 0) return;
-        var range = new TextRange(_selectionStart, _selectionEnd);
+        bool textSelected = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
+            && _selectionStart.CompareTo(_selectionEnd) != 0;
+        // The block caret on a table — its border clicked or right-clicked — holds the table as a unit: Del
+        // deletes it, Space indents it. Copy takes it too. With no text selected there was nothing to copy:
+        // the menu item was greyed out and Ctrl+C did nothing (live check, 2026-09-13).
+        var caretTable = !textSelected ? _caretBlock as TableBlock : null;
+        TextRange range;
+        if (caretTable != null && WholeTableEnds(caretTable) is { } ends)
+            range = new TextRange(new TextPointer(ends.first, 0), new TextPointer(ends.last, GetParagraphLength(ends.last)));
+        else if (textSelected)
+            range = new TextRange(_selectionStart, _selectionEnd);
+        else return;
         // GetText joins paragraphs with LF; LF-only shows as a single line in many Windows consumers
         // (Notepad, native text boxes), so put the platform newline on the system clipboard. Store the
         // SAME normalized form internally so the paste round-trip match (system text == what we copied)
@@ -2014,8 +2024,9 @@ public partial class RichEditor : Control
         // Capture the rich fragment synchronously (cloned) before any await / later edits.
         _internalClipboard = range.GetRichInlines();
         _internalClipboardText = text;
-        // A whole table selected (staged Ctrl+A, a viewer's right-click) copies THAT table — SelectedWholeTable.
-        _internalClipboardBlocks = SelectedWholeTable() is { } whole
+        // A whole table — the block caret's, or one selected whole (staged Ctrl+A, a viewer's right-click) —
+        // copies THAT table; see SelectedWholeTable.
+        _internalClipboardBlocks = (caretTable ?? SelectedWholeTable()) is { } whole
             ? new List<Block> { (Block)whole.Clone() }
             : CaptureBlockStructure(range);
 

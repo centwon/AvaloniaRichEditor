@@ -19,6 +19,10 @@ is empty after a right-click — and nothing else took a table out of a viewer. 
 - Copying a whole-table selection copies **that table**. The block capture took the outermost top-level block,
   so a nested table came out as the table around it and a one-cell table as bare text — in the editable
   editor too (staged Ctrl+A, then Ctrl+C).
+- In the editor, the table held by the **block caret** (its border clicked) is copied by Copy and Ctrl+C — with
+  no text selected there was nothing to copy. A right-click on the border now does what a click there does
+  (block caret, the table's own menu) with Copy enabled; it opened the text menu, or the table menu with Copy
+  greyed out. Cut is unchanged (Del, or the menu's "delete table", removes the table).
 
 Ported from the WinUI peer. No public surface change.
 

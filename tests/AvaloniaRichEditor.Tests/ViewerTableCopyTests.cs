@@ -23,8 +23,14 @@ public class ViewerTableCopyTests
 
     private static T Field<T>(RichEditor ed, string name) => (T)typeof(RichEditor).GetField(name, NP)!.GetValue(ed)!;
 
-    private static List<Block>? CopiedBlocks
-        => (List<Block>?)typeof(RichEditor).GetField("_internalClipboardBlocks", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null);
+    private static FieldInfo CopiedBlocksField
+        => typeof(RichEditor).GetField("_internalClipboardBlocks", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static List<Block>? CopiedBlocks => (List<Block>?)CopiedBlocksField.GetValue(null);
+
+    // The internal clipboard is STATIC — shared by every editor, so by every test. A copy test that does not
+    // clear it first can pass on a table an earlier test left there, with its own copy doing nothing.
+    private static void ClearClipboard() => CopiedBlocksField.SetValue(null, null);
 
     private static List<MenuItem> MenuItems(RichEditor ed)
     {
@@ -69,6 +75,15 @@ public class ViewerTableCopyTests
         return new Point(10 + tb.Indent, top + 6);
     }
 
+    // On the table's TOP border band, just ABOVE the grid — where GetBlockAtPoint finds the paragraph above,
+    // so only a border-first lookup finds the table there.
+    private static Point OnTopBorderAboveTheGrid(RichEditor ed, TableBlock tb)
+    {
+        var rect = typeof(RichEditor).GetMethod("GetTableRect", NP)!.Invoke(ed, new object[] { tb })!;
+        double top = (double)rect.GetType().GetField("Item1")!.GetValue(rect)!;
+        return new Point(10 + tb.Indent + 30, top - 2);
+    }
+
     [AvaloniaTheory]
     [InlineData(2, 2)]
     [InlineData(1, 1)] // a one-cell table has no separate whole-table stage — its cell block IS the table
@@ -88,6 +103,7 @@ public class ViewerTableCopyTests
         Assert.True(Field<bool>(host.Editor, "_cellSelMode"));            // shown selected: the cell fill
         Assert.Same(tb, Field<TableBlock?>(host.Editor, "_cellSelTable"));
 
+        ClearClipboard();
         Invoke(items[0]);
         var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
         Assert.Equal(rows, copied.Rows);
@@ -124,6 +140,7 @@ public class ViewerTableCopyTests
         var ed = new RichEditor { Document = doc };
 
         Assert.True((bool)typeof(RichEditor).GetMethod("SelectWholeTable", NP)!.Invoke(ed, new object[] { inner })!);
+        ClearClipboard();
         typeof(RichEditor).GetMethod("CopySelectionToClipboard", NP)!.Invoke(ed, null);
 
         var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
@@ -154,5 +171,42 @@ public class ViewerTableCopyTests
             Assert.Same(tb, host.CaretBlock);
             Assert.False(Field<bool>(host.Editor, "_cellSelMode"));
         }
+    }
+
+    // In the EDITOR the border holds the table as a unit — the block caret, with which Del deletes it and
+    // Space indents it. Copy takes it too. A right-click on the border now does what a click there does, so
+    // the menu is the table's own with Copy enabled; it opened the text menu, or the table menu with Copy
+    // greyed out (live check, 2026-09-13).
+    [AvaloniaFact]
+    public void InTheEditor_RightClickingATablesBorder_OffersCopy_AndCopyTakesTheTable()
+    {
+        var tb = Table(2, 2);
+        var host = Host(tb);
+
+        host.Click(OnTopBorderAboveTheGrid(host.Editor, tb), MouseButton.Right);
+
+        Assert.Same(tb, host.CaretBlock);
+        var copy = MenuItems(host.Editor).First(i => i.Header?.ToString() == RichEditorLocalization.GetString("Copy"));
+        Assert.True(copy.IsEnabled, "Copy is greyed out on a right-clicked table border");
+        ClearClipboard();
+        Invoke(copy);
+        var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
+        Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+    }
+
+    // ...and Ctrl+C after a border click, which copied nothing: there was no text selection to copy.
+    [AvaloniaFact]
+    public void InTheEditor_ClickingATablesBorder_ThenCtrlC_CopiesTheTable()
+    {
+        var tb = Table(2, 2);
+        var host = Host(tb);
+
+        host.Click(OnLeftBorder(host.Editor, tb));
+        Assert.Same(tb, host.CaretBlock); // the border click's block caret — the premise
+        ClearClipboard();
+        host.Key(Key.C, RawInputModifiers.Control);
+
+        var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
+        Assert.Equal((2, 2), (copied.Rows, copied.Columns));
     }
 }
