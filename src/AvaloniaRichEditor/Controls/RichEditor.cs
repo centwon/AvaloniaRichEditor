@@ -81,6 +81,9 @@ public partial class RichEditor : Control
     // Rendered rects of block images inside table cells (P4-2b), so a click can select one (top-level
     // block images are found via GetBlockAtPoint; cell images need this registry, like inline images).
     private List<(Avalonia.Rect rect, ImageBlock img)> _cellImageRects = new();
+    // Rendered grid rects of inline tables — their document position is known only while the host paragraph
+    // is drawn — so a hover or a click can find an inline table's border (InlineTableBorderAtPoint).
+    private List<(Avalonia.Rect rect, TableBlock tb)> _inlineTableRects = new();
     private bool _isResizingImage;
     private ImageBlock? _resizingImage;
     private double _initialImageWidth;
@@ -368,6 +371,7 @@ public partial class RichEditor : Control
         _rowBoundaries.Clear();
         _imageHandles.Clear();
         _cellImageRects.Clear();
+        _inlineTableRects.Clear();
         _inlineImageRects.Clear();
         _inlineHandles.Clear();
     }

@@ -157,6 +157,7 @@ public partial class RichEditor
         _rowBoundaries.Clear();
         _imageHandles.Clear();
         _cellImageRects.Clear();
+        _inlineTableRects.Clear();
         _inlineImageRects.Clear();
         _inlineHandles.Clear();
 
@@ -728,8 +729,15 @@ public partial class RichEditor
         var pending = _inlineTableDraws.ToArray();
         _inlineTableDraws.Clear();
         foreach (var (table, origin) in pending)
+        {
+            if (chrome)
+            {
+                var tl = LayoutTable(table, origin.X, origin.Y);
+                _inlineTableRects.Add((new Rect(origin.X, origin.Y, tl.TableWidth, tl.TotalHeight), table));
+            }
             DrawNestedTable(context, table, origin.X, origin.Y, chrome,
                 selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
+        }
     }
 
     // Draws a nested table's grid at (startX, top) and recurses into each anchor cell via DrawCellBlockList.

@@ -209,4 +209,94 @@ public class ViewerTableCopyTests
         var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
         Assert.Equal((2, 2), (copied.Rows, copied.Columns));
     }
+
+    // ---- inline tables: the same border, the same unit -------------------------------------------
+
+    private static InteractionHost HostWithInlineTable(TableBlock inner)
+    {
+        var host = new Paragraph();
+        host.Inlines.Add(new Run { Text = "before " });
+        host.Inlines.Add(new InlineTable { Table = inner });
+        host.Inlines.Add(new Run { Text = " after" });
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "above" } } });
+        doc.Blocks.Add(host);
+        var h = InteractionHost.Create(new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous });
+        h.Render();
+        return h;
+    }
+
+    // Where the last render drew the inline table's grid.
+    private static Rect InlineRect(RichEditor ed, TableBlock tb)
+        => ((List<(Rect rect, TableBlock tb)>)typeof(RichEditor).GetField("_inlineTableRects", NP)!.GetValue(ed)!)
+            .First(x => ReferenceEquals(x.tb, tb)).rect;
+
+    // On the left border, inside the FIRST row. Halfway down a 2×2 table is exactly the line between its
+    // rows, where the editor's row-resize handle wins (a viewer has none) — the first cut stood there and
+    // failed in the editor only.
+    private static Point OnInlineLeftBorder(Rect r) => new(r.Left, r.Top + 6);
+
+    private static object? MoveCursor
+        => typeof(RichEditor).GetProperty("MoveCursor", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null);
+
+    // An inline table's border shows the move cursor, as a top-level table's does; inside its cells it does
+    // not. It showed the I-beam: the hover only looked for top-level tables.
+    [AvaloniaFact]
+    public void AnInlineTablesBorder_ShowsTheMoveCursor()
+    {
+        var inner = Table(2, 2);
+        var host = HostWithInlineTable(inner);
+        var r = InlineRect(host.Editor, inner);
+
+        host.Move(OnInlineLeftBorder(r));
+        Assert.Same(MoveCursor, host.Editor.Cursor);
+        host.Move(new Point(r.Left + r.Width / 2, r.Top + r.Height / 2));
+        Assert.NotSame(MoveCursor, host.Editor.Cursor);
+    }
+
+    // A click on it selects the whole table — in the editor and in a viewer alike, since an inline table has
+    // no block caret to place — and Ctrl+C copies that table.
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClickingAnInlineTablesBorder_SelectsItWhole_AndCtrlCCopiesIt(bool readOnly)
+    {
+        var inner = Table(2, 2);
+        var host = HostWithInlineTable(inner);
+        var r = InlineRect(host.Editor, inner);
+        host.Editor.IsReadOnly = readOnly;
+
+        host.Click(OnInlineLeftBorder(r));
+        Assert.True(Field<bool>(host.Editor, "_cellSelMode"));
+        Assert.Same(inner, Field<TableBlock?>(host.Editor, "_cellSelTable"));
+
+        ClearClipboard();
+        host.Key(Key.C, RawInputModifiers.Control);
+        var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
+        Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+    }
+
+    // A right-click on it — on the top band just above the grid, where the host line's text menu came up —
+    // offers an enabled Copy that takes the table: the viewer's short menu, the editor's table menu.
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RightClickingAnInlineTablesBorder_OffersCopy_AndCopyTakesTheTable(bool readOnly)
+    {
+        var inner = Table(2, 2);
+        var host = HostWithInlineTable(inner);
+        var r = InlineRect(host.Editor, inner);
+        host.Editor.IsReadOnly = readOnly;
+
+        host.Click(new Point(r.Left + 20, r.Top - 2), MouseButton.Right);
+
+        var items = MenuItems(host.Editor);
+        var copy = items.First(i => i.Header?.ToString() == RichEditorLocalization.GetString("Copy"));
+        Assert.True(copy.IsEnabled, "Copy is greyed out on a right-clicked inline-table border");
+        if (!readOnly) Assert.Contains(RichEditorLocalization.GetString("DeleteTable"), items.Select(i => i.Header?.ToString()));
+        ClearClipboard();
+        Invoke(copy);
+        var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
+        Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+    }
 }

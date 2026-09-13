@@ -23,6 +23,10 @@ is empty after a right-click — and nothing else took a table out of a viewer. 
   no text selected there was nothing to copy. A right-click on the border now does what a click there does
   (block caret, the table's own menu) with Copy enabled; it opened the text menu, or the table menu with Copy
   greyed out. Cut is unchanged (Del, or the menu's "delete table", removes the table).
+- An **inline table's** left/top border now shows the move cursor, and a click there selects the whole table —
+  in the editor and in a viewer, since an inline table has no block caret — which Ctrl+C copies. A right-click
+  there selects it too and offers Copy: a viewer's short menu, the editor's table menu (whose Cut clears the
+  cells, as for any whole-table cell selection). It showed the I-beam and the host line's text menu.
 
 Ported from the WinUI peer. No public surface change.
 

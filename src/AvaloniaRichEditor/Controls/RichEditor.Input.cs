@@ -206,6 +206,15 @@ public partial class RichEditor
                 return;
             }
 
+        // An inline table's left/top border selects the whole table — the cell fill of a staged Ctrl+A — so
+        // Ctrl+C copies it (SelectedWholeTable). A top-level table's border places the block caret instead;
+        // an inline table has none. The move cursor over the border announces it (OnPointerMoved).
+        if (InlineTableBorderAtPoint(point) is { } inlineEdge && SelectWholeTableForCopy(inlineEdge))
+        {
+            _selectedBlock = null;
+            return;
+        }
+
         // Click on a hyperlink opens it in the default browser instead of placing the caret.
         var linkRun = GetLinkRunAtPoint(point);
         if (linkRun != null && !string.IsNullOrEmpty(linkRun.NavigateUri))
@@ -648,7 +657,8 @@ public partial class RichEditor
             // Outer left/top table border selects the whole table on click -> a move cursor signals that
             // the border is grabbable (vs the I-beam over cell text). One walk (was GetBlockAtPoint +
             // IsOnTableLeftOrTopBorder, which re-walked the document).
-            if (TableLeftOrTopBorderAtPoint(point) != null)
+            // An inline table's border too: a click there selects the whole table (OnPointerPressed).
+            if (TableLeftOrTopBorderAtPoint(point) != null || InlineTableBorderAtPoint(point) != null)
             {
                 Cursor = MoveCursor;
                 return;

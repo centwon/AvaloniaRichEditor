@@ -346,6 +346,22 @@ public partial class RichEditor
 
     // True when the point sits on the table's outer left or top border (a thin band). The right/bottom
     // borders are reserved for resize handles, so only left/top trigger whole-table selection.
+    // The inline table whose outer left/top border the point sits on, else null — the inline twin of
+    // TableLeftOrTopBorderAtPoint (same band), from the rects the last render drew them at. Walked from the
+    // end: a table nested in an inline table's cell is drawn after it, so the innermost wins.
+    private TableBlock? InlineTableBorderAtPoint(Point p)
+    {
+        const double m = 4;
+        for (int i = _inlineTableRects.Count - 1; i >= 0; i--)
+        {
+            var (r, tb) = _inlineTableRects[i];
+            bool inY = p.Y >= r.Top - m && p.Y <= r.Bottom + m;
+            bool inX = p.X >= r.Left - m && p.X <= r.Right + m;
+            if ((inY && Math.Abs(p.X - r.Left) <= m) || (inX && Math.Abs(p.Y - r.Top) <= m)) return tb;
+        }
+        return null;
+    }
+
     private bool IsOnTableLeftOrTopBorder(TableBlock tb, Point p)
     {
         if (GetTableRect(tb) is not { } tr) return false;

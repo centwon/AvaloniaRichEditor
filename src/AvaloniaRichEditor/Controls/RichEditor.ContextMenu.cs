@@ -216,7 +216,7 @@ public partial class RichEditor
             // shows — so Copy takes the table, and the viewer can see that it will. Copy acts on the text
             // selection, which is empty after a right-click: it was greyed out, and a viewer had no way to
             // take a table. The border band (partly outside the grid) counts as the table. From the WinUI peer.
-            if (!hasSelection && (TableLeftOrTopBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
+            if (!hasSelection && (TableLeftOrTopBorderAtPoint(point) ?? InlineTableBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
                 hasSelection = SelectWholeTableForCopy(roTable);
 
             var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)) };
@@ -233,7 +233,16 @@ public partial class RichEditor
         var borderTable = TableLeftOrTopBorderAtPoint(point);
         var block = (Block?)borderTable ?? GetBlockAtPoint(point);
 
-        if (block is ImageBlock ib)
+        if (borderTable == null && InlineTableBorderAtPoint(point) is { } inlineEdge)
+        {
+            // An inline table's border: the table as a unit, as a click there selects it — the whole-table
+            // selection and the table's own menu (Copy takes it; 글자처럼 취급, 표 삭제). The band lies partly
+            // outside the grid, where the host paragraph's text menu came up.
+            _selectedBlock = null;
+            SelectWholeTableForCopy(inlineEdge);
+            BuildTableMenu(items, inlineEdge, null, hasSelection: true);
+        }
+        else if (block is ImageBlock ib)
         {
             _selectedBlock = ib;
             CollapseSelectionToCaret();
