@@ -1646,8 +1646,9 @@ public partial class RichEditor : Control
     // Inserts a list of blocks at the caret, splitting the caret paragraph so the paste lands AT the
     // caret (Word/HWP behaviour): the first pasted paragraph continues the caret line, the last merges
     // with the text after the caret, and any blocks between become siblings. Works whether the caret is
-    // in a top-level paragraph or a table cell. Falls back to a plain after-block splice when the caret
-    // isn't in a normal paragraph, or when the paste carries a table that can't nest in a cell yet (P4-2b).
+    // in a top-level paragraph or a table cell — a pasted table nests in the cell (P4-2b), the same as
+    // InsertTable does there. Falls back to a plain after-block splice when the caret isn't in a normal
+    // paragraph.
     private void InsertBlocksAtCaret(System.Collections.Generic.IReadOnlyList<Block> blocks)
     {
         if (Document == null || blocks.Count == 0) return;
@@ -1662,7 +1663,7 @@ public partial class RichEditor : Control
         };
         bool inCell = p?.Parent is TableCell;
         int pi = container != null && p != null ? container.IndexOf(p) : -1;
-        if (container == null || p == null || pi < 0 || (inCell && blocks.Any(b => b is TableBlock)))
+        if (container == null || p == null || pi < 0)
         {
             InsertBlocksAfterCaretBlock(blocks);
             return;
@@ -1721,7 +1722,7 @@ public partial class RichEditor : Control
 
     // Plain after-block splice (the fallback): inserts cloned blocks after the caret's block — into the
     // enclosing cell when the caret is in one, else the document top level. Used when the caret isn't in
-    // a normal paragraph or the paste carries a table that can't nest in a cell.
+    // a normal paragraph.
     private void InsertBlocksAfterCaretBlock(System.Collections.Generic.IReadOnlyList<Block> blocks)
     {
         if (Document == null) return;
@@ -1746,11 +1747,11 @@ public partial class RichEditor : Control
 
     // The container + index for the after-block splice fallback: the enclosing cell's block list (after
     // the caret's paragraph) when the caret is in a cell, otherwise the document's top-level list (after
-    // the caret's top-level block). A paste containing a TableBlock can't nest in a cell yet (P4-2b), so
-    // it falls back to top level.
+    // the caret's top-level block). A pasted table nests in the cell (P4-2b) — it used to fall back to
+    // top level from before nested tables rendered, landing after the whole outer table.
     private (System.Collections.Generic.IList<Block> container, int at) BlockInsertTarget(System.Collections.Generic.IEnumerable<Block> blocks)
     {
-        if (Document != null && _caretPosition.Paragraph?.Parent is TableCell tc && !blocks.Any(b => b is TableBlock))
+        if (Document != null && _caretPosition.Paragraph?.Parent is TableCell tc)
         {
             int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
             return (tc.Blocks, pi >= 0 ? pi + 1 : tc.Blocks.Count);

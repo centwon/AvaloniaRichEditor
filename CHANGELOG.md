@@ -37,6 +37,9 @@ is empty after a right-click — and nothing else took a table out of a viewer. 
   the caret — inside a line of text — where it came back a block table splitting the paragraph it was pasted
   into. Its HTML carries the inline marker, so a paste of that into this editor stays inline too (Word/HWP
   take a table). Top-level tables and tables in cells still copy as blocks.
+- A **table pasted into a table cell nests in that cell** — the in-app clipboard (a copied or cut table), HTML
+  and RTF alike — the same as inserting a table there. It landed after the whole outer table: the paste kept a
+  fallback from before nested tables rendered.
 
 Ported from the WinUI peer. No public surface change.
 
