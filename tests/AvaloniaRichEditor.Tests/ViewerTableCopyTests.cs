@@ -28,9 +28,35 @@ public class ViewerTableCopyTests
 
     private static List<Block>? CopiedBlocks => (List<Block>?)CopiedBlocksField.GetValue(null);
 
+    private static FieldInfo CopiedInlinesField
+        => typeof(RichEditor).GetField("_internalClipboard", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static List<Inline>? CopiedInlines => (List<Inline>?)CopiedInlinesField.GetValue(null);
+
     // The internal clipboard is STATIC — shared by every editor, so by every test. A copy test that does not
     // clear it first can pass on a table an earlier test left there, with its own copy doing nothing.
-    private static void ClearClipboard() => CopiedBlocksField.SetValue(null, null);
+    private static void ClearClipboard()
+    {
+        CopiedBlocksField.SetValue(null, null);
+        CopiedInlinesField.SetValue(null, null);
+    }
+
+    // What a copy of the 2×2 table left on the clipboard: an inline table as an inline table (the inline
+    // list — paste puts it at the caret), any other as a block (user decision, 2026-09-13).
+    private static void AssertCopiedTheTable(bool inline)
+    {
+        if (inline)
+        {
+            Assert.Null(CopiedBlocks);
+            var it = Assert.IsType<InlineTable>(Assert.Single(CopiedInlines!));
+            Assert.Equal((2, 2), (it.Table.Rows, it.Table.Columns));
+        }
+        else
+        {
+            var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
+            Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+        }
+    }
 
     private static List<MenuItem> MenuItems(RichEditor ed)
     {
@@ -295,8 +321,7 @@ public class ViewerTableCopyTests
 
         ClearClipboard();
         host.Key(Key.C, RawInputModifiers.Control);
-        var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
-        Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+        AssertCopiedTheTable(where == "inline");
     }
 
     // A right-click on it — on the top band just above the grid, where the host line's text menu came up —
@@ -321,8 +346,117 @@ public class ViewerTableCopyTests
         if (!readOnly) Assert.Contains(RichEditorLocalization.GetString("DeleteTable"), items.Select(i => i.Header?.ToString()));
         ClearClipboard();
         Invoke(copy);
-        var copied = Assert.IsType<TableBlock>(Assert.Single(CopiedBlocks!));
-        Assert.Equal((2, 2), (copied.Rows, copied.Columns));
+        AssertCopiedTheTable(where == "inline");
+    }
+
+    // Every table in the document, at any depth — cells and inline tables included.
+    private static IEnumerable<TableBlock> AllTables(IEnumerable<Block> blocks)
+    {
+        foreach (var b in blocks)
+        {
+            if (b is TableBlock tb)
+            {
+                yield return tb;
+                foreach (var row in tb.Cells)
+                    foreach (var cell in row)
+                        foreach (var t in AllTables(cell.Blocks)) yield return t;
+            }
+            else if (b is Paragraph p)
+                foreach (var it in p.Inlines.OfType<InlineTable>())
+                    foreach (var t in AllTables(new Block[] { it.Table })) yield return t;
+        }
+    }
+
+    private static int Tables2x2(RichEditor ed) => AllTables(ed.Document!.Blocks).Count(t => t.Rows == 2 && t.Columns == 2);
+
+    // Cut and Delete take a table held whole — selected whole by its border (a nested table), or held by the
+    // block caret (a top-level one) — and REMOVE it, from the keyboard and from the menu. Cut copied the table
+    // and then cleared its cells, leaving an empty grid ("cut it, and it is still there", live check
+    // 2026-09-13), Delete emptied it the same way, and the block caret's cut removed nothing. Delete removing it
+    // too is the user's decision. The caret lands in the document — not inside the removed table, where a
+    // whole-table selection had put it — and one undo brings the table back (one checkpoint, not two).
+    [AvaloniaTheory]
+    [InlineData("cell", "ctrl+x")]
+    [InlineData("cell", "menu cut")]
+    [InlineData("cell", "delete")]
+    [InlineData("cell", "menu delete")]
+    [InlineData("inline", "ctrl+x")]
+    [InlineData("inline", "menu cut")]
+    [InlineData("inline", "delete")]
+    [InlineData("inline", "menu delete")]
+    [InlineData("top", "ctrl+x")]
+    [InlineData("top", "menu cut")]
+    [InlineData("top", "delete")]
+    [InlineData("top", "menu delete")]
+    public void CuttingOrDeletingATableHeldWhole_RemovesIt_AndOneUndoBringsItBack(string where, string how)
+    {
+        bool viaMenu = how.StartsWith("menu"), cut = how.EndsWith("cut") || how == "ctrl+x";
+        var inner = Table(2, 2);
+        InteractionHost host;
+        Point border;
+        if (where == "top") { host = Host(inner); border = OnLeftBorder(host.Editor, inner); }
+        else { host = HostWithNested(where, inner); border = OnInlineLeftBorder(NestedRect(host.Editor, inner)); }
+        Assert.Equal(1, Tables2x2(host.Editor));
+
+        ClearClipboard();
+        if (viaMenu)
+        {
+            host.Click(border, MouseButton.Right);
+            var label = RichEditorLocalization.GetString(cut ? "Cut" : "Delete");
+            var item = MenuItems(host.Editor).First(i => i.Header?.ToString() == label);
+            Assert.True(item.IsEnabled, $"{label} is greyed out on a table held whole");
+            Invoke(item);
+            // A click on a real menu item closes the menu; raising Click does not — and while the menu is
+            // open the next key (the Ctrl+Z below) goes to it, not to the editor.
+            ((ContextMenu?)typeof(RichEditor).GetField("_openContextMenu", NP)!.GetValue(host.Editor))?.Close();
+        }
+        else
+        {
+            host.Click(border);
+            if (cut) host.Key(Key.X, RawInputModifiers.Control);
+            else host.Key(Key.Delete);
+        }
+
+        if (cut) AssertCopiedTheTable(where == "inline");
+        else { Assert.Null(CopiedBlocks); Assert.Null(CopiedInlines); } // Delete copies nothing
+        Assert.Equal(0, Tables2x2(host.Editor)); // gone — not an emptied grid
+        var paragraphs = (List<Paragraph>)typeof(RichEditor).GetMethod("GetAllParagraphsInOrder", NP)!.Invoke(host.Editor, null)!;
+        Assert.Contains(host.Caret.Paragraph!, paragraphs);
+
+        host.Key(Key.Z, RawInputModifiers.Control);
+        Assert.Equal(1, Tables2x2(host.Editor));
+    }
+
+    // An inline table copies AS an inline table — the clipboard's inline list, which paste puts at the caret —
+    // not a block table splitting the paragraph it lands in (user decision, 2026-09-13). The paste half is
+    // InsertInlines, the paste path the inline list takes (a headless test has no system clipboard to go
+    // through). A top-level table still copies as a block (the tests above).
+    [AvaloniaFact]
+    public void AnInlineTable_CopiesAsAnInlineTable_AndPastesInlineAtTheCaret()
+    {
+        var inner = Table(2, 2);
+        var host = HostWithInlineTable(inner);
+        host.Click(OnInlineLeftBorder(NestedRect(host.Editor, inner)));
+        ClearClipboard();
+        var inlinesField = typeof(RichEditor).GetField("_internalClipboard", BindingFlags.NonPublic | BindingFlags.Static)!;
+        inlinesField.SetValue(null, null);
+        host.Key(Key.C, RawInputModifiers.Control);
+
+        Assert.Null(CopiedBlocks); // no block list: that is what made paste insert a block table
+        var copied = Assert.IsType<InlineTable>(Assert.Single((List<Inline>)inlinesField.GetValue(null)!));
+        Assert.Equal((2, 2), (copied.Table.Rows, copied.Table.Columns));
+
+        var above = (Paragraph)host.Editor.Document!.Blocks[0]; // "above" — the caret between "ab" and "ove"
+        var at = new TextPointer(above, 2);
+        foreach (var f in new[] { "_caretPosition", "_selectionStart", "_selectionEnd" })
+            typeof(RichEditor).GetField(f, NP)!.SetValue(host.Editor, at);
+        typeof(RichEditor).GetMethod("InsertInlines", NP)!.Invoke(host.Editor, new object[] { new List<Inline> { (Inline)copied.Clone() } });
+
+        Assert.Contains(above.Inlines, i => i is InlineTable);
+        Assert.Equal("ab", ((Run)above.Inlines[0]).Text);         // inside the line: text on both sides
+        Assert.IsType<Run>(above.Inlines[^1]);
+        Assert.Empty(host.Editor.Document!.Blocks.OfType<TableBlock>()); // no block table appeared
+        Assert.Equal(2, Tables2x2(host.Editor));                    // the original and the pasted one
     }
 
     // Where a nested table's border band overlaps the one around it (a cell's padding apart), the INNER table

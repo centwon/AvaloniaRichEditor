@@ -2030,10 +2030,18 @@ public partial class RichEditor : Control
         _internalClipboard = range.GetRichInlines();
         _internalClipboardText = text;
         // A whole table — the block caret's, or one selected whole (staged Ctrl+A, a viewer's right-click) —
-        // copies THAT table; see SelectedWholeTable.
-        _internalClipboardBlocks = (caretTable ?? SelectedWholeTable()) is { } whole
-            ? new List<Block> { (Block)whole.Clone() }
-            : CaptureBlockStructure(range);
+        // copies THAT table; see SelectedWholeTable. An INLINE table copies as an inline table: the inline list
+        // alone, which paste puts at the caret (InsertInlines) as it was. It came back a block table, splitting
+        // the paragraph it was pasted into (user decision, 2026-09-13).
+        var whole = caretTable ?? SelectedWholeTable();
+        var wholeInline = whole?.Parent as InlineTable;
+        if (wholeInline != null)
+        {
+            _internalClipboard = new List<Inline> { (Inline)wholeInline.Clone() };
+            _internalClipboardBlocks = null;
+        }
+        else
+            _internalClipboardBlocks = whole != null ? new List<Block> { (Block)whole.Clone() } : CaptureBlockStructure(range);
 
         // Rich HTML for other apps (Word, browsers). When the selection spans a table or block image,
         // use the captured top-level blocks so the HTML keeps the <table> structure; otherwise a trimmed
@@ -2041,7 +2049,16 @@ public partial class RichEditor : Control
         // images — so formatting and pasted-back pictures survive, and an image-only selection still has
         // content even though its plain text is empty.
         FlowDocument? htmlDoc;
-        if (_internalClipboardBlocks is { } caps && caps.Exists(b => b is TableBlock || b is ImageBlock))
+        if (wholeInline != null)
+        {
+            // The inline table inside a line of its own — the HTML writer marks it inline, so a paste of the
+            // HTML into this editor keeps it inline too.
+            htmlDoc = new FlowDocument();
+            var line = new Paragraph();
+            line.Inlines.Add((Inline)wholeInline.Clone());
+            htmlDoc.Blocks.Add(line);
+        }
+        else if (_internalClipboardBlocks is { } caps && caps.Exists(b => b is TableBlock || b is ImageBlock))
         {
             htmlDoc = new FlowDocument();
             foreach (var b in caps) htmlDoc.Blocks.Add(b);

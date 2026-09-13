@@ -128,6 +128,49 @@ public partial class RichEditor
         return false;
     }
 
+    // Removes a table held whole — selected whole (a border click, a staged Ctrl+A) or held by the block caret —
+    // for Cut's second half and for Delete. Copy takes THAT table (SelectedWholeTable / the caret's table), so
+    // Cut removes it; Delete removes it too (user decision). The cell-block rule — clear the cells, keep the
+    // grid — left an empty table standing: "cut it, and it is still there" (live check, 2026-09-13), and the
+    // block caret's cut removed nothing. That rule stays for a block of SOME cells. False when no table is held
+    // whole. The caller has pushed the undo checkpoint (DeleteBlock would push a second one). The caret leaves
+    // the removed table — a whole-table selection's caret sits in its last cell.
+    private bool RemoveTableHeldWhole()
+    {
+        bool textSelected = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
+            && _selectionStart.CompareTo(_selectionEnd) != 0;
+        var tb = SelectedWholeTable() ?? (!textSelected ? _caretBlock as TableBlock : null);
+        if (Document == null || tb == null) return false;
+        _cellSelMode = false; _cellSelTable = null; _caretBlock = null; _selectedBlock = null;
+
+        if (tb.Parent is InlineTable it && it.Parent is Paragraph host)
+        {
+            int off = OffsetOfInline(host, it);
+            host.Inlines.Remove(it);
+            UpdateParents(Document);
+            _caretPosition = new TextPointer(host, off);
+        }
+        else
+        {
+            IList<Block> container = tb.Parent is TableCell cell ? cell.Blocks : Document.Blocks;
+            int idx = container.IndexOf(tb);
+            RemoveBlockAnywhere(tb);
+            UpdateParents(Document); // a paragraph now borders the gap (top level); a cell keeps one
+            Paragraph? landing = null;
+            for (int i = Math.Max(0, idx); i < container.Count && landing == null; i++)
+                if (container[i] is Paragraph p) landing = p;
+            for (int i = Math.Min(idx, container.Count) - 1; i >= 0 && landing == null; i--)
+                if (container[i] is Paragraph p) landing = p;
+            landing ??= GetAllParagraphsInOrder().FirstOrDefault();
+            _caretPosition = new TextPointer(landing, 0);
+        }
+        CollapseSelectionToCaret();
+        InvalidateMeasure();
+        ResetCaretBlink();
+        InvalidateVisual();
+        return true;
+    }
+
     // First and last paragraph of all of `tb`: TableEnds, or for a one-cell table its cell's.
     private static (Paragraph first, Paragraph last)? WholeTableEnds(TableBlock tb)
     {

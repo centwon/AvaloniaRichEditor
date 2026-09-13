@@ -72,17 +72,21 @@ public class CellBlockSelectionTests
         Assert.Equal("", CellText(tb.Cells[0][1]));
     }
 
+    // A block of SOME cells: the two left columns of a 2×3 grid. It was the whole 2×2 grid, which since
+    // 2026-09-13 is a table held whole — Delete removes that (user decision; ViewerTableCopyTests).
     [AvaloniaFact]
     public void Delete_OnACellBlock_LeavesTheGridStanding()
     {
-        var (ed, tb) = Grid(2, 2);
+        var (ed, tb) = Grid(2, 3);
         DragAcrossCells(ed, tb, tb.Cells[0][0].Para, 0, tb.Cells[1][1].Para, 2);
 
         ed.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Delete });
 
         Assert.Single(ed.Document!.Blocks.OfType<TableBlock>());
         Assert.Equal(2, tb.Rows);
-        Assert.Equal(2, tb.Columns);
+        Assert.Equal(3, tb.Columns);
+        Assert.Equal("", CellText(tb.Cells[1][1]));   // inside the block: emptied
+        Assert.Equal("02", CellText(tb.Cells[0][2])); // outside it: untouched
     }
 
     // ---- formatting covers whole cells, and only the rectangle --------------

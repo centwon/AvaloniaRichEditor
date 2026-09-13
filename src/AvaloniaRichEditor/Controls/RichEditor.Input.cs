@@ -955,7 +955,7 @@ public partial class RichEditor
             }
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
-            DeleteSelection();
+            if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole goes whole
             InvalidateVisual();
             e.Handled = true;
             return;
@@ -1185,7 +1185,7 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Back)
         {
-            if (_selectionStart != _selectionEnd) DeleteSelection();
+            if (_selectionStart != _selectionEnd) { if (!RemoveTableHeldWhole()) DeleteSelection(); } // Backspace: a table held whole goes whole
             else if (_caretPosition.Offset > 0 && _caretPosition.Paragraph is { } bp)
             {
                 int nb = PrevCharBoundary(BuildPlain(bp), _caretPosition.Offset);
@@ -1245,7 +1245,7 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Delete)
         {
-            if (_selectionStart != _selectionEnd) DeleteSelection();
+            if (_selectionStart != _selectionEnd) { if (!RemoveTableHeldWhole()) DeleteSelection(); } // Delete: a table held whole goes whole
             else if (_caretPosition.Paragraph is { } dp && _caretPosition.Offset < GetParagraphLength(dp))
                 DeleteLocalText(dp, _caretPosition.Offset,
                     NextCharBoundary(BuildPlain(dp), _caretPosition.Offset) - _caretPosition.Offset);

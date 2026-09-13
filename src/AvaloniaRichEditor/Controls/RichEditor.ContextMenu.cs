@@ -352,25 +352,25 @@ public partial class RichEditor
         }
     }
 
-    // `canCopy`: Copy has something to take without a text selection — the block caret's table. Cut and
-    // Delete stay on the selection (the table's own menu carries "delete table").
+    // `canCopy`: Copy, Cut and Delete have something to act on without a text selection — the block caret's
+    // table (Cut and Delete remove it: RemoveTableHeldWhole).
     private void AddClipboardItems(List<Control> items, bool hasSelection, bool canCopy = false)
     {
         items.Add(Mi(Loc("Cut"), () =>
         {
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
-            DeleteSelection();
+            if (!RemoveTableHeldWhole()) DeleteSelection(); // the menu's cut: a table held whole goes whole
             InvalidateVisual();
-        }, hasSelection, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(ShortcutId.Cut)));
+        }, hasSelection || canCopy, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(ShortcutId.Cut)));
         items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection || canCopy, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
         items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste, gesture: RichEditorShortcuts.Gesture(ShortcutId.Paste)));
         items.Add(Mi(Loc("Delete"), () =>
         {
             if (Document != null) PushUndo();
-            DeleteSelection();
+            if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole is deleted, not emptied
             InvalidateVisual();
-        }, hasSelection, RichEditorIcon.Delete));
+        }, hasSelection || canCopy, RichEditorIcon.Delete));
     }
 
     // ── 글자 모양 (character shape) ── quick toggles (checked) + font larger/smaller + clear. The precise
