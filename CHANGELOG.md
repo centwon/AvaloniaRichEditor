@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the caret in a heading was sized for 10 pt text (2026-09-12)
+
+A heading's unstyled runs are stored at the 10 pt body default and drawn at the heading size, but the caret
+was sized from the stored size — every heading got the same short caret. Measured: 19.0 in an H1 whose text
+gets 29.1 at the same size in body text, 19.0 in an H2 (23.3). Body text never showed it because the caret is
+clamped to its line box. The caret now uses the renderer's rule (`DrawnRunSize`); explicitly sized runs were
+already right and are pinned. Found by measuring after the WinUI peer fixed the mirror-image defect.
+`CaretHeadingSizeTests` (6), two falsifications. Suite 915 → 921.
+
 ### Fixed / Changed — backported from the WinUI peer's four verification rounds (2026-09-12)
 
 Each item was first checked against this code and found identical — a shared defect, or a shared design the
