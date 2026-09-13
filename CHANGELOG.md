@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — context-menu items converged with the WinUI port (2026-09-13)
+
+- **Bold / Italic / Underline / Strikethrough, Clear Formatting and Insert Link are enabled without a
+  selection** — they act on the caret's word, or on the text typed next, exactly as their shortcuts do.
+- **Fixed**: Insert Link without a selection did nothing and left an empty undo step behind (the reason it had
+  been greyed out). It now links the caret's word, as one undo step.
+- **Open Link is disabled for a link it will not open** — only http/https links are launched; it used to do
+  nothing for the rest (mailto:, file:, …).
+- The List menu gains **Remove List**, and **Ctrl+Shift+7** toggles a numbered list (shown in the menu).
+
 ### Changed — one cell block model, shared with the WinUI port (2026-09-13)
 
 The two repos selected table cells differently; they now follow one rule (user decision).

@@ -374,16 +374,19 @@ public partial class RichEditor
 
     // ── 글자 모양 (character shape) ── quick toggles (checked) + font larger/smaller + clear. The precise
     // pickers (specific size, text color, highlight, font family) are toolbar-only, HWP-style.
-    private MenuItem CharacterFormatSub(CaretFormat fmt, bool hasSelection) => Sub(Loc("CharacterFormat"),
-        CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Bold)),
-        CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Italic)),
-        CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Underline)),
-        CheckItem(Loc("Strikethrough"), fmt.Strike, ToggleStrikethrough, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Strikethrough)),
+    // Always enabled: without a selection a toggle acts on the caret's word or arms the format for the next typed
+    // text, as Ctrl+B does — greying them out without a selection hid a command that works (converged with the
+    // WinUI port, 2026-09-13). The same for ClearFormatting.
+    private MenuItem CharacterFormatSub(CaretFormat fmt) => Sub(Loc("CharacterFormat"),
+        CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(ShortcutId.Bold)),
+        CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(ShortcutId.Italic)),
+        CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(ShortcutId.Underline)),
+        CheckItem(Loc("Strikethrough"), fmt.Strike, ToggleStrikethrough, true, RichEditorShortcuts.Gesture(ShortcutId.Strikethrough)),
         new Separator(),
         Mi(Loc("FontSizeIncrease"), IncreaseFontSize, true, RichEditorIcon.FontSizeIncrease, RichEditorShortcuts.Gesture(ShortcutId.FontLarger)),
         Mi(Loc("FontSizeDecrease"), DecreaseFontSize, true, RichEditorIcon.FontSizeDecrease, RichEditorShortcuts.Gesture(ShortcutId.FontSmaller)),
         new Separator(),
-        Mi(Loc("ClearFormatting"), ClearFormatting, hasSelection, RichEditorIcon.ClearFormatting));
+        Mi(Loc("ClearFormatting"), ClearFormatting, true, RichEditorIcon.ClearFormatting));
 
     // 문단 모양 (paragraph shape): alignment as a radio group (current value checked) + indent + margin,
     // flattened into one level (HWP-style — no nested 정렬/여백 submenus).
@@ -416,13 +419,16 @@ public partial class RichEditor
             Mi("◦", () => SetListStyle(ListMarkerStyle.Circle)),
             Mi("▪", () => SetListStyle(ListMarkerStyle.Square)),
             Mi("–", () => SetListStyle(ListMarkerStyle.Dash))),
-        CheckItem(Loc("NumberedList"), fmt.List == ListKind.Ordered, ToggleNumbering),
+        CheckItem(Loc("NumberedList"), fmt.List == ListKind.Ordered, ToggleNumbering, gesture: RichEditorShortcuts.Gesture(ShortcutId.NumberedList)),
         Sub(Loc("NumberStyle"),
             Mi("1.", () => SetListStyle(ListMarkerStyle.Decimal)),
             Mi("1)", () => SetListStyle(ListMarkerStyle.DecimalParen)),
             Mi("a)", () => SetListStyle(ListMarkerStyle.LowerAlpha)),
             Mi("A)", () => SetListStyle(ListMarkerStyle.UpperAlpha)),
             Mi("i)", () => SetListStyle(ListMarkerStyle.LowerRoman))),
+        new Separator(),
+        // A labelled way out of any list (the toggles above turn off only their own kind). From the WinUI port.
+        Mi(Loc("RemoveList"), RemoveList, fmt.List != ListKind.None),
         new Separator(),
         CheckItem(Loc("Quote"), fmt.Quote, ToggleQuote));
 
@@ -464,7 +470,7 @@ public partial class RichEditor
         {
             // HWP-style: 글자 모양 / 문단 모양 / 목록 / 제목 grouping submenus (flattened — alignment and
             // margin under 문단 모양, list/heading promoted to top level). Full formatting opt-in.
-            items.Add(CharacterFormatSub(fmt, hasSelection));
+            items.Add(CharacterFormatSub(fmt));
             items.Add(BuildParagraphFormatSub(fmt));
             items.Add(ListSub(fmt));
             items.Add(HeadingSub(fmt));
@@ -473,21 +479,23 @@ public partial class RichEditor
         {
             // Slim (default): just the quick character toggles, checked to reflect the caret. The rich
             // formatting groups live on the toolbar; opt in with ShowFormattingMenu for a toolbar-less host.
-            items.Add(CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Bold)));
-            items.Add(CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Italic)));
-            items.Add(CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, hasSelection, RichEditorShortcuts.Gesture(ShortcutId.Underline)));
+            // Always enabled — see CharacterFormatSub.
+            items.Add(CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(ShortcutId.Bold)));
+            items.Add(CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(ShortcutId.Italic)));
+            items.Add(CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(ShortcutId.Underline)));
         }
 
         items.Add(new Separator());
         if (link != null && !string.IsNullOrEmpty(link.NavigateUri))
         {
-            items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), icon: RichEditorIcon.OpenLink));
+            items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), IsOpenableUrl(link.NavigateUri), RichEditorIcon.OpenLink));
             items.Add(Mi(Loc("EditLink"), () => { _ = EditHyperlinkAsync(link.NavigateUri, link); }, icon: RichEditorIcon.EditLink));
             items.Add(Mi(Loc("RemoveLink"), () => SetHyperlink(null, link), icon: RichEditorIcon.RemoveLink));
         }
         else
         {
-            items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, hasSelection, RichEditorIcon.InsertLink));
+            // Enabled without a selection too: the link goes on the caret's word (SetHyperlink).
+            items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, true, RichEditorIcon.InsertLink));
         }
         items.Add(new Separator());
         items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)));
@@ -546,7 +554,7 @@ public partial class RichEditor
     // Concise menu shown when right-clicking a hyperlink: link actions + copy, no formatting clutter.
     private void BuildLinkMenu(List<Control> items, bool hasSelection, Run link)
     {
-        items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), icon: RichEditorIcon.OpenLink));
+        items.Add(Mi(Loc("OpenLink"), () => OpenUrl(link.NavigateUri!), IsOpenableUrl(link.NavigateUri), RichEditorIcon.OpenLink));
         items.Add(Mi(Loc("EditLink"), () => { _ = EditHyperlinkAsync(link.NavigateUri, link); }, icon: RichEditorIcon.EditLink));
         items.Add(Mi(Loc("RemoveLink"), () => SetHyperlink(null, link), icon: RichEditorIcon.RemoveLink));
         items.Add(Mi(Loc("CopyLink"), () =>

@@ -515,17 +515,17 @@ public partial class RichEditor
     private void SetHyperlink(string? url, Run? targetRun)
     {
         if (Document == null || IsReadOnly) return;
-        PushUndo();
-        if (_selectionStart.CompareTo(_selectionEnd) != 0)
+        if (targetRun != null && _selectionStart.CompareTo(_selectionEnd) == 0)
         {
-            var range = new TextRange(_selectionStart, _selectionEnd);
-            range.ApplyPropertyValue(r => r.NavigateUri = url);
-        }
-        else if (targetRun != null)
-        {
+            PushUndo();
             targetRun.NavigateUri = url;
+            InvalidateVisual();
+            return;
         }
-        InvalidateVisual();
+        // The selection — or, with none, the caret's word (at a word boundary: the text typed next), like every
+        // other character format. Without a selection this used to do nothing but push an empty undo step, which
+        // is why Insert Link was offered only with a selection (converged with the WinUI port, 2026-09-13).
+        ApplyStyleToSelection(r => r.NavigateUri = url);
     }
 
     private async Task EditHyperlinkAsync(string? current, Run? targetRun)

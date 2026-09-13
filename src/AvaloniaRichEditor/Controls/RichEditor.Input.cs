@@ -453,12 +453,16 @@ public partial class RichEditor
         ApplyCaretSelection(shift);
     }
 
+    // Only web links are launched: a document's links come from pasted pages and received files, and the shell
+    // hands any scheme to its handler (file:, ms-msdt:, …). The menu's "Open Link" is disabled for the rest
+    // rather than silently doing nothing (converged with the WinUI port, 2026-09-13).
+    internal static bool IsOpenableUrl(string? url)
+        => url != null && (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                        || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
+
     private static void OpenUrl(string url)
     {
-        // Only launch web links from pasted content; never arbitrary schemes (file:, etc.).
-        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return;
+        if (!IsOpenableUrl(url)) return;
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
@@ -773,6 +777,7 @@ public partial class RichEditor
             case ShortcutId.Heading6: SetHeading(6); break;
             case ShortcutId.BodyText: SetHeading(0); break;
             case ShortcutId.BulletList: ToggleBullet(); break;
+            case ShortcutId.NumberedList: ToggleNumbering(); break;
             case ShortcutId.LineSpacingSingle: SetLineSpacing(1.0); break;
             case ShortcutId.LineSpacingOneHalf: SetLineSpacing(1.5); break;
             case ShortcutId.LineSpacingDouble: SetLineSpacing(2.0); break;
