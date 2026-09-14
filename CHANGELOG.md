@@ -14,8 +14,9 @@ A character no installed font covers is drawn with the font's `.notdef` glyph �
 
 - Found through CI: `VectorPdfTests` were red on ubuntu since they were added — the runner has no CJK font, so
   the Hangul in them became `.notdef`. CI now installs `fonts-noto-cjk` so the Hangul tests exercise the real
-  fallback on Linux, and a new test uses an unassigned code point (U+0378), which no font anywhere has, to pin
-  the box on every OS.
+  fallback on Linux, and a new test subsets Inter's program to `.notdef` alone and checks its outline survives —
+  on the subsetter directly, because which character reaches `.notdef` depends on the OS (macOS draws even an
+  unassigned code point with a fallback font).
 
 ### Fixed — a file's table spans, empty picture-pool entries, a chosen Continuous page (2026-09-14)
 
