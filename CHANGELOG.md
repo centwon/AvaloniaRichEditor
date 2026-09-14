@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the events a host listens to: selection changes and "modified" (2026-09-14)
+
+`SelectionChanged` and `IsModifiedChanged` had no tests. Measured in the WinUI port first, whose code here was the
+same, then here:
+
+- Selecting a **picture**, holding a **table by its border**, **F5 in an empty cell**, and F5 with the cell's text
+  already selected changed the selection but raised no `SelectionChanged` — only the caret and selection endpoints
+  were compared, and none of these moves them. The selected object, the block caret and the cell block now count.
+  A host that enables Copy/Delete from this event kept them greyed after a picture was clicked.
+- `IsModifiedChanged` was raised **inside** the edit, before it changed the document: typing X after "ab", the
+  handler read "ab". It now comes after the command, like `TextChanged`. `MarkSaved` still reports at once.
+- **Every open** of a document raised `IsModifiedChanged` twice ("modified", then not). It no longer does (opening
+  over a modified document raises it once).
+- Unchanged: assigning `Document` directly is an edit (`IsModified` is true); `Load*` and `Clear` start clean.
+
 ### Changed — the table menu, item for item the WinUI port's (2026-09-14)
 
 The right-click menu fits what was clicked — text, table or image (user decision) — and the table menu is now the
