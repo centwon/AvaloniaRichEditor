@@ -73,11 +73,15 @@ public class PageSetupTests
         Assert.DoesNotContain("PageSetup", json);
         Assert.Null(DocumentSerializer.Deserialize(json).PageSetup);
 
-        // A default setup (A4 portrait, boundaries on, no chrome) is likewise omitted.
+        // A default-looking setup the document CARRIES is written (2026-09-14). "No setup" reads back as the
+        // host's defaults (the page-setup host-default rule), so omitting it reopened a Continuous page chosen
+        // under an A4 host as A4 — measured in the WinUI port, same code. The editor leaves the setup off a
+        // document only when the host's defaults are plain too, so an editor's plain document keeps its bytes.
         var doc = SampleDoc();
         doc.PageSetup = new PageSetup(); // all defaults
         Assert.True(doc.PageSetup.IsDefault);
-        var json2 = DocumentSerializer.Serialize(doc);
-        Assert.DoesNotContain("PageSetup", json2);
+        var back = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc));
+        Assert.NotNull(back.PageSetup);
+        Assert.Equal(RichEditorPageSize.Continuous, back.PageSetup!.PageSize);
     }
 }

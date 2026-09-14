@@ -103,8 +103,9 @@ public static class DocumentPackage
                 using var ms = new MemoryStream();
                 es.CopyTo(ms);
                 var bytes = ms.ToArray();
-                string mime = dto?.Images != null && dto.Images.TryGetValue(key, out var meta) && meta.MimeType != null
-                    ? meta.MimeType
+                // A null pool entry ("k": null) threw NullReferenceException out of the load.
+                string mime = dto?.Images != null && dto.Images.TryGetValue(key, out var meta) && meta?.MimeType is { } m
+                    ? m
                     : ImageMime.Detect(bytes);
                 pool[key] = (bytes, mime);
             }

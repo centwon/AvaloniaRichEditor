@@ -286,6 +286,23 @@ public partial class RichEditor : Control
         };
     }
 
+    // Every table in the blocks — in cells (covered ones too) and inside inline tables — made consistent.
+    private static void NormalizeTableSpans(IEnumerable<Block> blocks)
+    {
+        foreach (var b in blocks)
+        {
+            if (b is TableBlock tb)
+            {
+                tb.EnsureSpanConsistency();
+                foreach (var row in tb.Cells)
+                    foreach (var cell in row) NormalizeTableSpans(cell.Blocks);
+            }
+            else if (b is Paragraph p)
+                foreach (var inl in p.Inlines)
+                    if (inl is InlineTable it) NormalizeTableSpans(new Block[] { it.Table });
+        }
+    }
+
     /// <inheritdoc/>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -297,6 +314,9 @@ public partial class RichEditor : Control
             _layoutCache.Clear();
             _tableLayoutCache.Clear();
             ResetInteractionState(); // selections/modes point into the document being replaced
+            // A host's own model is trusted no more than a file: spans describing no grid crashed the editor or
+            // hid cells (see TableBlock.EnsureSpanConsistency). Undo swaps in clones, consistent already.
+            if (Document != null) NormalizeTableSpans(Document.Blocks);
             if (Document != null) UpdateParents(Document);
             SyncPageSetupOnDocumentChanged(); // apply the loaded doc's page setup to the page properties
             _textChangedPending = true; // wholesale content swap
