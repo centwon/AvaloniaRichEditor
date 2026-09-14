@@ -903,8 +903,7 @@ public partial class RichEditor
             return;
         }
 
-        bool hasTextSel = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
-            && _selectionStart.CompareTo(_selectionEnd) != 0;
+        bool hasTextSel = HasTextOrCellSelection;
 
         if (e.Key == Key.C && ctrl)
         {

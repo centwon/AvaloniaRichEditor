@@ -191,8 +191,7 @@ public partial class RichEditor
     {
         if (Document == null) return;
 
-        bool hasSelection = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
-            && _selectionStart.CompareTo(_selectionEnd) != 0;
+        bool hasSelection = HasTextOrCellSelection;
 
         if (IsReadOnly)
         {
@@ -285,7 +284,9 @@ public partial class RichEditor
                 || ReferenceEquals(_caretBlock, tbk)
                 || (hasSelection && SelectedCellRange(tbk) != null);
             if (tableStructureMode)
-                BuildTableMenu(items, tbk, tp.Paragraph, hasSelection);
+                // A table held whole by the block caret (its border) names no cell: the cell items are greyed, as in
+                // the WinUI port (user decision, 2026-09-14) — they took the cell nearest the border, one nobody chose.
+                BuildTableMenu(items, tbk, ReferenceEquals(_caretBlock, tbk) && !hasSelection ? null : tp.Paragraph, hasSelection);
             else
                 // Editing inside a cell: same caret menu as a top-level paragraph, with the table ops in a
                 // submenu. Target the INNERMOST table the caret is in (a nested table — P4-2b), not the
@@ -442,9 +443,6 @@ public partial class RichEditor
             Mi("A)", () => SetListStyle(ListMarkerStyle.UpperAlpha)),
             Mi("i)", () => SetListStyle(ListMarkerStyle.LowerRoman))),
         new Separator(),
-        // A labelled way out of any list (the toggles above turn off only their own kind). From the WinUI port.
-        Mi(Loc("RemoveList"), RemoveList, fmt.List != ListKind.None),
-        new Separator(),
         CheckItem(Loc("Quote"), fmt.Quote, ToggleQuote));
 
     // ── 제목 (heading / style) — promoted to top level, radio-checked at the current level.
@@ -528,6 +526,7 @@ public partial class RichEditor
             var tableItems = new List<Control>();
             AddTableStructureItems(tableItems, cellTable, _caretPosition.Paragraph, hasSelection);
             items.Add(new Separator());
+            items.Add(SelectCellItem(_caretPosition.Paragraph)); // in reach while editing the cell, not only in the submenu
             items.Add(Sub(Loc("TableOps"), tableItems.ToArray()));
         }
     }
@@ -613,6 +612,8 @@ public partial class RichEditor
     {
         AddClipboardItems(items, hasSelection, canCopy: ReferenceEquals(_caretBlock, tb));
         items.Add(new Separator());
+        items.Add(SelectCellItem(cell));
+        items.Add(new Separator());
         AddTableStructureItems(items, tb, cell, hasSelection);
     }
 
@@ -641,6 +642,74 @@ public partial class RichEditor
             Opt("VAlignBottom", CellVerticalAlignment.Bottom));
     }
 
+    // 셀 선택 (F5): the cell as a ONE-cell block — dragging across cells can never produce one. In the table menu after
+    // the clipboard verbs, and in a cell's text menu right above the "Table" submenu (user decision, 2026-09-14: in
+    // reach while editing). Greyed with no cell (a table held whole by its border).
+    private MenuItem SelectCellItem(Paragraph? cell)
+    {
+        var loc = cell != null ? FindCell(cell) : null;
+        return Mi(Loc("SelectCell"), () =>
+        {
+            if (loc is not { } lc) return;
+            var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
+            SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
+        }, loc != null, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectCell));
+    }
+
+    // 셀 배경: the toolbar's palette as a swatch grid inside the submenu (as the table-size picker is), plus "none".
+    // The model and every format already carried TableCell.Background; this is the way to set it here (the WinUI
+    // port had it; converged 2026-09-14).
+    private MenuItem BuildCellBackgroundSub(TableBlock tb, int r, int c)
+    {
+        var targets = CellBackgroundTargets(tb, r, c);
+        void Apply(IBrush? brush)
+        {
+            _openContextMenu?.Close();
+            if (Document == null || IsReadOnly || targets.Count == 0) return;
+            PushUndo();
+            foreach (var cell in targets) cell.Background = brush;
+            InvalidateVisual();
+        }
+        var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 8 };
+        foreach (var hex in RichEditorToolbar.Palette)
+        {
+            Color color;
+            try { color = Color.Parse(hex); }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); color = Colors.Black; } // as the toolbar's swatches
+            var swatch = new Border
+            {
+                Width = 18, Height = 18, Margin = new Thickness(1),
+                Background = new SolidColorBrush(color), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1),
+            };
+            swatch.PointerPressed += (_, _) => Apply(new SolidColorBrush(color));
+            grid.Children.Add(swatch);
+        }
+        var none = new Button { Content = Loc("HighlightNone"), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, Margin = new Thickness(0, 6, 0, 0) };
+        none.Click += (_, _) => Apply(null);
+        var panel = new StackPanel { Margin = new Thickness(8, 6) };
+        panel.Children.Add(grid);
+        panel.Children.Add(none);
+        return new MenuItem { Header = Loc("CellBackground"), IsEnabled = !IsReadOnly && targets.Count > 0, ItemsSource = new Control[] { panel } };
+    }
+
+    // The cells a background goes on: the cell block when one is on this table (a one-cell block included), else the
+    // cell (r, c); none when the right-click was on the border with no block.
+    private List<TableCell> CellBackgroundTargets(TableBlock tb, int r, int c)
+    {
+        var result = new List<TableCell>();
+        if (SelectedCellRange(tb) is { } rg)
+        {
+            foreach (var (rr, cc, cell) in tb.LogicalCells())
+                if (rr >= rg.r0 && rr <= rg.r1 && cc >= rg.c0 && cc <= rg.c1) result.Add(cell);
+        }
+        else if (r >= 0 && c >= 0)
+        {
+            var (ar, ac) = tb.AnchorOf(r, c);
+            result.Add(tb.Cells[ar][ac]);
+        }
+        return result;
+    }
+
     private void AddTableStructureItems(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
     {
         var loc = cell != null ? FindCell(cell) : null;
@@ -656,15 +725,6 @@ public partial class RichEditor
             rBelow = ar + System.Math.Max(1, rs);
             cRight = ac + System.Math.Max(1, cs);
         }
-        // A ONE-cell block (also F5). Dragging across cells can never produce one, so without this a single cell
-        // couldn't be selected as a unit.
-        items.Add(Mi(Loc("SelectCell"), () =>
-        {
-            if (loc is not { } lc) return;
-            var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
-            SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
-        }, loc != null, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectCell)));
-        items.Add(new Separator());
         items.Add(Mi(Loc("InsertRowAbove"), () => TableInsertRow(tb, r), r >= 0, RichEditorIcon.InsertRowAbove));
         items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, rBelow), r >= 0, RichEditorIcon.InsertRowBelow));
         items.Add(Mi(Loc("DeleteRow"), () => TableDeleteRow(tb, r), r >= 0 && tb.Rows > 1, RichEditorIcon.DeleteRow));
@@ -694,7 +754,10 @@ public partial class RichEditor
             InvalidateVisual();
         }, canUnmerge, RichEditorIcon.UnmergeCells));
         items.Add(new Separator());
-        if (r >= 0 && c >= 0) items.Add(BuildCellVAlignSub(tb, r, c));
+        // An item that does not apply is greyed, not dropped (user decision, 2026-09-14): the same items in the same
+        // places as the WinUI port's table menu.
+        items.Add(r >= 0 && c >= 0 ? BuildCellVAlignSub(tb, r, c) : new MenuItem { Header = Loc("CellVerticalAlign"), IsEnabled = false });
+        items.Add(BuildCellBackgroundSub(tb, r, c));
         items.Add(MarginMenu(tb));
         // HWP-style "treat as character": a top-level block table can become inline; an inline table can
         // promote back to a block (only when its host paragraph is top-level).
@@ -716,6 +779,7 @@ public partial class RichEditor
             asChar.Click += (_, _) => ConvertInlineTableToBlock(itHost, itw);
             items.Add(asChar);
         }
+        items.Add(new Separator());
         items.Add(Mi(Loc("DeleteTable"), () =>
         {
             if (tb.Parent is InlineTable it2 && it2.Parent is Paragraph host2) DeleteInlineTable(host2, it2);

@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the table menu, item for item the WinUI port's (2026-09-14)
+
+The right-click menu fits what was clicked — text, table or image (user decision) — and the table menu is now the
+same in both editors.
+
+- **Cell Background…** joins the table menu and the cells' "Table" submenu: the toolbar's palette as a swatch
+  grid, plus None. It goes on the cell block (a one-cell block included), else on the clicked cell. The model and
+  every format already carried a cell background; there was no way to set it here.
+- Delete Table sits after a separator; Cell Vertical Alignment is greyed, not dropped, when no cell was clicked —
+  an item that does not apply is greyed, so the same items stand in the same places.
+- **Remove List** is gone again: a list is turned off by its own toggle.
+- A table held whole by its border names no cell, so the cell items (Select Cell, rows, columns, merge, cell
+  alignment and background) are greyed — they used to act on the cell nearest the border, one nobody chose.
+- Editing inside a cell, **Select Cell (F5)** is right in the text menu, just above the "Table" submenu (which now
+  starts with the rows).
+- **Fixed**: an EMPTY cell's one-cell block (F5) read as "nothing selected" — a right-click dropped it (it moved the
+  caret) and Ctrl+C copied nothing. It now counts as a selection and copies as a 1×1 table.
+- The demo shows the full formatting menu while editing, as the WinUI demo does.
+
 ### Fixed — right-clicking a table with a selection moved the caret away from it (2026-09-14)
 
 With text selected, a right-click in a table cell moved the caret to the clicked cell while the selection stayed

@@ -131,6 +131,25 @@ public class CellDragSelectionInteractionTests
         Assert.Equal(2, b.Rows); // the one under the pointer is untouched
     }
 
+    // A right-click on an EMPTY cell's one-cell block keeps the block: its zero-length range read as "nothing
+    // selected", so the right-click moved the caret and dropped it.
+    [AvaloniaFact]
+    public void ARightClick_OnAnEmptyOneCellBlock_KeepsTheBlock()
+    {
+        var (host, tb) = Grid(2, 2);
+        ((Run)tb.Cells[0][0].Para.Inlines[0]).Text = "";
+        host.Render();
+        var p00 = tb.Cells[0][0].Para;
+        foreach (var f in new[] { "_selectionStart", "_selectionEnd", "_caretPosition" })
+            typeof(RichEditor).GetField(f, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(host.Editor, new TextPointer(p00, 0));
+
+        host.Editor.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.F5 });
+        Assert.Same(tb, BlockTable(host.Editor));
+
+        host.Click(InCell(host, tb, 1, 1), Avalonia.Input.MouseButton.Right);
+        Assert.Same(tb, BlockTable(host.Editor));
+    }
+
     private static T Field<T>(RichEditor ed, string name)
         => (T)typeof(RichEditor).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(ed)!;
 
