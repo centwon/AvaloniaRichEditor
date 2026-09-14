@@ -17,6 +17,10 @@ same in both editors.
 - Delete Table sits after a separator; Cell Vertical Alignment is greyed, not dropped, when no cell was clicked —
   an item that does not apply is greyed, so the same items stand in the same places.
 - **Remove List** is gone again: a list is turned off by its own toggle.
+- A table held whole by its border names no cell, so the cell items (Select Cell, rows, columns, merge, cell
+  alignment and background) are greyed — they used to act on the cell nearest the border, one nobody chose.
+- Editing inside a cell, **Select Cell (F5)** is right in the text menu, just above the "Table" submenu (which now
+  starts with the rows).
 - **Fixed**: an EMPTY cell's one-cell block (F5) read as "nothing selected" — a right-click dropped it (it moved the
   caret) and Ctrl+C copied nothing. It now counts as a selection and copies as a 1×1 table.
 - The demo shows the full formatting menu while editing, as the WinUI demo does.

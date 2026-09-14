@@ -171,6 +171,24 @@ public class ContextMenuConvergenceTests
         Assert.Equal(TableMenuLabels(inlineToggle: !nested), labels); // a table in a cell has no 글자처럼 취급
     }
 
+    // Editing inside a cell, 셀 선택 is right in the text menu — just above the "Table" submenu, not only inside it
+    // (user decision, 2026-09-14). The submenu then starts with the rows. Written the same way in the port.
+    [AvaloniaFact]
+    public void InACell_TheTextMenuOffersSelectCell_RightAboveTheTableSubmenu()
+    {
+        var (ed, tb) = TableEditor(nested: false);
+        foreach (var f in new[] { "_caretPosition", "_selectionStart", "_selectionEnd" })
+            typeof(RichEditor).GetField(f, NP)!.SetValue(ed, new TextPointer(tb.Cells[1][1].Para, 0));
+        var items = new List<Control>();
+        typeof(RichEditor).GetMethod("BuildTextMenu", NP)!.Invoke(ed, new object?[] { items, false, null, tb });
+
+        var labels = items.Select(i => i is Separator ? "—" : (i as MenuItem)?.Header as string ?? "").ToArray();
+        Assert.Equal(new[] { "—", Loc("SelectCell"), Loc("TableOps") }, labels[^3..]);
+        Assert.True(((MenuItem)items[^2]).IsEnabled);
+        var sub = (MenuItem)items[^1];
+        Assert.Equal(Loc("InsertRowAbove"), ((MenuItem)(sub.ItemsSource ?? sub.Items)!.Cast<object>().First()).Header as string);
+    }
+
     // 셀 배경 goes on the cell block when there is one — a one-cell block included — else on the clicked cell.
     [AvaloniaFact]
     public void CellBackground_TakesTheCellBlock_ElseTheClickedCell()

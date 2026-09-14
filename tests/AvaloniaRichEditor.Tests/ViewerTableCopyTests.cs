@@ -26,6 +26,23 @@ public class ViewerTableCopyTests
     // The table holding the active cell block — what the renderer fills (the table shown selected) — or null.
     private static TableBlock? BlockTable(RichEditor ed) => (TableBlock?)typeof(RichEditor).GetMethod("CellBlockTable", NP)!.Invoke(ed, null);
 
+    // A table held whole by its border names no cell: the cell items are greyed, as in the WinUI port (user decision,
+    // 2026-09-14). They took the cell nearest the border — acting on a cell nobody chose.
+    [AvaloniaFact]
+    public void RightClickingATablesBorder_GreysTheCellItems()
+    {
+        var tb = Table(2, 2);
+        var host = Host(tb);
+
+        host.Click(OnLeftBorder(host.Editor, tb), MouseButton.Right);
+
+        var items = MenuItems(host.Editor);
+        foreach (var key in new[] { "SelectCell", "InsertRowAbove", "InsertRowBelow", "DeleteRow", "InsertColumnLeft",
+                                    "UnmergeCells", "CellVerticalAlign", "CellBackground" })
+            Assert.False(items.Single(i => (i.Header as string) == RichEditorLocalization.GetString(key)).IsEnabled, key);
+        Assert.True(items.Single(i => (i.Header as string) == RichEditorLocalization.GetString("DeleteTable")).IsEnabled);
+    }
+
     private static FieldInfo CopiedBlocksField
         => typeof(RichEditor).GetField("_internalClipboardBlocks", BindingFlags.NonPublic | BindingFlags.Static)!;
 

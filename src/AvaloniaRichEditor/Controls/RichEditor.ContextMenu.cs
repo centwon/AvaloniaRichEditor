@@ -284,7 +284,9 @@ public partial class RichEditor
                 || ReferenceEquals(_caretBlock, tbk)
                 || (hasSelection && SelectedCellRange(tbk) != null);
             if (tableStructureMode)
-                BuildTableMenu(items, tbk, tp.Paragraph, hasSelection);
+                // A table held whole by the block caret (its border) names no cell: the cell items are greyed, as in
+                // the WinUI port (user decision, 2026-09-14) — they took the cell nearest the border, one nobody chose.
+                BuildTableMenu(items, tbk, ReferenceEquals(_caretBlock, tbk) && !hasSelection ? null : tp.Paragraph, hasSelection);
             else
                 // Editing inside a cell: same caret menu as a top-level paragraph, with the table ops in a
                 // submenu. Target the INNERMOST table the caret is in (a nested table — P4-2b), not the
@@ -524,6 +526,7 @@ public partial class RichEditor
             var tableItems = new List<Control>();
             AddTableStructureItems(tableItems, cellTable, _caretPosition.Paragraph, hasSelection);
             items.Add(new Separator());
+            items.Add(SelectCellItem(_caretPosition.Paragraph)); // in reach while editing the cell, not only in the submenu
             items.Add(Sub(Loc("TableOps"), tableItems.ToArray()));
         }
     }
@@ -609,6 +612,8 @@ public partial class RichEditor
     {
         AddClipboardItems(items, hasSelection, canCopy: ReferenceEquals(_caretBlock, tb));
         items.Add(new Separator());
+        items.Add(SelectCellItem(cell));
+        items.Add(new Separator());
         AddTableStructureItems(items, tb, cell, hasSelection);
     }
 
@@ -635,6 +640,20 @@ public partial class RichEditor
             Opt("VAlignTop", CellVerticalAlignment.Top),
             Opt("VAlignCenter", CellVerticalAlignment.Center),
             Opt("VAlignBottom", CellVerticalAlignment.Bottom));
+    }
+
+    // 셀 선택 (F5): the cell as a ONE-cell block — dragging across cells can never produce one. In the table menu after
+    // the clipboard verbs, and in a cell's text menu right above the "Table" submenu (user decision, 2026-09-14: in
+    // reach while editing). Greyed with no cell (a table held whole by its border).
+    private MenuItem SelectCellItem(Paragraph? cell)
+    {
+        var loc = cell != null ? FindCell(cell) : null;
+        return Mi(Loc("SelectCell"), () =>
+        {
+            if (loc is not { } lc) return;
+            var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
+            SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
+        }, loc != null, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectCell));
     }
 
     // 셀 배경: the toolbar's palette as a swatch grid inside the submenu (as the table-size picker is), plus "none".
@@ -706,15 +725,6 @@ public partial class RichEditor
             rBelow = ar + System.Math.Max(1, rs);
             cRight = ac + System.Math.Max(1, cs);
         }
-        // A ONE-cell block (also F5). Dragging across cells can never produce one, so without this a single cell
-        // couldn't be selected as a unit.
-        items.Add(Mi(Loc("SelectCell"), () =>
-        {
-            if (loc is not { } lc) return;
-            var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
-            SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
-        }, loc != null, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectCell)));
-        items.Add(new Separator());
         items.Add(Mi(Loc("InsertRowAbove"), () => TableInsertRow(tb, r), r >= 0, RichEditorIcon.InsertRowAbove));
         items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, rBelow), r >= 0, RichEditorIcon.InsertRowBelow));
         items.Add(Mi(Loc("DeleteRow"), () => TableDeleteRow(tb, r), r >= 0 && tb.Rows > 1, RichEditorIcon.DeleteRow));
