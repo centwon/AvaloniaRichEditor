@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a character no font has printed as a blank in the PDF (2026-09-15)
+
+A character no installed font covers is drawn with the font's `.notdef` glyph — the box the screen shows. When
+`SavePdf` cut the embedded fonts down (`hb_subset`), `.notdef` lost its outline by default, so the PDF printed a
+**blank** where the screen showed a box. The subsetter now keeps it (`NOTDEF_OUTLINE`).
+
+- Found through CI: `VectorPdfTests` were red on ubuntu since they were added — the runner has no CJK font, so
+  the Hangul in them became `.notdef`. CI now installs `fonts-noto-cjk` so the Hangul tests exercise the real
+  fallback on Linux, and a new test subsets Inter's program to `.notdef` alone and checks its outline survives —
+  on the subsetter directly, because which character reaches `.notdef` depends on the OS (macOS draws even an
+  unassigned code point with a fallback font).
+
 ### Fixed — a file's table spans, empty picture-pool entries, a chosen Continuous page (2026-09-14)
 
 Measured in the WinUI port first; the loader and the page-setup capture here were the same code.

@@ -319,6 +319,36 @@ public class VectorPdfTests
         }
     }
 
+    // A character no installed font has is drawn with the font's .notdef glyph (id 0) — the box the screen shows.
+    // hb_subset drops .notdef's outline unless asked to keep it (NOTDEF_OUTLINE), so the PDF printed a BLANK where the
+    // screen showed a box. Ubuntu CI met it with Hangul (no CJK font on the runner).
+    // Tested on the subsetter itself, not through a document: WHICH character reaches .notdef depends on the OS's
+    // fallback — the first draft used unassigned U+0378, and macOS drew even that with a fallback font (its premise
+    // check caught it on CI) — but how the subsetter treats glyph 0 does not.
+    [AvaloniaFact]
+    public void TheMissingCharacterBox_KeepsItsOutlineThroughSubsetting()
+    {
+        var ed = new RichEditor { DefaultFontFamily = Inter };
+        ed.LoadHtml("<p>box here</p>");
+        var whole = (byte[])typeof(RichEditor).GetMethod("RenderVectorPdf", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ed, null)!;
+        var inter = FontPrograms(Objects(whole)).First(kv => kv.Key.Contains("Inter")).Value; // embedded whole
+        Assert.True(Outline(inter, 0) > 0, "Inter's .notdef has no outline to keep — the premise failed");
+
+        // Only .notdef is asked for. The control counts rather than naming glyphs: hb_subset keeps a composite's
+        // components, and a first draft's "not asked for" glyphs (1-4) survived — Inter's .notdef keeps a few others.
+        var harfBuzz = typeof(RichEditor).Assembly.GetType("AvaloniaRichEditor.Formatters.PdfFontSubsetter")!
+            .GetNestedType("HarfBuzz", BindingFlags.NonPublic)!;
+        var cut = (byte[]?)harfBuzz.GetMethod("Subset", BindingFlags.Public | BindingFlags.Static)!
+            .Invoke(null, new object[] { inter, new HashSet<int> { 0 } });
+
+        Assert.NotNull(cut);
+        Assert.True(Outline(cut!, 0) > 0, ".notdef lost its outline — a missing character's box prints as a blank");
+        // The control: the rest is cut, so the check above is not met by a subsetter that keeps everything.
+        var (_, whole0) = GlyphStats(inter);
+        var (_, kept) = GlyphStats(cut!);
+        Assert.True(kept <= 16 && kept * 10 < whole0, $"{kept} of {whole0} outlines survived asking for .notdef alone — nothing was subset");
+    }
+
     // Paging carries over: two sheets of content, two PDF pages.
     [AvaloniaFact]
     public void SavePdf_WritesOnePagePerSheet()
