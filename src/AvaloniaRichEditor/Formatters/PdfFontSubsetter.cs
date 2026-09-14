@@ -284,8 +284,10 @@ internal static class PdfFontSubsetter
         private const string Lib = "libHarfBuzzSharp";
         // RETAIN_GIDS, and NO_LAYOUT_CLOSURE: the page content is already-shaped glyph ids, so the glyphs a
         // GSUB substitution could reach (ligatures, alternates) are dead weight — with the closure, Inter kept
-        // 73 outlines for a line of text.
-        private const uint RetainGids = 0x2 | 0x200;
+        // 73 outlines for a line of text. NOTDEF_OUTLINE (0x40): a character no installed font has is drawn with
+        // .notdef — the box the screen shows — and hb_subset drops that outline by default, so the PDF printed a
+        // blank there (measured 2026-09-15: Hangul on the Ubuntu CI runner, which has no CJK font).
+        private const uint RetainGids = 0x2 | 0x40 | 0x200;
         private const int MemoryModeDuplicate = 0;
 
         public static byte[]? Subset(byte[] font, HashSet<int> glyphs)

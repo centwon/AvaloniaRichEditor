@@ -26,10 +26,12 @@ jobs:
         run: dotnet build AvaloniaRichEditor.slnx -c Release --no-restore
       - name: Test
         run: dotnet test tests/AvaloniaRichEditor.Tests/AvaloniaRichEditor.Tests.csproj -c Release --no-build
-      # The render tests rasterize with real Skia; Linux needs fontconfig for glyph rendering.
+      # The render tests rasterize with real Skia; Linux needs fontconfig for glyph rendering, and a CJK font:
+      # the PDF tests write Hangul, and with no font that has it the runner drew .notdef boxes, so the text
+      # could not be searched (VectorPdfTests red on ubuntu since they were added).
       - name: Install Linux font libs
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1 fonts-noto-cjk
       - name: Test (render pixels, real Skia)
         run: dotnet test tests/AvaloniaRichEditor.Tests.Render/AvaloniaRichEditor.Tests.Render.csproj -c Release --no-build
 

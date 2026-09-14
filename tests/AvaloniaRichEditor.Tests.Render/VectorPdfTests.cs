@@ -319,6 +319,31 @@ public class VectorPdfTests
         }
     }
 
+    // A character no installed font has is drawn with the font's .notdef glyph (id 0) — the box the screen shows.
+    // hb_subset drops .notdef's outline unless asked to keep it, so the PDF printed a BLANK where the screen showed
+    // a box. Ubuntu CI met it with Hangul (no CJK font on the runner); U+0378 is unassigned, so no font anywhere has
+    // it and this runs the same on every OS.
+    [AvaloniaFact]
+    public void AMissingCharactersBox_KeepsItsOutline()
+    {
+        var ed = new RichEditor { DefaultFontFamily = Inter };
+        ed.LoadHtml("<p>box ͸ here</p>");
+        var whole = (byte[])typeof(RichEditor).GetMethod("RenderVectorPdf", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ed, null)!;
+        var subset = (byte[])typeof(RichEditor).Assembly.GetType("AvaloniaRichEditor.Formatters.PdfFontSubsetter")!
+            .GetMethod("Subset", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object[] { whole })!;
+
+        var before = FontPrograms(Objects(whole));
+        var after = FontPrograms(Objects(subset));
+        var shown = ShownGlyphs(Objects(whole));
+        var withBox = shown.Where(kv => kv.Value.Contains(0)).Select(kv => kv.Key).ToList();
+        Assert.True(withBox.Count > 0, "no font showed .notdef — the premise failed: " + string.Join(", ", shown.Keys));
+        foreach (var font in withBox)
+        {
+            Assert.True(Outline(before[font], 0) > 0, $"{font}: .notdef had no outline to begin with");
+            Assert.True(Outline(after[font], 0) > 0, $"{font}: .notdef lost its outline — the box prints as a blank");
+        }
+    }
+
     // Paging carries over: two sheets of content, two PDF pages.
     [AvaloniaFact]
     public void SavePdf_WritesOnePagePerSheet()
