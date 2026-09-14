@@ -64,8 +64,12 @@ public static class DocumentSerializer
         var blocks = new List<BlockDto>();
         foreach (var block in document.Blocks) blocks.Add(BlockToDto(block, images));
         var dto = new FlowDocumentDto { Version = CurrentSchemaVersion, Blocks = blocks };
-        // Only persist a non-default page setup, so plain (Continuous) documents keep their original format.
-        if (document.PageSetup is { IsDefault: false } ps)
+        // A document with no page setup is written without one, so plain documents keep their original format.
+        // One that CARRIES a setup is written even when it looks default: an editor whose host defaults to A4
+        // keeps a chosen Continuous on the document, and dropping it here reopened the file as A4 (measured in
+        // the WinUI port 2026-09-14, same code) — "no setup" means "the host's", which is not "Continuous". The
+        // editor leaves the setup off only when both the document's and the host's are plain.
+        if (document.PageSetup is { } ps)
             dto.PageSetup = new PageSetupDto
             {
                 PageSize = ps.PageSize.ToString(),
@@ -123,6 +127,7 @@ public static class DocumentSerializer
         if (dto?.Images != null)
             foreach (var (key, entry) in dto.Images)
             {
+                if (entry == null) continue; // `"Images":{"k":null}` threw NullReferenceException out of the load
                 var bytes = TryFromBase64(entry.Data);
                 if (bytes != null) pool[key] = (bytes, entry.MimeType ?? "image/png");
             }
@@ -388,12 +393,15 @@ public static class DocumentSerializer
                     var rs = new List<int>();
                     for (int c = 0; c < tb.Columns; c++)
                     {
-                        cs.Add(d.ColSpans != null && r < d.ColSpans.Count && c < d.ColSpans[r].Count ? d.ColSpans[r][c] : 1);
-                        rs.Add(d.RowSpans != null && r < d.RowSpans.Count && c < d.RowSpans[r].Count ? d.RowSpans[r][c] : 1);
+                        // A JSON null row (`"ColSpans":[null]`) threw NullReferenceException out of the load — not
+                        // the JsonException the load paths promise — so it reads as "no spans" like a missing row.
+                        cs.Add(d.ColSpans is { } dcs && r < dcs.Count && dcs[r] is { } csr && c < csr.Count ? csr[c] : 1);
+                        rs.Add(d.RowSpans is { } drs && r < drs.Count && drs[r] is { } rsr && c < rsr.Count ? rsr[c] : 1);
                     }
                     tb.ColSpans.Add(cs);
                     tb.RowSpans.Add(rs);
                 }
+                tb.EnsureSpanConsistency(); // the file's span VALUES are data too — see there
                 return tb;
             default:
                 return DtoToParagraph(d, pool);

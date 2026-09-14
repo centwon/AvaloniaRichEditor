@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a file's table spans, empty picture-pool entries, a chosen Continuous page (2026-09-14)
+
+Measured in the WinUI port first; the loader and the page-setup capture here were the same code.
+
+- A JSON/`.flow` table's spans were trusted as they came. In the port a negative span crashed the editor on load, and
+  a slot marked covered that no merge covered (`0,0`, or a `0,1` pair) hid that cell's text from the editor and every
+  export; overflowing or overlapping merges drew over their neighbours. Loading, and assigning `Document` (tables in
+  cells and inline tables included), now makes the grid consistent — merges inside it, a merge that collides with
+  another or with a cell shrunk to 1×1, a covered slot no merge covers made a plain cell. A consistent table is left
+  exactly as it was. `TableBlock.EnsureSpanConsistency` does it (its doc already said "safe after deserialization";
+  it fixed only the lists' shape).
+- `"ColSpans":[null]` and a `null` picture-pool entry (JSON and `.flow`) stopped the load with a
+  `NullReferenceException` — not even the documented `JsonException`. They now read as absent.
+- A **Continuous** page chosen under a host that defaults to A4 was dropped on save and reopened as A4: a document
+  without a page setup follows the host's defaults, and a default-looking setup was omitted. A setup the document
+  carries is now written; it is left off only when both the document's and the host's are plain, so plain documents
+  keep their bytes.
+  - Serialization change: a document that explicitly carries a default `PageSetup` now writes it (it used to be
+    omitted); `PageSetupTests` changed accordingly.
+
+### Fixed — the events a host listens to: selection changes and "modified" (2026-09-14)
+
+`SelectionChanged` and `IsModifiedChanged` had no tests. Measured in the WinUI port first, whose code here was the
+same, then here:
+
+- Selecting a **picture**, holding a **table by its border**, **F5 in an empty cell**, and F5 with the cell's text
+  already selected changed the selection but raised no `SelectionChanged` — only the caret and selection endpoints
+  were compared, and none of these moves them. The selected object, the block caret and the cell block now count.
+  A host that enables Copy/Delete from this event kept them greyed after a picture was clicked.
+- `IsModifiedChanged` was raised **inside** the edit, before it changed the document: typing X after "ab", the
+  handler read "ab". It now comes after the command, like `TextChanged`. `MarkSaved` still reports at once.
+- **Every open** of a document raised `IsModifiedChanged` twice ("modified", then not). It no longer does (opening
+  over a modified document raises it once).
+- Unchanged: assigning `Document` directly is an edit (`IsModified` is true); `Load*` and `Clear` start clean.
+
 ### Changed — the table menu, item for item the WinUI port's (2026-09-14)
 
 The right-click menu fits what was clicked — text, table or image (user decision) — and the table menu is now the

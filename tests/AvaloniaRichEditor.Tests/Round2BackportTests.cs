@@ -28,6 +28,10 @@ public class Round2BackportTests
         ed.FocusDocumentEnd();
         ed.InsertText("X");
         Assert.True(ed.IsModified);
+        // The "modified" report is posted to run after the edit (HostEventTests): let it land, as it would
+        // before the host's next action. Without it the host was never told "modified", so un-marking it is
+        // no change to report.
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
 
         bool fired = false;
         ed.IsModifiedChanged += (_, _) => fired = true;
