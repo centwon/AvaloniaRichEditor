@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace AvaloniaRichEditor.Documents;
 
@@ -402,10 +402,11 @@ public class TableBlock : Block
     //   * anything but an anchor (both spans >= 1) or a covered slot (both 0) is a plain cell;
     //   * an anchor is clamped to the grid;
     //   * merges are claimed in row-major order. One that would reach a slot already claimed, or another anchor,
-    //     shrinks to 1x1; an anchor whose OWN slot an earlier merge already claimed undoes that merge instead —
-    //     either way no anchor, and so no cell's text, ends up hidden under a merge;
+    //     shrinks to 1x1 — so no anchor, and so no cell's text, ends up hidden under a merge. (A merge only ever
+    //     claims covered slots, so an anchor's own slot is never claimed before its turn: a first draft also
+    //     undid "the earlier merge over an anchor", and falsification showed that path unreachable.)
     //   * a covered slot no merge claimed becomes a plain cell.
-    // One pass over the grid (an undone merge is undone once), so a hostile table cannot make it quadratic.
+    // One pass over the grid, so a hostile table cannot make it quadratic.
     private void NormalizeSpanValues()
     {
         int rows = Cells.Count;
@@ -422,17 +423,6 @@ public class TableBlock : Block
         var owner = new (int r, int c)?[rows][];
         for (int r = 0; r < rows; r++) owner[r] = new (int r, int c)?[Cells[r].Count];
 
-        void Undo((int r, int c) a)
-        {
-            int cs = ColSpans[a.r][a.c], rs = RowSpans[a.r][a.c];
-            for (int rr = a.r; rr < a.r + rs; rr++)
-                for (int cc = a.c; cc < a.c + cs; cc++)
-                    if (InGrid(rr, cc) && owner[rr][cc] == a) owner[rr][cc] = null;
-            ColSpans[a.r][a.c] = 1;
-            RowSpans[a.r][a.c] = 1;
-            owner[a.r][a.c] = a;
-        }
-
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < Cells[r].Count; c++)
             {
@@ -440,7 +430,6 @@ public class TableBlock : Block
                 if (cs == 0) continue; // a covered slot: claimed by the merge over it, or an orphan below
                 cs = System.Math.Min(cs, Cells[r].Count - c);
                 rs = System.Math.Min(rs, rows - r);
-                if (owner[r][c] is { } earlier) Undo(earlier);
                 bool clash = false;
                 for (int rr = r; rr < r + rs && !clash; rr++)
                     for (int cc = c; cc < c + cs && !clash; cc++)

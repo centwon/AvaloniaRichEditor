@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a file's table spans, empty picture-pool entries, a chosen Continuous page (2026-09-14)
+
+Measured in the WinUI port first; the loader and the page-setup capture here were the same code.
+
+- A JSON/`.flow` table's spans were trusted as they came. In the port a negative span crashed the editor on load, and
+  a slot marked covered that no merge covered (`0,0`, or a `0,1` pair) hid that cell's text from the editor and every
+  export; overflowing or overlapping merges drew over their neighbours. Loading, and assigning `Document` (tables in
+  cells and inline tables included), now makes the grid consistent — merges inside it, a merge that collides with
+  another or with a cell shrunk to 1×1, a covered slot no merge covers made a plain cell. A consistent table is left
+  exactly as it was. `TableBlock.EnsureSpanConsistency` does it (its doc already said "safe after deserialization";
+  it fixed only the lists' shape).
+- `"ColSpans":[null]` and a `null` picture-pool entry (JSON and `.flow`) stopped the load with a
+  `NullReferenceException` — not even the documented `JsonException`. They now read as absent.
+- A **Continuous** page chosen under a host that defaults to A4 was dropped on save and reopened as A4: a document
+  without a page setup follows the host's defaults, and a default-looking setup was omitted. A setup the document
+  carries is now written; it is left off only when both the document's and the host's are plain, so plain documents
+  keep their bytes.
+  - Serialization change: a document that explicitly carries a default `PageSetup` now writes it (it used to be
+    omitted); `PageSetupTests` changed accordingly.
+
 ### Fixed — the events a host listens to: selection changes and "modified" (2026-09-14)
 
 `SelectionChanged` and `IsModifiedChanged` had no tests. Measured in the WinUI port first, whose code here was the
