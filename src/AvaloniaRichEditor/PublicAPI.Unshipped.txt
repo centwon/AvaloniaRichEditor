@@ -11,3 +11,4 @@ AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.get -> AvaloniaRichEdit
 AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.set -> void
 AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.get -> bool
 AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.set -> void
+override AvaloniaRichEditor.Controls.RichEditor.OnPointerCaptureLost(Avalonia.Input.PointerCaptureLostEventArgs! e) -> void

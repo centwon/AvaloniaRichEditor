@@ -22,11 +22,21 @@ public partial class RichEditor
         return null;
     }
 
-    // The content width of the cell that encloses a nested table `t`, or null if `t` is top-level.
-    // Used to clamp a nested table's width on resize so it stays within its cell.
+    // The content width a table inside a cell has to fit in, or null if `t` is not in a cell. Used to clamp
+    // the table's width on resize so it stays within its cell: a nested table gets the cell's content box, an
+    // inline table in a cell's paragraph that box less the paragraph's gutter. The inline case was missing —
+    // its last column dragged +300 grew to 420 in a 190px cell, drawn through the neighbour (measured
+    // 2026-09-15, found by the WinUI port's table-resize audit).
     private static double? EnclosingCellInnerWidth(TableBlock t)
     {
-        if (t.Parent is not TableCell cell || cell.Parent is not TableBlock parent) return null;
+        double gutter = 0;
+        TableCell? cell = t.Parent as TableCell;
+        if (t.Parent is InlineTable { Parent: Paragraph { Parent: TableCell hostCell } host })
+        {
+            cell = hostCell;
+            gutter = CellParaLeft(host);
+        }
+        if (cell == null || cell.Parent is not TableBlock parent) return null;
         for (int r = 0; r < parent.Rows; r++)
             for (int c = 0; c < parent.Columns; c++)
                 if (ReferenceEquals(parent.Cells[r][c], cell))
@@ -34,7 +44,7 @@ public partial class RichEditor
                     var (cs, _) = parent.SpanOf(r, c);
                     double w = 0;
                     for (int k = c; k < c + cs && k < parent.ColumnWidths.Count; k++) w += parent.ColumnWidths[k];
-                    return System.Math.Max(10, w - 10);
+                    return System.Math.Max(10, w - 10 - gutter);
                 }
         return null;
     }

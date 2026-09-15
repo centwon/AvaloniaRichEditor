@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — table drags: a crash between narrow columns, tables growing out of their cell, a drag that outlived the button (2026-09-15)
+
+Backported from the WinUI port's table-resize audit; every item was measured here first (6 tests red).
+
+- Dragging the edge between two columns that together are narrower than 40px **crashed** the editor
+  (`ArgumentException` from `Math.Clamp` — its bounds inverted). Such widths are ordinary: HTML keeps any positive
+  `<td width>`, and a table inserted into a cell floors its columns at 15. The pair now keeps its total width.
+- An inline table in a cell's paragraph grew past the cell when its last column was dragged (420px in a 190px cell),
+  drawn over the neighbouring cell. It is now capped like a nested table.
+- A nested table that already overflows its cell (a file says so) snapped its last column down to the room left
+  (150 → 40) the moment it was grabbed. The cap no longer goes below the width the drag started from.
+- When the pointer capture was lost without a release (the window deactivating mid-drag, another element taking the
+  pointer), a column, row or picture drag — or a drag-selection — carried on under a plain hover. Losing the capture
+  now ends it.
+  - New override: `RichEditor.OnPointerCaptureLost`.
+
 ### Fixed — a character no font has printed as a blank in the PDF (2026-09-15)
 
 A character no installed font covers is drawn with the font's `.notdef` glyph — the box the screen shows. When
