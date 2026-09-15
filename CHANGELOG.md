@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grows to the object — Avalonia's line height is exact and would have drawn the object over the next line.
 - ↓ from a paragraph's last line now lands on the next block however tall the line is; a fixed 30px step fell short
   of a picture below once lines got taller.
+- A paragraph's default bottom margin is now 0 (was 10px), as in HWP: line spacing alone separates paragraphs, so a
+  list at 100% no longer looks like ~175%. Images and tables keep 10px. Saved files state their margins, so they
+  keep theirs; a JSON paragraph without the field, a new paragraph and a pasted one get 0.
 - No public API change.
 
 ### Added — drag a table or a picture to move it, hold Ctrl to copy (2026-09-15)

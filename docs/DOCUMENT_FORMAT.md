@@ -95,7 +95,7 @@ FlowDocument
 |---|---|---|---|
 | `Indent` | number | 항상 | 0 (왼쪽 여백 px) |
 | `MarginTop` | number? | 항상 | 없으면 **0** |
-| `MarginBottom` | number? | 항상 | 없으면 **10** (Divider는 0) — 여백 도입 이전 문서의 기존 룩 유지 |
+| `MarginBottom` | number? | 항상 | 없으면 문단 **0**(HWP처럼 줄 간격만으로 구분), 이미지·표 **10**, Divider 0 |
 
 #### `Type: "Paragraph"`
 

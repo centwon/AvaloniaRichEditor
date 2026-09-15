@@ -45,6 +45,13 @@ public enum ListMarkerStyle
 /// Also serves as the content of a table cell.</summary>
 public class Paragraph : Block
 {
+    /// <summary>Creates an empty paragraph. Like HWP, a paragraph has no bottom margin by default — its
+    /// line spacing alone separates it from the next (images/tables keep <see cref="Block"/>'s 10).</summary>
+    public Paragraph()
+    {
+        MarginBottom = 0;
+    }
+
     /// <summary>The inline elements (runs and inline images) that make up the paragraph.</summary>
     public List<Inline> Inlines { get; set; } = new();
     /// <summary>Horizontal text alignment. Default: Left.</summary>
