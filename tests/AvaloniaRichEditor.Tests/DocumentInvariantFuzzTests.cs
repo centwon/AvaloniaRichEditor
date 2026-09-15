@@ -327,6 +327,47 @@ public class DocumentInvariantFuzzTests
         new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0, 0, 0xFF)),
     };
 
+    // An object dragged somewhere a pointer could drop it (RichEditor.DragBlock.cs): any table, picture,
+    // inline picture or inline table, to any offset of any paragraph a user can reach — its own cells
+    // included, which a move must refuse and a copy may take.
+    private static string DropOp(RichEditor ed, Random rng)
+    {
+        var objects = new List<object>();
+        var paras = new List<Paragraph>();
+        void Walk(IEnumerable<Block> blocks)
+        {
+            foreach (var b in blocks)
+            {
+                if (b is ImageBlock) objects.Add(b);
+                else if (b is TableBlock tb)
+                {
+                    objects.Add(tb);
+                    foreach (var (_, _, cell) in tb.LogicalCells()) Walk(cell.Blocks);
+                }
+                else if (b is Paragraph p)
+                {
+                    paras.Add(p);
+                    foreach (var inl in p.Inlines)
+                        if (inl is InlineImage) objects.Add(inl);
+                        else if (inl is InlineTable it)
+                        {
+                            objects.Add(it);
+                            foreach (var (_, _, cell) in it.Table.LogicalCells()) Walk(cell.Blocks);
+                        }
+                }
+            }
+        }
+        Walk(ed.Document!.Blocks);
+        if (objects.Count == 0) return "drop(nothing)";
+        var obj = objects[rng.Next(objects.Count)];
+        var target = paras[rng.Next(paras.Count)];
+        int len = target.Inlines.Sum(i => i is Run r ? (r.Text?.Length ?? 0) : 1);
+        bool copy = rng.Next(3) == 0;
+        typeof(RichEditor).GetMethod("DropObject", NP)!
+            .Invoke(ed, new object[] { obj, new TextPointer(target, rng.Next(len + 1)), copy });
+        return copy ? "drop-copy" : "drop-move";
+    }
+
     private static string FormatOp(RichEditor ed, Random rng)
     {
         switch (rng.Next(12))
@@ -364,10 +405,11 @@ public class DocumentInvariantFuzzTests
 
     private static string Step(RichEditor ed, Random rng)
     {
-        switch (rng.Next(36))
+        switch (rng.Next(37))
         {
             // Cell-block keys through the real key handler (unified with the WinUI port, 2026-09-13): they set
             // up the block — one cell, or grown by cells — that the next Delete, format or merge acts on.
+            case 36: return DropOp(ed, rng);
             case 34: Press(ed, Key.F5); return "f5-cell-block";
             case 35:
                 Press(ed, new[] { Key.Left, Key.Right, Key.Up, Key.Down }[rng.Next(4)], KeyModifiers.Shift);

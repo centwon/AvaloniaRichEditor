@@ -274,6 +274,9 @@ public partial class RichEditor : Control
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
+        // Ctrl let go mid-drag: the "+" copy mark follows it (RichEditor.DragBlock.cs). A handler, not an
+        // OnKeyUp override — that would be new public surface.
+        KeyUp += OnDragKeyUp;
 
         _caretTimer = new DispatcherTimer
         {
@@ -392,6 +395,7 @@ public partial class RichEditor : Control
         _isResizingInline = false; _resizingInline = null;
         _dragUndoPending = false;
         _isSelecting = false;
+        CancelObjectDrag(); // a release would drop the old document's object into the new one
 
         // Registries rebuilt on the next render; clearing them now releases the old blocks immediately.
         _columnBoundaries.Clear();

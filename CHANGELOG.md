@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — drag a table or a picture to move it, hold Ctrl to copy (2026-09-15)
+
+From the WinUI port, where it shipped first; the gesture is the same in both.
+
+- Press a table's left or top border (where the move cursor already showed) or a picture, and drag: a grey caret
+  shows where it will land, and the release moves it there. With Ctrl down at the release it is copied instead,
+  and a "+" beside the caret says so while dragging. Block pictures, pictures in cells, inline pictures, tables,
+  tables in cells and inline tables. A click without a drag does what it did before; one undo step either way.
+- Dropped at the start of a paragraph the object goes before it, at the end after it, and in the middle the
+  paragraph is split around it. Dropped where it already is, nothing changes — no undo step, not modified.
+- A table cannot be moved into one of its own cells (the no-drop cursor shows); copying it there is allowed.
+- A read-only editor still only selects. Losing the pointer capture or replacing the document mid-drag cancels it.
+- No public API change.
+
 ### Fixed — table drags: a crash between narrow columns, tables growing out of their cell, a drag that outlived the button (2026-09-15)
 
 Backported from the WinUI port's table-resize audit; every item was measured here first (6 tests red).
