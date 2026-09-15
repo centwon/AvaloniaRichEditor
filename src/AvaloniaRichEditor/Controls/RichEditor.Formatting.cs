@@ -202,8 +202,9 @@ public partial class RichEditor
     /// Prefer <see cref="SetLineSpacing"/> for proportional spacing that scales with font size.</summary>
     public void SetLineHeight(double height)
         => ApplyToSelectedParagraphs(p => p.LineHeight = height);
-    /// <summary>Sets proportional line spacing on every selected paragraph as a multiple of the natural
-    /// single-line height (1.0 = single, 1.5 = 1.5 lines; HWP % ÷ 100). <see cref="double.NaN"/> clears it.</summary>
+    /// <summary>Sets proportional line spacing on every selected paragraph as HWP % ÷ 100 — line box =
+    /// largest font size × <paramref name="multiplier"/> (1.6 = 160%). <see cref="double.NaN"/> clears it
+    /// (back to the HWP default 160%).</summary>
     public void SetLineSpacing(double multiplier)
         => ApplyToSelectedParagraphs(p => p.LineSpacing = multiplier);
     /// <summary>Toggles a bullet list on the selected paragraphs.</summary>

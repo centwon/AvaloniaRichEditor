@@ -1187,8 +1187,11 @@ public partial class RichEditor
                 ApplyCaretSelection(shift); InvalidateVisual(); e.Handled = true; return;
             }
             // In a (possibly tall) cell, step just below the cell's bottom edge so the move always
-            // clears it into the row below; outside a cell, a small fixed step is enough.
-            double ty = CaretCellRect() is { } dnCell ? dnCell.Bottom + 2 : _lastCaretPoint.Y + 30;
+            // clears it into the row below; outside a cell, just inside the next block's top (a fixed
+            // step fell short once line spacing made the bottom line taller).
+            double ty = CaretCellRect() is { } dnCell ? dnCell.Bottom + 2
+                : _caretPosition.Paragraph is { } dnPara && NextBlockTop(dnPara) is { } nextTop ? nextTop + 2
+                : _lastCaretPoint.Y + 30;
             if (!shift && BlockAtY(ty) is { } db && !CaretInBlock(db))
             {
                 // HWP: ↓ arriving at a table steps INTO its first row (the column under the caret's x)
@@ -1705,6 +1708,24 @@ public partial class RichEditor
     }
 
     // The image/table block whose rendered vertical span contains y, or null (used for Up/Down into a block).
+    // Top of the block after top-level paragraph `p`, in BlockAtY's coordinates; null when `p` is the last
+    // block or not top-level. Lets ↓ step exactly past `p`'s bottom however tall its lines/margins are.
+    private double? NextBlockTop(Paragraph p)
+    {
+        if (Document == null) return null;
+        double yOffset = 0, maxWidth = ContentLayoutWidth;
+        bool found = false;
+        foreach (var block in Document.Blocks)
+        {
+            yOffset += block.MarginTop;
+            if (found) return yOffset;
+            double h = BlockExtent(block, maxWidth, yOffset, out _, out _);
+            found = ReferenceEquals(block, p);
+            yOffset += h + block.MarginBottom;
+        }
+        return null;
+    }
+
     private Block? BlockAtY(double y)
     {
         if (Document == null) return null;

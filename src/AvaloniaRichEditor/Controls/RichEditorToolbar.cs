@@ -418,8 +418,8 @@ public partial class RichEditorToolbar : UserControl
         Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20), RichEditorIcon.IndentDecrease));
         Add(Div());
 
-        // Line spacing: an icon dropdown (HWP-style %), where the value maps to Paragraph.LineSpacing
-        // = %/100. 160% is the HWP default; the list spans 100–300%. Scales with font size.
+        // Line spacing: an icon dropdown (HWP %), where the value maps to Paragraph.LineSpacing = %/100
+        // (line box = font size × %). 160% is the HWP default; the list spans 100–300%.
         Add(BuildLineSpacingControl());
         Add(Div());
 
@@ -912,12 +912,12 @@ public partial class RichEditorToolbar : UserControl
         }
         if (_undoBtn != null) _undoBtn.IsEnabled = rt.CanUndo;
         if (_redoBtn != null) _redoBtn.IsEnabled = rt.CanRedo;
-        // Spacing box shows the caret paragraph's current % (unset / ≤1.0 = single = 100%). Set the text
+        // Spacing box shows the caret paragraph's current % (unset = the HWP default 160%). Set the text
         // directly (not via ApplySpacingPercent) so reflecting the caret doesn't re-apply to the document.
         if (_spacingBox != null && !_spacingBox.IsFocused)
         {
             double ls = f.LineSpacing;
-            int pct = double.IsNaN(ls) || ls <= 0 ? 100 : (int)System.Math.Round(ls * 100);
+            int pct = (int)System.Math.Round((double.IsNaN(ls) || ls <= 0 ? RichEditor.DefaultLineSpacing : ls) * 100);
             _spacingBox.Text = pct + "%";
         }
 

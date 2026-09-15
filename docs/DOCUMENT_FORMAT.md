@@ -104,7 +104,7 @@ FlowDocument
 | `Inlines` | InlineDto[] | 인라인 목록 (아래 §2.4) |
 | `TextAlignment` | string | Avalonia `TextAlignment` 이름(`"Left"`/`"Center"`/`"Right"`/`"Justify"` 등). 파싱 실패 시 Left |
 | `LineHeight` | number? | 절대 줄 높이 px("고정값"). 없으면 NaN(=미설정). `LineSpacing` 설정 시 무시됨 |
-| `LineSpacing` | number? | 비례 줄 간격 배수(1.0=단일, 1.5=1.5줄, 2.0=2배 — HWP %÷100). 글자 크기에 비례. 없으면 NaN. `LineHeight`보다 우선 |
+| `LineSpacing` | number? | 비례 줄 간격 = HWP "글자에 따라" %÷100. 줄 높이 = 문단의 가장 큰 글자 크기 × 값(1.0=100%=글자 크기, 1.6=160%). Word "배수"와 다름. 없으면 NaN → `LineHeight`, 그것도 없으면 HWP 기본 160%. `LineHeight`보다 우선 |
 | `MarginRight` | number? | 오른쪽 여백 px(줄바꿈 폭 축소). **문단 전용**. 없으면 0 |
 | `ListType` | string | `"None"`/`"Bullet"`/`"Ordered"`. 파싱 실패 시 레거시 `IsListItem` 참조 |
 | `ListMarker` | string? | 글머리표/번호 모양: `Disc`/`Circle`/`Square`/`Dash`(글머리표), `Decimal`/`DecimalParen`/`LowerAlpha`/`UpperAlpha`/`LowerRoman`(번호). 없으면 `Default`(•/"1.") |

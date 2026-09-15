@@ -286,13 +286,10 @@ public partial class RichEditor
             case Paragraph p:
                 if (GetParagraphLength(p) == 0)
                 {
-                    if (!double.IsNaN(p.LineSpacing))
-                    {
-                        bool hd = p.HeadingLevel is >= 1 and <= 6;
-                        double basePt = hd ? HeadingFontSize(p.HeadingLevel) : DefaultFontSize;
-                        return Math.Max(p.LineSpacing, 1.0) * PtToPx(basePt) * NaturalLineFactor;
-                    }
-                    return !double.IsNaN(p.LineHeight) ? p.LineHeight : 20;
+                    if (double.IsNaN(p.LineSpacing) && !double.IsNaN(p.LineHeight)) return p.LineHeight;
+                    bool hd = p.HeadingLevel is >= 1 and <= 6;
+                    double basePt = hd ? HeadingFontSize(p.HeadingLevel) : DefaultFontSize;
+                    return (double.IsNaN(p.LineSpacing) ? DefaultLineSpacing : p.LineSpacing) * PtToPx(basePt);
                 }
                 // Deliberately the PLAIN layout even while the IME composes: `paraLayout` is handed to the
                 // caret and link hit-tests, whose indices must stay logical offsets, and to pagination.

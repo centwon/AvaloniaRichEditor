@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — line spacing follows HWP: a percentage of the font size, 160% by default (2026-09-15)
+
+- `Paragraph.LineSpacing` now means HWP's "글자에 따라" ratio: a line is the paragraph's largest font size × the
+  value (1.6 = 160%). It used to multiply the font's natural line height (≈1.2 × the size, Word's "Multiple"), while
+  the toolbar's % and the docs already called it HWP's % ÷ 100 — so choosing 160% gave ≈192%.
+- A paragraph that sets neither `LineSpacing` nor `LineHeight` now gets the HWP default 160% (it had the font's
+  natural height), and the toolbar shows 160% for it. Values under ~120% now tighten the lines instead of being
+  ignored. Saved files are unchanged, but existing documents render with the new spacing.
+- A paragraph holding an inline picture or table taller than its line box keeps natural stacking, so the line still
+  grows to the object — Avalonia's line height is exact and would have drawn the object over the next line.
+- ↓ from a paragraph's last line now lands on the next block however tall the line is; a fixed 30px step fell short
+  of a picture below once lines got taller.
+- No public API change.
+
 ### Added — drag a table or a picture to move it, hold Ctrl to copy (2026-09-15)
 
 From the WinUI port, where it shipped first; the gesture is the same in both.
