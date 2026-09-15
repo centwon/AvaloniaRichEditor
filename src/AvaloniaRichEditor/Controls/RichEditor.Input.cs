@@ -538,14 +538,17 @@ public partial class RichEditor
                 while (_resizingTable.ColumnWidths.Count <= _resizingColumnIndex)
                     _resizingTable.ColumnWidths.Add(100);
                 double newLast = Math.Max(minW, _initialColumnWidth + diff);
-                // A nested table is bound to its cell: cap the total width at the cell's content width so
-                // growing the last column can't overflow (shrinking stays free, down to minW).
+                // A table in a cell is bound to it: cap the total width at the cell's content width so
+                // growing the last column can't overflow (shrinking stays free, down to minW). The cap never
+                // falls below the width the drag started from: a table that already overflows (a file says so)
+                // snapped its last column to the room left — the floor, 40 of 150 — on the first pixel of
+                // movement (measured 2026-09-15).
                 if (EnclosingCellInnerWidth(_resizingTable) is { } innerW)
                 {
                     double otherSum = 0;
                     for (int k = 0; k < _resizingTable.ColumnWidths.Count; k++)
                         if (k != _resizingColumnIndex) otherSum += _resizingTable.ColumnWidths[k];
-                    newLast = Math.Min(newLast, Math.Max(minW, innerW - otherSum));
+                    newLast = Math.Min(newLast, Math.Max(_initialColumnWidth, innerW - otherSum));
                 }
                 _resizingTable.ColumnWidths[_resizingColumnIndex] = newLast;
             }
@@ -554,9 +557,7 @@ public partial class RichEditor
                 // Internal edge: redistribute between the two adjacent columns, total fixed.
                 while (_resizingTable.ColumnWidths.Count <= _resizingColumnIndex + 1)
                     _resizingTable.ColumnWidths.Add(100);
-                double minDiff = -(_initialColumnWidth - minW);
-                double maxDiff = _initialNextColumnWidth - minW;
-                diff = Math.Clamp(diff, minDiff, maxDiff);
+                diff = ClampColumnDelta(diff, _initialColumnWidth, _initialNextColumnWidth, minW);
                 _resizingTable.ColumnWidths[_resizingColumnIndex] = _initialColumnWidth + diff;
                 _resizingTable.ColumnWidths[_resizingColumnIndex + 1] = _initialNextColumnWidth - diff;
             }
@@ -656,6 +657,37 @@ public partial class RichEditor
                 : IbeamCursor;
         }
         finally { _trustLayoutCache = false; }
+    }
+
+    // How far an internal column boundary may move, given the two adjacent columns' start widths. Normally
+    // each side keeps `minW`. When the two together are narrower than 2*minW the naive bounds INVERT
+    // (min > max) and Math.Clamp throws ArgumentException — the drag crashed (measured 2026-09-15 on 15+15px
+    // columns; the WinUI port fixed the same line after an external audit). Sub-minimum widths are ordinary:
+    // HTML keeps any positive <td width>, a nested InsertTable floors at 15. Then keep the pair's total and
+    // both sides non-negative.
+    internal static double ClampColumnDelta(double diff, double initColW, double initNextColW, double minW)
+    {
+        double minDiff = -(initColW - minW);
+        double maxDiff = initNextColW - minW;
+        if (minDiff > maxDiff) { minDiff = -initColW; maxDiff = initNextColW; }
+        return Math.Clamp(diff, minDiff, maxDiff);
+    }
+
+    // Capture can end without a release reaching the editor (the window deactivated mid-drag, another element
+    // took the pointer). Nothing else cleared a drag, so it outlived the button: the next plain hover went on
+    // resizing the column or row under the pointer, or extending the selection (measured 2026-09-15). End
+    // whatever is live. Every release path clears its own drag before it releases the capture, so arriving
+    // here after a release finds nothing.
+    /// <inheritdoc/>
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        _dragUndoPending = false;
+        _isResizingImage = false; _resizingImage = null;
+        _isResizingInline = false; _resizingInline = null;
+        _isResizingColumn = false; _resizingTable = null;
+        _isResizingRow = false; _resizingRowTable = null;
+        _isSelecting = false;
     }
 
     /// <inheritdoc/>
