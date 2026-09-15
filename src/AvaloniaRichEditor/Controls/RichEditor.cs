@@ -1228,9 +1228,9 @@ public partial class RichEditor : Control
     // Convert only here, at the render boundary, so the rest of the engine speaks pt.
     internal static double PtToPx(double pt) => pt * (4.0 / 3.0);
 
-    // Natural single-line height as a multiple of font size (typical ≈1.2 incl. leading). Used to turn
-    // a proportional Paragraph.LineSpacing (1.0 = single, 1.5 = 1.5 lines) into an absolute px line box.
-    internal const double NaturalLineFactor = 1.2;
+    // HWP's default line spacing (160%), applied when a paragraph sets neither LineSpacing nor LineHeight.
+    // Paragraph.LineSpacing is HWP's "글자에 따라" ratio: line box = largest font size × ratio.
+    internal const double DefaultLineSpacing = 1.6;
 
     // The layout font size (pt) for a heading paragraph (1–6 = h1–h6); 0/other = body. Applied at layout
     // time to runs left at the body default, so the heading look never has to be baked into the model.
@@ -1538,15 +1538,21 @@ public partial class RichEditor : Control
             SplicePreedit(segs, preeditOffset, preeditText!, preeditProps);
         }
 
-        // Line spacing: proportional LineSpacing wins (scales with the paragraph's font); single/≤1.0
-        // stays NaN so the font's natural metrics apply (never clips). Else an absolute LineHeight, else auto.
+        // Line spacing (HWP "글자에 따라"): line box = largest font size × ratio. An absolute LineHeight
+        // applies only when LineSpacing is unset; with neither set, the HWP default 160%.
         double lh;
-        if (!double.IsNaN(p.LineSpacing))
+        if (double.IsNaN(p.LineSpacing) && !double.IsNaN(p.LineHeight)) lh = p.LineHeight;
+        else
         {
+            double ratio = double.IsNaN(p.LineSpacing) ? DefaultLineSpacing : p.LineSpacing;
             double basePt = maxRunPt > 0 ? maxRunPt : (heading ? headingSize : defaultSize);
-            lh = p.LineSpacing <= 1.0 + 1e-6 ? double.NaN : p.LineSpacing * PtToPx(basePt) * NaturalLineFactor;
+            lh = ratio * PtToPx(basePt);
+            // Avalonia's LineHeight is an exact override (its additive LineSpacing is internal), so it would
+            // clamp a line holding an inline image/table taller than the box onto the next line. Such a
+            // paragraph falls back to natural stacking, where the line grows to the object.
+            foreach (var s in segs)
+                if (Math.Max(s.ImageSize.Height, s.TableSize.Height) > lh) { lh = double.NaN; break; }
         }
-        else lh = !double.IsNaN(p.LineHeight) ? p.LineHeight : double.NaN;
         var paraProps = new Avalonia.Media.TextFormatting.GenericTextParagraphProperties(
             FlowDirection.LeftToRight,
             p.TextAlignment,

@@ -986,9 +986,9 @@ namespace AvaloniaRichEditor.Formatters
             return sb.ToString();
         }
 
-        // Block.MarginBottom's default. Only a paragraph that DIFFERS from it carries spacing worth
-        // writing — emitting the default on every paragraph would change nothing and bloat every export.
-        private const double DefaultMarginBottom = 10;
+        // A Paragraph's MarginBottom default (0, as in HWP). Only a paragraph that DIFFERS from it carries
+        // spacing worth writing — emitting the default on every paragraph would change nothing and bloat every export.
+        private const double DefaultMarginBottom = 0;
 
         // Opens and closes the <ul>/<ol> nesting around a run of list-item paragraphs. One instance per
         // block list — the document's top level has its own, and so does each <td>, because a list inside

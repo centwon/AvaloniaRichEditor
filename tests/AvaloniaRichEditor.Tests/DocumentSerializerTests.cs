@@ -73,6 +73,22 @@ public class DocumentSerializerTests
     }
 
     [Fact]
+    public void ParagraphBottomMargin_DefaultsToZero_WhileSavedMarginsSurvive()
+    {
+        // HWP: line spacing alone separates paragraphs. Images/tables keep their 10px gap from the text.
+        Assert.Equal(0, new Paragraph().MarginBottom);
+        Assert.Equal(10, new ImageBlock().MarginBottom);
+
+        // A file saved before the change states its 10, so it keeps its look.
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { MarginBottom = 10, Inlines = { new Run { Text = "old" } } });
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "new" } } });
+        var back = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc));
+        Assert.Equal(10, Assert.IsType<Paragraph>(back.Blocks[0]).MarginBottom);
+        Assert.Equal(0, Assert.IsType<Paragraph>(back.Blocks[1]).MarginBottom);
+    }
+
+    [Fact]
     public void RoundTrip_PreservesInlineFormatting()
     {
         var doc2 = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(SampleDoc()));

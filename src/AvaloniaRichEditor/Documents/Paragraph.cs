@@ -45,18 +45,26 @@ public enum ListMarkerStyle
 /// Also serves as the content of a table cell.</summary>
 public class Paragraph : Block
 {
+    /// <summary>Creates an empty paragraph. Like HWP, a paragraph has no bottom margin by default — its
+    /// line spacing alone separates it from the next (images/tables keep <see cref="Block"/>'s 10).</summary>
+    public Paragraph()
+    {
+        MarginBottom = 0;
+    }
+
     /// <summary>The inline elements (runs and inline images) that make up the paragraph.</summary>
     public List<Inline> Inlines { get; set; } = new();
     /// <summary>Horizontal text alignment. Default: Left.</summary>
     public TextAlignment TextAlignment { get; set; } = TextAlignment.Left;
     /// <summary>Absolute line-box height in device-independent pixels ("exactly" spacing, like Word's
-    /// fixed value). <see cref="double.NaN"/> = unset. Overridden by <see cref="LineSpacing"/> when that
-    /// is set. For proportional spacing that scales with font size, prefer <see cref="LineSpacing"/>.</summary>
+    /// fixed value, HWP's "고정 값"). <see cref="double.NaN"/> = unset. Overridden by <see cref="LineSpacing"/>
+    /// when that is set. For proportional spacing that scales with font size, prefer <see cref="LineSpacing"/>.</summary>
     public double LineHeight { get; set; } = double.NaN;
-    /// <summary>Proportional line spacing as a multiple of the natural single-line height (1.0 = single,
-    /// 1.5 = 1.5 lines, 2.0 = double — i.e. HWP's % ÷ 100 or Word's "Multiple"). Scales with font size.
-    /// <see cref="double.NaN"/> = unset (falls back to <see cref="LineHeight"/>, then the font's natural
-    /// height). Takes priority over <see cref="LineHeight"/> when set.</summary>
+    /// <summary>Proportional line spacing, HWP's "글자에 따라" % ÷ 100: the line box is the paragraph's
+    /// largest font size × this ratio (1.0 = 100% = font size, 1.6 = 160%, 2.0 = 200%). Not Word's
+    /// "Multiple", which is relative to the font's natural line height. <see cref="double.NaN"/> = unset
+    /// (falls back to <see cref="LineHeight"/>, then the HWP default 160%). Takes priority over
+    /// <see cref="LineHeight"/> when set.</summary>
     public double LineSpacing { get; set; } = double.NaN;
     /// <summary>Right margin in device-independent pixels — narrows the wrap width. Paragraph-only:
     /// nothing flows around images/tables, so a right margin would be invisible there

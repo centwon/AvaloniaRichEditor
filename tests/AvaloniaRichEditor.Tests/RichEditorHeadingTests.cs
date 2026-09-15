@@ -113,6 +113,26 @@ public class RichEditorHeadingTests
     }
 
     [AvaloniaFact]
+    public void LineSpacing_IsHwpPercentOfFontSize_AndDefaultsTo160()
+    {
+        // HWP "글자에 따라": a line box is font size × ratio (not × the font's natural line height), so
+        // one extra 100% on a single 10pt line adds exactly 10pt = 13.33px. Unset = the HWP default 160%.
+        static double MeasuredHeight(double spacing)
+        {
+            var p = TestHelpers.Para(new Run { Text = "x", FontSize = 10 });
+            p.LineSpacing = spacing;
+            var ed = EditorWithCaretIn(p);
+            ed.PageSize = RichEditorPageSize.Continuous;
+            ed.Measure(new Size(400, double.PositiveInfinity));
+            return ed.DesiredSize.Height;
+        }
+
+        // ±1px: DesiredSize is pixel-rounded. Word's "Multiple" (× natural ≈1.2) would give ≈16px.
+        Assert.InRange(MeasuredHeight(3.0) - MeasuredHeight(2.0), 10 * 96.0 / 72 - 1, 10 * 96.0 / 72 + 1);
+        Assert.Equal(MeasuredHeight(1.6), MeasuredHeight(double.NaN), 3);
+    }
+
+    [AvaloniaFact]
     public void CaretFormat_ReflectsLineSpacing()
     {
         // The toolbar's line-spacing % label reads CaretFormat.LineSpacing; it must mirror the caret

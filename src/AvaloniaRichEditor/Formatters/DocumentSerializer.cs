@@ -415,7 +415,7 @@ public static class DocumentSerializer
             LineHeight = d.LineHeight ?? double.NaN,
             LineSpacing = d.LineSpacing ?? double.NaN,
             MarginTop = d.MarginTop ?? 0,
-            MarginBottom = d.MarginBottom ?? 10,
+            MarginBottom = d.MarginBottom ?? 0,
             MarginRight = d.MarginRight ?? 0,
             HeadingLevel = d.HeadingLevel,
             Background = StringToBrush(d.Background),
