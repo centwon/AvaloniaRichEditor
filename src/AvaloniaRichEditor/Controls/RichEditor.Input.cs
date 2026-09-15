@@ -203,6 +203,7 @@ public partial class RichEditor
                 CollapseSelectionToCaret();
                 ResetCaretBlink();
                 InvalidateVisual();
+                ArmObjectDrag(ci.img, point, e); // and dragging it (RichEditor.DragBlock.cs)
                 return;
             }
 
@@ -213,6 +214,8 @@ public partial class RichEditor
         if (NestedTableBorderAtPoint(point) is { } inlineEdge && SelectWholeTableForCopy(inlineEdge))
         {
             _selectedBlock = null;
+            // The border also grabs it: an inline table moves as the inline it is, a nested one as a block.
+            ArmObjectDrag(inlineEdge.Parent as InlineTable ?? (object)inlineEdge, point, e);
             return;
         }
 
@@ -237,6 +240,7 @@ public partial class RichEditor
             CollapseSelectionToCaret();
             ResetCaretBlink();
             InvalidateVisual();
+            ArmObjectDrag(clickedImage, point, e);
             return;
         }
         if (clickedBlock is TableBlock table)
@@ -255,6 +259,7 @@ public partial class RichEditor
                 _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
                 ResetCaretBlink();
                 InvalidateVisual();
+                ArmObjectDrag(table, point, e); // the border is also where the table is grabbed to move it
                 return;
             }
             // Otherwise the click places a caret in the cell (below) — right after a cross-cell drag too: the
@@ -276,6 +281,7 @@ public partial class RichEditor
                     _selectedInline = (ir.p, ir.img);
                     ResetCaretBlink();
                     InvalidateVisual();
+                    ArmObjectDrag(ir.img, point, e); // a drag from here moves the picture instead
                     return; // no drag-selection from this press
                 }
 
@@ -586,6 +592,8 @@ public partial class RichEditor
             return;
         }
 
+        if (_dragObject != null) { DragObjectMoved(point, e.KeyModifiers.HasFlag(KeyModifiers.Control)); return; }
+
         if (_isSelecting)
         {
             // Drag-select hit-testing walks the document but never mutates it, so the layout cache
@@ -688,6 +696,7 @@ public partial class RichEditor
         _isResizingColumn = false; _resizingTable = null;
         _isResizingRow = false; _resizingRowTable = null;
         _isSelecting = false;
+        CancelObjectDrag(); // cancelled, not dropped: a lost capture is not a release
     }
 
     /// <inheritdoc/>
@@ -715,6 +724,13 @@ public partial class RichEditor
             ResetCaretBlink();
             InvalidateVisual();
             e.Handled = true;
+            return;
+        }
+
+        if (_dragObject != null)
+        {
+            FinishObjectDrag(e.KeyModifiers.HasFlag(KeyModifiers.Control));
+            e.Pointer.Capture(null); // after the drag is cleared, so OnPointerCaptureLost finds nothing live
             return;
         }
 
@@ -823,6 +839,9 @@ public partial class RichEditor
         bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+
+        // Ctrl pressed mid-drag makes the drop a copy: the "+" appears now, not at the next pointer move.
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl && _dragObjectActive) OnDragModifierChanged(true);
 
         // A bare modifier press is the first half of a chord (Shift+Tab, Ctrl+B) — nothing below acts on
         // one, and letting it fall through counted it as "some other key": it dismissed the block caret

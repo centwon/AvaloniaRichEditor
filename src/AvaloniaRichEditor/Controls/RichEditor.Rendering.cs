@@ -487,6 +487,7 @@ public partial class RichEditor
                     caretHeight = th;
                     _lastCaretPoint = caretPoint.Value;
                 }
+                if (chrome) DrawDropPreview(context, paragraph, layout, px, yOffset);
 
                 layout.Draw(context, new Point(px, yOffset));
                 FlushInlineTableDraws(context, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
@@ -652,6 +653,7 @@ public partial class RichEditor
                     caretHeight = th;
                     _lastCaretPoint = caretPoint.Value;
                 }
+                if (chrome) DrawDropPreview(context, para, layout, px, blkY);
 
                 layout.Draw(context, new Point(px, blkY));
                 FlushInlineTableDraws(context, chrome, selectedParagraphs, selStart, selEnd, ref caretPoint, ref caretHeight);
