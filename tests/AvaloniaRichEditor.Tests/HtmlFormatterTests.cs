@@ -24,6 +24,33 @@ public class HtmlFormatterTests
         Assert.Equal(((Paragraph)sync.Blocks[1]).Text(), ((Paragraph)async.Blocks[1]).Text());
     }
 
+    // CSS line-height % (and a unitless number) is a multiple of the font size — LineSpacing's HWP ratio —
+    // so it maps 1:1; px is the absolute LineHeight. Unset writes nothing and "normal" reads as unset.
+    [Fact]
+    public void LineSpacing_RoundTrips_AsCssLineHeight_AndReadsForeignValues()
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { LineSpacing = 1.6, Inlines = { new Run { Text = "ratio" } } });
+        doc.Blocks.Add(new Paragraph { LineHeight = 24, Inlines = { new Run { Text = "fixed" } } });
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "unset" } } });
+
+        string html = HtmlDocumentFormatter.ToHtml(doc);
+        Assert.Contains("line-height:160%", html);
+        Assert.Contains("line-height:24px", html);
+
+        var ps = HtmlDocumentFormatter.ParseHtml(HtmlDocumentFormatter.ToHtml(HtmlDocumentFormatter.ParseHtml(html)))
+            .Blocks.OfType<Paragraph>().ToList();
+        Assert.Equal(1.6, ps[0].LineSpacing, 3);
+        Assert.Equal(24, ps[1].LineHeight, 1);
+        Assert.True(double.IsNaN(ps[2].LineSpacing));
+        Assert.True(double.IsNaN(ps[2].LineHeight));
+
+        var foreign = HtmlDocumentFormatter.ParseHtml("<p style=\"line-height:2\">a</p><p style=\"line-height:normal\">b</p>")
+            .Blocks.OfType<Paragraph>().ToList();
+        Assert.Equal(2.0, foreign[0].LineSpacing, 3);
+        Assert.True(double.IsNaN(foreign[1].LineSpacing));
+    }
+
     [AvaloniaFact]
     public async System.Threading.Tasks.Task ParseHtmlAsync_DataImage_BuildsSameAsSync()
     {

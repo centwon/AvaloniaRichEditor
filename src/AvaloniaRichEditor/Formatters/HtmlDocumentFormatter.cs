@@ -478,6 +478,7 @@ namespace AvaloniaRichEditor.Formatters
             if (ReadIndentPx(node) is > 0 and var ind) p.Indent = ind;
             if (name == "blockquote") p.IsQuote = true;
             if (ReadAlign(node) is var al && al != TextAlignment.Left) p.TextAlignment = al;
+            ApplyLineHeightStyle(node, p);
             ApplyMarginMarker(node, p);
         }
 
@@ -494,6 +495,23 @@ namespace AvaloniaRichEditor.Formatters
             if (double.TryParse(parts[0], System.Globalization.NumberStyles.Float, inv, out double t)) p.MarginTop = t;
             if (double.TryParse(parts[1], System.Globalization.NumberStyles.Float, inv, out double b)) p.MarginBottom = b;
             if (double.TryParse(parts[2], System.Globalization.NumberStyles.Float, inv, out double r)) p.MarginRight = r;
+        }
+
+        // CSS line-height into the paragraph: "160%" or a unitless "1.6" is a multiple of the font size —
+        // exactly LineSpacing's HWP ratio — and "24px" is the absolute LineHeight. "normal"/absent = unset.
+        // The inverse of EmitParagraphElement's line-height (ported from the WinUI peer).
+        private static void ApplyLineHeightStyle(HtmlNode node, Paragraph p)
+        {
+            var v = ReadStyleValue(node, "line-height")?.Trim();
+            if (string.IsNullOrEmpty(v) || v.Equals("normal", StringComparison.OrdinalIgnoreCase)) return;
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            const System.Globalization.NumberStyles fl = System.Globalization.NumberStyles.Float;
+            if (v.EndsWith("%", StringComparison.Ordinal) && double.TryParse(v[..^1], fl, inv, out var pct) && pct > 0)
+                p.LineSpacing = pct / 100.0;
+            else if (v.EndsWith("px", StringComparison.OrdinalIgnoreCase) && double.TryParse(v[..^2], fl, inv, out var px) && px > 0)
+                p.LineHeight = px;
+            else if (double.TryParse(v, fl, inv, out var mult) && mult > 0)
+                p.LineSpacing = mult;
         }
 
         // HTML collapses runs of COLLAPSIBLE whitespace to one space. A non-breaking space is not
@@ -1043,6 +1061,12 @@ namespace AvaloniaRichEditor.Formatters
             string pStyle = $"text-align:{align};";
             if (p.Background is ISolidColorBrush pbg) pStyle += $"background-color:{CssColor(pbg.Color)};";
             if (p.Indent > 0) pStyle += $"margin-left:{p.Indent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;";
+            // Line spacing as CSS line-height: % is a multiple of the font size, the same as LineSpacing's
+            // HWP ratio, so it maps 1:1; an absolute LineHeight goes out in px. Unset writes nothing.
+            if (!double.IsNaN(p.LineSpacing) && p.LineSpacing > 0)
+                pStyle += $"line-height:{(p.LineSpacing * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}%;";
+            else if (!double.IsNaN(p.LineHeight) && p.LineHeight > 0)
+                pStyle += $"line-height:{p.LineHeight.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;";
             // A paragraph can be a list item AND a heading, but the tag can only be one of
             // <li>/<h1..6>, and <li> wins because the list structure is what HTML cannot
             // otherwise express. The heading level would then be dropped outright, so it rides
@@ -1086,6 +1110,8 @@ namespace AvaloniaRichEditor.Formatters
                || p.TextAlignment != TextAlignment.Left
                || p.Background != null
                || p.Indent > 0
+               || (!double.IsNaN(p.LineSpacing) && p.LineSpacing > 0)
+               || (!double.IsNaN(p.LineHeight) && p.LineHeight > 0)
                || p.MarginTop != 0 || p.MarginBottom != DefaultMarginBottom || p.MarginRight != 0;
 
         // Emits a table as an HTML <table>. Shared by block tables and inline tables (milestone B). Cell

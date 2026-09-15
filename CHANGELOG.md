@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — line spacing survives HTML and RTF (2026-09-16)
+
+From the WinUI port, which already carried it; both formatters used to drop line spacing on the way out and in.
+
+- HTML: CSS `line-height`. A percentage or a unitless number is a multiple of the font size — exactly
+  `LineSpacing`'s HWP ratio — so 160% goes out and comes back as 1.6; `LineHeight` goes out in px; `normal` reads as
+  unset. A cell paragraph with line spacing is written as its own element so the value has somewhere to go.
+- RTF: `\sl` with `\slmult1` for a ratio (Word's multiple of the natural line ≈ HWP ÷ 1.2, so `\sl` = ratio × 200)
+  and `\sl-N\slmult0` for an exact height. An unset paragraph states the default 160% (`\sl320`) so Word and HWP
+  show what the editor drew, with an ignorable `{\*\arsl}` that brings it back unset here.
+
 ### Changed — line spacing follows HWP: a percentage of the font size, 160% by default (2026-09-15)
 
 - `Paragraph.LineSpacing` now means HWP's "글자에 따라" ratio: a line is the paragraph's largest font size × the

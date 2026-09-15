@@ -377,11 +377,16 @@ internal sealed class RtfParser
             case "pard":
                 _skipMarkerText = false;   // a marker's text never spans a paragraph reset
                 _paraBottomBorder = false; // a border is paragraph formatting, so the reset clears it
+                _slTwips = 0; _slMult = false; // so is line spacing
                 SetItap(1); break;         // paragraph-property reset; \itap is one of those properties
             // A horizontal rule has no control word of its own in RTF; Word — and this writer — spell it
             // as an empty paragraph carrying a bottom border. Only the writing half existed, so every
             // divider came back as a blank line and was gone for good after one save/load.
             case "brdrb": if (_st.Dest == Dest.Normal && _curRow == null) _paraBottomBorder = true; break;
+            // Line spacing: \slN (+\slmult1 = proportional; \slmult0 = absolute twips, negative meaning
+            // "exactly"). The two words arrive in either order, so both re-apply.
+            case "sl": _slTwips = p ?? 0; ApplyLineSpacingWords(); break;
+            case "slmult": _slMult = (p ?? 0) != 0; ApplyLineSpacingWords(); break;
 
             // Ours (see WriteListMarker): the list nesting level, announced before the marker tag. It
             // restores ListLevel — RTF has no standard place for it — and says how much gutter the \li
@@ -395,6 +400,9 @@ internal sealed class RtfParser
             // text, which is the point — it is the only spelling both Word and HWP show.
             case "armkb": _para.ListType = ListKind.Bullet; StartMarkerText(p); break;
             case "armkn": _para.ListType = ListKind.Ordered; StartMarkerText(p); break;
+            // Ours (see WriteParagraphPropsBody): the \sl before it only states the default 160% for other
+            // readers — the paragraph had no spacing of its own, so it goes back to unset.
+            case "arsl": _para.LineSpacing = double.NaN; _para.LineHeight = double.NaN; _slTwips = 0; _slMult = false; break;
 
             // tables. Every one of these is guarded by the destination: Word writes a nested table's row
             // definition inside the ignorable group {\*\nesttableprops \trowd …\nestrow}, and acting on
@@ -729,6 +737,19 @@ internal sealed class RtfParser
     private bool _imageOwnsNextPar;
     // True while the paragraph being read carries a bottom border (\brdrb) — see EndParagraph.
     private bool _paraBottomBorder;
+
+    // \sl / \slmult state (line spacing; see the "sl"/"slmult" cases).
+    private int _slTwips;
+    private bool _slMult;
+
+    private void ApplyLineSpacingWords()
+    {
+        if (_slTwips == 0) { _para.LineSpacing = double.NaN; _para.LineHeight = double.NaN; return; }
+        // \slmult is Word's multiple of the natural line (≈1.2 × the size); LineSpacing is HWP's ratio of
+        // the size, so ratio = N/240 × 1.2 = N/200 (the writer's inverse).
+        if (_slMult) { _para.LineSpacing = _slTwips / 200.0; _para.LineHeight = double.NaN; }
+        else { _para.LineHeight = Math.Abs(_slTwips) / 15.0; _para.LineSpacing = double.NaN; } // "at least" ≈ exact
+    }
 
     // ---- tables ----
 
@@ -1235,7 +1256,21 @@ internal sealed class RtfWriter
             _body.Append($@"\fi-360\li{indentTwips + gutter}\tx{gutter}");
         }
         else if (indentTwips > 0) _body.Append($@"\li{indentTwips}");
+        // Line spacing: proportional = \slmult1, absolute = negative twips ("exactly") with \slmult0.
+        // LineSpacing is HWP's ratio of the font size while \slmult is Word's multiple of the natural line
+        // (≈1.2 × the size), so N = ratio × 240 / 1.2 = ratio × 200. An unset paragraph is drawn at the HWP
+        // default 160%, so that is stated (\sl320) — saying nothing means the reader's default, Word's being
+        // single — and tagged so this reader restores "unset" (ported from the WinUI peer).
+        bool defaulted = false;
+        if (!double.IsNaN(p.LineSpacing) && p.LineSpacing > 0)
+            _body.Append($@"\sl{(int)Math.Round(p.LineSpacing * 200)}\slmult1");
+        else if (!double.IsNaN(p.LineHeight) && p.LineHeight > 0)
+            _body.Append($@"\sl-{(int)Math.Round(p.LineHeight * 15)}\slmult0");
+        else { _body.Append(@"\sl320\slmult1"); defaulted = true; }
+        // The delimiter for the last control word goes BEFORE the tag: a space after a group's `}` would be
+        // content (the WinUI peer's first version showed it as a leading space in the paragraph).
         _body.Append(' ');
+        if (defaulted) _body.Append(@"{\*\arsl}");
     }
 
     // A list item's marker. It used to go out as BARE TEXT followed by \tab — the comment here called that
