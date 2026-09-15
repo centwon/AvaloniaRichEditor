@@ -37,6 +37,33 @@ public class RtfRoundTripTests
         Assert.Equal(emoji, Text(p));
     }
 
+    // Line spacing: LineSpacing is HWP's ratio of the font size, \slmult Word's multiple of the natural
+    // line (≈1.2 × the size), so \sl = ratio × 200. An unset paragraph states the default 160% for other
+    // readers and carries {\*\arsl} so it comes back unset here. Two cycles, for the accumulating kind.
+    [Fact]
+    public void RoundTrip_LineSpacing_Ratio_Fixed_AndUnset()
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { LineSpacing = 1.5, Inlines = { new Run { Text = "ratio" } } });
+        doc.Blocks.Add(new Paragraph { LineHeight = 30, Inlines = { new Run { Text = "fixed" } } });
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "unset" } } });
+
+        string rtf = RtfDocumentFormatter.Write(doc);
+        Assert.Contains(@"\sl300\slmult1", rtf);        // 1.5 × 200
+        Assert.Contains(@"\sl-450\slmult0", rtf);       // 30px × 15 twips, "exactly"
+        Assert.Contains(@"\sl320\slmult1 {\*\arsl}", rtf);
+
+        var back = RoundTrip(RtfDocumentFormatter.Parse(rtf));
+        var ps = back.Blocks.OfType<Paragraph>().ToList();
+        Assert.Equal(1.5, ps[0].LineSpacing, 3);
+        Assert.True(double.IsNaN(ps[0].LineHeight));
+        Assert.Equal(30, ps[1].LineHeight, 1);
+        Assert.True(double.IsNaN(ps[1].LineSpacing));
+        Assert.True(double.IsNaN(ps[2].LineSpacing));
+        Assert.True(double.IsNaN(ps[2].LineHeight));
+        Assert.Equal("unset", Text(ps[2]));             // the tag adds no leading space
+    }
+
     [Fact]
     public void RoundTrip_PreservesTextAndCharacterFormatting()
     {
