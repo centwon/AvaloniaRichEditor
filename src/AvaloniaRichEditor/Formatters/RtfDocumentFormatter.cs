@@ -1115,6 +1115,13 @@ internal sealed class RtfWriter
 
     public string Build(FlowDocument doc)
     {
+        // Pictures are written as hex — 2 chars per byte — and dominate the output. Sized up front, the body is
+        // one allocation of that payload instead of a chain of re-allocations as it grows (from the WinUI
+        // peer's probe, 2026-09-16: one 10 MB picture allocated 120 MB writing RTF here).
+        long hexChars = 4096;
+        foreach (var bytes in DocumentPictures.Bytes(doc.Blocks)) hexChars += bytes.Length * 2L + 128;
+        _body.EnsureCapacity((int)Math.Min(hexChars, int.MaxValue / 2));
+
         int ordered = 0;
         foreach (var block in doc.Blocks)
         {
@@ -1136,9 +1143,19 @@ internal sealed class RtfWriter
         // puts them and where readers look. Nothing wrote them, so a document with a header exported to
         // Word or HWP simply lost it while the model and .flow carried it correctly.
         WritePageChrome(sb, doc.PageSetup);
-        sb.Append(_body);
-        sb.Append('}');
-        return sb.ToString();
+        // The header is small and the body holds the pictures: build the result straight from both, rather
+        // than appending the body into the header's builder (a whole copy) and then calling ToString (another).
+        return string.Create(sb.Length + _body.Length + 1, (sb, _body), static (dest, parts) =>
+        {
+            parts.sb.CopyTo(0, dest, parts.sb.Length);
+            int at = parts.sb.Length;
+            foreach (var chunk in parts._body.GetChunks())
+            {
+                chunk.Span.CopyTo(dest[at..]);
+                at += chunk.Length;
+            }
+            dest[at] = '}';
+        });
     }
 
     private void WriteBlock(Block block, int ordered)

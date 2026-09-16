@@ -951,7 +951,26 @@ namespace AvaloniaRichEditor.Formatters
         /// <summary>Serializes <paramref name="doc"/> to an HTML string.</summary>
         public static string ToHtml(FlowDocument doc)
         {
-            var sb = new StringBuilder();
+            var sb = new StringBuilder(EstimateCapacity(doc));
+            AppendHtml(sb, doc);
+            return sb.ToString();
+        }
+
+        // Pictures are written as base64 data URIs, so a document's HTML is about 4/3 of its image bytes in chars.
+        // Sized up front, the builder is ONE allocation of that payload; and each picture's tag used to be built as
+        // its own strings first (the base64, the <img>, the <p> around it). From the WinUI peer's probe
+        // (2026-09-16, CopyAllocationProbeTests): copying one 10 MB picture allocated 165 MB building its HTML.
+        internal static int EstimateCapacity(FlowDocument doc)
+        {
+            long chars = 4096;
+            foreach (var bytes in DocumentPictures.Bytes(doc.Blocks)) chars += (bytes.Length + 2) / 3 * 4 + 256;
+            return (int)Math.Min(chars, int.MaxValue / 2);
+        }
+
+        /// <summary>Appends the HTML for <paramref name="doc"/> to <paramref name="sb"/> — for a caller wrapping it
+        /// (the clipboard's selection &lt;div&gt;), which would otherwise copy the whole payload once more.</summary>
+        internal static void AppendHtml(StringBuilder sb, FlowDocument doc)
+        {
             var listStack = new System.Collections.Generic.List<ListKind>(); // open <ul>/<ol> per nesting level
 
             void CloseOne()
@@ -997,11 +1016,12 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     // RawBytes checked first so export doesn't force a lazy bitmap decode.
                     CloseAll();
-                    sb.Append($"<p>{ImgTag(ib.RawBytes, ib.MimeType, ib.RawBytes == null ? ib.Image : null, ib.Width, ib.Height, ib.AltText)}</p>\n");
+                    sb.Append("<p>");
+                    AppendImgTag(sb, ib.RawBytes, ib.MimeType, ib.RawBytes == null ? ib.Image : null, ib.Width, ib.Height, ib.AltText);
+                    sb.Append("</p>\n");
                 }
             }
             CloseAll();
-            return sb.ToString();
         }
 
         // A Paragraph's MarginBottom default (0, as in HWP). Only a paragraph that DIFFERS from it carries
@@ -1213,7 +1233,7 @@ namespace AvaloniaRichEditor.Formatters
                                 EmitInline(sb, cpara.Inlines[i], i == 0, i == cpara.Inlines.Count - 1);
                         }
                         else if (cblk is ImageBlock cib && (cib.RawBytes != null || cib.Image != null))
-                        { cellLists.CloseAll(); sb.Append(ImgTag(cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height, cib.AltText)); prevWasBareParagraph = false; }
+                        { cellLists.CloseAll(); AppendImgTag(sb, cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height, cib.AltText); prevWasBareParagraph = false; }
                         else if (cblk is TableBlock nt)
                         { cellLists.CloseAll(); EmitTable(sb, nt); prevWasBareParagraph = false; } // nested table
                         else if (cblk is DividerBlock)
@@ -1238,7 +1258,7 @@ namespace AvaloniaRichEditor.Formatters
         {
             if (inline is InlineImage im && (im.RawBytes != null || im.Image != null))
             {
-                sb.Append(ImgTag(im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height, im.AltText, opensParagraph));
+                AppendImgTag(sb, im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height, im.AltText, opensParagraph);
                 return;
             }
             // An inline table has no HTML inline equivalent; emit it as a <table> so its content survives
@@ -1373,12 +1393,13 @@ namespace AvaloniaRichEditor.Formatters
         // a bitmap set without bytes is PNG-encoded as before.
         // `opensParagraph` carries the same meaning as it does for an inline table: this image was the
         // FIRST thing in its paragraph, so on import there is no earlier paragraph of its own to rejoin.
-        private static string ImgTag(byte[]? raw, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, string? alt = null, bool opensParagraph = false)
+        private static void AppendImgTag(StringBuilder sb, byte[]? raw, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, string? alt = null, bool opensParagraph = false)
         {
-            string b64, m;
+            byte[] data;
+            string m;
             if (raw != null)
             {
-                b64 = System.Convert.ToBase64String(raw);
+                data = raw;
                 m = mime ?? "image/png";
             }
             else if (bmp != null)
@@ -1387,20 +1408,41 @@ namespace AvaloniaRichEditor.Formatters
                 {
                     using var ms = new System.IO.MemoryStream();
                     bmp.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
-                    b64 = System.Convert.ToBase64String(ms.ToArray());
+                    data = ms.ToArray();
                 }
-                catch (Exception ex) { RichEditorDiagnostics.Report(ex); return ""; }
+                catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
                 m = "image/png";
             }
-            else return "";
-            string size = "";
-            if (!double.IsNaN(w) && w > 0) size += $" width=\"{(int)w}\"";
-            if (!double.IsNaN(h) && h > 0) size += $" height=\"{(int)h}\"";
+            else return;
+            sb.Append("<img src=\"data:").Append(m).Append(";base64,");
+            AppendBase64(sb, data);
+            sb.Append('"');
+            if (!double.IsNaN(w) && w > 0) sb.Append(" width=\"").Append((int)w).Append('"');
+            if (!double.IsNaN(h) && h > 0) sb.Append(" height=\"").Append((int)h).Append('"');
             // The accessibility description. Standard HTML, so it also survives a paste into anything
             // else that understands <img alt>.
-            if (!string.IsNullOrEmpty(alt)) size += $" alt=\"{AttrEscape(alt)}\"";
-            if (opensParagraph) size += " data-are-opens=\"1\"";
-            return $"<img src=\"data:{m};base64,{b64}\"{size}/>";
+            if (!string.IsNullOrEmpty(alt)) sb.Append(" alt=\"").Append(AttrEscape(alt)).Append('"');
+            if (opensParagraph) sb.Append(" data-are-opens=\"1\"");
+            sb.Append("/>");
+        }
+
+        // Base64 straight into the builder, a slice at a time: no string of the whole payload is ever made.
+        // Slices are whole multiples of 3 bytes, so no padding appears between them.
+        internal static void AppendBase64(StringBuilder sb, ReadOnlySpan<byte> data)
+        {
+            const int SliceBytes = 3 * 16 * 1024;
+            char[] chars = System.Buffers.ArrayPool<char>.Shared.Rent(SliceBytes / 3 * 4);
+            try
+            {
+                while (!data.IsEmpty)
+                {
+                    var slice = data[..Math.Min(SliceBytes, data.Length)];
+                    Convert.TryToBase64Chars(slice, chars, out int written);
+                    sb.Append(chars, 0, written);
+                    data = data[slice.Length..];
+                }
+            }
+            finally { System.Buffers.ArrayPool<char>.Shared.Return(chars); }
         }
     }
 }

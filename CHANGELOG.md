@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — copying a picture allocates a third as much (2026-09-17)
+
+From the WinUI port, which measured it.
+
+- Copy puts the selection on the clipboard as CF_HTML, with each picture as base64. The HTML writer built every
+  picture as strings of the whole payload several times over (the base64, the tag, the paragraph around it, the
+  builder growing, the final string, the clipboard `<div>`), then the CF_HTML envelope was made a string and encoded to
+  UTF-8 on top. Copying one 10 MB picture allocated **205 MB** (`CopyAllocationProbeTests`, `RICHEDITOR_PERF=1`).
+- Base64 is now written a slice at a time into a builder sized for the payload, the `<div>` goes into the same builder,
+  and the envelope is built straight as UTF-8 bytes: **67 MB**. Exporting the same document to RTF: 120 → 80 MB (the body
+  is sized up front and the result built from it directly). Output is unchanged byte for byte.
+- No public API change.
+
 ### Changed — pictures are drawn from a bitmap decoded at the size they are drawn (2026-09-16)
 
 From the WinUI port, which measured the cost: six 4000×3000 photos shown 240 px wide held ~280 MB of decoded pixels.
