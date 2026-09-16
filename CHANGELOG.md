@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the undo history kept deleted pictures outside its memory budget (2026-09-16)
+
+From the WinUI port, which measured it.
+
+- The 64 MB undo budget left pictures out entirely, on the grounds that snapshots share them with the live document.
+  That holds only while a picture is in the document: once an edit removes it, the snapshots are its sole owners — and
+  here they share the **decoded bitmap** as well as the encoded bytes (4 bytes a pixel: 46 MB for a 12 MP photo).
+  Inserting and deleting photos grew the history without bound; the port measured 133 MB of bytes alone behind the
+  64 MB budget.
+- Encoded bytes and decoded bitmaps that the current document doesn't reference now count against the budget, each
+  once however many steps share it; past the budget the oldest steps go (the three-step floor stays). Pictures still in
+  the document cost nothing, so undo depth in picture-heavy documents is unchanged. A picture just removed is charged
+  from the next checkpoint.
+- No public API change.
+
 ### Added — line spacing survives HTML and RTF (2026-09-16)
 
 From the WinUI port, which already carried it; both formatters used to drop line spacing on the way out and in.
