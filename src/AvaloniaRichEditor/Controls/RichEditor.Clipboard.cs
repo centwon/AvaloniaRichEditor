@@ -242,11 +242,11 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         {
             using var ms = new System.IO.MemoryStream();
             scaled.Save(ms, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
-            ib.SetImageData(ms.ToArray(), "image/png", scaled);
+            ib.SetImageData(ms.ToArray(), "image/png"); // not seeded: drawn from ImageDisplayCache
         }
         else
         {
-            ib.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
+            ib.SetImageData(bytes, ImageMime.Detect(bytes));
         }
 
         PushUndo();

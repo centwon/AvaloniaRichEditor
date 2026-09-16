@@ -975,7 +975,7 @@ public partial class RichEditor
                 // Cut a selected image as a unit: copy, then remove it.
                 if ((_selectedBlock as ImageBlock ?? _caretBlock as ImageBlock) is { } xb)
                 {
-                    _ = CopyImageToClipboardAsync(xb.RawBytes, xb.Image, inline: false, xb.Width, xb.Height);
+                    _ = CopyImageToClipboardAsync(xb.RawBytes, xb.RawBytes == null ? xb.Image : null, inline: false, xb.Width, xb.Height);
                     PushUndo();
                     _selectedBlock = null; _caretBlock = null;
                     RemoveBlockAnywhere(xb);
@@ -985,7 +985,7 @@ public partial class RichEditor
                 }
                 if (_selectedInline is { } xi)
                 {
-                    _ = CopyImageToClipboardAsync(xi.img.RawBytes, xi.img.Image, inline: true, xi.img.Width, xi.img.Height);
+                    _ = CopyImageToClipboardAsync(xi.img.RawBytes, xi.img.RawBytes == null ? xi.img.Image : null, inline: true, xi.img.Width, xi.img.Height);
                     PushUndo();
                     xi.p.Inlines.Remove(xi.img);
                     _selectedInline = null;

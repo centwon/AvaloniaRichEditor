@@ -149,6 +149,7 @@ public partial class RichEditor
         if (Document == null) return;
 
         _trustLayoutCache = !contentChanged;
+        _imagePixelScale = ScreenPixelScale(); // once per pass: pictures decode for the pixels they cover
         try
         {
 
@@ -498,8 +499,8 @@ public partial class RichEditor
             {
                 orderedIndex = 0;
                 double cullHeight = beHeight; // == img.Height (or 200 fallback), from BlockExtent
-                // Cull check before touching img.Image: the getter lazily decodes RawBytes (N6-2), so
-                // skipping it means off-screen images are never decoded at all. yOffset advances by the
+                // Cull check before resolving the picture: that decodes it (N6-2), so skipping it means
+                // off-screen images are never decoded at all. yOffset advances by the
                 // declared size, matching MeasureContentHeight's unconditional advance.
                 if ((yOffset + cullHeight < visTop || yOffset > visBottom)
                     && !ReferenceEquals(img, _caretBlock) && !ReferenceEquals(img, _selectedBlock))
@@ -507,13 +508,13 @@ public partial class RichEditor
                     yOffset += cullHeight + img.MarginBottom;
                     continue;
                 }
-                if (img.Image != null)
+                double width = img.Width > 0 ? img.Width : 200;
+                double height = beHeight; // == img.Height (or 200), shared with measure/hit-tests
+                if (PictureToDraw(img, width, height) is { } picture)
                 {
-                    double width = img.Width > 0 ? img.Width : 200;
-                    double height = beHeight; // == img.Height (or 200), shared with measure/hit-tests
                     double imgX = listIndent + img.Indent;
                     var imgRect = new Rect(imgX, yOffset, width, height);
-                    context.DrawImage(img.Image, imgRect);
+                    context.DrawImage(picture, imgRect);
                     if (ReferenceEquals(img, _caretBlock)) blockCaretRect = imgRect;
 
                     if (chrome)
@@ -667,7 +668,7 @@ public partial class RichEditor
                 // same selection overlay + resize handle as a top-level block image, registered in
                 // document coordinates so the shared resize/hit-test paths work unchanged.
                 var (iw, ih) = CellImageSize(cimg, innerW);
-                if (cimg.Image is { } bmp)
+                if (PictureToDraw(cimg, iw, ih) is { } bmp)
                 {
                     var ir = new Rect(ox, blkY, iw, ih);
                     context.DrawImage(bmp, ir);

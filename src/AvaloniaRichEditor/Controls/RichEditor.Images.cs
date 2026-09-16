@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using AvaloniaRichEditor.Documents;
 
@@ -19,12 +20,82 @@ public partial class RichEditor
         return (w, h);
     }
 
+    // ---- drawing pictures at the size they are drawn -------------------------------------------------
+    // The renderer used to draw the model's Image, whose getter decodes at SOURCE size and keeps the bitmap on
+    // the element (and, through Clone, on undo snapshots). Measured on the WinUI port (2026-09-16): six
+    // 4000x3000 photos shown 240 px wide held ~280 MB; decoded to the drawn size, the cost followed the display.
+    // So nothing the editor does on its own touches Image any more when bytes exist — drawing goes through
+    // ImageDisplayCache, sizes come from the header, and save/copy decode transiently. A host reading Image
+    // still gets the full bitmap, as documented.
+
+    private readonly ImageDisplayCache _displayImages = new();
+
+    // Device pixels per DIP for the pictures drawn in the current pass. Render sets it from the screen;
+    // printing raises it to print resolution for the duration.
+    private double _imagePixelScale = 1;
+
+    // Pictures print at up to this resolution (never above the source's own).
+    internal const double PrintImageDpi = 300;
+
+    private double ScreenPixelScale()
+    {
+        var top = TopLevel.GetTopLevel(this);
+        if (top == null) return 1;
+        double s = top.RenderScaling;
+        // Zoom is a LayoutTransform the HOST puts around the editor (RichEditorView does); whatever transforms
+        // sit between here and the window multiply what a DIP covers on screen.
+        if (this.TransformToVisual(top) is { } m)
+            s *= Math.Max(Math.Sqrt(m.M11 * m.M11 + m.M12 * m.M12), Math.Sqrt(m.M21 * m.M21 + m.M22 * m.M22));
+        return s > 0 && double.IsFinite(s) ? s : 1;
+    }
+
+    internal Avalonia.Media.Imaging.Bitmap? PictureToDraw(ImageBlock img, double w, double h)
+        => PictureToDraw(img.RawBytes, img.CachedBitmap, () => img.Image, w, h);
+
+    internal Avalonia.Media.Imaging.Bitmap? PictureToDraw(InlineImage img, double w, double h)
+        => PictureToDraw(img.RawBytes, img.CachedBitmap, () => img.Image, w, h);
+
+    private Avalonia.Media.Imaging.Bitmap? PictureToDraw(byte[]? rawBytes, Avalonia.Media.Imaging.Bitmap? cached,
+        Func<Avalonia.Media.Imaging.Bitmap?> image, double w, double h)
+    {
+        if (rawBytes == null) return image(); // a bitmap set directly: there is nothing to decode
+        return _displayImages.Get(rawBytes, cached,
+            (int)Math.Ceiling(Math.Max(1, w) * _imagePixelScale), (int)Math.Ceiling(Math.Max(1, h) * _imagePixelScale));
+    }
+
+    // The picture's natural size in DIPs: from the header when the format is one ImageInfo reads, else from a
+    // decode — the element's own bitmap if it has one, or a transient decode that isn't kept.
+    private static Size? NaturalSize(byte[]? rawBytes, Avalonia.Media.Imaging.Bitmap? cached, Func<Avalonia.Media.Imaging.Bitmap?> image)
+    {
+        if (rawBytes != null)
+        {
+            var (w, h) = ImageInfo.GetPixelSize(rawBytes);
+            if (w > 0 && h > 0) return new Size(w, h);
+        }
+        if (cached != null) return cached.Size;
+        if (rawBytes == null) return image()?.Size;
+        try
+        {
+            using var ms = new System.IO.MemoryStream(rawBytes);
+            using var bmp = new Avalonia.Media.Imaging.Bitmap(ms);
+            return bmp.Size;
+        }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
+    }
+
+    private static Size? NaturalSize(ImageBlock img) => NaturalSize(img.RawBytes, img.CachedBitmap, () => img.Image);
+    private static Size? NaturalSize(InlineImage img) => NaturalSize(img.RawBytes, img.CachedBitmap, () => img.Image);
+
+    // Whether the element has a picture at all — what the image menu items used to ask by decoding it.
+    private static bool HasPicture(ImageBlock img) => img.RawBytes != null || img.Image != null;
+    private static bool HasPicture(InlineImage img) => img.RawBytes != null || img.Image != null;
+
     private void ResetImageSize(ImageBlock img)
     {
-        if (Document == null || img.Image == null) return;
+        if (Document == null || NaturalSize(img) is not { } natural) return;
         PushUndo();
-        img.Width = img.Image.Size.Width;
-        img.Height = img.Image.Size.Height;
+        img.Width = natural.Width;
+        img.Height = natural.Height;
         // A size preset changes the block's height, so the document's total height changed. The presets
         // reach neither ResetCaretBlink nor any other re-measuring path (the resize DRAG does — see
         // OnPointerReleased), so the ScrollViewer kept the old extent: a picture reset to natural size
@@ -37,10 +108,12 @@ public partial class RichEditor
     // falling back to natural size when no explicit size is set. Display size only — bytes untouched.
     private void ScaleImageSize(ImageBlock img, double factor)
     {
-        if (Document == null || img.Image == null) return;
+        if (Document == null || !HasPicture(img)) return;
+        Size natural = img.Width > 0 && img.Height > 0 ? default : NaturalSize(img) ?? default;
+        double baseW = img.Width > 0 ? img.Width : natural.Width;
+        double baseH = img.Height > 0 ? img.Height : natural.Height;
+        if (baseW <= 0 || baseH <= 0) return; // no size set and none readable: nothing to scale from
         PushUndo();
-        double baseW = img.Width > 0 ? img.Width : img.Image.Size.Width;
-        double baseH = img.Height > 0 ? img.Height : img.Image.Size.Height;
         img.Width = Math.Max(1, baseW * factor);
         img.Height = Math.Max(1, baseH * factor);
         InvalidateMeasure(); // see ResetImageSize
@@ -88,19 +161,21 @@ public partial class RichEditor
             await s.CopyToAsync(ms);
             var bytes = ms.ToArray();
             using var ms2 = new System.IO.MemoryStream(bytes);
-            var bmp = new Avalonia.Media.Imaging.Bitmap(ms2); // validate before committing
+            using (new Avalonia.Media.Imaging.Bitmap(ms2)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
             if (Document != null) PushUndo();
-            img.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
+            img.SetImageData(bytes, ImageMime.Detect(bytes));
             InvalidateVisual();
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
-    private Task SaveImageAsync(ImageBlock img) => SaveBitmapAsync(img.Image);
+    private Task SaveImageAsync(ImageBlock img) => SaveBitmapAsync(img.RawBytes, img.RawBytes == null ? img.Image : null);
 
-    private async Task SaveBitmapAsync(Avalonia.Media.Imaging.Bitmap? bmp)
+    // Saves as PNG. With bytes, the full-size bitmap is decoded for the save and dropped after it — reading the
+    // model's Image instead would decode it at source size and keep it on the element.
+    private async Task SaveBitmapAsync(byte[]? rawBytes, Avalonia.Media.Imaging.Bitmap? bmp)
     {
-        if (bmp == null) return;
+        if (rawBytes == null && bmp == null) return;
         var top = TopLevel.GetTopLevel(this);
         if (top == null) return;
         var file = await top.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
@@ -113,7 +188,10 @@ public partial class RichEditor
         try
         {
             await using var s = await file.OpenWriteAsync();
-            bmp.Save(s, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+            if (bmp != null) { bmp.Save(s, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default); return; }
+            using var ms = new System.IO.MemoryStream(rawBytes!);
+            using var decoded = new Avalonia.Media.Imaging.Bitmap(ms);
+            decoded.Save(s, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
@@ -137,10 +215,10 @@ public partial class RichEditor
         PushUndo();
         var im = new InlineImage
         {
-            Width = double.IsNaN(ib.Width) ? (ib.Image?.Size.Width ?? 16) : ib.Width,
-            Height = double.IsNaN(ib.Height) ? (ib.Image?.Size.Height ?? 16) : ib.Height
+            Width = double.IsNaN(ib.Width) ? (NaturalSize(ib)?.Width ?? 16) : ib.Width,
+            Height = double.IsNaN(ib.Height) ? (NaturalSize(ib)?.Height ?? 16) : ib.Height
         };
-        if (ib.RawBytes != null) im.SetImageData(ib.RawBytes, ib.MimeType, ib.Image);
+        if (ib.RawBytes != null) im.SetImageData(ib.RawBytes, ib.MimeType, ib.CachedBitmap);
         else im.Image = ib.Image;
         Document.Blocks.Remove(ib);
         if (atEnd) anchor.Inlines.Add(im);
@@ -169,7 +247,7 @@ public partial class RichEditor
 
         PushUndo();
         var ib = new ImageBlock { Width = im.Width, Height = im.Height };
-        if (im.RawBytes != null) ib.SetImageData(im.RawBytes, im.MimeType, im.Image);
+        if (im.RawBytes != null) ib.SetImageData(im.RawBytes, im.MimeType, im.CachedBitmap);
         else ib.Image = im.Image;
         p.Inlines.Remove(im);
         Document.Blocks.Insert(idx + 1, ib);
@@ -191,10 +269,10 @@ public partial class RichEditor
 
     private void ResetInlineImageSize(InlineImage img)
     {
-        if (Document == null || img.Image == null) return;
+        if (Document == null || NaturalSize(img) is not { } natural) return;
         PushUndo();
-        img.Width = img.Image.Size.Width;
-        img.Height = img.Image.Size.Height;
+        img.Width = natural.Width;
+        img.Height = natural.Height;
         InvalidateMeasure(); // see ResetImageSize — a taller inline image grows its line box
         InvalidateVisual();
     }
@@ -203,10 +281,12 @@ public partial class RichEditor
     // mirroring the block-image presets. Display size only — the encoded bytes are untouched.
     private void ScaleInlineImageSize(InlineImage img, double factor)
     {
-        if (Document == null || img.Image == null) return;
+        if (Document == null || !HasPicture(img)) return;
+        Size natural = img.Width > 0 && img.Height > 0 ? default : NaturalSize(img) ?? default;
+        double baseW = img.Width > 0 ? img.Width : natural.Width;
+        double baseH = img.Height > 0 ? img.Height : natural.Height;
+        if (baseW <= 0 || baseH <= 0) return; // no size set and none readable: nothing to scale from
         PushUndo();
-        double baseW = img.Width > 0 ? img.Width : img.Image.Size.Width;
-        double baseH = img.Height > 0 ? img.Height : img.Image.Size.Height;
         img.Width = Math.Max(1, baseW * factor);
         img.Height = Math.Max(1, baseH * factor);
         InvalidateMeasure(); // see ResetImageSize
@@ -231,9 +311,9 @@ public partial class RichEditor
             await s.CopyToAsync(ms);
             var bytes = ms.ToArray();
             using var ms2 = new System.IO.MemoryStream(bytes);
-            var bmp = new Avalonia.Media.Imaging.Bitmap(ms2); // validate before committing
+            using (new Avalonia.Media.Imaging.Bitmap(ms2)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
             if (Document != null) PushUndo();
-            img.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
+            img.SetImageData(bytes, ImageMime.Detect(bytes));
             InvalidateVisual();
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }

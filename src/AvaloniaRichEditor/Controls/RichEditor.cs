@@ -1126,13 +1126,15 @@ public partial class RichEditor : Control
         return sb.ToString();
     }
 
-    // A layout segment is either text (Text != null), an inline image (Image != null, length 1), or an
-    // inline table (DrawTable != null, length 1): the two object kinds occupy one ObjChar position each.
+    // A layout segment is either text (Text != null), an inline table (DrawTable != null, length 1), or
+    // otherwise an inline image (length 1): the two object kinds occupy one ObjChar position each.
     private struct LayoutSeg
     {
         public string? Text;
         public Avalonia.Media.TextFormatting.TextRunProperties Props;
-        public Avalonia.Media.Imaging.Bitmap? Image;
+        // Resolved when the run DRAWS, not when the layout is built: a layout is built to measure every
+        // paragraph, including ones never on screen, and the bitmap depends on the scale it is drawn at.
+        public System.Func<Avalonia.Media.Imaging.Bitmap?>? Picture;
         public Size ImageSize;
         // Inline table: the measured box and a closure that draws the grid + cell contents at a given
         // document-space origin (delegates to the recursive DrawNestedTable primitive).
@@ -1144,12 +1146,12 @@ public partial class RichEditor : Control
     private sealed class ImageTextRun : Avalonia.Media.TextFormatting.DrawableTextRun
     {
         private static readonly ReadOnlyMemory<char> _obj = "￼".AsMemory();
-        private readonly Avalonia.Media.Imaging.Bitmap? _bmp;
+        private readonly System.Func<Avalonia.Media.Imaging.Bitmap?>? _picture;
         private readonly Size _size;
         private readonly Avalonia.Media.TextFormatting.TextRunProperties _props;
 
-        public ImageTextRun(Avalonia.Media.Imaging.Bitmap? bmp, Size size, Avalonia.Media.TextFormatting.TextRunProperties props)
-        { _bmp = bmp; _size = size; _props = props; }
+        public ImageTextRun(System.Func<Avalonia.Media.Imaging.Bitmap?>? picture, Size size, Avalonia.Media.TextFormatting.TextRunProperties props)
+        { _picture = picture; _size = size; _props = props; }
 
         public override ReadOnlyMemory<char> Text => _obj;
         public override int Length => 1;
@@ -1159,8 +1161,8 @@ public partial class RichEditor : Control
 
         public override void Draw(DrawingContext context, Point origin)
         {
-            if (_bmp != null)
-                context.DrawImage(_bmp, new Rect(origin.X, origin.Y, _size.Width, _size.Height));
+            if (_picture?.Invoke() is { } bmp)
+                context.DrawImage(bmp, new Rect(origin.X, origin.Y, _size.Width, _size.Height));
         }
     }
 
@@ -1211,7 +1213,7 @@ public partial class RichEditor : Control
                     }
                     if (seg.DrawTable != null)
                         return new TableTextRun(seg.TableSize, seg.Props, seg.DrawTable);
-                    return new ImageTextRun(seg.Image, seg.ImageSize, seg.Props);
+                    return new ImageTextRun(seg.Picture, seg.ImageSize, seg.Props);
                 }
                 pos += len;
             }
@@ -1491,10 +1493,11 @@ public partial class RichEditor : Control
             }
             else if (inline is InlineImage img)
             {
+                var imageSize = new Size(img.Width > 0 ? img.Width : 16, img.Height > 0 ? img.Height : 16);
                 segs.Add(new LayoutSeg
                 {
-                    Image = img.Image,
-                    ImageSize = new Size(img.Width > 0 ? img.Width : 16, img.Height > 0 ? img.Height : 16),
+                    Picture = () => PictureToDraw(img, imageSize.Width, imageSize.Height),
+                    ImageSize = imageSize,
                     Props = defaultProps
                 });
             }
@@ -2023,12 +2026,12 @@ public partial class RichEditor : Control
     {
         if ((_selectedBlock as ImageBlock ?? _caretBlock as ImageBlock) is { } ib)
         {
-            _ = CopyImageToClipboardAsync(ib.RawBytes, ib.Image, inline: false, ib.Width, ib.Height);
+            _ = CopyImageToClipboardAsync(ib.RawBytes, ib.RawBytes == null ? ib.Image : null, inline: false, ib.Width, ib.Height);
             return true;
         }
         if (_selectedInline is { } si)
         {
-            _ = CopyImageToClipboardAsync(si.img.RawBytes, si.img.Image, inline: true, si.img.Width, si.img.Height);
+            _ = CopyImageToClipboardAsync(si.img.RawBytes, si.img.RawBytes == null ? si.img.Image : null, inline: true, si.img.Width, si.img.Height);
             return true;
         }
         return false;
