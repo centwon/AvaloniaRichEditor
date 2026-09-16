@@ -1,0 +1,166 @@
+using System;
+using System.Reflection;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using AvaloniaRichEditor.Controls;
+using AvaloniaRichEditor.Documents;
+using Xunit;
+
+namespace AvaloniaRichEditor.Tests.Render;
+
+/// <summary>Pictures are decoded at the size they are DRAWN (2026-09-16, from the WinUI port, which measured
+/// it: six 4000x3000 photos shown 240 px wide held ~280 MB of decoded pixels). Real codecs are needed to see a
+/// decoded size — the main project's no-op backend decodes everything to 1x1 — hence this project.
+/// <para>The display cache is internal and this project has no internals access, so it is read by reflection.</para></summary>
+public class ImageDisplayDecodeRenderTests
+{
+    private const double W = 600, H = 800;
+    private const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
+
+    // A solid-colour, bottom-up 24-bit BMP. Every test uses its OWN size so no two share bytes by accident.
+    private static byte[] SolidBmp(int w, int h, byte r, byte g, byte b)
+    {
+        int stride = (w * 3 + 3) & ~3, size = 54 + stride * h;
+        var bytes = new byte[size];
+        bytes[0] = (byte)'B'; bytes[1] = (byte)'M';
+        BitConverter.GetBytes(size).CopyTo(bytes, 2);
+        BitConverter.GetBytes(54).CopyTo(bytes, 10);
+        BitConverter.GetBytes(40).CopyTo(bytes, 14);
+        BitConverter.GetBytes(w).CopyTo(bytes, 18);
+        BitConverter.GetBytes(h).CopyTo(bytes, 22);
+        BitConverter.GetBytes((short)1).CopyTo(bytes, 26);
+        BitConverter.GetBytes((short)24).CopyTo(bytes, 28);
+        BitConverter.GetBytes(stride * h).CopyTo(bytes, 34);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int o = 54 + y * stride + x * 3;
+                bytes[o] = b; bytes[o + 1] = g; bytes[o + 2] = r;
+            }
+        return bytes;
+    }
+
+    private static PixelSize? DisplayBitmapSize(RichEditor ed, byte[] raw)
+    {
+        var cache = typeof(RichEditor).GetField("_displayImages", NP)!.GetValue(ed)!;
+        var bmp = (Bitmap?)cache.GetType().GetMethod("CachedFor", NP)!.Invoke(cache, [raw]);
+        return bmp?.PixelSize;
+    }
+
+    private static (RichEditor ed, byte[] raw, ImageBlock block) EditorWithPicture(int srcW, int srcH, double w, double h)
+    {
+        var block = new ImageBlock { Width = w, Height = h };
+        block.SetImageData(SolidBmp(srcW, srcH, 255, 0, 0), "image/bmp");
+        var doc = new FlowDocument();
+        doc.Blocks.Add(block);
+        return (new RichEditor { Document = doc }, block.RawBytes!, block);
+    }
+
+    private static void Render(Visual root, Control ed)
+    {
+        ed.Measure(new Size(W, double.PositiveInfinity));
+        ed.Arrange(new Rect(0, 0, W, H));
+        using var rtb = new RenderTargetBitmap(new PixelSize((int)W, (int)H));
+        rtb.Render(root);
+    }
+
+    [AvaloniaFact]
+    public void APictureIsDecodedAtTheSizeItIsDrawn_NotItsSourceSize()
+    {
+        var (ed, raw, block) = EditorWithPicture(2000, 1500, 200, 150);
+
+        Render(ed, ed);
+
+        var px = DisplayBitmapSize(ed, raw)!.Value;
+        Assert.InRange(px.Width, 200, 251);  // 200 drawn, plus the cache's 25% headroom
+        Assert.InRange(px.Height, 150, 189);
+        Assert.Null(block.CachedBitmap); // and nothing source-sized left on the document
+    }
+
+    // Drawn first at 1x, then zoomed to 3x in the same editor: the small decode must be replaced by a sharper
+    // one. (Starting at 3x would never exercise the upgrade — a first decode is sized right regardless.)
+    [AvaloniaFact]
+    public void ZoomingIn_ReplacesTheDecodeWithASharperOne()
+    {
+        var (ed, raw, _) = EditorWithPicture(2002, 1500, 200, 150);
+        // The zoom RichEditorView applies: a LayoutTransform around the editor, inside a window.
+        var zoom = new LayoutTransformControl { LayoutTransform = new ScaleTransform(1, 1), Child = ed };
+        var window = new Window { Width = W * 3, Height = H * 3, Content = zoom };
+        window.Show();
+        try
+        {
+            void Draw()
+            {
+                window.UpdateLayout();
+                using var rtb = new RenderTargetBitmap(new PixelSize((int)W, (int)H));
+                rtb.Render(ed);
+            }
+
+            Draw();
+            var before = DisplayBitmapSize(ed, raw)!.Value;
+            Assert.True(before.Width <= 251, $"at 1x: {before.Width}x{before.Height}");
+
+            zoom.LayoutTransform = new ScaleTransform(3, 3);
+            Draw();
+            var after = DisplayBitmapSize(ed, raw)!.Value;
+            Assert.True(after.Width >= 600 && after.Height >= 450, $"at 3x zoom: {after.Width}x{after.Height}");
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public void APictureIsNeverDecodedAboveItsSource()
+    {
+        var (ed, raw, _) = EditorWithPicture(64, 48, 400, 300);
+
+        Render(ed, ed);
+
+        Assert.Equal(new PixelSize(64, 48), DisplayBitmapSize(ed, raw));
+    }
+
+    [AvaloniaFact]
+    public void AnInlinePicture_IsDecodedAtItsDrawnSizeToo()
+    {
+        var inline = new InlineImage { Width = 80, Height = 60 };
+        inline.SetImageData(SolidBmp(1600, 1201, 0, 0, 255), "image/bmp");
+        var doc = new FlowDocument();
+        var p = new Paragraph();
+        p.Inlines.Add(new Run { Text = "a" });
+        p.Inlines.Add(inline);
+        doc.Blocks.Add(p);
+        var ed = new RichEditor { Document = doc };
+
+        Render(ed, ed);
+
+        var px = DisplayBitmapSize(ed, inline.RawBytes!)!.Value;
+        Assert.InRange(px.Width, 80, 101);
+        Assert.Null(inline.CachedBitmap);
+    }
+
+    // Printing draws at print resolution — a picture printed at screen size would print soft.
+    [AvaloniaFact]
+    public void PrintingDecodesAtPrintResolution()
+    {
+        var (ed, raw, _) = EditorWithPicture(3000, 2250, 200, 150);
+
+        using var page = ed.RenderPrintPage(0, dpi: 96);
+
+        var px = DisplayBitmapSize(ed, raw)!.Value;
+        Assert.True(px.Width >= 200 * 300 / 96, $"printed from {px.Width}x{px.Height}");
+    }
+
+    // The size presets read the source size from the header, without decoding onto the model.
+    [AvaloniaFact]
+    public void OriginalSize_ComesFromTheHeader_WithoutPinningABitmap()
+    {
+        var (ed, _, block) = EditorWithPicture(1234, 567, 100, 50);
+
+        typeof(RichEditor).GetMethod("ResetImageSize", NP)!.Invoke(ed, [block]);
+
+        Assert.Equal((1234.0, 567.0), (block.Width, block.Height));
+        Assert.Null(block.CachedBitmap);
+    }
+}

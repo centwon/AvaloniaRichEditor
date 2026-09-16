@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — pictures are drawn from a bitmap decoded at the size they are drawn (2026-09-16)
+
+From the WinUI port, which measured the cost: six 4000×3000 photos shown 240 px wide held ~280 MB of decoded pixels.
+
+- The editor drew the model's `Image`, whose getter decodes at **source** size and keeps the bitmap on the element —
+  and on every undo snapshot, which shares it. A 12 MP photo shown as a thumbnail held 46 MB for as long as the
+  document (or its history) did.
+- Pictures are now decoded for the device pixels they cover (display size × screen scaling × any zoom transform around
+  the editor, with 25% headroom), never above the source, and decoded again larger when drawn larger. Printing and PDF
+  export decode at up to 300 DPI. Inline pictures resolve their bitmap when drawn, not when their paragraph is measured.
+- Nothing the editor does on its own reads `Image` any more when a picture has bytes: "original size" and the other
+  size presets read the size from the file header, and Save Image / Copy decode for the operation and drop the result.
+  `Image` itself is unchanged — a host reading it still gets the full-size bitmap.
+- No public API change.
+
 ### Fixed — the undo history kept deleted pictures outside its memory budget (2026-09-16)
 
 From the WinUI port, which measured it.

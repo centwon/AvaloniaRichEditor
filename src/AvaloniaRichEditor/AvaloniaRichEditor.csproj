@@ -62,5 +62,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="AvaloniaRichEditor.Tests" />
+    <InternalsVisibleTo Include="AvaloniaRichEditor.Tests.Render" />
   </ItemGroup>
 </Project>

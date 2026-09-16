@@ -534,7 +534,7 @@ public partial class RichEditor
     private void BuildImageMenu(List<Control> items, ImageBlock img)
     {
         // Edit
-        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: false, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.RawBytes == null ? img.Image : null, inline: false, img.Width, img.Height); }, HasPicture(img), RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
         // A viewer gets the copy and nothing else. Everything below MUTATES the image — resize, promote
         // to a character, margins, replace, save, delete — so a read-only editor must not offer any of
         // it. Copy is the whole point of reaching this menu in a viewer: it copies the IMAGE, which the
@@ -545,10 +545,10 @@ public partial class RichEditor
         // Size presets in a submenu. "Original" resets to natural size; the fractions scale the
         // current display size (so they compound). Width/Height only — encoded bytes untouched.
         items.Add(Sub(Loc("ImageSize"),
-            Mi(Loc("OriginalSize"), () => ResetImageSize(img), img.Image != null),
-            Mi(Loc("HalfSize"), () => ScaleImageSize(img, 1.0 / 2), img.Image != null),
-            Mi(Loc("ThirdSize"), () => ScaleImageSize(img, 1.0 / 3), img.Image != null),
-            Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), img.Image != null)));
+            Mi(Loc("OriginalSize"), () => ResetImageSize(img), HasPicture(img)),
+            Mi(Loc("HalfSize"), () => ScaleImageSize(img, 1.0 / 2), HasPicture(img)),
+            Mi(Loc("ThirdSize"), () => ScaleImageSize(img, 1.0 / 3), HasPicture(img)),
+            Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), HasPicture(img))));
         // HWP-style toggle: unchecked here (block image); checking it demotes to an inline character.
         // Disabled for a cell image: block<->inline conversion anchors to top-level paragraphs, which a
         // cell image doesn't have (mirrors the inline-image menu's guard inside cells).
@@ -559,7 +559,7 @@ public partial class RichEditor
         // File ops: replace / save.
         items.Add(new Separator());
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
-        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveImageAsync(img); }, img.Image != null, RichEditorIcon.SaveImageAs));
+        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveImageAsync(img); }, HasPicture(img), RichEditorIcon.SaveImageAs));
         // Delete
         items.Add(new Separator());
         items.Add(Mi(Loc("Delete"), () => DeleteBlock(img), icon: RichEditorIcon.Delete));
@@ -584,15 +584,15 @@ public partial class RichEditor
     private void BuildInlineImageMenu(List<Control> items, Paragraph p, InlineImage img)
     {
         // Edit
-        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.Image, inline: true, img.Width, img.Height); }, img.RawBytes != null || img.Image != null, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.RawBytes == null ? img.Image : null, inline: true, img.Width, img.Height); }, HasPicture(img), RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
         if (IsReadOnly) return; // see BuildImageMenu: everything below mutates the image
         // 개체 모양 (object shape): size preset + 글자처럼 취급.
         items.Add(new Separator());
         items.Add(Sub(Loc("ImageSize"),
-            Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), img.Image != null),
-            Mi(Loc("HalfSize"), () => ScaleInlineImageSize(img, 1.0 / 2), img.Image != null),
-            Mi(Loc("ThirdSize"), () => ScaleInlineImageSize(img, 1.0 / 3), img.Image != null),
-            Mi(Loc("QuarterSize"), () => ScaleInlineImageSize(img, 1.0 / 4), img.Image != null)));
+            Mi(Loc("OriginalSize"), () => ResetInlineImageSize(img), HasPicture(img)),
+            Mi(Loc("HalfSize"), () => ScaleInlineImageSize(img, 1.0 / 2), HasPicture(img)),
+            Mi(Loc("ThirdSize"), () => ScaleInlineImageSize(img, 1.0 / 3), HasPicture(img)),
+            Mi(Loc("QuarterSize"), () => ScaleInlineImageSize(img, 1.0 / 4), HasPicture(img))));
         // Checked here (inline = treated as a character). Unchecking promotes back to a block image;
         // disabled inside table cells, which cannot host block siblings.
         bool canBlock = Document != null && Document.Blocks.IndexOf(p) >= 0;
@@ -602,7 +602,7 @@ public partial class RichEditor
         // File ops: replace / save.
         items.Add(new Separator());
         items.Add(Mi(Loc("ReplaceImage"), () => { _ = ReplaceInlineImageAsync(img); }, icon: RichEditorIcon.ReplaceImage));
-        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveBitmapAsync(img.Image); }, img.Image != null, RichEditorIcon.SaveImageAs));
+        items.Add(Mi(Loc("SaveImageAs"), () => { _ = SaveBitmapAsync(img.RawBytes, img.RawBytes == null ? img.Image : null); }, HasPicture(img), RichEditorIcon.SaveImageAs));
         // Delete
         items.Add(new Separator());
         items.Add(Mi(Loc("Delete"), () => DeleteInlineImage(p, img), icon: RichEditorIcon.Delete));

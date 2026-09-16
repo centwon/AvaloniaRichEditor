@@ -320,9 +320,17 @@ public partial class RichEditor
             // Same slice clip rule as the page-view render: end the clip where the slice ends.
             var clip = new Rect(PagePadX, PagePadY, contentW,
                 Math.Min(contentH, sliceBottom - sliceTop));
-            using (ctx.PushClip(clip))
-            using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
-                DrawDocumentBlocks(ctx, contentW, sliceTop, sliceBottom, chrome: false);
+            // Print resolution for pictures on the page (the bitmap page, the vector PDF, the print dialog) —
+            // the screen's scale would print them at screen sharpness.
+            double screenScale = _imagePixelScale;
+            _imagePixelScale = Math.Max(screenScale, PrintImageDpi / 96.0);
+            try
+            {
+                using (ctx.PushClip(clip))
+                using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
+                    DrawDocumentBlocks(ctx, contentW, sliceTop, sliceBottom, chrome: false);
+            }
+            finally { _imagePixelScale = screenScale; }
         }
         DrawPageMarginChrome(ctx, new Rect(0, 0, paperW, paperH), pageIndex, breaks.Count);
     }
