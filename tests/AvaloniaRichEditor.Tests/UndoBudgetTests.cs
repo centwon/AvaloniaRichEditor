@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia.Headless.XUnit;
 using AvaloniaRichEditor.Controls;
 using AvaloniaRichEditor.Documents;
 using Xunit;
@@ -147,5 +148,110 @@ public class UndoBudgetTests
 
         Assert.Equal(3, undone);          // the undo stack was trimmed to the floor
         Assert.Equal(3, redone);          // and so was the redo stack it filled
+    }
+
+    // ---- pictures in the budget (2026-09-16, from the WinUI peer) ---------------------------------
+    // The budget used to leave pictures out entirely, "shared with the live document". Once an edit removes
+    // a picture only the history keeps it — here with its DECODED bitmap, which Clone shares as well. The
+    // peer measured the bytes alone: 36 photos inserted and deleted held 133 MB behind a 64 MB budget.
+    // A megabyte per picture against a few-megabyte budget makes each trim a countable step.
+
+    private const int Mb = 1024 * 1024;
+
+    private static FlowDocument DocWithPicture(byte[] bytes, Avalonia.Media.Imaging.Bitmap? decoded = null)
+    {
+        var d = Doc("p");
+        var img = new ImageBlock { Width = 10, Height = 10 };
+        img.SetImageData(bytes, "image/png", decoded);
+        d.Blocks.Add(img);
+        return d;
+    }
+
+    private static int UndoDepth(UndoManager undo, FlowDocument current)
+    {
+        int depth = 0;
+        while (undo.Undo(current, Caret(current)) != null) depth++;
+        return depth;
+    }
+
+    // Each checkpoint holds a picture the NEXT edit removed: only the history keeps those alive.
+    [Fact]
+    public void PicturesOnlyTheHistoryKeepsCountAgainstTheBudget()
+    {
+        var undo = new UndoManager(maxBytes: 3 * Mb + Mb / 2);
+        for (int i = 0; i < 6; i++)
+        {
+            var doc = DocWithPicture(new byte[Mb]);
+            undo.PushState(doc, Caret(doc));
+        }
+        // newest: its picture is still live (free); then 1, 2, 3 MB — the next would be 4 MB > 3.5.
+        Assert.Equal(4, UndoDepth(undo, Doc("p")));
+    }
+
+    // The decoded bitmap is the bigger half of a removed picture here, and it is its own object.
+    [AvaloniaFact]
+    public void ARemovedPicturesDecodedBitmapCountsToo()
+    {
+        var undo = new UndoManager(maxBytes: 3 * Mb + Mb / 2);
+        for (int i = 0; i < 6; i++)
+        {
+            var bitmap = new Avalonia.Media.Imaging.WriteableBitmap(new Avalonia.PixelSize(512, 512), // 1 MB of pixels
+                new Avalonia.Vector(96, 96), Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+            var doc = DocWithPicture(new byte[16], bitmap);
+            undo.PushState(doc, Caret(doc));
+        }
+        Assert.Equal(4, UndoDepth(undo, Doc("p")));
+    }
+
+    // Pictures still in the document cost the history nothing — charging them would trim history that
+    // frees no memory.
+    [Fact]
+    public void PicturesStillInTheDocumentAreNotCharged()
+    {
+        var shared = new byte[Mb];
+        var undo = new UndoManager(maxBytes: Mb / 2);
+        for (int i = 0; i < 6; i++)
+        {
+            var doc = DocWithPicture(shared);
+            undo.PushState(doc, Caret(doc));
+        }
+        Assert.Equal(6, UndoDepth(undo, DocWithPicture(shared)));
+    }
+
+    // One removed picture held by five checkpoints is one megabyte, not five.
+    [Fact]
+    public void APictureSharedBySeveralCheckpointsIsChargedOnce()
+    {
+        var removed = new byte[Mb];
+        var undo = new UndoManager(maxBytes: Mb + Mb / 2);
+        for (int i = 0; i < 5; i++)
+        {
+            var doc = DocWithPicture(removed);
+            undo.PushState(doc, Caret(doc));
+        }
+        var after = Doc("p"); // the edit removed it
+        undo.PushState(after, Caret(after));
+
+        Assert.Equal(6, UndoDepth(undo, after));
+    }
+
+    // Undo moves the CURRENT document onto the redo stack; when the restored snapshot doesn't have its
+    // pictures, the redo stack is the only thing holding them.
+    [Fact]
+    public void TheRedoStackIsChargedForPicturesTheRestoredDocumentDoesNotHave()
+    {
+        var undo = new UndoManager(maxBytes: 3 * Mb + Mb / 2);
+        var plain = Doc("p");
+        for (int i = 0; i < 6; i++) undo.PushState(plain, Caret(plain));
+
+        for (int i = 0; i < 6; i++)
+        {
+            var current = DocWithPicture(new byte[Mb]);
+            Assert.NotNull(undo.Undo(current, Caret(current)));
+        }
+
+        int redoDepth = 0;
+        while (undo.Redo(plain, Caret(plain)) != null) redoDepth++;
+        Assert.Equal(3, redoDepth); // 1, 2, 3 MB — every one of them unshared with the plain restored doc
     }
 }

@@ -42,6 +42,10 @@ public class ImageBlock : Block
         set { _cachedBitmap = value; RawBytes = null; MimeType = null; _decodeFailed = false; }
     }
 
+    /// <summary>The decoded bitmap if one exists, WITHOUT decoding — what the undo budget measures
+    /// (<see cref="Image"/>'s getter would decode just to be weighed).</summary>
+    internal Bitmap? CachedBitmap => _cachedBitmap;
+
     /// <summary>Sets the image from its original encoded bytes. Pass <paramref name="decoded"/>
     /// when a bitmap is already in hand to seed the render cache and avoid a second decode.</summary>
     public void SetImageData(byte[] bytes, string? mimeType, Bitmap? decoded = null)
