@@ -287,7 +287,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         var item = new DataTransferItem();
         if (!string.IsNullOrEmpty(text)) item.SetText(text);
         if (!string.IsNullOrEmpty(html) && OperatingSystem.IsWindows())
-            item.Set(CfHtmlFormat, System.Text.Encoding.UTF8.GetBytes(BuildCfHtml(html!)));
+            item.Set(CfHtmlFormat, BuildCfHtmlBytes(html!));
         var dt = new DataTransfer();
         dt.Add(item);
         await clipboard.SetDataAsync(dt);
@@ -301,15 +301,21 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     private string? BuildSelectionHtml(FlowDocument? doc)
     {
         if (doc == null || doc.Blocks.Count == 0) return null;
-        string inner = HtmlDocumentFormatter.ToHtml(doc);
-        if (string.IsNullOrEmpty(inner)) return null;
+
         // Double-quoted attribute + single-quoted (and thus valid for multi-word/CJK names) font-family,
         // matching ToHtml — a single-quoted style attribute or an unquoted family name is dropped by
         // Word/HWP on paste.
         string family = (DefaultFontFamily.Name ?? "").Replace("'", "").Replace("\"", "");
         // pt, not px (Word/HWP ignore px font-size on paste); the 10pt body default matches ToHtml's
         // skipped default so unstyled runs inherit the right base size.
-        return $"<div style=\"font-family:'{family}';font-size:10pt\">{inner}</div>";
+        // Written into one pre-sized builder: formatting the HTML to a string and then interpolating it into the
+        // <div> copied a picture's whole base64 payload once more (see HtmlDocumentFormatter.EstimateCapacity).
+        string open = $"<div style=\"font-family:'{family}';font-size:10pt\">";
+        var sb = new System.Text.StringBuilder(HtmlDocumentFormatter.EstimateCapacity(doc) + open.Length + 6);
+        sb.Append(open);
+        HtmlDocumentFormatter.AppendHtml(sb, doc);
+        if (sb.Length == open.Length) return null; // nothing to put in it
+        return sb.Append("</div>").ToString();
     }
 
     // A trimmed FlowDocument for the current selection that, unlike GetRichRuns (runs only), preserves
@@ -377,7 +383,11 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     // StartFragment/EndFragment are byte offsets (UTF-8) into the payload, plus the fragment markers.
     // The offsets are fixed-width (10 digits), so the header length is the same with placeholder zeros
     // and with the real values — one measuring pass suffices. (internal for unit-test coverage.)
-    internal static string BuildCfHtml(string fragmentHtml)
+    internal static string BuildCfHtml(string fragmentHtml) => System.Text.Encoding.UTF8.GetString(BuildCfHtmlBytes(fragmentHtml));
+
+    // Built straight as the UTF-8 bytes the clipboard takes. Making the envelope a string first and then encoding it
+    // allocated the whole payload twice more for a copy with a picture in it (the fragment is base64).
+    internal static byte[] BuildCfHtmlBytes(string fragmentHtml)
     {
         const string headerFmt =
             "Version:0.9\r\nStartHTML:{0:0000000000}\r\nEndHTML:{1:0000000000}\r\n" +
@@ -386,13 +396,17 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         const string post = "<!--EndFragment-->\r\n</body></html>";
         var enc = System.Text.Encoding.UTF8;
         int headerLen = enc.GetByteCount(string.Format(System.Globalization.CultureInfo.InvariantCulture, headerFmt, 0, 0, 0, 0));
-        int startHtml = headerLen;
-        int startFragment = startHtml + enc.GetByteCount(pre);
+        int startFragment = headerLen + enc.GetByteCount(pre);
         int endFragment = startFragment + enc.GetByteCount(fragmentHtml);
         int endHtml = endFragment + enc.GetByteCount(post);
         string header = string.Format(System.Globalization.CultureInfo.InvariantCulture, headerFmt,
-            startHtml, endHtml, startFragment, endFragment);
-        return header + pre + fragmentHtml + post;
+            headerLen, endHtml, startFragment, endFragment);
+        var bytes = new byte[endHtml];
+        int at = enc.GetBytes(header, bytes);
+        at += enc.GetBytes(pre, bytes.AsSpan(at));
+        at += enc.GetBytes(fragmentHtml, bytes.AsSpan(at));
+        enc.GetBytes(post, bytes.AsSpan(at));
+        return bytes;
     }
 
     // Copies an image (block or inline) to the OS clipboard. Paste re-enters through the image
