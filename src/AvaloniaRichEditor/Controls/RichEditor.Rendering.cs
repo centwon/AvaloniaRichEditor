@@ -514,7 +514,7 @@ public partial class RichEditor
                 {
                     double imgX = listIndent + img.Indent;
                     var imgRect = new Rect(imgX, yOffset, width, height);
-                    context.DrawImage(picture, imgRect);
+                    DrawPicture(context, picture, imgRect);
                     if (ReferenceEquals(img, _caretBlock)) blockCaretRect = imgRect;
 
                     if (chrome)
@@ -533,11 +533,13 @@ public partial class RichEditor
                         context.DrawRectangle(null, AccentBorderPen, imgRect);
                         if (imgSelected)
                         {
-                            var handle = new Rect(imgX + width - 6, yOffset + height - 6, 12, 12);
-                            context.FillRectangle(AccentHandleFill, handle);
-                            // Registered with the drawn handle so there is never a grabbable area with
+                            // Registered with the drawn handles so there is never a grabbable area with
                             // nothing under the pointer to explain it. Slightly larger for easy grabbing.
-                            _imageHandles.Add((new Rect(imgX + width - 9, yOffset + height - 9, 18, 18), img, width, height));
+                            foreach (var (knob, grab, grip) in PictureHandles(imgRect, 12))
+                            {
+                                context.FillRectangle(AccentHandleFill, knob);
+                                _imageHandles.Add((grab, img, width, height, grip));
+                            }
                         }
                     }
 
@@ -671,7 +673,7 @@ public partial class RichEditor
                 if (PictureToDraw(cimg, iw, ih) is { } bmp)
                 {
                     var ir = new Rect(ox, blkY, iw, ih);
-                    context.DrawImage(bmp, ir);
+                    DrawPicture(context, bmp, ir);
                     if (chrome)
                     {
                         if (ReferenceEquals(cimg, _selectedBlock))
@@ -682,9 +684,11 @@ public partial class RichEditor
                         context.DrawRectangle(null, AccentBorderPen, ir);
                         if (ReferenceEquals(cimg, _selectedBlock))   // handle on selection only
                         {
-                            var handle = new Rect(ox + iw - 6, blkY + ih - 6, 12, 12);
-                            context.FillRectangle(AccentHandleFill, handle);
-                            _imageHandles.Add((new Rect(ox + iw - 9, blkY + ih - 9, 18, 18), cimg, iw, ih));
+                            foreach (var (knob, grab, grip) in PictureHandles(ir, 12))
+                            {
+                                context.FillRectangle(AccentHandleFill, knob);
+                                _imageHandles.Add((grab, cimg, iw, ih, grip));
+                            }
                         }
                         // NOT gated: this is what click-selection and the context menu look the picture
                         // up in. Gating it on selection would make a cell picture unselectable — nothing
@@ -837,10 +841,12 @@ public partial class RichEditor
                     if (_selectedInline is { } sel && ReferenceEquals(sel.img, ii))
                     {
                         context.DrawRectangle(null, AccentPen2, ir);
-                        var knob = new Rect(ir.Right - 5, ir.Bottom - 5, 10, 10);
-                        context.FillRectangle(Brushes.White, knob);
-                        context.DrawRectangle(null, AccentPen15, knob);
-                        _inlineHandles.Add((new Rect(ir.Right - 9, ir.Bottom - 9, 18, 18), p, ii));
+                        foreach (var (knob, grab, grip) in PictureHandles(ir, 10))
+                        {
+                            context.FillRectangle(Brushes.White, knob);
+                            context.DrawRectangle(null, AccentPen15, knob);
+                            _inlineHandles.Add((grab, p, ii, grip));
+                        }
                     }
                     break;
                 }

@@ -111,6 +111,74 @@ public class ImageDisplayDecodeRenderTests
         finally { window.Close(); }
     }
 
+    // A picture resized out of its source's proportions (an <img width height>, the edge handles) is drawn
+    // STRETCHED into its rect. Decoding to fit INSIDE the rect kept the aspect and came out short on the long
+    // axis — 400×100 from a 4:3 source decoded ~167 px wide — so the picture was soft along it. From the WinUI
+    // port (2026-09-19), where the same decode also re-ran every frame; here the cache compares against the
+    // target it asked for, so it only blurred.
+    [AvaloniaTheory]
+    [InlineData(400, 100)]
+    [InlineData(100, 400)]
+    public void AStretchedPicture_IsDecodedSharpOnBothAxes(double w, double h)
+    {
+        var (ed, raw, _) = EditorWithPicture(2003 + (int)w, 1500, w, h);
+
+        Render(ed, ed);
+
+        var px = DisplayBitmapSize(ed, raw)!.Value;
+        Assert.True(px.Width >= w && px.Height >= h, $"{w}x{h} drawn from a {px.Width}x{px.Height} bitmap");
+    }
+
+    // Alternating 1-pixel red and white ROWS: the finest vertical detail a picture can have.
+    private static byte[] StripedBmp(int w, int h)
+    {
+        var bytes = SolidBmp(w, h, 255, 255, 255);
+        int stride = (w * 3 + 3) & ~3;
+        for (int y = 0; y < h; y += 2)
+            for (int x = 0; x < w; x++)
+            {
+                int o = 54 + y * stride + x * 3;
+                bytes[o] = 0; bytes[o + 1] = 0; // B, G = 0: red
+            }
+        return bytes;
+    }
+
+    // A squashed picture still shrinks its short axis several times when drawn. Sampling that skips source
+    // rows turns fine detail into noise — in the port "SHARP" was drawn as "SHAKI'" until the draw filtered.
+    // Oracle: 1px stripes shrunk ~17:1 average to one even pink (an exact 16:1 samples every row pair at the
+    // same phase and passes by luck — the port's first version of this test did).
+    [AvaloniaFact]
+    public void ASquashedPicture_IsFiltered_NotAliased()
+    {
+        var block = new ImageBlock { Width = 400, Height = 47 };
+        block.SetImageData(StripedBmp(401, 800), "image/bmp");
+        var doc = new FlowDocument();
+        doc.Blocks.Add(block);
+        var ed = new RichEditor { Document = doc };
+        ed.Measure(new Size(W, double.PositiveInfinity));
+        ed.Arrange(new Rect(0, 0, W, H));
+        using var rtb2 = new RenderTargetBitmap(new PixelSize((int)W, (int)H));
+        rtb2.Render(ed);
+
+        int stride = (int)W * 4;
+        var buf = new byte[stride * (int)H];
+        var handle = System.Runtime.InteropServices.GCHandle.Alloc(buf, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try { rtb2.CopyPixels(new PixelRect(0, 0, (int)W, (int)H), handle.AddrOfPinnedObject(), buf.Length, stride); }
+        finally { handle.Free(); }
+
+        var greens = new System.Collections.Generic.List<int>();
+        for (int y = 0; y < (int)H; y++)
+        {
+            int o = y * stride + 200 * 4; // BGRA, x = 200 is inside the 400px-wide picture
+            if (buf[o + 3] > 200 && buf[o + 2] > 200 && buf[o + 1] < 250) greens.Add(buf[o + 1]);
+        }
+        Assert.True(greens.Count >= 40, $"found {greens.Count} picture rows — the picture was not drawn where expected");
+        var inner = greens.GetRange(2, greens.Count - 4);
+        int min = int.MaxValue, max = int.MinValue;
+        foreach (var g in inner) { min = Math.Min(min, g); max = Math.Max(max, g); }
+        Assert.True(max - min < 40, $"rows range from green {min} to {max}: aliased, not averaged ({string.Join(",", inner.GetRange(0, 16))})");
+    }
+
     [AvaloniaFact]
     public void APictureIsNeverDecodedAboveItsSource()
     {

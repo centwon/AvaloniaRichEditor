@@ -36,6 +36,37 @@ public partial class RichEditor
     private static Cursor ColResizeCursor => Cur(StandardCursorType.SizeWestEast);
     private static Cursor RowResizeCursor => Cur(StandardCursorType.SizeNorthSouth);
     private static Cursor CornerResizeCursor => Cur(StandardCursorType.BottomRightCorner);
+    private static Cursor GripCursor(ResizeGrip grip) => grip switch
+    {
+        ResizeGrip.Right => ColResizeCursor,
+        ResizeGrip.Bottom => RowResizeCursor,
+        _ => CornerResizeCursor,
+    };
+
+    // A picture this tall is well past any page; the cap only stops a runaway drag.
+    private const double MaxImageHeight = 10000;
+
+    // The size a picture resize drag has reached at `point`. The corner keeps the proportions the picture had
+    // when the drag began, driven by the horizontal movement (as it always was); an edge handle changes one
+    // side and keeps the other at its size as drawn — inside a cell that is the scaled-down size, so the edge
+    // follows the pointer instead of being scaled down again from the declared size.
+    private (double w, double h, bool moved) ResizedImageSize(Point point, double min)
+    {
+        double dx = point.X - _initialImageMouseX, dy = point.Y - _initialImageMouseY;
+        double w = _initialImageWidth, h = _initialImageHeight;
+        switch (_resizeGrip)
+        {
+            case ResizeGrip.Right:
+                w = Math.Max(min, _initialImageWidth + dx);
+                return (w, h, dx != 0);
+            case ResizeGrip.Bottom:
+                h = Math.Clamp(_initialImageHeight + dy, min, MaxImageHeight);
+                return (w, h, dy != 0);
+            default:
+                w = Math.Max(min, _initialImageWidth + dx);
+                return (w, _imageAspect > 0 ? w / _imageAspect : h, dx != 0);
+        }
+    }
     private static Cursor MoveCursor => Cur(StandardCursorType.SizeAll);
 
     // "Draw table" mode: the grid picker chose rows×cols, and the next drag on the control sets the
@@ -134,6 +165,8 @@ public partial class RichEditor
                     _initialImageHeight = h.drawnH > 0 ? h.drawnH : (h.img.Height > 0 ? h.img.Height : 200);
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
                     _initialImageMouseX = point.X;
+                    _initialImageMouseY = point.Y;
+                    _resizeGrip = h.grip;
                     e.Pointer.Capture(this);
                     return;
                 }
@@ -152,6 +185,8 @@ public partial class RichEditor
                     _initialImageHeight = h.img.Height > 0 ? h.img.Height : 16;
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
                     _initialImageMouseX = point.X;
+                    _initialImageMouseY = point.Y;
+                    _resizeGrip = h.grip;
                     e.Pointer.Capture(this);
                     return;
                 }
@@ -511,22 +546,20 @@ public partial class RichEditor
 
         if (_isResizingInline && _resizingInline != null)
         {
-            double diff = point.X - _initialImageMouseX;
-            if (diff != 0) PushDragUndoOnce(); // the drag really moved -> now it's an edit
-            double newW = Math.Max(8, _initialImageWidth + diff);
-            _resizingInline.Width = newW;
-            _resizingInline.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingInline.Height; // keep aspect ratio
+            var (w, h, moved) = ResizedImageSize(point, 8);
+            if (moved) PushDragUndoOnce(); // the drag really moved -> now it's an edit
+            _resizingInline.Width = w;
+            _resizingInline.Height = h;
             InvalidateResizedImageGeometry(_resizingInline.Parent as Paragraph);
             return;
         }
 
         if (_isResizingImage && _resizingImage != null)
         {
-            double diff = point.X - _initialImageMouseX;
-            if (diff != 0) PushDragUndoOnce();
-            double newW = Math.Max(20, _initialImageWidth + diff);
-            _resizingImage.Width = newW;
-            _resizingImage.Height = _imageAspect > 0 ? newW / _imageAspect : _resizingImage.Height; // keep aspect ratio
+            var (w, h, moved) = ResizedImageSize(point, 20);
+            if (moved) PushDragUndoOnce();
+            _resizingImage.Width = w;
+            _resizingImage.Height = h;
             // A block image in a cell sizes that cell, and so the row: the image's parent IS the cell.
             InvalidateResizedImageGeometry(_resizingImage.Parent as TableCell);
             return;
@@ -612,7 +645,7 @@ public partial class RichEditor
         {
             if (h.rect.Contains(point))
             {
-                Cursor = CornerResizeCursor;
+                Cursor = GripCursor(h.grip);
                 return;
             }
         }
@@ -621,7 +654,7 @@ public partial class RichEditor
         {
             if (h.rect.Contains(point))
             {
-                Cursor = CornerResizeCursor;
+                Cursor = GripCursor(h.grip);
                 return;
             }
         }

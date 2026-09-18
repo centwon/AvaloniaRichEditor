@@ -49,6 +49,17 @@ public partial class RichEditor
         return s > 0 && double.IsFinite(s) ? s : 1;
     }
 
+    // Every picture draw. The display bitmap COVERS its rect with the source's aspect (ImageDisplayCache), so a
+    // picture squashed out of its proportions still shrinks its short axis several times when drawn — and
+    // sampling that skips source rows turns fine lines into noise (measured: 1px stripes shrunk ~17:1 came out
+    // with rows anywhere from green 0 to 239). HighQuality filters the downscale. From the WinUI port
+    // (2026-09-19), where the same defect drew "SHARP" as "SHAKI'".
+    private static void DrawPicture(Avalonia.Media.DrawingContext context, Avalonia.Media.Imaging.Bitmap bmp, Rect rect)
+    {
+        using (context.PushRenderOptions(new Avalonia.Media.RenderOptions { BitmapInterpolationMode = Avalonia.Media.Imaging.BitmapInterpolationMode.HighQuality }))
+            context.DrawImage(bmp, rect);
+    }
+
     internal Avalonia.Media.Imaging.Bitmap? PictureToDraw(ImageBlock img, double w, double h)
         => PictureToDraw(img.RawBytes, img.CachedBitmap, () => img.Image, w, h);
 

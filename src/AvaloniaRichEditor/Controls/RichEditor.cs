@@ -84,7 +84,24 @@ public partial class RichEditor : Control
     // several times the width the handle sits at. Seeding the drag from the declared size made a drag of
     // a few dozen px land inside the range that still clamps to the same drawn width — the handle looked
     // dead. The drag is relative to what the user can see.
-    private List<(Avalonia.Rect rect, ImageBlock img, double drawnW, double drawnH)> _imageHandles = new();
+    private List<(Avalonia.Rect rect, ImageBlock img, double drawnW, double drawnH, ResizeGrip grip)> _imageHandles = new();
+
+    /// <summary>A selected picture's handles: the corner keeps its proportions (as it always did), the middle
+    /// of the right edge changes only the width and the middle of the bottom edge only the height — Word's
+    /// arrangement, and the only way to change a picture's proportions without a file. From the WinUI port
+    /// (2026-09-19). The corner is recorded first, so where the grab areas overlap on a small picture the
+    /// press and the cursor (both take the first match) find the corner.</summary>
+    internal enum ResizeGrip { Corner, Right, Bottom }
+
+    // The three handles of a picture drawn at `pic`: the visible knob of `knob` px and the grab area around it.
+    private static IEnumerable<(Avalonia.Rect knob, Avalonia.Rect grab, ResizeGrip grip)> PictureHandles(Avalonia.Rect pic, double knob)
+    {
+        const double grab = 18;
+        foreach (var (x, y, g) in new[] { (pic.Right, pic.Bottom, ResizeGrip.Corner),
+                                          (pic.Right, pic.Y + pic.Height / 2, ResizeGrip.Right),
+                                          (pic.X + pic.Width / 2, pic.Bottom, ResizeGrip.Bottom) })
+            yield return (new Avalonia.Rect(x - knob / 2, y - knob / 2, knob, knob), new Avalonia.Rect(x - grab / 2, y - grab / 2, grab, grab), g);
+    }
     // Rendered rects of block images inside table cells (P4-2b), so a click can select one (top-level
     // block images are found via GetBlockAtPoint; cell images need this registry, like inline images).
     private List<(Avalonia.Rect rect, ImageBlock img)> _cellImageRects = new();
@@ -97,13 +114,15 @@ public partial class RichEditor : Control
     private double _initialImageWidth;
     private double _initialImageHeight;
     private double _initialImageMouseX;
+    private double _initialImageMouseY;
     private double _imageAspect;
+    private ResizeGrip _resizeGrip;
 
     // Inline-image selection + resize (mirrors the block-image handle pattern). The on-screen rect
     // of every visible inline image is rebuilt each Render pass for click hit-testing; the resize
     // handle exists only for the selected image. Initial size/aspect state above is shared.
     private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img)> _inlineImageRects = new();
-    private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img)> _inlineHandles = new();
+    private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img, ResizeGrip grip)> _inlineHandles = new();
     private (Paragraph p, InlineImage img)? _selectedInline;
     private bool _isResizingInline;
     private InlineImage? _resizingInline;
@@ -1162,7 +1181,7 @@ public partial class RichEditor : Control
         public override void Draw(DrawingContext context, Point origin)
         {
             if (_picture?.Invoke() is { } bmp)
-                context.DrawImage(bmp, new Rect(origin.X, origin.Y, _size.Width, _size.Height));
+                DrawPicture(context, bmp, new Rect(origin.X, origin.Y, _size.Width, _size.Height));
         }
     }
 
