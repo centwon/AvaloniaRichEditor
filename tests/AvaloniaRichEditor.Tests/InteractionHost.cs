@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
@@ -97,11 +98,17 @@ internal sealed class InteractionHost : IDisposable
 
     // drawnW/drawnH are the size the image was painted at, which inside a cell is the declared size
     // scaled down to fit — the drag is measured against that, so tests need it too.
-    public IReadOnlyList<(Rect rect, ImageBlock img, double drawnW, double drawnH)> ImageHandles
-        => Field<List<(Rect, ImageBlock, double, double)>>("_imageHandles");
+    // Three per selected picture, corner first (see RichEditor.ResizeGrip) — so .First(...) finds the corner.
+    // The grip is exposed as its name: the enum is internal to the library.
+    public IReadOnlyList<(Rect rect, ImageBlock img, double drawnW, double drawnH, string grip)> ImageHandles
+        => ((System.Collections.IEnumerable)Editor.GetType().GetField("_imageHandles", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(Editor)!)
+            .Cast<System.Runtime.CompilerServices.ITuple>()
+            .Select(t => ((Rect)t[0]!, (ImageBlock)t[1]!, (double)t[2]!, (double)t[3]!, t[4]!.ToString()!)).ToList();
 
-    public IReadOnlyList<(Rect rect, Paragraph p, InlineImage img)> InlineImageHandles
-        => Field<List<(Rect, Paragraph, InlineImage)>>("_inlineHandles");
+    public IReadOnlyList<(Rect rect, Paragraph p, InlineImage img, string grip)> InlineImageHandles
+        => ((System.Collections.IEnumerable)Editor.GetType().GetField("_inlineHandles", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(Editor)!)
+            .Cast<System.Runtime.CompilerServices.ITuple>()
+            .Select(t => ((Rect)t[0]!, (Paragraph)t[1]!, (InlineImage)t[2]!, t[3]!.ToString()!)).ToList();
 
     // Where a cell's pictures were painted. Unlike the handles this is recorded whether or not anything
     // is selected — it is what click-selection and the context menu look a picture up in — so it is how

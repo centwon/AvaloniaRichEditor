@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — handles to stretch a picture's width or height alone (2026-09-19)
+
+From the WinUI port.
+
+- A selected picture has three handles: the **bottom-right corner** keeps its proportions (as before), the **middle of
+  the right edge** changes only the width, the **middle of the bottom edge** only the height (Word's arrangement). The
+  cursor follows the handle (↘ ↔ ↕). Block pictures, pictures in table cells and inline pictures alike.
+- One drag is one undo step. A picture in a cell is resized from the size it is drawn at, so the edge follows the pointer.
+- No public API change.
+
+### Fixed — pictures resized out of their proportions were soft, and fine detail aliased (2026-09-19)
+
+- A picture is drawn stretched into its rect, but its display bitmap was decoded to fit INSIDE that rect with the
+  source's aspect — one axis came out short (a 4:3 photo shown 400×100 was drawn from a 200×124 bitmap). It is now decoded
+  to cover the rect (never above the source).
+- Pictures are drawn with high-quality filtering, so shrinking the short axis of a squashed picture no longer skips rows
+  (fine lines at random spacing, small text garbled).
+
 ### Changed — copying a picture allocates a third as much (2026-09-17)
 
 From the WinUI port, which measured it.

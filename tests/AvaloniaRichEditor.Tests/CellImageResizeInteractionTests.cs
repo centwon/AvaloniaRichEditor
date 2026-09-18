@@ -184,8 +184,13 @@ public class CellImageResizeInteractionTests
         // Stored: kept growing past it, and surfaces once the column is widened.
         Assert.True(img.Width > after.drawnW + 50, $"stored {img.Width} vs drawn {after.drawnW}");
 
+        // Grabbed near the top, not at the centre: the picture now fills the cell and is still selected, so
+        // its right-edge handle (2026-09-19) sits on this boundary at the picture's mid-height — and a
+        // selected picture's handles are tested before column boundaries, so the centre would resize it.
         var colHandle = host.ColumnHandles.First(h => h.colIndex == 0);
-        host.Drag(colHandle.rect.Center, colHandle.rect.Center + new Point(250, 0));
+        var grab = new Point(colHandle.rect.Center.X, colHandle.rect.Top + 3);
+        Assert.DoesNotContain(host.ImageHandles, h => h.rect.Contains(grab));
+        host.Drag(grab, grab + new Point(250, 0));
         host.Render();
 
         double drawnWider = host.ImageHandles.First(h => ReferenceEquals(h.img, img)).drawnW;

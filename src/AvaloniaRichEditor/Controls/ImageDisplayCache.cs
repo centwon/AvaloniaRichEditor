@@ -56,18 +56,23 @@ internal sealed class ImageDisplayCache
     private static bool Smaller(Bitmap bmp, int w, int h)
         => w > bmp.PixelSize.Width + 1 || h > bmp.PixelSize.Height + 1; // +1: request vs aspect-fitted rounding
 
-    // At most maxW × maxH, keeping the aspect ratio and never enlarging. The source size comes from the header;
-    // when the header isn't one ImageInfo reads, the picture is decoded whole, as it always was.
-    private static (Bitmap? bitmap, bool atSourceSize) Decode(byte[] rawBytes, int maxW, int maxH)
+    // The smallest size with the source's aspect that COVERS boxW × boxH, never enlarging. A picture is drawn
+    // stretched into its rect, which need not have the source's proportions (an <img width height>, the edge
+    // handles); fitting INSIDE the box left the long axis short and the picture soft along it (from the WinUI
+    // port, 2026-09-19). One uniform scale also keeps requests totally ordered, so pictures sharing bytes at
+    // different proportions converge on one decode. The source size comes from the header; when the header
+    // isn't one ImageInfo reads, the picture is decoded whole, as it always was.
+    private static (Bitmap? bitmap, bool atSourceSize) Decode(byte[] rawBytes, int boxW, int boxH)
     {
         try
         {
             var (natW, natH) = ImageInfo.GetPixelSize(rawBytes);
             using var ms = new System.IO.MemoryStream(rawBytes);
-            if (natW <= 0 || natH <= 0 || (natW <= maxW && natH <= maxH))
-                return (new Bitmap(ms), true);
-            double s = Math.Min(maxW / natW, maxH / natH);
-            int width = Math.Max(1, (int)Math.Round(natW * s));
+            double s = natW > 0 && natH > 0 ? Math.Max(boxW / natW, boxH / natH) : 1;
+            if (s >= 1) return (new Bitmap(ms), true);
+            // Ceiling: rounding down would land a pixel short of the box. The epsilon keeps an exact fit from
+            // rounding up past it on floating-point noise.
+            int width = Math.Min((int)natW, Math.Max(1, (int)Math.Ceiling(natW * s - 1e-9)));
             return (Bitmap.DecodeToWidth(ms, width, BitmapInterpolationMode.HighQuality), false);
         }
         catch (Exception ex)
