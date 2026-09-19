@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a Find button on the toolbar (2026-09-19)
+
+From the WinUI port. It opens whatever answers Ctrl+F (`RichEditorView`'s find bar, or a host's own find UI via
+`FindRequested`), and shows only while something does — on a bare editor with a toolbar there is nothing to open.
+A viewer's toolbar has it too (find only reads). New icon slot `RichEditorIcon.Find`.
+
 ### Added — the find bar, Ctrl+F / Ctrl+H / F3 (2026-09-19)
 
 From the WinUI port. The search engine was there (`FindNext`, `FindPrev`, `ReplaceNext`, `ReplaceAll`, highlight-all)

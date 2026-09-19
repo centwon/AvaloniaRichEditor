@@ -21,3 +21,4 @@ AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.get -> bool
 AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.set -> void
 AvaloniaRichEditor.Controls.RichEditorView.ShowFindBar(bool withReplace) -> void
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBarProperty -> Avalonia.StyledProperty<bool>!
+AvaloniaRichEditor.Controls.RichEditorIcon.Find = 47 -> AvaloniaRichEditor.Controls.RichEditorIcon

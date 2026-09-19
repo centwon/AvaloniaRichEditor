@@ -96,7 +96,7 @@ public partial class RichEditorToolbar : UserControl
     // decimal separator of the current culture.
     private static string SizeText(double pt)
         => pt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-    private Control? _tableBtn, _imageBtn, _dividerBtn;
+    private Control? _tableBtn, _imageBtn, _dividerBtn, _findBtn;
     // Color-picker faces, synced to the caret's run: either a swatch bar under the built-in glyph,
     // or (with a host icon) a wrapper whose Foreground tints the icon's colour-inheriting layers.
     private Border? _colorSwatch, _highlightSwatch;
@@ -183,11 +183,13 @@ public partial class RichEditorToolbar : UserControl
             {
                 old.StatusChanged -= OnTargetStatusChanged;
                 old.PropertyChanged -= OnTargetPropertyChanged;
+                old.FindUiChanged -= OnTargetFindUiChanged;
             }
             if (change.NewValue is RichEditor rt)
             {
                 rt.StatusChanged += OnTargetStatusChanged;
                 rt.PropertyChanged += OnTargetPropertyChanged;
+                rt.FindUiChanged += OnTargetFindUiChanged;
             }
             Build(); // font list comes from the target, so rebuild
             Sync();
@@ -201,7 +203,8 @@ public partial class RichEditorToolbar : UserControl
         if (e.Property == RichEditor.FontFamilyChoicesProperty) { Build(); Sync(); }
         else if (e.Property == RichEditor.IsReadOnlyProperty) { Build(); Sync(); } // editable vs view toolbar differ structurally
         else if (e.Property == RichEditor.AllowImagesProperty
-              || e.Property == RichEditor.AllowTablesProperty) ApplyFlags();
+              || e.Property == RichEditor.AllowTablesProperty
+              || e.Property == RichEditor.AllowFindReplaceProperty) ApplyFlags();
         else if (e.Property == RichEditor.PageSizeProperty
               || e.Property == RichEditor.PageOrientationProperty
               || e.Property == RichEditor.ShowPageBoundariesProperty) SyncPage();
@@ -275,6 +278,9 @@ public partial class RichEditorToolbar : UserControl
             cb.DropDownClosed += (_, _) => Target?.Focus();
             return cb;
         }
+        Control FindButton() => Btn("🔎", Loc("Find") + " (" + RichEditorShortcuts.Display(ShortcutId.Find) + ")",
+            () => Target?.RaiseFindRequested(false), RichEditorIcon.Find);
+
         Control Div() => new Border
         {
             Width = 1, Height = 22, Margin = new Thickness(6, 4),
@@ -286,7 +292,7 @@ public partial class RichEditorToolbar : UserControl
         _undoBtn = _redoBtn = _boldBtn = _italicBtn = _underlineBtn = _strikeBtn = _bulletBtn = _numberBtn = null;
         _fontCombo = _sizeCombo = _headingCombo = _alignCombo = null;
         _spacingBox = null; _bulletPreview = _numberPreview = null;
-        _tableBtn = _imageBtn = _dividerBtn = null;
+        _tableBtn = _imageBtn = _dividerBtn = _findBtn = null;
         _zoomCombo = _paperCombo = _orientCombo = null; _exportBtn = _importBtn = _printBtn = null;
         _colorSwatch = _highlightSwatch = null; _colorIconHost = _highlightIconHost = null;
 
@@ -297,8 +303,11 @@ public partial class RichEditorToolbar : UserControl
 
         if (ro)
         {
-            // Read-only = view toolbar: page/zoom + Export/Print only (no editing controls; Import hidden).
-            if (ShowPageControls) BuildPageControls(items);
+            // Read-only = view toolbar: find + page/zoom + Export/Print (no editing controls; Import hidden).
+            // Find only reads, so a viewer keeps it.
+            _findBtn = FindButton();
+            Add(_findBtn);
+            if (ShowPageControls) { Add(Div()); BuildPageControls(items); }
             if (ShowFileActions) { if (items.Count > 0) Add(Div()); BuildFileActions(items); }
         }
         else
@@ -428,6 +437,11 @@ public partial class RichEditorToolbar : UserControl
         _imageBtn = Btn("🖼", Loc("InsertImage"), () => { _ = Target?.InsertImageFromFileAsync(); }, RichEditorIcon.InsertImage);
         _dividerBtn = Btn("―", Loc("InsertDivider"), () => Target?.InsertDivider(), RichEditorIcon.InsertDivider);
         Add(_tableBtn); Add(_imageBtn); Add(_dividerBtn);
+
+        // Find: opens whatever answers RichEditor.FindRequested (RichEditorView's bar), the path Ctrl+F takes.
+        Add(Div());
+        _findBtn = FindButton();
+        Add(_findBtn);
         }
 
         // Maximum adds the built-in page/zoom controls and file actions at the end.
@@ -875,7 +889,11 @@ public partial class RichEditorToolbar : UserControl
         if (_tableBtn != null) _tableBtn.IsVisible = Target.AllowTables;
         if (_imageBtn != null) _imageBtn.IsVisible = Target.AllowImages;
         if (_dividerBtn != null) _dividerBtn.IsVisible = Target.AllowTables || Target.AllowImages;
+        // Only while something answers Find: on a bare editor + toolbar nothing does, and the button opened nothing.
+        if (_findBtn != null) _findBtn.IsVisible = Target.AllowFindReplace && Target.HasFindUi;
     }
+
+    private void OnTargetFindUiChanged(object? sender, EventArgs e) => ApplyFlags();
 
     // Reflects the caret's formatting on the toolbar: active B/I/U/S, list, font, alignment, undo/redo.
     private void Sync()
