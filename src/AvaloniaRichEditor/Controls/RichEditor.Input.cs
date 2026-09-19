@@ -901,6 +901,10 @@ public partial class RichEditor
         }
     }
 
+    // A Ctrl+Alt chord whose key symbol is a printable character is AltGr typing, not a shortcut.
+    internal static bool IsAltGrTyping(bool ctrl, bool alt, string? keySymbol)
+        => ctrl && alt && keySymbol is { Length: > 0 } s && !char.IsControl(s[0]);
+
     /// <inheritdoc/>
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -920,6 +924,12 @@ public partial class RichEditor
             or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin
             or Key.CapsLock or Key.NumLock or Key.Scroll)
             return;
+
+        // AltGr arrives as Ctrl+Alt. When the layout makes a character of the chord (German AltGr+2 = ², Polish
+        // AltGr+C = ć), that is typing: leave the key unhandled so TextInput inserts it, rather than running a
+        // Ctrl+Alt shortcut (the heading keys Ctrl+Alt+1..6 took ² and ³). KeySymbol is the layout's own answer.
+        // From the WinUI port (2026-09-19), which has to ask the OS layout for it.
+        if (IsAltGrTyping(ctrl, alt, e.KeySymbol)) return;
 
         // Escape abandons an armed/in-progress "draw table" mode.
         if (e.Key == Key.Escape && _pendingTableDraw != null) { CancelTableDraw(); e.Handled = true; return; }
