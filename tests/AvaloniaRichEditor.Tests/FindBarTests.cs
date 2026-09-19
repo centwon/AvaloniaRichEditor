@@ -14,9 +14,18 @@ namespace AvaloniaRichEditor.Tests;
 
 // The find UI (from the WinUI port, 2026-09-19): the library had the search engine but no way to reach it — no
 // Ctrl+F, no F3, no bar. Driven through the window.
-public class FindBarTests
+//
+// Every host is disposed: a RichEditorView carries a toolbar, and a toolbar left attached stays subscribed to the
+// static LanguageChanged — the (non-Avalonia, other-thread) LocalizationTests then rebuilt it off its thread and five
+// of them failed on CI (2026-09-19; the same accident ToolbarLanguageThreadTests records).
+public class FindBarTests : System.IDisposable
 {
     private const BindingFlags NP = BindingFlags.NonPublic | BindingFlags.Instance;
+    private readonly List<InteractionHost> _hosts = new();
+
+    public void Dispose() { foreach (var h in _hosts) h.Dispose(); }
+
+    private InteractionHost Track(InteractionHost h) { _hosts.Add(h); return h; }
 
     private static FlowDocument Doc() => new()
     {
@@ -37,7 +46,7 @@ public class FindBarTests
     [AvaloniaFact]
     public void CtrlF_AndCtrlH_AskForTheFindUi()
     {
-        var host = InteractionHost.Create(new RichEditor { Document = Doc() });
+        var host = Track(InteractionHost.Create(new RichEditor { Document = Doc() }));
         var asked = new List<bool>();
         host.Editor.FindRequested += (_, withReplace) => asked.Add(withReplace);
 
@@ -51,7 +60,7 @@ public class FindBarTests
     [AvaloniaFact]
     public void AViewer_GetsFind_ButNotReplace()
     {
-        var host = InteractionHost.Create(new RichEditor { Document = Doc(), IsReadOnly = true });
+        var host = Track(InteractionHost.Create(new RichEditor { Document = Doc(), IsReadOnly = true }));
         var asked = new List<bool>();
         host.Editor.FindRequested += (_, withReplace) => asked.Add(withReplace);
 
@@ -64,7 +73,7 @@ public class FindBarTests
     [AvaloniaFact]
     public void F3_RepeatsTheLastSearch_ShiftF3Backwards()
     {
-        var host = InteractionHost.Create(new RichEditor { Document = Doc() });
+        var host = Track(InteractionHost.Create(new RichEditor { Document = Doc() }));
         Assert.True(host.Editor.FindNext("apple", matchCase: false));
         int first = SelectionStart(host.Editor);
         Assert.Equal("apple", host.Editor.LastFindQuery);
@@ -90,7 +99,7 @@ public class FindBarTests
     public void TheViewsBar_Opens_Finds_AndCloses()
     {
         var view = new RichEditorView(); view.Editor.Document = Doc();
-        var host = InteractionHost.CreateWithView(view);
+        var host = Track(InteractionHost.CreateWithView(view));
 
         host.Key(Key.F, RawInputModifiers.Control);
         Assert.True(BarHost(view).IsVisible, "Ctrl+F did not open the find bar");
@@ -109,7 +118,7 @@ public class FindBarTests
     public void ReopeningTheBar_PrefillsTheLastQuery()
     {
         var view = new RichEditorView(); view.Editor.Document = Doc();
-        var host = InteractionHost.CreateWithView(view);
+        var host = Track(InteractionHost.CreateWithView(view));
         view.Editor.FindNext("banana", matchCase: false);
 
         host.Key(Key.F, RawInputModifiers.Control);
@@ -121,7 +130,7 @@ public class FindBarTests
     public void WithTheBuiltInBarOff_TheRequestStillReachesTheHost()
     {
         var view = new RichEditorView { ShowBuiltInFindBar = false }; view.Editor.Document = Doc();
-        var host = InteractionHost.CreateWithView(view);
+        var host = Track(InteractionHost.CreateWithView(view));
         bool asked = false;
         view.Editor.FindRequested += (_, _) => asked = true;
 
@@ -137,7 +146,7 @@ public class FindBarTests
     public void F3_WorksFromTheQueryBox_ShiftF3Backwards()
     {
         var view = new RichEditorView(); view.Editor.Document = Doc();
-        var host = InteractionHost.CreateWithView(view);
+        var host = Track(InteractionHost.CreateWithView(view));
         host.Key(Key.F, RawInputModifiers.Control);
         var box = FindBox(view);
         box.Text = "apple";
