@@ -93,6 +93,10 @@ public partial class RichEditor
     private Point ClampToEditorBounds(Point p)
         => new(Math.Clamp(p.X, 0, Math.Max(0, Bounds.Width)), Math.Clamp(p.Y, 0, Math.Max(0, Bounds.Height)));
 
+    // Also run when the document is replaced (a file opened, an undo/redo swap — the pick belonged to the
+    // document being left, and the first click in the new one inserted a table into a file just opened) and
+    // when the pointer capture is lost mid-drag (a lost capture is not a release). From the WinUI port's audit
+    // (2026-09-19); measured here too.
     private void CancelTableDraw()
     {
         if (_pendingTableDraw == null) return;
@@ -105,6 +109,30 @@ public partial class RichEditor
 
     // Inserts a block table sized to a drawn rectangle: equal columns across totalWidth, equal minimum
     // row heights across totalHeight. Mirrors InsertTable but with explicit dimensions.
+    // The widest table the container at `startView` can hold: the content box of the cell there, at any depth,
+    // else the whole editor (the drag is already clamped to it). Only the editor clamp existed, so a table drawn
+    // in a 200px cell came out as wide as the drag — 500px, over its neighbours (measured 2026-09-19). The column
+    // drag had the same defect (EnclosingCellInnerWidth).
+    private double TableDrawRoom(Point startView)
+    {
+        if (GetPositionFromPoint(MapViewToDoc(startView)).Paragraph is { } p && FindCell(p) is { } loc)
+        {
+            var (cs, _) = loc.tb.SpanOf(loc.r, loc.c);
+            double w = 0;
+            for (int k = loc.c; k < loc.c + cs && k < loc.tb.ColumnWidths.Count; k++) w += loc.tb.ColumnWidths[k];
+            return Math.Max(20, w - 10);
+        }
+        return double.PositiveInfinity;
+    }
+
+    // The rectangle a drag has drawn, no wider than the table can be — what the preview shows is what inserts.
+    private Rect DrawnTableRect(Point start, Point end)
+    {
+        double width = Math.Min(Math.Abs(end.X - start.X), TableDrawRoom(start));
+        double left = end.X < start.X ? start.X - width : start.X;
+        return new Rect(left, Math.Min(start.Y, end.Y), width, Math.Abs(end.Y - start.Y));
+    }
+
     private void InsertTableDrawn(int rows, int cols, double totalWidth, double totalHeight)
     {
         if (Document == null || IsReadOnly || !AllowTables) return;
@@ -730,6 +758,7 @@ public partial class RichEditor
         _isResizingRow = false; _resizingRowTable = null;
         _isSelecting = false;
         CancelObjectDrag(); // cancelled, not dropped: a lost capture is not a release
+        if (_tableDrawStart != null) CancelTableDraw(); // likewise: abandoned, not inserted
     }
 
     /// <inheritdoc/>
@@ -741,8 +770,7 @@ public partial class RichEditor
         if (_pendingTableDraw is { } pd && _tableDrawStart is { } startView)
         {
             var endView = ClampToEditorBounds(e.GetPosition(this));
-            e.Pointer.Capture(null);
-            var rectView = new Rect(startView, endView);
+            var rectView = DrawnTableRect(startView, endView);
             // Place the caret where the drag began so the table inserts there.
             _caretPosition = GetPositionFromPoint(MapViewToDoc(startView));
             CollapseSelectionToCaret();
@@ -754,6 +782,11 @@ public partial class RichEditor
             _tableDrawStart = null;
             _tableDrawCurrent = null;
             Cursor = Avalonia.Input.Cursor.Default;
+            // Released last, like every other release path. Releasing raises OnPointerCaptureLost, which now
+            // abandons a draw in progress; here that was harmless even released first (pd/startView are copied
+            // into locals above — measured: releasing first still inserts), but the port re-read its fields and
+            // shipped "no draw ever inserts" for one commit (found live, 2026-09-19). Keep the order anyway.
+            e.Pointer.Capture(null);
             ResetCaretBlink();
             InvalidateVisual();
             e.Handled = true;
@@ -862,6 +895,9 @@ public partial class RichEditor
             case ShortcutId.LineSpacingSingle: SetLineSpacing(1.0); break;
             case ShortcutId.LineSpacingOneHalf: SetLineSpacing(1.5); break;
             case ShortcutId.LineSpacingDouble: SetLineSpacing(2.0); break;
+            // The dialog opens on the link the caret is in (its address prefilled), else on "https://"; OK applies to
+            // the selection or the caret's word, as the menu's Insert Link does.
+            case ShortcutId.InsertLink: _ = EditHyperlinkAsync(CaretLinkUri(), null); break;
         }
     }
 

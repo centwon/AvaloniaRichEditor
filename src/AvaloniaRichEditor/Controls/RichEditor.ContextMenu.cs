@@ -508,7 +508,8 @@ public partial class RichEditor
         else
         {
             // Enabled without a selection too: the link goes on the caret's word (SetHyperlink).
-            items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, true, RichEditorIcon.InsertLink));
+            items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, true, RichEditorIcon.InsertLink,
+                RichEditorShortcuts.Gesture(ShortcutId.InsertLink)));
         }
         items.Add(new Separator());
         items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)));

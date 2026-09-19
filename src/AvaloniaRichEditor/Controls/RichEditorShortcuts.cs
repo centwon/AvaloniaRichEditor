@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Avalonia.Input;
 
 namespace AvaloniaRichEditor.Controls;
@@ -14,6 +14,7 @@ internal enum ShortcutId
     Heading1, Heading2, Heading3, Heading4, Heading5, Heading6, BodyText,
     BulletList, NumberedList, LineSpacingSingle, LineSpacingOneHalf, LineSpacingDouble,
     SelectCell,
+    InsertLink,
 }
 
 internal readonly record struct ShortcutSpec(ShortcutId Id, bool Ctrl, bool Shift, bool Alt, Key Key, string Display);
@@ -57,6 +58,8 @@ internal static class RichEditorShortcuts
         new(ShortcutId.LineSpacingSingle,  true, false, false, Key.D1, "Ctrl+1"),
         new(ShortcutId.LineSpacingOneHalf, true, false, false, Key.D5, "Ctrl+5"),
         new(ShortcutId.LineSpacingDouble,  true, false, false, Key.D2, "Ctrl+2"),
+        // Word's Insert Hyperlink (from the WinUI port, where it has been bound since the hyperlink audit).
+        new(ShortcutId.InsertLink,         true, false, false, Key.K, "Ctrl+K"),
         // Not Ctrl-modified, so TryMatch (reached only with Ctrl) never runs it: OnKeyDown routes F5 through
         // TryCellBlockKey. Listed for the menu hint (HWP's cell block key; the WinUI port lists it the same).
         new(ShortcutId.SelectCell,         false, false, false, Key.F5, "F5"),

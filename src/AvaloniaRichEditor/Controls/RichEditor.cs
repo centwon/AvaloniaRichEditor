@@ -401,6 +401,7 @@ public partial class RichEditor : Control
         _caretBlockAfter = false;
         _selectedInline = null;
         _cellBlockMark = null; // it holds a cell of the document being replaced
+        CancelTableDraw();     // an armed "draw table" pick: its first click would insert into the new document
         _pendingCaretStyles = null;
         // An armed format painter belongs to the document it was armed in: carried across a swap it would
         // paint the NEW document's next selection with the OLD one's format. (Backported 2026-09-12 from

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -528,6 +528,11 @@ public partial class RichEditor
         // is why Insert Link was offered only with a selection (converged with the WinUI port, 2026-09-13).
         ApplyStyleToSelection(r => r.NavigateUri = url);
     }
+
+    // The address of the link the caret is in — the character before it (the one the caret follows), else the
+    // first. Null when the caret is not in a link. Same rule as the WinUI port's CurrentLinkUri.
+    internal string? CaretLinkUri()
+        => _caretPosition.Paragraph is { } p ? RunAtOffset(p, _caretPosition.Offset > 0 ? _caretPosition.Offset - 1 : 0)?.NavigateUri : null;
 
     private async Task EditHyperlinkAsync(string? current, Run? targetRun)
     {

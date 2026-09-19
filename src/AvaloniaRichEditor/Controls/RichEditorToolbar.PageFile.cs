@@ -326,6 +326,14 @@ public partial class RichEditorToolbar
         using var stream = await files[0].OpenReadAsync();
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms);
+        await ImportStreamAsync(ms);
+    }
+
+    /// <summary>Loads an imported file into the target, whatever format it is — Import minus its picker, so a
+    /// test can hand it the bytes of any file.</summary>
+    internal async Task ImportStreamAsync(MemoryStream ms)
+    {
+        if (Target == null) return;
         ms.Position = 0;
         // Sniff the content: ZIP magic ("PK") = .flow package, "{\rtf" = RTF, "<" = HTML, else JSON.
         // Faults land in ImportAsync's guard; the RTF branch reports through TryParse before that.
@@ -340,12 +348,36 @@ public partial class RichEditorToolbar
             return;
         }
 
+        // A byte-order mark goes before the sniff. Windows tools write one (Notepad before 1903, Visual Studio,
+        // PowerShell 5's -Encoding utf8, "Unicode" = UTF-16), and it is neither whitespace to TrimStart nor
+        // skipped by LooksLikeRtf: every such file went to the JSON reader and failed (from the WinUI port,
+        // 2026-09-19; measured here too — HTML, JSON and RTF with a UTF-8 mark, HTML and JSON in UTF-16). The
+        // failure lands in the diagnostics channel only, so on screen the import did nothing.
+        int bom = 0;
+        System.Text.Encoding encoding = new System.Text.UTF8Encoding(false);
+        if (len >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF) bom = 3;
+        else if (len >= 2 && buf[0] == 0xFF && buf[1] == 0xFE) { bom = 2; encoding = System.Text.Encoding.Unicode; }
+        else if (len >= 2 && buf[0] == 0xFE && buf[1] == 0xFF) { bom = 2; encoding = System.Text.Encoding.BigEndianUnicode; }
+        if (encoding is not System.Text.UTF8Encoding)
+        {
+            // UTF-16: decode first (RTF is 7-bit ASCII, so its text IS its Latin1 reading), then sniff the text.
+            string text = encoding.GetString(buf, bom, len - bom);
+            if (RtfDocumentFormatter.LooksLikeRtf(text))
+            {
+                if (RtfDocumentFormatter.TryParse(text, out var d16, out var e16)) Target.LoadDocument(d16);
+                else System.Diagnostics.Debug.WriteLine($"Import failed: {e16}");
+            }
+            else if (text.TrimStart().StartsWith("<", StringComparison.Ordinal)) Target.LoadHtml(text);
+            else await Target.LoadJsonAsync(text);
+            return;
+        }
+
         // RTF is parsed here rather than through LoadRtf so a damaged file reports on the same channel
         // as every other import fault: LoadRtf deliberately keeps the open document and stays silent,
         // which on a file-open reads as "nothing happened".
-        if (LooksLikeRtf(buf, len))
+        if (LooksLikeRtf(buf, bom, len))
         {
-            string latin1 = System.Text.Encoding.Latin1.GetString(buf, 0, len);
+            string latin1 = System.Text.Encoding.Latin1.GetString(buf, bom, len - bom);
             if (RtfDocumentFormatter.TryParse(latin1, out var rtfDoc, out var rtfError))
                 Target.LoadDocument(rtfDoc);
             else
@@ -353,7 +385,7 @@ public partial class RichEditorToolbar
             return;
         }
 
-        string utf8 = System.Text.Encoding.UTF8.GetString(buf, 0, len);
+        string utf8 = System.Text.Encoding.UTF8.GetString(buf, bom, len - bom);
         if (utf8.TrimStart().StartsWith("<", StringComparison.Ordinal)) Target.LoadHtml(utf8);
         else await Target.LoadJsonAsync(utf8);
     }
@@ -363,9 +395,9 @@ public partial class RichEditorToolbar
     // Latin1, and the skipped set is exactly the one string.TrimStart() removes from a Latin1-decoded
     // string — HT/LF/VT/FF/CR, space, NEL (0x85) and NBSP (0xA0) are the only chars below U+0100 that
     // char.IsWhiteSpace accepts. So this answers what LooksLikeRtf(latin1) answered, without the string.
-    private static bool LooksLikeRtf(byte[] buf, int len)
+    private static bool LooksLikeRtf(byte[] buf, int start, int len)
     {
-        int i = 0;
+        int i = start;
         while (i < len && buf[i] is 0x09 or 0x0A or 0x0B or 0x0C or 0x0D or 0x20 or 0x85 or 0xA0) i++;
         return len - i >= 5
             && buf[i] == (byte)'{' && buf[i + 1] == (byte)'\\'
