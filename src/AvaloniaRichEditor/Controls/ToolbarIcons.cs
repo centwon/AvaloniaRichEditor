@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
@@ -111,6 +111,10 @@ internal static class ToolbarIcons
             ("M5 8 H19 V16 H17", false),
             ("M7 16 H5 V8", false),
             ("M7 13 H17 V20 H7 Z", false)),
+        // Find: a magnifier (the WinUI port's, drawn in the same hand).
+        RichEditorIcon.Find => Build(20,
+            ("M10.5 4 a6.5 6.5 0 1 0 0 13 a6.5 6.5 0 1 0 0 -13 Z", false),
+            ("M15.5 15.5 L20.5 20.5", false)),
 
         _ => null,
     };

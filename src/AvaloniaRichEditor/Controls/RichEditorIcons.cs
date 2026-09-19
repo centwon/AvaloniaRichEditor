@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Avalonia.Controls;
 
 namespace AvaloniaRichEditor.Controls;
@@ -113,6 +113,8 @@ public enum RichEditorIcon
     FontSizeIncrease,
     /// <summary>Decrease font size (글자 작게).</summary>
     FontSizeDecrease,
+    /// <summary>Find / replace (the toolbar's find button, from the WinUI port).</summary>
+    Find,
 }
 
 /// <summary>
