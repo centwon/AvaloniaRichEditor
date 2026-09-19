@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using AvaloniaRichEditor.Documents;
 
@@ -58,11 +58,35 @@ public partial class RichEditor
         return (current, total);
     }
 
+    // ---- the find UI's entry points (from the WinUI port, 2026-09-19) -----------------------------------------
+    // The library had the search engine but no way in: no Ctrl+F, no F3, no bar. The editor raises FindRequested
+    // for Ctrl+F / Ctrl+H (and a host's own button); RichEditorView answers it with its built-in bar, and a host
+    // with its own find UI subscribes instead (setting RichEditorView.ShowBuiltInFindBar to false).
+
+    /// <summary>Raised when the user asks for the find UI: Ctrl+F (argument <see langword="false"/>) or Ctrl+H
+    /// (<see langword="true"/> — with the replace row). <see cref="RichEditorView"/> opens its built-in bar.</summary>
+    public event EventHandler<bool>? FindRequested;
+
+    internal void RaiseFindRequested(bool withReplace) => FindRequested?.Invoke(this, withReplace);
+
+    /// <summary>The query of the last <see cref="FindNext"/> / <see cref="FindPrev"/>, which F3 repeats and a find
+    /// bar opens pre-filled with. Null before the first search.</summary>
+    public string? LastFindQuery { get; private set; }
+
+    /// <summary>Whether the last search matched case.</summary>
+    public bool LastFindMatchCase { get; private set; }
+
+    /// <summary>Repeats the last search (F3; backwards for Shift+F3). False when there was none or it found nothing.</summary>
+    public bool FindAgain(bool backwards)
+        => !string.IsNullOrEmpty(LastFindQuery)
+           && (backwards ? FindPrev(LastFindQuery!, LastFindMatchCase) : FindNext(LastFindQuery!, LastFindMatchCase));
+
     /// <summary>Selects the next occurrence of <paramref name="query"/> after the caret, wrapping around.
     /// Returns <see langword="true"/> if a match was found.</summary>
     public bool FindNext(string query, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
+        LastFindQuery = query; LastFindMatchCase = matchCase;
         SetFindHighlight(query, matchCase);
         var paras = GetAllParagraphsInOrder();
         int pi = _selectionEnd.Paragraph != null ? paras.IndexOf(_selectionEnd.Paragraph) : -1;
@@ -74,6 +98,7 @@ public partial class RichEditor
     public bool FindPrev(string query, bool matchCase)
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
+        LastFindQuery = query; LastFindMatchCase = matchCase;
         SetFindHighlight(query, matchCase);
         var paras = GetAllParagraphsInOrder();
         int pi = _selectionStart.Paragraph != null ? paras.IndexOf(_selectionStart.Paragraph) : -1;

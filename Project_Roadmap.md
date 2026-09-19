@@ -911,6 +911,21 @@ PTS(비관리형 C++)를 못 쓰므로 렌더·레이아웃·히트테스트·�
 >   - 참고(포트와 차이, 미변경): 포트는 놓기에서 캐럿을 옮기지 않고 캐럿 위치에 넣는다 — 여기는 드래그 시작점으로 캐럿을 옮긴다.
 >   - 실기 확인 완료(2026-09-19, 사용자): BOM 파일 3종 가져오기, 표 그리기(보통·셀 폭 제한·모드 해제), Ctrl+K.
 
+>
+> - **라운드31 · AltGr · 찾기 UI(2026-09-19, 포트에서 이식)**
+>   - **AltGr**: AltGr는 Ctrl+Alt로 들어와, AltGr 문자가 있는 자판에서 제목 단축키 Ctrl+Alt+1~6이 독일어 AltGr+2(²)·AltGr+3(³)을
+>     가로챘다. `KeyEventArgs.KeySymbol`이 인쇄 가능한 문자면 처리하지 않고 TextInput으로(`IsAltGrTyping`). 포트는 OS 자판에 물어야
+>     해서(`ToUnicodeEx`) 배선을 실입력으로 검증 못 했지만, 여기는 헤드리스 창에 `KeySymbol`을 실어 **배선까지** 검증(대조군: 기호 없음 =
+>     제목 단축키). 반증: 판정 제거 → 빨강. `InteractionHost.Key`에 keySymbol 오버로드.
+>   - **찾기 UI**: 검색 엔진(`FindNext`/`FindPrev`/`ReplaceNext`/`ReplaceAll`, 강조, n/m 위치)은 있었는데 **닿을 길이 없었다** — Ctrl+F도,
+>     F3도, 막대도 없었다(표면 기계 diff: 포트에만 `FindRequested`·`LastFindQuery`·`FindAgain`·`ShowFindBar` 등). 포트 설계 그대로:
+>     편집기가 Ctrl+F/Ctrl+H에 `FindRequested(withReplace)`를 내고(찾기는 뷰어에서도, 바꾸기는 편집 가능할 때만), F3/Shift+F3는 마지막
+>     검색 반복, `RichEditorView`가 도구 모음 아래 막대로 응답(Enter 다음 · Shift+Enter 이전 · Esc 닫기 · ▸ 바꾸기 줄 · Aa · n/m, 닫으면
+>     강조 해제). `ShowBuiltInFindBar=false`면 호스트 자체 UI. 공개 API 추가 9(minor). 도구 모음의 찾기 버튼은 여기 아이콘 세트에
+>     찾기 아이콘이 없어 넣지 않았다(포트엔 있음 — 남은 차이).
+>   - 테스트: `AltGrKeyTests` 8, `FindBarTests` 6(실입력). 반증: 뷰 구독 제거(2) · F3 제거(1) · 뷰어 찾기 허용 제거(5) 전부 빨강.
+>     `InteractionHost.CreateWithView` 추가. 전체 1107 + 렌더 41 그린.
+
 ## 🔵 백로그 (착수 미정)
 
 - **표 행/열 조작의 에디터 레벨 공개 API** — `TableInsertRow`/`TableDeleteColumn` 등이 private이라 호스트가

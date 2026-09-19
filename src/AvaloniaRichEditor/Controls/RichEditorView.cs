@@ -17,7 +17,7 @@ namespace AvaloniaRichEditor.Controls;
 /// documents/commands/flags and <see cref="Toolbar"/> for toolbar tweaks; hosts that want their
 /// own layout or scrolling should compose the lower layers (①/②) directly instead.
 /// </summary>
-public class RichEditorView : UserControl
+public partial class RichEditorView : UserControl
 {
     /// <summary>The editor. Load/save documents and set feature flags here.</summary>
     public RichEditor Editor { get; } = new();
@@ -187,12 +187,15 @@ public class RichEditorView : UserControl
         var dock = new DockPanel();
         DockPanel.SetDock(Toolbar, Dock.Top);
         dock.Children.Add(Toolbar);
+        DockPanel.SetDock(_findBarHost, Dock.Top); // under the toolbar, collapsed until Ctrl+F / Ctrl+H
+        dock.Children.Add(_findBarHost);
         DockPanel.SetDock(_statusBar, Dock.Bottom);
         dock.Children.Add(_statusBar);
         dock.Children.Add(_scroller); // fills the remaining space between toolbar and status bar
         Content = dock;
 
         Toolbar.ShowFileActions = ShowFileActions;
+        Editor.FindRequested += (_, withReplace) => ShowFindBar(withReplace); // Ctrl+F / Ctrl+H
 
         // Keep the status bar live. Counts follow any caret move; the page count and image-limit
         // warning ride the content-only signal (they need O(blocks) walks).

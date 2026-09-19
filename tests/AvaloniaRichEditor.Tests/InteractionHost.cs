@@ -52,6 +52,10 @@ internal sealed class InteractionHost : IDisposable
         return (Show(panel, editor, width, height), toolbar);
     }
 
+    // The whole bundled view (toolbar, find bar, scroller, status bar) around its editor.
+    public static InteractionHost CreateWithView(RichEditorView view, double width = 1200, double height = 700)
+        => Show(view, view.Editor, width, height);
+
     private static InteractionHost Show(Control content, RichEditor editor, double width, double height)
     {
         var window = new Window { Width = width, Height = height, Content = content };

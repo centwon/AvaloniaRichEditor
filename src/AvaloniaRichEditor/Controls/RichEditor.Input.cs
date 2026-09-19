@@ -867,9 +867,12 @@ public partial class RichEditor
     // here; everything routed through this method is editing and is gated by IsReadOnly.
     private void RunShortcut(ShortcutId id)
     {
+        // Find reads, so it works in a viewer too; Find + Replace edits.
+        if (id == ShortcutId.Find) { if (AllowFindReplace) RaiseFindRequested(false); return; }
         if (IsReadOnly) return;
         switch (id)
         {
+            case ShortcutId.FindReplace: if (AllowFindReplace) RaiseFindRequested(true); break;
             case ShortcutId.Redo: DoRedo(); break;
             case ShortcutId.Bold: ToggleBold(); break;
             case ShortcutId.Italic: ToggleItalic(); break;
@@ -943,7 +946,8 @@ public partial class RichEditor
             if (e.Key == Key.Tab) return;
             // Allow caret movement and copy/select-all; block everything that edits.
             bool nav = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown;
-            bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A);
+            bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A || e.Key == Key.F); // + Find: it only reads
+            if (e.Key == Key.F3) { if (AllowFindReplace && FindAgain(shift)) e.Handled = true; return; }
             bool cellBlock = e.Key == Key.F5; // selects a cell, which Ctrl+C then copies as a 1×1 table
             if (!nav && !copyOrAll && !cellBlock) { e.Handled = true; return; }
         }
@@ -1091,6 +1095,9 @@ public partial class RichEditor
         // context menu and toolbar hints. Copy/Cut/Paste/SelectAll/Undo are handled above (they need
         // object-selection / plain-paste nuances); this covers formatting + Redo(Ctrl+Shift+Z/Ctrl+Y).
         // Ctrl + arrows/Home/End/Back/Delete (word/doc nav) aren't in the table and fall through below.
+        // F3 / Shift+F3: the last search again, forwards / backwards (the find bar need not be open).
+        if (e.Key == Key.F3 && !ctrl && !alt) { if (AllowFindReplace && FindAgain(shift)) e.Handled = true; return; }
+
         if (ctrl && RichEditorShortcuts.TryMatch(ctrl, shift, alt, e.Key, out var sid))
         {
             RunShortcut(sid);
