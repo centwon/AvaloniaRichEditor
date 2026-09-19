@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Ctrl+K opens the link dialog (2026-09-19)
+
+From the WinUI port. On a link, the dialog opens with its address; elsewhere it inserts one on the selection or the
+caret's word, as the context menu's Insert Link does. The menu item shows the shortcut.
+
+### Fixed — Import, and "draw table" mode (2026-09-19)
+
+From the WinUI port's audit, measured here first.
+
+- **Files with a byte-order mark did not import.** Notepad (before Windows 10 1903), Visual Studio and PowerShell 5 write
+  one; the format check did not skip it, so HTML, JSON and RTF with a UTF-8 mark and HTML and JSON in UTF-16 all went to
+  the JSON reader and failed, with nothing on screen. The mark now sets the encoding.
+- **"Draw table" mode** stayed armed across opening a document or an undo (the next click inserted a table into the
+  document just opened) and across a lost pointer capture. It is now cancelled. A table drawn inside a table cell was as
+  wide as the drag — wider than the cell, drawn over its neighbours; it is now limited to the cell, and the preview shows
+  the limited size.
+- No public API change.
+
 ### Added — handles to stretch a picture's width or height alone (2026-09-19)
 
 From the WinUI port.

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 using System.Text;
 using Avalonia.Headless.XUnit;
@@ -67,7 +67,7 @@ public class ImportSniffAndHexTests
         var buf = (enc ?? Encoding.Latin1).GetBytes(content);
         var m = typeof(RichEditorToolbar).GetMethod("LooksLikeRtf",
             BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (bool)m.Invoke(null, new object[] { buf, buf.Length })!;
+        return (bool)m.Invoke(null, new object[] { buf, 0, buf.Length })!;
     }
 
     private static void AssertAgrees(string content, Encoding? enc = null)
@@ -103,8 +103,10 @@ public class ImportSniffAndHexTests
         Assert.False(SniffBytes("<p>한글</p>", Encoding.UTF8));
     }
 
-    // A BOM is not whitespace, so it does not open an RTF file — the same answer the string version
-    // gives, and the reason a BOM'd file goes down the UTF-8 branch where the BOM belongs.
+    // A BOM is not whitespace, so the sniff itself does not skip it — the same answer the string version gives.
+    // The importer skips a mark BEFORE sniffing (ImportStreamAsync). This comment used to say a BOM'd file "goes
+    // down the UTF-8 branch where the BOM belongs"; that branch did not handle it either, and every such file
+    // failed to import (2026-09-19, PortAuditBackportTests).
     [Fact]
     public void ByteSniff_BomIsNotSkipped()
     {

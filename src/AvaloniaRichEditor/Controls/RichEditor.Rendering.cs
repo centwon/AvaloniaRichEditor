@@ -261,7 +261,7 @@ public partial class RichEditor
         // "Draw table" rubber-band: a dashed rectangle following the cursor (view space, drawn over all
         // content). Only present while a drag is in progress in draw mode.
         if (_tableDrawStart is { } ds && _tableDrawCurrent is { } dc)
-            context.DrawRectangle(AccentFill50, AccentPen2, new Rect(ds, dc));
+            context.DrawRectangle(AccentFill50, AccentPen2, DrawnTableRect(ds, dc));
         }
         finally { _trustLayoutCache = false; } // never leak the trusted state past this render pass
     }
