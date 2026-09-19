@@ -86,7 +86,9 @@ public partial class RichEditorView
         _findBox = new TextBox { MinWidth = 200, PlaceholderText = L("Find"), FontSize = 12 };
         _findBox.KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Enter) { DoFind(backwards: e.KeyModifiers.HasFlag(KeyModifiers.Shift)); e.Handled = true; }
+            // F3 too: after Enter the focus stays in this box, so F3 never reached the editor's own handler and did
+            // nothing (live check, 2026-09-19).
+            if (e.Key is Key.Enter or Key.F3) { DoFind(backwards: e.KeyModifiers.HasFlag(KeyModifiers.Shift)); e.Handled = true; }
             else if (e.Key == Key.Escape) { HideFindBar(); e.Handled = true; }
         };
         // Highlight-all as the user types (browser find); the counter follows.
@@ -139,6 +141,7 @@ public partial class RichEditorView
         _replaceBox.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter) { DoReplace(); e.Handled = true; }
+            else if (e.Key == Key.F3) { DoFind(backwards: e.KeyModifiers.HasFlag(KeyModifiers.Shift)); e.Handled = true; }
             else if (e.Key == Key.Escape) { HideFindBar(); e.Handled = true; }
         };
 

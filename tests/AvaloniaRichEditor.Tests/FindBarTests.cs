@@ -130,4 +130,27 @@ public class FindBarTests
         Assert.True(asked);
         Assert.False(BarHost(view).IsVisible);
     }
+
+    // F3 from where the user actually is after searching: the query box keeps the focus after Enter, so the key never
+    // reached the editor's F3 and did nothing (live check, 2026-09-19 — the test above only pressed F3 in the editor).
+    [AvaloniaFact]
+    public void F3_WorksFromTheQueryBox_ShiftF3Backwards()
+    {
+        var view = new RichEditorView(); view.Editor.Document = Doc();
+        var host = InteractionHost.CreateWithView(view);
+        host.Key(Key.F, RawInputModifiers.Control);
+        var box = FindBox(view);
+        box.Text = "apple";
+        box.Focus(); host.Pump();
+        host.Key(Key.Enter);
+        int first = SelectionStart(view.Editor);
+
+        host.Key(Key.F3);
+        Assert.True(box.IsFocused); // still typing in the box
+        int second = SelectionStart(view.Editor);
+        Assert.True(second > first, $"F3 from the query box did not move on ({first} -> {second})");
+
+        host.Key(Key.F3, RawInputModifiers.Shift);
+        Assert.Equal(first, SelectionStart(view.Editor));
+    }
 }
