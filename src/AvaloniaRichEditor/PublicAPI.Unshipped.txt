@@ -12,3 +12,12 @@ AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.set -> void
 AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.get -> bool
 AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.set -> void
 override AvaloniaRichEditor.Controls.RichEditor.OnPointerCaptureLost(Avalonia.Input.PointerCaptureLostEventArgs! e) -> void
+AvaloniaRichEditor.Controls.RichEditor.FindAgain(bool backwards) -> bool
+AvaloniaRichEditor.Controls.RichEditor.FindRequested -> System.EventHandler<bool>?
+AvaloniaRichEditor.Controls.RichEditor.LastFindMatchCase.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.LastFindQuery.get -> string?
+AvaloniaRichEditor.Controls.RichEditorView.HideFindBar() -> void
+AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.get -> bool
+AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.set -> void
+AvaloniaRichEditor.Controls.RichEditorView.ShowFindBar(bool withReplace) -> void
+static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBarProperty -> Avalonia.StyledProperty<bool>!

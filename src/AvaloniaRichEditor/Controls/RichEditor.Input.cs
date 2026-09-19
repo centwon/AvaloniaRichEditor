@@ -867,9 +867,12 @@ public partial class RichEditor
     // here; everything routed through this method is editing and is gated by IsReadOnly.
     private void RunShortcut(ShortcutId id)
     {
+        // Find reads, so it works in a viewer too; Find + Replace edits.
+        if (id == ShortcutId.Find) { if (AllowFindReplace) RaiseFindRequested(false); return; }
         if (IsReadOnly) return;
         switch (id)
         {
+            case ShortcutId.FindReplace: if (AllowFindReplace) RaiseFindRequested(true); break;
             case ShortcutId.Redo: DoRedo(); break;
             case ShortcutId.Bold: ToggleBold(); break;
             case ShortcutId.Italic: ToggleItalic(); break;
@@ -901,6 +904,10 @@ public partial class RichEditor
         }
     }
 
+    // A Ctrl+Alt chord whose key symbol is a printable character is AltGr typing, not a shortcut.
+    internal static bool IsAltGrTyping(bool ctrl, bool alt, string? keySymbol)
+        => ctrl && alt && keySymbol is { Length: > 0 } s && !char.IsControl(s[0]);
+
     /// <inheritdoc/>
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -921,6 +928,12 @@ public partial class RichEditor
             or Key.CapsLock or Key.NumLock or Key.Scroll)
             return;
 
+        // AltGr arrives as Ctrl+Alt. When the layout makes a character of the chord (German AltGr+2 = ², Polish
+        // AltGr+C = ć), that is typing: leave the key unhandled so TextInput inserts it, rather than running a
+        // Ctrl+Alt shortcut (the heading keys Ctrl+Alt+1..6 took ² and ³). KeySymbol is the layout's own answer.
+        // From the WinUI port (2026-09-19), which has to ask the OS layout for it.
+        if (IsAltGrTyping(ctrl, alt, e.KeySymbol)) return;
+
         // Escape abandons an armed/in-progress "draw table" mode.
         if (e.Key == Key.Escape && _pendingTableDraw != null) { CancelTableDraw(); e.Handled = true; return; }
 
@@ -933,7 +946,8 @@ public partial class RichEditor
             if (e.Key == Key.Tab) return;
             // Allow caret movement and copy/select-all; block everything that edits.
             bool nav = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown;
-            bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A);
+            bool copyOrAll = ctrl && (e.Key == Key.C || e.Key == Key.A || e.Key == Key.F); // + Find: it only reads
+            if (e.Key == Key.F3) { if (AllowFindReplace && FindAgain(shift)) e.Handled = true; return; }
             bool cellBlock = e.Key == Key.F5; // selects a cell, which Ctrl+C then copies as a 1×1 table
             if (!nav && !copyOrAll && !cellBlock) { e.Handled = true; return; }
         }
@@ -1081,6 +1095,9 @@ public partial class RichEditor
         // context menu and toolbar hints. Copy/Cut/Paste/SelectAll/Undo are handled above (they need
         // object-selection / plain-paste nuances); this covers formatting + Redo(Ctrl+Shift+Z/Ctrl+Y).
         // Ctrl + arrows/Home/End/Back/Delete (word/doc nav) aren't in the table and fall through below.
+        // F3 / Shift+F3: the last search again, forwards / backwards (the find bar need not be open).
+        if (e.Key == Key.F3 && !ctrl && !alt) { if (AllowFindReplace && FindAgain(shift)) e.Handled = true; return; }
+
         if (ctrl && RichEditorShortcuts.TryMatch(ctrl, shift, alt, e.Key, out var sid))
         {
             RunShortcut(sid);

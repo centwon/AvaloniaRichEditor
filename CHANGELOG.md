@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the find bar, Ctrl+F / Ctrl+H / F3 (2026-09-19)
+
+From the WinUI port. The search engine was there (`FindNext`, `FindPrev`, `ReplaceNext`, `ReplaceAll`, highlight-all)
+but nothing reached it.
+
+- `RichEditor.FindRequested` is raised by Ctrl+F (find) and Ctrl+H (find and replace); find works read-only, replace
+  only when editable. F3 / Shift+F3 repeat the last search (`FindAgain`, `LastFindQuery`, `LastFindMatchCase`).
+- `RichEditorView` answers with a bar under the toolbar: Enter = next, Shift+Enter = previous, Esc = close, a chevron
+  for the replace row, match case, and an "n/m" counter; closing it clears the highlight. `ShowBuiltInFindBar = false`
+  leaves the request to a host's own UI (`ShowFindBar` / `HideFindBar` open and close it from code).
+- Public API added — the next release is a minor bump.
+
+### Fixed — AltGr characters were taken by Ctrl+Alt shortcuts (2026-09-19)
+
+From the WinUI port. AltGr arrives as Ctrl+Alt, so on a layout with AltGr characters the heading shortcuts
+Ctrl+Alt+1..6 swallowed German AltGr+2 (²) and AltGr+3 (³). A Ctrl+Alt key that produces a character is now typed.
+
 ### Added — Ctrl+K opens the link dialog (2026-09-19)
 
 From the WinUI port. On a link, the dialog opens with its address; elsewhere it inserts one on the selection or the

@@ -52,6 +52,10 @@ internal sealed class InteractionHost : IDisposable
         return (Show(panel, editor, width, height), toolbar);
     }
 
+    // The whole bundled view (toolbar, find bar, scroller, status bar) around its editor.
+    public static InteractionHost CreateWithView(RichEditorView view, double width = 1200, double height = 700)
+        => Show(view, view.Editor, width, height);
+
     private static InteractionHost Show(Control content, RichEditor editor, double width, double height)
     {
         var window = new Window { Width = width, Height = height, Content = content };
@@ -184,10 +188,13 @@ internal sealed class InteractionHost : IDisposable
 
     // ---- keyboard -----------------------------------------------------------
 
-    public void Key(Key key, RawInputModifiers modifiers = RawInputModifiers.None)
+    public void Key(Key key, RawInputModifiers modifiers = RawInputModifiers.None) => Key(key, modifiers, string.Empty);
+
+    // With the key symbol the layout produces — what an AltGr chord carries (German AltGr+2 = "²").
+    public void Key(Key key, RawInputModifiers modifiers, string keySymbol)
     {
-        Window.KeyPress(key, modifiers, PhysicalKey.None, string.Empty);
-        Window.KeyRelease(key, modifiers, PhysicalKey.None, string.Empty);
+        Window.KeyPress(key, modifiers, PhysicalKey.None, keySymbol);
+        Window.KeyRelease(key, modifiers, PhysicalKey.None, keySymbol);
         Pump();
     }
 

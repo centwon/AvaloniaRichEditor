@@ -15,6 +15,7 @@ internal enum ShortcutId
     BulletList, NumberedList, LineSpacingSingle, LineSpacingOneHalf, LineSpacingDouble,
     SelectCell,
     InsertLink,
+    Find, FindReplace,
 }
 
 internal readonly record struct ShortcutSpec(ShortcutId Id, bool Ctrl, bool Shift, bool Alt, Key Key, string Display);
@@ -60,6 +61,8 @@ internal static class RichEditorShortcuts
         new(ShortcutId.LineSpacingDouble,  true, false, false, Key.D2, "Ctrl+2"),
         // Word's Insert Hyperlink (from the WinUI port, where it has been bound since the hyperlink audit).
         new(ShortcutId.InsertLink,         true, false, false, Key.K, "Ctrl+K"),
+        new(ShortcutId.Find,               true, false, false, Key.F, "Ctrl+F"),
+        new(ShortcutId.FindReplace,        true, false, false, Key.H, "Ctrl+H"),
         // Not Ctrl-modified, so TryMatch (reached only with Ctrl) never runs it: OnKeyDown routes F5 through
         // TryCellBlockKey. Listed for the menu hint (HWP's cell block key; the WinUI port lists it the same).
         new(ShortcutId.SelectCell,         false, false, false, Key.F5, "F5"),
