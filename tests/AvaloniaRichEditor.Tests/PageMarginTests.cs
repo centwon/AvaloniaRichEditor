@@ -36,10 +36,10 @@ public class PageMarginTests
 
         ed.PageMargin = Wide;
 
-        // A4 is 794 DIP (210 mm) wide. Default 12.7 mm a side = 48 DIP: 794 - 96 = 698 before.
+        // A4 is 794 DIP (210 mm) wide. Default 15 mm a side = 56.7 DIP: 794 - 113 = 681 before.
         // 25 mm a side = 94.5 DIP: 794 - 189 = 605 after.
-        Assert.Equal(698, before, 0);
-        Assert.Equal(605, ed.ContentLayoutWidth, 0);
+        Assert.Equal(794 - 2 * 15 * PageSetup.DipsPerMm, before, 0);
+        Assert.Equal(794 - 2 * 25 * PageSetup.DipsPerMm, ed.ContentLayoutWidth, 0);
     }
 
     [AvaloniaFact]

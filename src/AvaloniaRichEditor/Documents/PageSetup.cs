@@ -28,14 +28,16 @@ public class PageSetup
     /// them. Defaults to <see cref="DefaultMargin"/>.</summary>
     public PageMargins Margin { get; set; } = DefaultMargin;
 
-    /// <summary>The margins a document starts with: 12.7 mm (half an inch) left and right, 10.6 mm top and
-    /// bottom — the sizes this editor has always drawn.</summary>
-    public static PageMargins DefaultMargin { get; } = new(MarginXMm, MarginYMm, MarginXMm, MarginYMm);
+    /// <summary>The margins a document starts with: 15 mm on every side.</summary>
+    public static PageMargins DefaultMargin { get; } = new(DefaultMarginMm);
 
     // Here rather than on the control because the RTF writer needs them too, and a formatter reaching for a
     // control's statics is how a headless formatter stops being headless.
-    internal const double MarginXMm = 12.7;   // 48 DIP, what this editor drew before margins were settable
-    internal const double MarginYMm = 10.6;   // 40 DIP
+    //
+    // 15 mm, not the 12.7 x 10.6 this editor drew while the margins were two constants in device pixels
+    // (48 x 40 DIP): millimetres are the unit a page is set in, and the default should be a number someone
+    // would choose. It is also the middle step of the toolbar's picker, so a new document shows "Normal".
+    internal const double DefaultMarginMm = 15;
 
     // A margin a document (or an RTF from another word processor) states has to leave a content box to
     // put text in: negative, NaN/infinite, or two sides that together swallow the paper all describe a

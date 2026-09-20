@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using AvaloniaRichEditor.Controls;
@@ -12,7 +11,8 @@ namespace AvaloniaRichEditor.Tests;
 
 // Page margins reached 1.3.0 as a host API only: the built-in toolbar had paper and orientation, so a
 // person using an app built on RichEditorView could not change them at all (spotted by the user right
-// after the feature went in). Presets on the toolbar, as Word and HWP lead with.
+// after the feature went in). Five steps in millimetres, in a box built like the line-spacing control —
+// the icon once, the current step, a chevron that drops the list.
 //
 // The toolbar is disposed after use: an attached one stays subscribed to the static LanguageChanged and
 // breaks other tests' threads (see FindBarTests).
@@ -22,8 +22,12 @@ public class ToolbarMarginPickerTests : IDisposable
     private readonly List<InteractionHost> _hosts = new();
     public void Dispose() { foreach (var h in _hosts) h.Dispose(); }
 
-    private static ComboBox Picker(RichEditorToolbar tb)
-        => (ComboBox)typeof(RichEditorToolbar).GetField("_marginCombo", NP)!.GetValue(tb)!;
+    private static T Field<T>(RichEditorToolbar tb, string name)
+        => (T)typeof(RichEditorToolbar).GetField(name, NP)!.GetValue(tb)!;
+
+    private static string Label(RichEditorToolbar tb) => Field<TextBlock>(tb, "_marginLabel").Text ?? "";
+    private static bool Enabled(RichEditorToolbar tb) => Field<Border>(tb, "_marginBox").IsEnabled;
+    private static List<Button> Items(RichEditorToolbar tb) => Field<List<Button>>(tb, "_marginItems");
 
     private static FlowDocument Doc() => new() { Blocks = { new Paragraph { Inlines = { new Run { Text = "page" } } } } };
 
@@ -38,12 +42,11 @@ public class ToolbarMarginPickerTests : IDisposable
     }
 
     [AvaloniaFact]
-    public void PickingAPreset_SetsTheMargins_AndTheDocumentKeepsThem()
+    public void PickingAStep_SetsTheMargins_AndTheDocumentKeepsThem()
     {
         var (ed, tb) = Paged();
-        var picker = Picker(tb);
 
-        picker.SelectedIndex = 1; // narrow, 10 mm
+        Items(tb)[1].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); // narrow, 10 mm
 
         Assert.Equal(new PageMargins(10), ed.PageMargin);
         // The pickers edit the OPEN DOCUMENT's setup, so a save carries the change.
@@ -51,44 +54,49 @@ public class ToolbarMarginPickerTests : IDisposable
     }
 
     // The pickers edit the OPEN DOCUMENT, not the host's defaults — which is only observable in the NEXT
-    // document: one that carries no page setup of its own starts from the host's. Without this the
-    // margins a reader picked for one file would follow every file opened afterwards, and be saved into
-    // them (the WinUI port shipped exactly that for paper, see EditDocumentPageSetup).
+    // document: one that carries no page setup of its own starts from the host's. Without this the margins
+    // a reader picked for one file would follow every file opened afterwards, and be saved into them (the
+    // WinUI port shipped exactly that for paper, see EditDocumentPageSetup).
     [AvaloniaFact]
-    public void PickingAPreset_DoesNotBecomeTheHostsDefaultForTheNextDocument()
+    public void PickingAStep_DoesNotBecomeTheHostsDefaultForTheNextDocument()
     {
         var (ed, tb) = Paged();
-        Picker(tb).SelectedIndex = 3; // wide, 20 mm
-        Assert.Equal(new PageMargins(20), ed.PageMargin);
+        Items(tb)[4].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); // widest, 30 mm
+        Assert.Equal(new PageMargins(30), ed.PageMargin);
 
         ed.Document = Doc(); // a fresh document with no page setup of its own
 
         Assert.Equal(PageSetup.DefaultMargin, ed.PageMargin);
     }
 
+    // A new document sits on the middle step, so the box names it rather than printing numbers.
     [AvaloniaFact]
-    public void ThePickerShowsTheEditorsCurrentMargins()
+    public void TheBoxNamesTheStepTheMarginsAreOn()
     {
         var (ed, tb) = Paged();
+        Assert.Equal(RichEditorLocalization.GetString("MarginNormal"), Label(tb));
 
-        var wide = new PageMargins(20);
-        ed.PageMargin = wide; // set from code, not from the picker
+        ed.PageMargin = new PageMargins(20);
         tb.RefreshPageControls();
 
-        Assert.Equal(wide, ((ComboBoxItem)Picker(tb).SelectedItem!).Tag);
+        Assert.Equal(RichEditorLocalization.GetString("MarginWide"), Label(tb));
     }
 
-    // A host or a document may carry margins that match no preset. Showing one anyway would be a lie about
-    // what the page is — the zoom combo has the same rule for an off-grid zoom.
+    // A host or a document may carry margins that match no step. Naming one anyway would be a lie about
+    // what the page is, and leaving the box blank (the first version did) says nothing — so it states the
+    // millimetres, as short as they are regular.
     [AvaloniaFact]
-    public void MarginsThatMatchNoPreset_SelectNothing()
+    public void MarginsThatMatchNoStep_AreSpeltOutInMillimetres()
     {
         var (ed, tb) = Paged();
 
         ed.PageMargin = new PageMargins(42, 6, 8, 31);
         tb.RefreshPageControls();
+        Assert.Equal("42 6 8 31mm", Label(tb));
 
-        Assert.Null(Picker(tb).SelectedItem);
+        ed.PageMargin = PageMargins.Symmetric(18, 12);
+        tb.RefreshPageControls();
+        Assert.Equal("18 / 12mm", Label(tb));
     }
 
     // Continuous reflows to the control's width: there is no paper, so no margins either.
@@ -96,11 +104,11 @@ public class ToolbarMarginPickerTests : IDisposable
     public void ThePickerIsDisabledInContinuous()
     {
         var (ed, tb) = Paged();
-        Assert.True(Picker(tb).IsEnabled);
+        Assert.True(Enabled(tb));
 
         ed.PageSize = RichEditorPageSize.Continuous;
         tb.RefreshPageControls();
 
-        Assert.False(Picker(tb).IsEnabled);
+        Assert.False(Enabled(tb));
     }
 }

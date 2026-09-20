@@ -256,9 +256,10 @@ public class PaginationTests
     {
         var ed = EditorWith(EmptyPara(50));
         ed.PageSize = RichEditorPageSize.A4;
-        Assert.Equal(698, ed.ContentLayoutWidth, 3);   // 794 - 2*48
+        // Default margins are 15 mm = 56.7 DIP a side.
+        Assert.Equal(794 - 2 * 15 * PageSetup.DipsPerMm, ed.ContentLayoutWidth, 3);
         ed.PageSize = RichEditorPageSize.Letter;
-        Assert.Equal(720, ed.ContentLayoutWidth, 3);   // 816 - 2*48
+        Assert.Equal(816 - 2 * 15 * PageSetup.DipsPerMm, ed.ContentLayoutWidth, 3);
         ed.PageSize = RichEditorPageSize.Continuous;
         Assert.Equal(0, ed.ContentLayoutWidth, 3);     // reflows to control width (0 unmeasured)
     }
@@ -285,7 +286,7 @@ public class PaginationTests
         var land = ed.GetPaperPixelSize();
         Assert.Equal(1123, land.Width, 3);   // dimensions swapped
         Assert.Equal(794, land.Height, 3);
-        Assert.Equal(1123 - 2 * 48, ed.ContentLayoutWidth, 3); // wider content column
+        Assert.Equal(1123 - 2 * 15 * PageSetup.DipsPerMm, ed.ContentLayoutWidth, 3); // wider content column
     }
 
     [AvaloniaFact]

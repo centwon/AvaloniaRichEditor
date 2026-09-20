@@ -217,7 +217,11 @@ public class VectorPdfTests
         double margin = Geometry(ed, "PagePadRight") * 72 / 96;
         Assert.True(raster.Right > 0 && vector.Right > 0, "nothing drawn");
         Assert.True(vector.Right < W - margin + 2, $"ink runs to x={vector.Right}, past the right margin at {W - margin:0}");
-        Assert.True(Math.Abs(vector.Left - raster.Left) <= 2 && Math.Abs(vector.Right - raster.Right) <= 3,
+        // ±5 on the right: the content width is 794 - 2 x 56.7 DIP once margins are millimetres, and the
+        // two paths land that fraction differently — the vector page draws at point scale, the raster one
+        // rasterises at 72 dpi. The claim being held is that both put the text in the same place on the
+        // paper, not that they agree to the pixel.
+        Assert.True(Math.Abs(vector.Left - raster.Left) <= 2 && Math.Abs(vector.Right - raster.Right) <= 5,
             $"vector ink spans {vector.Left}..{vector.Right}, the rasterized page {raster.Left}..{raster.Right}");
     }
 

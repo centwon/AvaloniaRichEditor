@@ -60,7 +60,10 @@ public partial class RichEditorToolbar
     public Func<bool>? IsFitWidthGetter { get; set; }
 
     // ---- page / zoom ------------------------------------------------------
-    private ComboBox? _zoomCombo, _paperCombo, _orientCombo, _marginCombo;
+    private ComboBox? _zoomCombo, _paperCombo, _orientCombo;
+    private Border? _marginBox;
+    private TextBlock? _marginLabel;
+    private readonly System.Collections.Generic.List<Button> _marginItems = new();
 
     private static readonly (RichEditorPageSize size, string label)[] PaperSizes =
     {
@@ -133,46 +136,100 @@ public partial class RichEditorToolbar
         // need not be one of these — then nothing is selected (the zoom combo does the same for an
         // off-grid zoom) and picking an entry is what changes it.
         //
-        // The icon rides INSIDE the combo, on each entry, so the picker reads as one control like the
-        // paper and orientation ones beside it — and the closed box shows the icon with the current step,
-        // which spelling out "여백"/"Margins" only cost width to say.
-        _marginCombo = PageCombo(132, Loc("MarginTip"));
-        foreach (var (label, margin) in MarginPresets)
-            _marginCombo.Items.Add(new ComboBoxItem { Content = MarginEntry(Loc(label)), Tag = margin });
-        _marginCombo.SelectionChanged += (_, _) =>
-        {
-            if (_suppress || Target is not { } t || _marginCombo.SelectedItem is not ComboBoxItem { Tag: PageMargins m }) return;
-            t.EditDocumentPageSetup(() => t.PageMargin = m); // the open document's setup, not the host's defaults
-        };
-        items.Add(_marginCombo);
+        items.Add(BuildMarginControl());
     }
 
-    // One entry: the margin icon, then the step's name. A fresh icon per entry — a control has one parent,
-    // and the ComboBox shows the selected entry's own content in the closed box.
-    private Control MarginEntry(string text)
+    // The margin picker, built like the line-spacing control rather than as a plain combo: one bordered box
+    // holding the icon once, the current step, and a chevron that drops a list of plain entries. The icon
+    // says what the control is, so nothing has to spell out "여백"/"Margins" and spend toolbar width on it.
+    private Control BuildMarginControl()
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+
         if ((RichEditorIcons.TryCreate(RichEditorIcon.PageMargin) ?? ToolbarIcons.Create(RichEditorIcon.PageMargin))
-            is { } icon)
+            is { } glyph)
         {
-            icon.VerticalAlignment = VerticalAlignment.Center;
-            row.Children.Add(icon);
+            if (glyph is Layoutable lg) lg.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(glyph);
         }
-        row.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
-        return row;
+
+        _marginLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, MinWidth = 86 };
+        row.Children.Add(_marginLabel);
+
+        var presets = new Button
+        {
+            Content = ToolbarIcons.ChevronDown(),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(2, 0),
+            MinWidth = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft });
+        var panel = new StackPanel { MinWidth = 120 };
+        _marginItems.Clear();
+        foreach (var (label, margin) in MarginPresets)
+        {
+            var m = margin;
+            var item = new Button
+            {
+                Content = Loc(label),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+            };
+            // The pickers edit the OPEN DOCUMENT's setup, not the host's defaults (see EditDocumentPageSetup).
+            item.Click += (_, _) =>
+            {
+                if (Target is { } t) t.EditDocumentPageSetup(() => t.PageMargin = m);
+                flyout.Hide();
+                Sync();
+            };
+            _marginItems.Add(item);
+            panel.Children.Add(item);
+        }
+        flyout.Content = panel;
+        row.Children.Add(presets);
+
+        _marginBox = new Border
+        {
+            Child = row,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#DCDCDC")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 0),
+            Margin = new Thickness(2, 0),
+            MinHeight = 28,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(_marginBox, Loc("MarginTip"));
+        Avalonia.Controls.Primitives.FlyoutBase.SetAttachedFlyout(_marginBox, flyout);
+        presets.Click += (_, _) => Avalonia.Controls.Primitives.FlyoutBase.ShowAttachedFlyout(_marginBox);
+        return _marginBox;
     }
 
-    // Five steps, narrowest first, in the millimetres page setup is discussed in. "Normal" is the editor's
-    // own default (12.7 x 10.6 mm — half an inch across, what it drew before margins were settable) and the
-    // only asymmetric one; the rest are square, as Word's and HWP's presets are.
+    // Five steps, narrowest first, in the millimetres page setup is discussed in. The middle one is the
+    // editor's own default, so a document that has never been touched shows "Normal".
     private static readonly (string Label, PageMargins Margin)[] MarginPresets =
     {
         ("MarginNarrowest", new PageMargins(5)),
         ("MarginNarrow", new PageMargins(10)),
-        ("MarginNormal", PageSetup.DefaultMargin),
+        ("MarginNormal", PageSetup.DefaultMargin),   // 15 mm
         ("MarginWide", new PageMargins(20)),
         ("MarginWidest", new PageMargins(30)),
     };
+
+    // Margins that match no step, written as short as they are regular: one number when all four sides
+    // agree, two when the sides and the top/bottom pair up, else all four.
+    private static string MarginText(PageMargins m)
+    {
+        if (m.Left == m.Right && m.Top == m.Bottom)
+            return m.Left == m.Top ? $"{m.Left:0.#}mm" : $"{m.Left:0.#} / {m.Top:0.#}mm";
+        return $"{m.Left:0.#} {m.Top:0.#} {m.Right:0.#} {m.Bottom:0.#}mm";
+    }
 
     /// <summary>Reflects the host's current zoom / fit-width and the editor's paper state onto the built-in
     /// page controls. Call after changing view-level zoom (which the toolbar can't observe directly).</summary>
@@ -209,13 +266,15 @@ public partial class RichEditorToolbar
                 if (it is ComboBoxItem { Tag: RichEditorPageOrientation o } ci && o == Target.PageOrientation) { _orientCombo.SelectedItem = ci; break; }
             _orientCombo.IsEnabled = paged; // orientation is meaningless in Continuous
         }
-        if (_marginCombo != null)
+        if (_marginLabel != null && _marginBox != null)
         {
-            ComboBoxItem? match = null;
-            foreach (var it in _marginCombo.Items)
-                if (it is ComboBoxItem { Tag: PageMargins m } ci && m.Equals(Target.PageMargin)) { match = ci; break; }
-            _marginCombo.SelectedItem = match; // null = margins that match no preset (a host's, or a file's)
-            _marginCombo.IsEnabled = paged;    // margins are meaningless in Continuous, as orientation is
+            // A host's margins, or a document's, need not be one of the steps; then the box states the
+            // millimetres themselves rather than a step name that is not the page's.
+            string? step = null;
+            foreach (var (label, m) in MarginPresets)
+                if (m.Equals(Target.PageMargin)) { step = Loc(label); break; }
+            _marginLabel.Text = step ?? MarginText(Target.PageMargin);
+            _marginBox.IsEnabled = paged; // margins are meaningless in Continuous, as orientation is
         }
         if (_zoomCombo != null)
         {
