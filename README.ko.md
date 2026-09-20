@@ -105,7 +105,7 @@ Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // �
 - 인라인 서식: 굵게 / 기울임 / 밑줄 / 취소선, 글꼴 및 크기, 글자색 및 배경(하이라이트) 색, 하이퍼링크
 - 문단 서식: 정렬, 줄 간격, 들여쓰기, 제목(headings), 글머리 기호 / 번호 매기기 목록
 - 한국어/CJK **IME** 조합 (인라인 preedit)
-- 찾기 / 바꾸기, 실행 취소 / 다시 실행
+- 찾기 막대(`Ctrl+F` / `Ctrl+H` / `F3`)로 찾기 / 바꾸기, 실행 취소 / 다시 실행
 
 ### 표 (Tables)
 
@@ -117,25 +117,25 @@ Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // �
   일반 블록 표와 인라인 표를 서로 전환할 수 있습니다
 - **드래그하여 표 삽입**: 그리드에서 행 × 열을 고른 뒤 문서 위에서 드래그해 크기를 직접 지정합니다
   (클릭하면 기본 크기)
+- 셀 세로 정렬, 표(테두리)나 그림을 끌어 옮기기(`Ctrl`을 누르면 복사)
 
 ### 이미지와 페이지 레이아웃
 
-- 인라인 및 블록 **이미지** — 삽입, 크기 조절, 교체, 저장
+- 인라인 및 블록 **이미지** — 삽입, 크기 조절(모서리 또는 가로·세로 한 변 손잡이), 교체, 저장, 대체 텍스트
 - 워드 스타일 **페이지 뷰**: `PageSize`(기본 Continuous, 또는 A4/A3/A5/B4/B5/Letter/Legal/Tabloid),
   `PageOrientation`, `ShowPageBoundaries`, 줄 단위 페이지 나누기, 머리글/바닥글/쪽번호
 - 페이지 설정은 **문서 단위로 저장**되고(`FlowDocument.PageSetup`) 불러올 때 다시 적용됩니다 —
   워드프로세서와 같습니다
-- **인쇄 및 PDF**: 페이지별 비트맵 렌더링(`RenderPrintPage`, 300 DPI)과 의존성 없는 래스터 PDF
-  내보내기(`SavePdf`)
+- **인쇄 및 PDF**: 페이지별 렌더링(`RenderPrintPage`, 300 DPI)과 글자를 선택·검색할 수 있는 PDF
+  내보내기(`SavePdf`, 글꼴 서브셋 포함) — Skia 백엔드가 없으면 래스터 PDF
 
 ### 상호운용 (Interchange)
 
 - 클립보드: 내부 리치 복사/붙여넣기, 리치 **HTML 복사**(`CF_HTML`), 외부 HTML/**RTF** 붙여넣기(Word/아래한글),
   이미지 붙여넣기, Excel/TSV → 표
 - **HTML, JSON, RTF** 가져오기/내보내기. JSON/`.flow`와 HTML은 무손실 왕복입니다(인라인 표는 인라인 유지)
-- RTF 내보내기는 가져오기보다 **의도적으로 풍부합니다**: 병합된 셀과 셀별 배경색은 Word/아래한글용으로
-  기록되지만 다시 가져올 때는 무시되며, 중첩 표는 기본 열 너비로 들어옵니다(Word가 이를 무시 가능한
-  그룹에 보관하기 때문)
+- RTF의 한계: 인라인 표는 Word/아래한글에서 블록 표로 보이고 그림 대체 텍스트는 RTF에 자리가 없으며,
+  중첩 표는 기본 열 너비로 들어옵니다(Word가 이를 무시 가능한 그룹에 보관하기 때문)
 
 ### 호스팅 (Hosting)
 
@@ -162,16 +162,17 @@ API 문서는 XML 주석으로 패키지에 포함되어 있어 모든 공개 �
 
 ## 플랫폼 지원 (Platform support)
 
-이 컨트롤은 크로스 플랫폼 Avalonia API로 작성되었으며 **P/Invoke가 없습니다**. 다만 현재 **Windows**에서
-개발·테스트되고 있으며 macOS/Linux는 **best-effort**입니다:
+이 컨트롤은 크로스 플랫폼 Avalonia API로 작성되었습니다. P/Invoke는 두 곳뿐입니다: Windows 전용 시스템
+글꼴 조회(다른 OS에서는 건너뜀)와 PDF 내보내기의 HarfBuzz 글꼴 서브셋(Avalonia.Skia가 이미 싣는 네이티브
+라이브러리). **Windows**에서 개발·테스트되며 macOS/Linux는 **best-effort**입니다:
 
 - 클립보드 HTML은 포맷 식별자로 매칭되며 Windows `CF_HTML` 헤더를 투명하게 처리합니다(다른 플랫폼의 일반
   `text/html`은 변경 없이 통과).
 - 특정 폰트를 가정하지 않습니다: `DefaultFontFamily`로 대체되며 우클릭 폰트 목록은 `FontFamilyChoices`에서
   옵니다. 대상 플랫폼/지역에 맞게 두 가지를 모두 설정하세요(데모는 한국어 폰트를 사용).
 
-CI 빌드와 테스트는 **Windows, macOS, Linux**(3-OS 매트릭스)에서 통과합니다. macOS/Linux에서의 더 깊은
-기능 검증은 아직 보류 중입니다(로드맵에서 추적).
+CI 빌드와 테스트는 **Windows, macOS, Linux**(3-OS 매트릭스)에서 통과합니다. 실제 macOS/Linux 기기에서의
+동작(글꼴, IME, 네이티브 클립보드)은 사용자 리포트로 확인해 나갑니다.
 
 ## 접근성 (Accessibility)
 

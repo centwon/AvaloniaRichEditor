@@ -33,7 +33,7 @@ Word COM으로 열어 **객체 모델에 질문한다**(`Range.Cells`, `Borders.
 `ComputeStatistics`). 28항목 PASS/FAIL. 스크린샷 판독보다 정확하다 — 실제로 육안으로는 링크 색을
 잘못 봤고 측정이 맞았다.
 
-### 함정 3가지 (전부 실측으로 배운 것)
+### 함정 (전부 실측으로 배운 것)
 
 - ⚠️ **읽기 전용으로만 쓸 것.** `Documents.Add` + `SaveAs2`(Word에게 참조 파일을 쓰게 하기)는 헤드리스에서
   **멈춘다**. 10분 타임아웃 + 보이지 않는 WINWORD 프로세스 잔류.
@@ -41,6 +41,8 @@ Word COM으로 열어 **객체 모델에 질문한다**(`Range.Cells`, `Borders.
   깨지고 **파서 에러**가 난다.
 - ⚠️ **`Rows.Item(n).Cells`는 세로 병합 표에서 예외를 던진다.** `Range.Cells`를 순회해 `RowIndex`로
   그룹핑할 것(`CellsPerRow` 참조).
+- ⚠️ **`new TableBlock(r, c) { ColumnWidths = { … } }`는 덮어쓰지 않고 뒤에 붙는다.** 생성자가 이미
+  열마다 100을 넣어둬서 선언한 값이 읽히지 않는다. 생성기에서는 `Widths(...)` 헬퍼를 쓸 것.
 
 ## 3. HWP
 

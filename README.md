@@ -98,7 +98,7 @@ for a full editor host.
   highlight colors, hyperlinks
 - Paragraphs with alignment, line spacing, indentation, headings, and bullet / numbered lists
 - Korean/CJK **IME** composition with inline preedit
-- Find / replace, undo / redo
+- Find / replace with a find bar (`Ctrl+F` / `Ctrl+H` / `F3`), undo / redo
 
 ### Tables
 
@@ -110,16 +110,17 @@ for a full editor host.
   and inline from the right-click menu
 - **Draw-to-size insertion**: pick rows × columns from the grid, then drag on the document to set the
   size (or click for the default)
+- Vertical cell alignment; drag a table (by its border) or a picture to move it (hold `Ctrl` to copy)
 
 ### Images and page layout
 
-- Inline and block **images** — insert, resize, replace, save
+- Inline and block **images** — insert, resize (corner or single-edge handles), replace, save, alt text
 - Word-style **page view**: `PageSize` (Continuous by default, or A4/A3/A5/B4/B5/Letter/Legal/Tabloid),
   `PageOrientation`, `ShowPageBoundaries`, line-boundary page breaks, headers/footers/page numbers
 - Page setup is **persisted per document** (`FlowDocument.PageSetup`) and re-applied on load, like a word
   processor
-- **Print and PDF**: per-page bitmap rendering (`RenderPrintPage`, 300 DPI) and dependency-free raster PDF
-  export (`SavePdf`)
+- **Print and PDF**: per-page rendering (`RenderPrintPage`, 300 DPI) and PDF export (`SavePdf`) with
+  selectable, searchable text and subset fonts — a raster PDF where the Skia backend isn't available
 
 ### Interchange
 
@@ -127,9 +128,8 @@ for a full editor host.
   (Word/HWP), image paste, Excel/TSV → table
 - **HTML, JSON, and RTF** import/export. JSON/`.flow` and HTML round-trip losslessly (an inline table
   stays inline)
-- RTF export is deliberately **richer than RTF import**: merged cells and per-cell shading are written for
-  Word/HWP but ignored on the way back in, and a nested table imports at default column widths (Word keeps
-  those in an ignorable group)
+- RTF has gaps: an inline table reaches Word/HWP as a block table and picture alt text has no RTF form, and
+  a nested table imports at default column widths (Word keeps those in an ignorable group)
 
 ### Hosting
 
@@ -156,16 +156,18 @@ API documentation ships with the package as XML docs, so IntelliSense covers eve
 
 ## Platform support
 
-The control is written against cross-platform Avalonia APIs and has **no P/Invoke**. However it is
-currently developed and tested on **Windows**; macOS/Linux are **best-effort** for now:
+The control is written against cross-platform Avalonia APIs. P/Invoke appears in only two places: a
+Windows-only system font query (skipped elsewhere) and HarfBuzz font subsetting for PDF export (the native
+library Avalonia.Skia already ships). It is developed and tested on **Windows**; macOS/Linux are
+**best-effort**:
 
 - Clipboard HTML is matched by format identifier and handles the Windows `CF_HTML` header transparently
   (other platforms' plain `text/html` passes through unchanged).
 - No fonts are assumed: runs fall back to `DefaultFontFamily`, and the right-click font list comes from
   `FontFamilyChoices`. Set both for your target platform/locale (the demo uses Korean fonts).
 
-CI builds and tests pass on **Windows, macOS, and Linux** (3-OS matrix); deeper functional verification
-on macOS/Linux is still pending (tracked in the roadmap).
+CI builds and tests pass on **Windows, macOS, and Linux** (3-OS matrix); behaviour on real macOS/Linux
+machines (fonts, IME, native clipboard) is followed up from user reports.
 
 ## Accessibility
 
