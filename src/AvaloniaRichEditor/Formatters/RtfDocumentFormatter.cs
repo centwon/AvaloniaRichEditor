@@ -622,17 +622,18 @@ internal sealed class RtfParser
     // control words in any order, and a file may state only some — the rest keep our default.
     private readonly int[] _marginTwips = { -1, -1, -1, -1 };
 
+
     // Each stated margin, once the paper is known well enough to check it against. The paper may still be
     // Continuous here (a file that gives margins but no size, or a size we have no name for): its print
     // fallback is A4, which is what such a document would be printed on anyway.
     private void ApplyMargins()
     {
-        double Side(int i, double fallback) => _marginTwips[i] >= 0 ? _marginTwips[i] / 15.0 : fallback;
+        double Side(int i, double fallback) => _marginTwips[i] >= 0 ? _marginTwips[i] / PageSetup.TwipsPerMm : fallback;
         var d = PageSetup.DefaultMargin;
-        var m = new Avalonia.Thickness(Side(0, d.Left), Side(1, d.Top), Side(2, d.Right), Side(3, d.Bottom));
+        var m = new PageMargins(Side(0, d.Left), Side(1, d.Top), Side(2, d.Right), Side(3, d.Bottom));
         var ps = _doc.PageSetup;
-        var (w, h) = PageSetup.PaperDips(ps?.PageSize ?? Controls.RichEditorPageSize.Continuous,
-                                         ps?.Orientation ?? Controls.RichEditorPageOrientation.Portrait);
+        var (w, h) = PageSetup.PaperMillimetres(ps?.PageSize ?? Controls.RichEditorPageSize.Continuous,
+                                                ps?.Orientation ?? Controls.RichEditorPageOrientation.Portrait);
         if (!PageSetup.IsUsableMargin(m, w, h))
         {
             // Not "keep what we had": an earlier call may have accepted these margins against the A4
@@ -1236,8 +1237,9 @@ internal sealed class RtfWriter
         {
             var (w, h) = PageSetup.PaperDips(ps.PageSize, ps.Orientation);
             sb.Append($@"\paperw{(int)Math.Round(w * 15)}\paperh{(int)Math.Round(h * 15)}");
-            sb.Append($@"\margl{(int)Math.Round(ps.Margin.Left * 15)}\margr{(int)Math.Round(ps.Margin.Right * 15)}");
-            sb.Append($@"\margt{(int)Math.Round(ps.Margin.Top * 15)}\margb{(int)Math.Round(ps.Margin.Bottom * 15)}");
+            // Margins are millimetres; RTF wants twips (1440 per inch).
+            sb.Append($@"\margl{PageSetup.MmToTwips(ps.Margin.Left)}\margr{PageSetup.MmToTwips(ps.Margin.Right)}");
+            sb.Append($@"\margt{PageSetup.MmToTwips(ps.Margin.Top)}\margb{PageSetup.MmToTwips(ps.Margin.Bottom)}");
             // \landscape is the document-level flag; PaperDips has already swapped the dimensions, so
             // this only tells the reader how to present the page setup it was given.
             if (ps.Orientation == Controls.RichEditorPageOrientation.Landscape) sb.Append(@"\landscape");
@@ -1246,8 +1248,8 @@ internal sealed class RtfWriter
             // opened in HWP as Letter until they were here. Both are the same values by construction,
             // so there is nothing to keep in sync beyond this line.
             sb.Append($@"\sectd\pgwsxn{(int)Math.Round(w * 15)}\pghsxn{(int)Math.Round(h * 15)}");
-            sb.Append($@"\marglsxn{(int)Math.Round(ps.Margin.Left * 15)}\margrsxn{(int)Math.Round(ps.Margin.Right * 15)}");
-            sb.Append($@"\margtsxn{(int)Math.Round(ps.Margin.Top * 15)}\margbsxn{(int)Math.Round(ps.Margin.Bottom * 15)}");
+            sb.Append($@"\marglsxn{PageSetup.MmToTwips(ps.Margin.Left)}\margrsxn{PageSetup.MmToTwips(ps.Margin.Right)}");
+            sb.Append($@"\margtsxn{PageSetup.MmToTwips(ps.Margin.Top)}\margbsxn{PageSetup.MmToTwips(ps.Margin.Bottom)}");
             if (ps.Orientation == Controls.RichEditorPageOrientation.Landscape) sb.Append(@"\lndscpsxn");
             sb.Append('\n');
         }
@@ -1266,7 +1268,7 @@ internal sealed class RtfWriter
         if (hasFooter)
         {
             var (w, _) = PageSetup.PaperDips(ps.PageSize, ps.Orientation);
-            int contentTwips = (int)Math.Round((w - ps.Margin.Left - ps.Margin.Right) * 15);
+            int contentTwips = (int)Math.Round(w * 15) - PageSetup.MmToTwips(ps.Margin.Left) - PageSetup.MmToTwips(ps.Margin.Right);
             _body.Append(@"{\footer\pard\plain\ql");
             if (ps.ShowPageNumbers) _body.Append(@"\tqr\tx").Append(contentTwips);
             _body.Append(' ');

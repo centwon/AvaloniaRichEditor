@@ -45,12 +45,14 @@ public partial class MainWindow : Window
         };
     }
 
-    private static readonly System.Collections.Generic.List<(string Label, Avalonia.Thickness Margin)> MarginPresets =
+    // Millimetres, like the toolbar's own picker — these exist to reach shapes the toolbar's five steps
+    // do not: a band too thin for the header, and an asymmetric one (which tells "four sides" from "two").
+    private static readonly System.Collections.Generic.List<(string Label, AvaloniaRichEditor.Documents.PageMargins Margin)> MarginPresets =
     [
-        ("기본 48 / 40", new Avalonia.Thickness(48, 40, 48, 40)),
-        ("좁게 16 / 12", new Avalonia.Thickness(16, 12, 16, 12)),
-        ("넓게 120 / 96", new Avalonia.Thickness(120, 96, 120, 96)),
-        ("비대칭 좌160 상24 우32 하120", new Avalonia.Thickness(160, 24, 32, 120)),
+        ("기본 12.7 / 10.6mm", AvaloniaRichEditor.Documents.PageSetup.DefaultMargin),
+        ("아주 좁게 4 / 3mm", new AvaloniaRichEditor.Documents.PageMargins(4, 3, 4, 3)),
+        ("아주 넓게 40 / 30mm", new AvaloniaRichEditor.Documents.PageMargins(40, 30, 40, 30)),
+        ("비대칭 좌42 상6 우8 하31mm", new AvaloniaRichEditor.Documents.PageMargins(42, 6, 8, 31)),
     ];
 
     protected override void OnOpened(EventArgs e)

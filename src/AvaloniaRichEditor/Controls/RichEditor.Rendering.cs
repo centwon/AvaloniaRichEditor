@@ -270,6 +270,23 @@ public partial class RichEditor
 
     // The document block walk: selection highlights, table grids, paragraphs, images, dividers,
     // resize-handle registration and caret geometry, all in continuous document coordinates.
+    // A 1px pen is centred on the rect it strokes, so a cell on the table's edge puts half its line OUTSIDE
+    // the table's own box. A page break lands exactly on that box, and the page's clip then cut the line in
+    // two — part of its weight on one page, the rest on the next (measured 2026-09-20: 67% of a whole line;
+    // reported from the demo). Pulling the edges that ARE the table's boundary half a pen inwards keeps all
+    // of a table's ink inside the box pagination knows about, and lands those lines on whole pixels, so they
+    // also come out crisper. Interior edges are shared by two neighbouring cells and stay centred —
+    // insetting those would draw each shared line twice, a pixel apart.
+    private static Rect InsetTableEdges(Rect cell, Rect table)
+    {
+        const double half = 0.5, eps = 0.01;
+        double left = cell.X + (Math.Abs(cell.X - table.X) < eps ? half : 0);
+        double top = cell.Y + (Math.Abs(cell.Y - table.Y) < eps ? half : 0);
+        double right = cell.Right - (Math.Abs(cell.Right - table.Right) < eps ? half : 0);
+        double bottom = cell.Bottom - (Math.Abs(cell.Bottom - table.Bottom) < eps ? half : 0);
+        return new Rect(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
+    }
+
     // Page view replays this once per visible page under a clip+translation, with the page's
     // document slice as the cull window; the continuous mode calls it once with the viewport.
     // chrome=false (print/export rendering) draws content only: no selection highlights, caret
@@ -346,6 +363,8 @@ public partial class RichEditor
                 // (Excel/Word style) instead of the linear text run; otherwise fall back to text highlight.
                 var cellBlock = chrome ? SelectedCellRange(tb) : null;
 
+                var tableBox = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
+
                 foreach (var (r, c, rect) in tl.AnchorRects)
                 {
                     var cell = tb.Cells[r][c];
@@ -353,7 +372,7 @@ public partial class RichEditor
 
                     if (cell.Background != null)
                         context.FillRectangle(cell.Background, rect);
-                    context.DrawRectangle(null, GrayBorderPen, rect);
+                    context.DrawRectangle(null, GrayBorderPen, InsetTableEdges(rect, tableBox));
 
                     // A cell is in "cell-selection mode" when it's part of a multi-cell drag block, or its
                     // whole content is selected (Tab focus / triple-click). Such cells show a fill and NO

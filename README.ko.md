@@ -123,7 +123,7 @@ Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // �
 
 - 인라인 및 블록 **이미지** — 삽입, 크기 조절(모서리 또는 가로·세로 한 변 손잡이), 교체, 저장, 대체 텍스트
 - 워드 스타일 **페이지 뷰**: `PageSize`(기본 Continuous, 또는 A4/A3/A5/B4/B5/Letter/Legal/Tabloid),
-  `PageOrientation`, `PageMargin`(네 변), `ShowPageBoundaries`, 줄 단위 페이지 나누기, 머리글/바닥글/쪽번호
+  `PageOrientation`, `PageMargin`(네 변, mm), `ShowPageBoundaries`, 줄 단위 페이지 나누기, 머리글/바닥글/쪽번호
 - 페이지 설정은 **문서 단위로 저장**되고(`FlowDocument.PageSetup`) 불러올 때 다시 적용됩니다 —
   워드프로세서와 같습니다
 - **인쇄 및 PDF**: 페이지별 렌더링(`RenderPrintPage`, 300 DPI)과 글자를 선택·검색할 수 있는 PDF

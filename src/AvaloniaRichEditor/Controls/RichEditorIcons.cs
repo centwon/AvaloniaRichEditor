@@ -115,6 +115,8 @@ public enum RichEditorIcon
     FontSizeDecrease,
     /// <summary>Find / replace (the toolbar's find button, from the WinUI port).</summary>
     Find,
+    /// <summary>Page margins (the toolbar's margin picker).</summary>
+    PageMargin,
 }
 
 /// <summary>

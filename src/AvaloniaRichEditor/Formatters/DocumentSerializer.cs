@@ -166,14 +166,14 @@ public static class DocumentSerializer
     // A file is untrusted input (it reaches here by Open and by paste), so a margin that leaves no page to
     // write on is dropped whole rather than per side — half a stated margin is not what the file meant.
     // Paper: what the file itself declares, since the margins are read alongside it.
-    private static Avalonia.Thickness ReadMargin(PageSetupDto psd)
+    private static PageMargins ReadMargin(PageSetupDto psd)
     {
         var d = PageSetup.DefaultMargin;
-        var m = new Avalonia.Thickness(psd.MarginLeft ?? d.Left, psd.MarginTop ?? d.Top,
-                                       psd.MarginRight ?? d.Right, psd.MarginBottom ?? d.Bottom);
+        var m = new PageMargins(psd.MarginLeft ?? d.Left, psd.MarginTop ?? d.Top,
+                                psd.MarginRight ?? d.Right, psd.MarginBottom ?? d.Bottom);
         var size = Enum.TryParse<Controls.RichEditorPageSize>(psd.PageSize, out var sz) ? sz : Controls.RichEditorPageSize.Continuous;
         var orient = Enum.TryParse<Controls.RichEditorPageOrientation>(psd.Orientation, out var or) ? or : Controls.RichEditorPageOrientation.Portrait;
-        var (w, h) = PageSetup.PaperDips(size, orient);
+        var (w, h) = PageSetup.PaperMillimetres(size, orient);
         return PageSetup.IsUsableMargin(m, w, h) ? m : d;
     }
 
@@ -583,9 +583,9 @@ internal class PageSetupDto
     public string? Header { get; set; }
     public string? Footer { get; set; }
     public bool ShowPageNumbers { get; set; }
-    // Page margins in DIPs, one per side. Omitted when they are the default, so a document that never
-    // touched them keeps its bytes; a reader that predates them (or a file that omits one side) falls
-    // back to the default for that side.
+    // Page margins in MILLIMETRES, one per side. Omitted when they are the default, so a document that
+    // never touched them keeps its bytes; a reader that predates them (or a file that omits one side)
+    // falls back to the default for that side.
     public double? MarginLeft { get; set; }
     public double? MarginTop { get; set; }
     public double? MarginRight { get; set; }

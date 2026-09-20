@@ -115,6 +115,10 @@ internal static class ToolbarIcons
         RichEditorIcon.Find => Build(20,
             ("M10.5 4 a6.5 6.5 0 1 0 0 13 a6.5 6.5 0 1 0 0 -13 Z", false),
             ("M15.5 15.5 L20.5 20.5", false)),
+        // Page margins: the sheet, with the text box inside it — the band between the two IS the margin.
+        RichEditorIcon.PageMargin => Build(20,
+            ("M5 3 H19 V21 H5 Z", false),
+            ("M8.5 7 H15.5 V17 H8.5 Z", false)),
 
         _ => null,
     };

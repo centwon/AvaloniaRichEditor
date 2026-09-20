@@ -36,7 +36,7 @@ public class PageChromeBandRenderTests
         return buf;
     }
 
-    private static RichEditor PagedEditor(Thickness margin)
+    private static RichEditor PagedEditor(AvaloniaRichEditor.Documents.PageMargins margin)
     {
         var ed = new RichEditor
         {
@@ -72,7 +72,7 @@ public class PageChromeBandRenderTests
     [AvaloniaFact]
     public void AHeaderIsDrawnInTheBand_WhenItFits()
     {
-        var ed = PagedEditor(new Thickness(48, 40, 48, 40)); // the default band, 40 DIP
+        var ed = PagedEditor(AvaloniaRichEditor.Documents.PageSetup.DefaultMargin); // 10.6 mm = 40 DIP band
 
         var px = Render(ed);
 
@@ -84,12 +84,12 @@ public class PageChromeBandRenderTests
     [AvaloniaFact]
     public void ABandTooThinForTheLine_IsLeftEmpty()
     {
-        var ed = PagedEditor(new Thickness(16, 12, 16, 12));
+        var ed = PagedEditor(new AvaloniaRichEditor.Documents.PageMargins(4, 3, 4, 3)); // 3 mm = 11 DIP band
 
         var px = Render(ed);
 
-        int inBand = MarkedPixels(px, PaperTop + 2, PaperTop + 12, PaperLeft(ed) + 2, PaperRight(ed) - 2);
-        Assert.True(inBand == 0, $"a 12 DIP band cannot hold an 11pt line, but {inBand} pixels were drawn in it");
+        int inBand = MarkedPixels(px, PaperTop + 2, PaperTop + 11, PaperLeft(ed) + 2, PaperRight(ed) - 2);
+        Assert.True(inBand == 0, $"a 3 mm band cannot hold an 11pt line, but {inBand} pixels were drawn in it");
     }
 
     // The defect's other half — the line also started ABOVE the paper, on the desk — has no test: the

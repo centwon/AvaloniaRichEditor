@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using AvaloniaRichEditor.Documents;
 using AvaloniaRichEditor.Formatters;
 
 namespace AvaloniaRichEditor.Controls;
@@ -131,23 +132,38 @@ public partial class RichEditorToolbar
         // notices, not a number most people want to type. A margin set by a host or carried by a document
         // need not be one of these — then nothing is selected (the zoom combo does the same for an
         // off-grid zoom) and picking an entry is what changes it.
-        _marginCombo = PageCombo(116, Loc("MarginTip"));
+        //
+        // The icon carries the meaning ("여백"/"Margins" spelled out cost more toolbar width than the
+        // values it labelled); the entries name the step and the millimetres it stands for.
+        if ((RichEditorIcons.TryCreate(RichEditorIcon.PageMargin) ?? ToolbarIcons.Create(RichEditorIcon.PageMargin))
+            is { } marginIcon)
+        {
+            marginIcon.Margin = new Thickness(4, 0, 2, 0);
+            marginIcon.VerticalAlignment = VerticalAlignment.Center;
+            ToolTip.SetTip(marginIcon, Loc("MarginTip"));
+            items.Add(marginIcon);
+        }
+        _marginCombo = PageCombo(112, Loc("MarginTip"));
         foreach (var (label, margin) in MarginPresets)
             _marginCombo.Items.Add(new ComboBoxItem { Content = Loc(label), Tag = margin });
         _marginCombo.SelectionChanged += (_, _) =>
         {
-            if (_suppress || Target is not { } t || _marginCombo.SelectedItem is not ComboBoxItem { Tag: Thickness m }) return;
+            if (_suppress || Target is not { } t || _marginCombo.SelectedItem is not ComboBoxItem { Tag: PageMargins m }) return;
             t.EditDocumentPageSetup(() => t.PageMargin = m); // the open document's setup, not the host's defaults
         };
         items.Add(_marginCombo);
     }
 
-    // Normal is the editor's own default; narrow and wide keep its 6:5 ratio between the sides.
-    private static readonly (string Label, Thickness Margin)[] MarginPresets =
+    // Five steps in round millimetres, the unit page setup is discussed in. "Normal" is the editor's own
+    // default (12.7 x 10.6 mm = half an inch across, what it drew before margins were settable) and the
+    // only asymmetric one; the rest are square, as Word's and HWP's presets are.
+    private static readonly (string Label, PageMargins Margin)[] MarginPresets =
     {
-        ("MarginNormal", new Thickness(48, 40, 48, 40)),
-        ("MarginNarrow", new Thickness(24, 20, 24, 20)),
-        ("MarginWide", new Thickness(96, 80, 96, 80)),
+        ("MarginNone", new PageMargins(0)),
+        ("MarginNarrow", new PageMargins(10)),
+        ("MarginNormal", PageSetup.DefaultMargin),
+        ("MarginWide", new PageMargins(20)),
+        ("MarginWidest", new PageMargins(30)),
     };
 
     /// <summary>Reflects the host's current zoom / fit-width and the editor's paper state onto the built-in
@@ -189,7 +205,7 @@ public partial class RichEditorToolbar
         {
             ComboBoxItem? match = null;
             foreach (var it in _marginCombo.Items)
-                if (it is ComboBoxItem { Tag: Thickness m } ci && m.Equals(Target.PageMargin)) { match = ci; break; }
+                if (it is ComboBoxItem { Tag: PageMargins m } ci && m.Equals(Target.PageMargin)) { match = ci; break; }
             _marginCombo.SelectedItem = match; // null = margins that match no preset (a host's, or a file's)
             _marginCombo.IsEnabled = paged;    // margins are meaningless in Continuous, as orientation is
         }

@@ -18,9 +18,9 @@ namespace AvaloniaRichEditor.Tests;
 // tested, as is the case that decides it — the editor keeps a page to write on either way.
 public class PageMarginTests
 {
-    private static readonly Thickness Wide = new(100, 80, 100, 80);
+    private static readonly PageMargins Wide = new(25, 20, 25, 20); // mm
 
-    private static FlowDocument A4Doc(Thickness? margin = null)
+    private static FlowDocument A4Doc(PageMargins? margin = null)
     {
         var doc = new FlowDocument();
         doc.Blocks.Add(TestHelpers.Para(new Run { Text = "page" }));
@@ -36,9 +36,10 @@ public class PageMarginTests
 
         ed.PageMargin = Wide;
 
-        // A4 is 794 DIP wide: 794 - 2*48 = 698 before, 794 - 2*100 = 594 after.
-        Assert.Equal(698, before, 1);
-        Assert.Equal(594, ed.ContentLayoutWidth, 1);
+        // A4 is 794 DIP (210 mm) wide. Default 12.7 mm a side = 48 DIP: 794 - 96 = 698 before.
+        // 25 mm a side = 94.5 DIP: 794 - 189 = 605 after.
+        Assert.Equal(698, before, 0);
+        Assert.Equal(605, ed.ContentLayoutWidth, 0);
     }
 
     [AvaloniaFact]
@@ -51,7 +52,7 @@ public class PageMarginTests
         ed.Measure(new Size(900, 1200));
         int before = ed.GetPrintPageCount();
 
-        ed.PageMargin = new Thickness(48, 400, 48, 400); // a tall band top and bottom: less page to write on
+        ed.PageMargin = new PageMargins(12.7, 105, 12.7, 105); // a tall band top and bottom: less page to write on
         ed.Measure(new Size(900, 1200));
 
         Assert.True(ed.GetPrintPageCount() > before, $"{before} pages before, {ed.GetPrintPageCount()} after");
@@ -96,14 +97,21 @@ public class PageMarginTests
             Assert.False(setup.TryGetProperty(side, out _), $"{side} was written at its default");
     }
 
+    // RTF carries lengths as whole twips (1/1440 inch), so a millimetre does not survive exactly: 25 mm
+    // is 1417.32 twips, written as 1417 and read back as 24.994. The contract is that the page comes back
+    // the same to within a twip — not that the number is identical.
     [Fact]
-    public void MarginsRoundTripThroughRtf()
+    public void MarginsRoundTripThroughRtf_ToWithinATwip()
     {
         var doc = A4Doc(Wide);
 
-        var back = RtfDocumentFormatter.Parse(RtfDocumentFormatter.Write(doc));
+        var m = RtfDocumentFormatter.Parse(RtfDocumentFormatter.Write(doc)).PageSetup!.Margin;
 
-        Assert.Equal(Wide, back.PageSetup!.Margin);
+        const double twipMm = 25.4 / 1440;
+        Assert.Equal(Wide.Left, m.Left, twipMm);
+        Assert.Equal(Wide.Top, m.Top, twipMm);
+        Assert.Equal(Wide.Right, m.Right, twipMm);
+        Assert.Equal(Wide.Bottom, m.Bottom, twipMm);
     }
 
     // The point of reading them: a file from another word processor keeps its own margins. 1440 twips = 1
@@ -115,7 +123,7 @@ public class PageMarginTests
         var doc = RtfDocumentFormatter.Parse(
             @"{\rtf1\ansi\paperw11910\paperh16845\margl1440\margr720\margt1440\margb720 hello\par}");
 
-        Assert.Equal(new Thickness(96, 96, 48, 48), doc.PageSetup!.Margin);
+        Assert.Equal(new PageMargins(25.4, 25.4, 12.7, 12.7), doc.PageSetup!.Margin);
     }
 
     // A file that states only some sides keeps ours for the rest, rather than falling to zero.
@@ -125,22 +133,22 @@ public class PageMarginTests
         var doc = RtfDocumentFormatter.Parse(@"{\rtf1\ansi\paperw11910\paperh16845\margl1440 hello\par}");
 
         var d = PageSetup.DefaultMargin;
-        Assert.Equal(new Thickness(96, d.Top, d.Right, d.Bottom), doc.PageSetup!.Margin);
+        Assert.Equal(new PageMargins(25.4, d.Top, d.Right, d.Bottom), doc.PageSetup!.Margin);
     }
 
     // ---- margins that leave no page ---------------------------------------------------------------
 
     [AvaloniaTheory]
-    [InlineData(-10.0, 40.0)]            // negative
-    [InlineData(500.0, 40.0)]            // 2 x 500 > A4's 794 wide
-    [InlineData(48.0, 700.0)]            // 2 x 700 > A4's 1123 tall
-    [InlineData(double.NaN, 40.0)]
-    [InlineData(double.PositiveInfinity, 40.0)]
+    [InlineData(-10.0, 10.0)]            // negative
+    [InlineData(120.0, 10.0)]            // 2 x 120 mm > A4's 210 mm across
+    [InlineData(12.7, 160.0)]            // 2 x 160 mm > A4's 297 mm down
+    [InlineData(double.NaN, 10.0)]
+    [InlineData(double.PositiveInfinity, 10.0)]
     public void AMarginThatLeavesNoPage_IsRefusedByTheProperty(double x, double y)
     {
         var ed = new RichEditor { Document = A4Doc(), PageSize = RichEditorPageSize.A4 };
 
-        ed.PageMargin = new Thickness(x, y, x, y);
+        ed.PageMargin = new PageMargins(x, y, x, y);
 
         Assert.Equal(PageSetup.DefaultMargin, ed.PageMargin); // kept the last usable value
         Assert.True(ed.ContentLayoutWidth > 0);
@@ -149,7 +157,7 @@ public class PageMarginTests
     [Fact]
     public void AJsonFileWithAMarginThatLeavesNoPage_FallsBackToTheDefault()
     {
-        string json = DocumentSerializer.Serialize(A4Doc(new Thickness(48, 40, 48, 40)))
+        string json = DocumentSerializer.Serialize(A4Doc(PageSetup.DefaultMargin))
             .Replace("\"ShowPageNumbers\": false", "\"ShowPageNumbers\": false, \"MarginLeft\": 900");
 
         var doc = DocumentSerializer.Deserialize(json);
@@ -160,7 +168,7 @@ public class PageMarginTests
     [Fact]
     public void AnRtfWithAMarginThatLeavesNoPage_FallsBackToTheDefault()
     {
-        // 20000 twips = 1333 DIP, wider than A4's 794 on its own.
+        // 20000 twips = 353 mm, wider than A4's 210 on its own.
         var doc = RtfDocumentFormatter.Parse(
             @"{\rtf1\ansi\paperw11910\paperh16845\margl20000\margr20000 hello\par}");
 
@@ -172,7 +180,7 @@ public class PageMarginTests
     [Fact]
     public void MarginsStatedBeforeASmallerPaper_AreRecheckedAgainstIt()
     {
-        // 4400 twips = 293 DIP a side: 587 together fits A4 (794 wide), not A5 (559).
+        // 4400 twips = 77.6 mm a side: 155 together fits A4 (210 across), not A5 (148).
         var doc = RtfDocumentFormatter.Parse(
             @"{\rtf1\ansi\margl4400\margr4400\paperw8385\paperh11910 hello\par}");
 

@@ -1,6 +1,7 @@
 ﻿#nullable enable
-AvaloniaRichEditor.Controls.RichEditor.PageMargin.get -> Avalonia.Thickness
+AvaloniaRichEditor.Controls.RichEditor.PageMargin.get -> AvaloniaRichEditor.Documents.PageMargins
 AvaloniaRichEditor.Controls.RichEditor.PageMargin.set -> void
+AvaloniaRichEditor.Controls.RichEditorIcon.PageMargin = 48 -> AvaloniaRichEditor.Controls.RichEditorIcon
 AvaloniaRichEditor.Controls.RichEditorShortcut
 AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.get -> bool
 AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.init -> void
@@ -61,12 +62,25 @@ AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.CellVerticalAlignment.Bottom = 2 -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.CellVerticalAlignment.Center = 1 -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.CellVerticalAlignment.Top = 0 -> AvaloniaRichEditor.Documents.CellVerticalAlignment
-AvaloniaRichEditor.Documents.PageSetup.Margin.get -> Avalonia.Thickness
+AvaloniaRichEditor.Documents.PageMargins
+AvaloniaRichEditor.Documents.PageMargins.Bottom.get -> double
+AvaloniaRichEditor.Documents.PageMargins.Bottom.init -> void
+AvaloniaRichEditor.Documents.PageMargins.Left.get -> double
+AvaloniaRichEditor.Documents.PageMargins.Left.init -> void
+AvaloniaRichEditor.Documents.PageMargins.PageMargins() -> void
+AvaloniaRichEditor.Documents.PageMargins.PageMargins(double allSides) -> void
+AvaloniaRichEditor.Documents.PageMargins.PageMargins(double Left, double Top, double Right, double Bottom) -> void
+AvaloniaRichEditor.Documents.PageMargins.Right.get -> double
+AvaloniaRichEditor.Documents.PageMargins.Right.init -> void
+AvaloniaRichEditor.Documents.PageMargins.Top.get -> double
+AvaloniaRichEditor.Documents.PageMargins.Top.init -> void
+AvaloniaRichEditor.Documents.PageSetup.Margin.get -> AvaloniaRichEditor.Documents.PageMargins
 AvaloniaRichEditor.Documents.PageSetup.Margin.set -> void
 AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.get -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.set -> void
 AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.get -> bool
 AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.set -> void
+const AvaloniaRichEditor.Documents.PageSetup.DipsPerMm = 3.7795275590551185 -> double
 override AvaloniaRichEditor.Controls.RichEditor.OnPointerCaptureLost(Avalonia.Input.PointerCaptureLostEventArgs! e) -> void
 AvaloniaRichEditor.Controls.RichEditor.FindAgain(bool backwards) -> bool
 AvaloniaRichEditor.Controls.RichEditor.FindRequested -> System.EventHandler<bool>?
@@ -76,11 +90,14 @@ AvaloniaRichEditor.Controls.RichEditorView.HideFindBar() -> void
 AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.get -> bool
 AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.set -> void
 AvaloniaRichEditor.Controls.RichEditorView.ShowFindBar(bool withReplace) -> void
+override AvaloniaRichEditor.Documents.PageMargins.ToString() -> string!
 static AvaloniaRichEditor.Controls.RichEditorShortcuts.All.get -> System.Collections.Generic.IReadOnlyList<AvaloniaRichEditor.Controls.RichEditorShortcut>!
 static AvaloniaRichEditor.Controls.RichEditorShortcuts.Display(AvaloniaRichEditor.Controls.RichEditorShortcutId id) -> string!
 static AvaloniaRichEditor.Controls.RichEditorShortcuts.Gesture(AvaloniaRichEditor.Controls.RichEditorShortcutId id) -> Avalonia.Input.KeyGesture?
-static AvaloniaRichEditor.Documents.PageSetup.DefaultMargin.get -> Avalonia.Thickness
-static readonly AvaloniaRichEditor.Controls.RichEditor.PageMarginProperty -> Avalonia.StyledProperty<Avalonia.Thickness>!
+static AvaloniaRichEditor.Documents.PageMargins.Symmetric(double sides, double topAndBottom) -> AvaloniaRichEditor.Documents.PageMargins
+static AvaloniaRichEditor.Documents.PageSetup.DefaultMargin.get -> AvaloniaRichEditor.Documents.PageMargins
+static AvaloniaRichEditor.Documents.PageSetup.PaperMillimetres(AvaloniaRichEditor.Controls.RichEditorPageSize size, AvaloniaRichEditor.Controls.RichEditorPageOrientation orientation) -> (double W, double H)
+static readonly AvaloniaRichEditor.Controls.RichEditor.PageMarginProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Documents.PageMargins>!
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBarProperty -> Avalonia.StyledProperty<bool>!
 AvaloniaRichEditor.Controls.RichEditorIcon.Find = 47 -> AvaloniaRichEditor.Controls.RichEditorIcon
 AvaloniaRichEditor.Controls.RichEditor.InsertTableRow(AvaloniaRichEditor.Documents.TableBlock! table, int at) -> bool

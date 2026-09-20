@@ -43,11 +43,11 @@ public class ToolbarMarginPickerTests : IDisposable
         var (ed, tb) = Paged();
         var picker = Picker(tb);
 
-        picker.SelectedIndex = 1; // narrow
+        picker.SelectedIndex = 1; // narrow, 10 mm
 
-        Assert.Equal(new Thickness(24, 20, 24, 20), ed.PageMargin);
+        Assert.Equal(new PageMargins(10), ed.PageMargin);
         // The pickers edit the OPEN DOCUMENT's setup, so a save carries the change.
-        Assert.Equal(new Thickness(24, 20, 24, 20), ed.Document!.PageSetup!.Margin);
+        Assert.Equal(new PageMargins(10), ed.Document!.PageSetup!.Margin);
     }
 
     // The pickers edit the OPEN DOCUMENT, not the host's defaults — which is only observable in the NEXT
@@ -58,8 +58,8 @@ public class ToolbarMarginPickerTests : IDisposable
     public void PickingAPreset_DoesNotBecomeTheHostsDefaultForTheNextDocument()
     {
         var (ed, tb) = Paged();
-        Picker(tb).SelectedIndex = 2; // wide
-        Assert.Equal(new Thickness(96, 80, 96, 80), ed.PageMargin);
+        Picker(tb).SelectedIndex = 3; // wide, 20 mm
+        Assert.Equal(new PageMargins(20), ed.PageMargin);
 
         ed.Document = Doc(); // a fresh document with no page setup of its own
 
@@ -71,7 +71,7 @@ public class ToolbarMarginPickerTests : IDisposable
     {
         var (ed, tb) = Paged();
 
-        var wide = new Thickness(96, 80, 96, 80);
+        var wide = new PageMargins(20);
         ed.PageMargin = wide; // set from code, not from the picker
         tb.RefreshPageControls();
 
@@ -85,7 +85,7 @@ public class ToolbarMarginPickerTests : IDisposable
     {
         var (ed, tb) = Paged();
 
-        ed.PageMargin = new Thickness(160, 24, 32, 120);
+        ed.PageMargin = new PageMargins(42, 6, 8, 31);
         tb.RefreshPageControls();
 
         Assert.Null(Picker(tb).SelectedItem);

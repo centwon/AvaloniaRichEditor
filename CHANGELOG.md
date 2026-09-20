@@ -12,8 +12,11 @@ The margins were two constants nothing could reach: a host could pick the paper 
 write on, and an RTF from Word or HWP had its own margins dropped, so a document opened here paginated
 differently from what its author saw.
 
-- `RichEditor.PageMargin` (a `Thickness`, DIPs, four sides) and `PageSetup.Margin`, defaulting to
-  `PageSetup.DefaultMargin` — 48 left and right, 40 top and bottom, the previous constants.
+- `RichEditor.PageMargin` and `PageSetup.Margin`, four sides in **millimetres** (`PageMargins`), defaulting
+  to `PageSetup.DefaultMargin` — 12.7 mm (half an inch) left and right, 10.6 mm top and bottom, the sizes
+  this editor has always drawn. Millimetres because that is the unit a page is discussed in: paper sizes
+  are defined in mm, Word and HWP show margins in mm, and RTF carries them as physical length. A dedicated
+  type rather than Avalonia's `Thickness`, which means device pixels everywhere else in a UI framework.
 - They belong to the document: saved in JSON/`.flow` (omitted at the default, so a document that never
   touched them keeps its bytes) and applied on load, like the paper size.
 - RTF writes them (`\margl`/`\margr`/`\margt`/`\margb`, and the section-level pair HWP reads) and now
@@ -22,9 +25,19 @@ differently from what its author saw.
   refused: the property keeps its last usable value, and a file falls back to the default.
 - A margin band too thin for the header, footer or page number leaves it undrawn, rather than centring the
   line half off the paper and half over the body text. The margins stay exactly what was asked for.
-- The toolbar's page controls gained a **margin picker** (normal / narrow / wide), beside paper and
-  orientation, so the person using an app built on `RichEditorView` can change them too — margins that match
-  no preset (a host's, or a document's) select nothing rather than showing one that is not the page's.
+- The toolbar's page controls gained a **margin picker** beside paper and orientation, so the person using
+  an app built on `RichEditorView` can change them too: five steps in millimetres (none / 10 / 12.7 / 20 /
+  30), behind a margin icon. Margins that match no preset (a host's, or a document's) select nothing rather
+  than showing one that is not the page's. New icon slot `RichEditorIcon.PageMargin`.
+
+### Fixed — a table's outline was cut where a page break crossed it (2026-09-20)
+
+Reported from the demo. A 1px pen is centred on the rect it strokes, so a cell on the table's edge put half
+its line outside the table's own box; a page break lands on that box, and the page's clip cut the line in
+two — part of its weight at the bottom of one page, the rest at the top of the next (measured: 67% of a
+whole line). The edges that are the table's boundary are now drawn half a pen inwards, which keeps a
+table's ink inside the box pagination knows about — and lands those lines on whole pixels, so they come out
+crisper as well. Interior borders, shared by two cells, are unchanged.
 
 ### Added — the keyboard shortcut table is public (2026-09-20)
 

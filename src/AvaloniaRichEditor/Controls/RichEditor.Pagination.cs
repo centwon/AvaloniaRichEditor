@@ -116,17 +116,17 @@ public partial class RichEditor
     // across paper sizes.
     // Aliases of the shared page geometry (Documents.PageSetup): the RTF writer needs the same numbers
     // for its footer tab stop and cannot read them off a control type without dragging the control in.
-    /// <summary>The page margins in DIPs — the band between the paper's edge and the text, where the
-    /// header, footer and page number are drawn. Four sides, as Word, HWP and RTF have them; it is part of
-    /// the document's <see cref="Documents.PageSetup"/>, so it is saved with the document and applied on
+    /// <summary>The page margins in MILLIMETRES — the band between the paper's edge and the text, where
+    /// the header, footer and page number are drawn. Four sides, as Word, HWP and RTF have them; it is part
+    /// of the document's <see cref="Documents.PageSetup"/>, so it is saved with the document and applied on
     /// load. Only meaningful for a concrete paper size (Continuous reflows to the control's width).</summary>
-    public static readonly StyledProperty<Thickness> PageMarginProperty =
-        AvaloniaProperty.Register<RichEditor, Thickness>(nameof(PageMargin), Documents.PageSetup.DefaultMargin,
+    public static readonly StyledProperty<PageMargins> PageMarginProperty =
+        AvaloniaProperty.Register<RichEditor, PageMargins>(nameof(PageMargin), Documents.PageSetup.DefaultMargin,
             coerce: CoercePageMargin);
 
-    /// <summary>Gets or sets the page margins (DIPs, four sides). Defaults to
+    /// <summary>Gets or sets the page margins (millimetres, four sides). Defaults to
     /// <see cref="Documents.PageSetup.DefaultMargin"/>.</summary>
-    public Thickness PageMargin
+    public PageMargins PageMargin
     {
         get => GetValue(PageMarginProperty);
         set => SetValue(PageMarginProperty, value);
@@ -136,17 +136,19 @@ public partial class RichEditor
     // the layout width zero or negative, and every page-view measurement divides by it. A styled property
     // is reachable from XAML and from a binding, so the value is refused HERE rather than guarded at each
     // of the dozen places that read it; the editor keeps the last usable margins.
-    private static Thickness CoercePageMargin(AvaloniaObject o, Thickness value)
+    private static PageMargins CoercePageMargin(AvaloniaObject o, PageMargins value)
     {
         var ed = (RichEditor)o;
-        var (w, h) = Documents.PageSetup.PaperDips(ed.PageSize, ed.PageOrientation);
+        var (w, h) = Documents.PageSetup.PaperMillimetres(ed.PageSize, ed.PageOrientation);
         return Documents.PageSetup.IsUsableMargin(value, w, h) ? value : ed.PageMargin;
     }
 
-    internal double PagePadLeft => PageMargin.Left;
-    internal double PagePadRight => PageMargin.Right;
-    internal double PagePadTop => PageMargin.Top;
-    internal double PagePadBottom => PageMargin.Bottom;
+    // Layout is in DIPs; the page setting is in millimetres. Every reader of the margins goes through
+    // these four, so the conversion lives in one place.
+    internal double PagePadLeft => PageMargin.LeftDips;
+    internal double PagePadRight => PageMargin.RightDips;
+    internal double PagePadTop => PageMargin.TopDips;
+    internal double PagePadBottom => PageMargin.BottomDips;
     // Grey-desk gap above the first page and between consecutive pages in page-outline view. Kept thin
     // (~2 pt) so pages sit close together with just a sliver of desk between them, rather than a wide
     // grey band. The whole page-stack layout (MeasureOverride height, PageRectView, MapViewToDoc) is
