@@ -59,7 +59,7 @@ public partial class RichEditorToolbar
     public Func<bool>? IsFitWidthGetter { get; set; }
 
     // ---- page / zoom ------------------------------------------------------
-    private ComboBox? _zoomCombo, _paperCombo, _orientCombo;
+    private ComboBox? _zoomCombo, _paperCombo, _orientCombo, _marginCombo;
 
     private static readonly (RichEditorPageSize size, string label)[] PaperSizes =
     {
@@ -126,7 +126,29 @@ public partial class RichEditorToolbar
             t.EditDocumentPageSetup(() => t.PageOrientation = o);
         };
         items.Add(_orientCombo);
+
+        // Page margins. Presets only, as Word and HWP lead with: the band is a page property a reader
+        // notices, not a number most people want to type. A margin set by a host or carried by a document
+        // need not be one of these — then nothing is selected (the zoom combo does the same for an
+        // off-grid zoom) and picking an entry is what changes it.
+        _marginCombo = PageCombo(116, Loc("MarginTip"));
+        foreach (var (label, margin) in MarginPresets)
+            _marginCombo.Items.Add(new ComboBoxItem { Content = Loc(label), Tag = margin });
+        _marginCombo.SelectionChanged += (_, _) =>
+        {
+            if (_suppress || Target is not { } t || _marginCombo.SelectedItem is not ComboBoxItem { Tag: Thickness m }) return;
+            t.EditDocumentPageSetup(() => t.PageMargin = m); // the open document's setup, not the host's defaults
+        };
+        items.Add(_marginCombo);
     }
+
+    // Normal is the editor's own default; narrow and wide keep its 6:5 ratio between the sides.
+    private static readonly (string Label, Thickness Margin)[] MarginPresets =
+    {
+        ("MarginNormal", new Thickness(48, 40, 48, 40)),
+        ("MarginNarrow", new Thickness(24, 20, 24, 20)),
+        ("MarginWide", new Thickness(96, 80, 96, 80)),
+    };
 
     /// <summary>Reflects the host's current zoom / fit-width and the editor's paper state onto the built-in
     /// page controls. Call after changing view-level zoom (which the toolbar can't observe directly).</summary>
@@ -162,6 +184,14 @@ public partial class RichEditorToolbar
             foreach (var it in _orientCombo.Items)
                 if (it is ComboBoxItem { Tag: RichEditorPageOrientation o } ci && o == Target.PageOrientation) { _orientCombo.SelectedItem = ci; break; }
             _orientCombo.IsEnabled = paged; // orientation is meaningless in Continuous
+        }
+        if (_marginCombo != null)
+        {
+            ComboBoxItem? match = null;
+            foreach (var it in _marginCombo.Items)
+                if (it is ComboBoxItem { Tag: Thickness m } ci && m.Equals(Target.PageMargin)) { match = ci; break; }
+            _marginCombo.SelectedItem = match; // null = margins that match no preset (a host's, or a file's)
+            _marginCombo.IsEnabled = paged;    // margins are meaningless in Continuous, as orientation is
         }
         if (_zoomCombo != null)
         {

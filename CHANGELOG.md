@@ -22,6 +22,9 @@ differently from what its author saw.
   refused: the property keeps its last usable value, and a file falls back to the default.
 - A margin band too thin for the header, footer or page number leaves it undrawn, rather than centring the
   line half off the paper and half over the body text. The margins stay exactly what was asked for.
+- The toolbar's page controls gained a **margin picker** (normal / narrow / wide), beside paper and
+  orientation, so the person using an app built on `RichEditorView` can change them too — margins that match
+  no preset (a host's, or a document's) select nothing rather than showing one that is not the page's.
 
 ### Added — the keyboard shortcut table is public (2026-09-20)
 

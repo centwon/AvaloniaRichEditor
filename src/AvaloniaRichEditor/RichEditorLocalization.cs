@@ -152,6 +152,10 @@ public static class RichEditorLocalization
             ["OrientPortrait"] = "Portrait",
             ["OrientLandscape"] = "Landscape",
             ["OrientationTip"] = "Page orientation",
+            ["MarginNormal"] = "Normal margins",
+            ["MarginNarrow"] = "Narrow margins",
+            ["MarginWide"] = "Wide margins",
+            ["MarginTip"] = "Page margins (the band the header and footer sit in)",
             // File actions (RichEditorView)
             ["Export"] = "Export (JSON / .flow / HTML)",
             ["Import"] = "Import",
@@ -292,6 +296,10 @@ public static class RichEditorLocalization
             ["OrientPortrait"] = "세로",
             ["OrientLandscape"] = "가로",
             ["OrientationTip"] = "용지 방향",
+            ["MarginNormal"] = "여백 보통",
+            ["MarginNarrow"] = "여백 좁게",
+            ["MarginWide"] = "여백 넓게",
+            ["MarginTip"] = "쪽 여백 (머리글·바닥글이 앉는 띠)",
             // File actions (RichEditorView)
             ["Export"] = "내보내기 (JSON / .flow / HTML)",
             ["Import"] = "가져오기",
