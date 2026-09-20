@@ -236,8 +236,8 @@ public partial class RichEditor
                 context.FillRectangle(Brushes.White, paper);
                 context.DrawRectangle(null, GrayBorderPen, paper);
                 DrawPageMarginChrome(context, paper, i, breaks.Count);
-                var contentBox = new Rect(paper.X + PagePadX, paper.Y + PagePadY,
-                    paper.Width - 2 * PagePadX, paper.Height - 2 * PagePadY);
+                var contentBox = new Rect(paper.X + PagePadLeft, paper.Y + PagePadTop,
+                    paper.Width - PagePadLeft - PagePadRight, paper.Height - PagePadTop - PagePadBottom);
                 double sliceTop = breaks[i];
                 double sliceBottom = i + 1 < breaks.Count ? breaks[i + 1] : double.PositiveInfinity;
                 // The clip must end where the page's document slice ends, not at the full content

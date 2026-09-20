@@ -130,7 +130,7 @@ public class PaginationTests
             Assert.Equal(30, back.X, 3);
         }
         // X gains the paper margin (desk centering is 0 while unmeasured: Bounds is empty).
-        Assert.Equal(30 + RichEditor.PagePadX, ed.MapDocToView(new Avalonia.Point(30, 0)).X, 3);
+        Assert.Equal(30 + ed.PagePadLeft, ed.MapDocToView(new Avalonia.Point(30, 0)).X, 3);
     }
 
     [AvaloniaFact]
@@ -142,7 +142,7 @@ public class PaginationTests
         var doc = ed.MapViewToDoc(new Avalonia.Point(100, gapY));
         Assert.True(doc.Y < 1000 && doc.Y > 990, $"gap click should clamp to page 1's end, got {doc.Y:F1}");
         // Click on the top paper margin of page 2 clamps to page 2's content start.
-        double page2MarginY = RichEditor.PageGap * 2 + RichEditor.A4PageHeight + RichEditor.PagePadY / 2.0;
+        double page2MarginY = RichEditor.PageGap * 2 + RichEditor.A4PageHeight + ed.PagePadTop / 2.0;
         var doc2 = ed.MapViewToDoc(new Avalonia.Point(100, page2MarginY));
         Assert.Equal(1000, doc2.Y, 3);
     }

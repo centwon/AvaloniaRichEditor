@@ -484,6 +484,18 @@ internal sealed class RtfParser
             case "landscape": case "lndscpsxn":
                 if (_st.Dest == Dest.Normal) { _landscape = true; MatchPaper(); } break;
 
+            // Page margins, in twips. Document level (Word) and section level (HWP) again, as the paper
+            // above. A file from another word processor carries its own margins; before this they were
+            // dropped and the document opened with ours, so its pagination was not what its author saw.
+            case "margl": case "marglsxn":
+                if (_st.Dest == Dest.Normal && p is int ml) { _marginTwips[0] = ml; ApplyMargins(); } break;
+            case "margt": case "margtsxn":
+                if (_st.Dest == Dest.Normal && p is int mt) { _marginTwips[1] = mt; ApplyMargins(); } break;
+            case "margr": case "margrsxn":
+                if (_st.Dest == Dest.Normal && p is int mr) { _marginTwips[2] = mr; ApplyMargins(); } break;
+            case "margb": case "margbsxn":
+                if (_st.Dest == Dest.Normal && p is int mb) { _marginTwips[3] = mb; ApplyMargins(); } break;
+
             case "fonttbl": case "stylesheet": case "info": case "pntext": case "themedata":
             case "datastore": case "xmlnstbl": case "rsidtbl": case "generator": case "listtable":
             case "listoverridetable": case "revtbl":
@@ -606,6 +618,32 @@ internal sealed class RtfParser
     private int _paperW, _paperH;
     private bool _landscape;
 
+    // Margins in twips, left/top/right/bottom, -1 until the file states one. They arrive as four separate
+    // control words in any order, and a file may state only some — the rest keep our default.
+    private readonly int[] _marginTwips = { -1, -1, -1, -1 };
+
+    // Each stated margin, once the paper is known well enough to check it against. The paper may still be
+    // Continuous here (a file that gives margins but no size, or a size we have no name for): its print
+    // fallback is A4, which is what such a document would be printed on anyway.
+    private void ApplyMargins()
+    {
+        double Side(int i, double fallback) => _marginTwips[i] >= 0 ? _marginTwips[i] / 15.0 : fallback;
+        var d = PageSetup.DefaultMargin;
+        var m = new Avalonia.Thickness(Side(0, d.Left), Side(1, d.Top), Side(2, d.Right), Side(3, d.Bottom));
+        var ps = _doc.PageSetup;
+        var (w, h) = PageSetup.PaperDips(ps?.PageSize ?? Controls.RichEditorPageSize.Continuous,
+                                         ps?.Orientation ?? Controls.RichEditorPageOrientation.Portrait);
+        if (!PageSetup.IsUsableMargin(m, w, h))
+        {
+            // Not "keep what we had": an earlier call may have accepted these margins against the A4
+            // fallback, and the paper the file went on to declare is smaller.
+            if (_doc.PageSetup is { } stale) stale.Margin = PageSetup.DefaultMargin;
+            return;
+        }
+        _doc.PageSetup ??= new PageSetup();
+        _doc.PageSetup.Margin = m;
+    }
+
     // Turns the paper dimensions back into a named page size by asking PaperDips for each candidate —
     // the same table the control lays out with, so a document written by this project comes back exactly.
     // Tolerance is 2 twips: the dimensions are rounded DIPs on the way out.
@@ -624,6 +662,9 @@ internal sealed class RtfParser
                 _doc.PageSetup ??= new PageSetup();
                 _doc.PageSetup.PageSize = size;
                 _doc.PageSetup.Orientation = orientation;
+                // The margins may have arrived first and been checked against the A4 fallback; now that the
+                // real paper is known, check them against it (an A5 file's margins can fit A4 and not A5).
+                if (System.Array.Exists(_marginTwips, t => t >= 0)) ApplyMargins();
                 return;
             }
         }
@@ -1195,8 +1236,8 @@ internal sealed class RtfWriter
         {
             var (w, h) = PageSetup.PaperDips(ps.PageSize, ps.Orientation);
             sb.Append($@"\paperw{(int)Math.Round(w * 15)}\paperh{(int)Math.Round(h * 15)}");
-            sb.Append($@"\margl{(int)Math.Round(PageSetup.MarginX * 15)}\margr{(int)Math.Round(PageSetup.MarginX * 15)}");
-            sb.Append($@"\margt{(int)Math.Round(PageSetup.MarginY * 15)}\margb{(int)Math.Round(PageSetup.MarginY * 15)}");
+            sb.Append($@"\margl{(int)Math.Round(ps.Margin.Left * 15)}\margr{(int)Math.Round(ps.Margin.Right * 15)}");
+            sb.Append($@"\margt{(int)Math.Round(ps.Margin.Top * 15)}\margb{(int)Math.Round(ps.Margin.Bottom * 15)}");
             // \landscape is the document-level flag; PaperDips has already swapped the dimensions, so
             // this only tells the reader how to present the page setup it was given.
             if (ps.Orientation == Controls.RichEditorPageOrientation.Landscape) sb.Append(@"\landscape");
@@ -1205,6 +1246,8 @@ internal sealed class RtfWriter
             // opened in HWP as Letter until they were here. Both are the same values by construction,
             // so there is nothing to keep in sync beyond this line.
             sb.Append($@"\sectd\pgwsxn{(int)Math.Round(w * 15)}\pghsxn{(int)Math.Round(h * 15)}");
+            sb.Append($@"\marglsxn{(int)Math.Round(ps.Margin.Left * 15)}\margrsxn{(int)Math.Round(ps.Margin.Right * 15)}");
+            sb.Append($@"\margtsxn{(int)Math.Round(ps.Margin.Top * 15)}\margbsxn{(int)Math.Round(ps.Margin.Bottom * 15)}");
             if (ps.Orientation == Controls.RichEditorPageOrientation.Landscape) sb.Append(@"\lndscpsxn");
             sb.Append('\n');
         }
@@ -1223,7 +1266,7 @@ internal sealed class RtfWriter
         if (hasFooter)
         {
             var (w, _) = PageSetup.PaperDips(ps.PageSize, ps.Orientation);
-            int contentTwips = (int)Math.Round((w - 2 * PageSetup.MarginX) * 15);
+            int contentTwips = (int)Math.Round((w - ps.Margin.Left - ps.Margin.Right) * 15);
             _body.Append(@"{\footer\pard\plain\ql");
             if (ps.ShowPageNumbers) _body.Append(@"\tqr\tx").Append(contentTwips);
             _body.Append(' ');

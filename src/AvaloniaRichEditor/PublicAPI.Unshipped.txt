@@ -1,4 +1,6 @@
 ﻿#nullable enable
+AvaloniaRichEditor.Controls.RichEditor.PageMargin.get -> Avalonia.Thickness
+AvaloniaRichEditor.Controls.RichEditor.PageMargin.set -> void
 AvaloniaRichEditor.Controls.RichEditorShortcut
 AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.get -> bool
 AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.init -> void
@@ -59,6 +61,8 @@ AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.CellVerticalAlignment.Bottom = 2 -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.CellVerticalAlignment.Center = 1 -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.CellVerticalAlignment.Top = 0 -> AvaloniaRichEditor.Documents.CellVerticalAlignment
+AvaloniaRichEditor.Documents.PageSetup.Margin.get -> Avalonia.Thickness
+AvaloniaRichEditor.Documents.PageSetup.Margin.set -> void
 AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.get -> AvaloniaRichEditor.Documents.CellVerticalAlignment
 AvaloniaRichEditor.Documents.TableCell.VerticalAlignment.set -> void
 AvaloniaRichEditor.Documents.TextPointer.AtLineEnd.get -> bool
@@ -75,6 +79,8 @@ AvaloniaRichEditor.Controls.RichEditorView.ShowFindBar(bool withReplace) -> void
 static AvaloniaRichEditor.Controls.RichEditorShortcuts.All.get -> System.Collections.Generic.IReadOnlyList<AvaloniaRichEditor.Controls.RichEditorShortcut>!
 static AvaloniaRichEditor.Controls.RichEditorShortcuts.Display(AvaloniaRichEditor.Controls.RichEditorShortcutId id) -> string!
 static AvaloniaRichEditor.Controls.RichEditorShortcuts.Gesture(AvaloniaRichEditor.Controls.RichEditorShortcutId id) -> Avalonia.Input.KeyGesture?
+static AvaloniaRichEditor.Documents.PageSetup.DefaultMargin.get -> Avalonia.Thickness
+static readonly AvaloniaRichEditor.Controls.RichEditor.PageMarginProperty -> Avalonia.StyledProperty<Avalonia.Thickness>!
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBarProperty -> Avalonia.StyledProperty<bool>!
 AvaloniaRichEditor.Controls.RichEditorIcon.Find = 47 -> AvaloniaRichEditor.Controls.RichEditorIcon
 AvaloniaRichEditor.Controls.RichEditor.InsertTableRow(AvaloniaRichEditor.Documents.TableBlock! table, int at) -> bool

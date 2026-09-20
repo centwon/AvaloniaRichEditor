@@ -214,7 +214,7 @@ public class VectorPdfTests
         finally { handle.Free(); }
         var raster = InkColumns(buf, rw, rh);
 
-        double margin = Geometry(ed, "PagePadX") * 72 / 96;
+        double margin = Geometry(ed, "PagePadRight") * 72 / 96;
         Assert.True(raster.Right > 0 && vector.Right > 0, "nothing drawn");
         Assert.True(vector.Right < W - margin + 2, $"ink runs to x={vector.Right}, past the right margin at {W - margin:0}");
         Assert.True(Math.Abs(vector.Left - raster.Left) <= 2 && Math.Abs(vector.Right - raster.Right) <= 3,
