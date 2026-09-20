@@ -6,6 +6,13 @@ namespace AvaloniaRichEditor.Documents;
 /// <see cref="InlineImage"/>. Used for larger pictures; supports resize.</summary>
 public class ImageBlock : Block
 {
+    /// <summary>Creates a block picture. Its top margin is <see cref="Block.AutoTopMargin"/>: one line
+    /// gap below whatever precedes it, since a paragraph carries no bottom margin of its own.</summary>
+    public ImageBlock()
+    {
+        MarginTop = AutoTopMargin;
+    }
+
     private Bitmap? _cachedBitmap;
     // Set when a decode of RawBytes threw, so the render path doesn't retry the bad bytes every frame.
     // Crucially the bytes themselves are KEPT (the format may decode on another platform/codec, and a

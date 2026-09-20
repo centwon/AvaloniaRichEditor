@@ -186,7 +186,12 @@ public static class DocumentSerializer
             case Paragraph p:
                 return ParagraphToDto(p, pool);
             case DividerBlock dv:
-                return new BlockDto { Type = "Divider", MarginTop = dv.MarginTop, MarginBottom = dv.MarginBottom };
+                return new BlockDto
+                {
+                    Type = "Divider",
+                    MarginTop = double.IsNaN(dv.MarginTop) ? null : dv.MarginTop, // see the table branch
+                    MarginBottom = dv.MarginBottom,
+                };
             case ImageBlock img:
                 // Bytes go to the document image pool (deduplicated by hash); the block stores only
                 // the pool key. A bitmap set without bytes (legacy/consumer path) is PNG-encoded once.
@@ -200,7 +205,7 @@ public static class DocumentSerializer
                     Height = NanToNull(img.Height),
                     Alt = img.AltText,
                     Indent = img.Indent,
-                    MarginTop = img.MarginTop,
+                    MarginTop = double.IsNaN(img.MarginTop) ? null : img.MarginTop, // see the table branch
                     MarginBottom = img.MarginBottom
                 };
             case TableBlock tb:
@@ -210,7 +215,7 @@ public static class DocumentSerializer
                     Rows = tb.Rows,
                     Columns = tb.Columns,
                     Indent = tb.Indent,
-                    // NaN is "let the editor choose the gap" (TableBlock.AutoMarginTop) and JSON has no
+                    // NaN is "let the editor choose the gap" (Block.AutoTopMargin) and JSON has no
                     // NaN: it goes out as no field at all, and comes back as NaN on the next read.
                     MarginTop = double.IsNaN(tb.MarginTop) ? null : tb.MarginTop,
                     MarginBottom = tb.MarginBottom,
@@ -330,7 +335,7 @@ public static class DocumentSerializer
         switch (d.Type)
         {
             case "Divider":
-                return new DividerBlock { MarginTop = d.MarginTop ?? 0, MarginBottom = d.MarginBottom ?? 0 };
+                return new DividerBlock { MarginTop = d.MarginTop ?? Block.AutoTopMargin, MarginBottom = d.MarginBottom ?? 0 };
             case "Image":
                 {
                     // Bytes are kept encoded; the Bitmap is decoded lazily on first render.
@@ -340,7 +345,7 @@ public static class DocumentSerializer
                         Height = d.Height ?? double.NaN,
                         AltText = d.Alt,
                         Indent = d.Indent,
-                        MarginTop = d.MarginTop ?? 0,
+                        MarginTop = d.MarginTop ?? Block.AutoTopMargin, // absent = the editor's own gap
                         MarginBottom = d.MarginBottom ?? 10
                     };
                     if (ResolveImage(d.ImageRef, d.ImageBase64, d.MimeType, pool) is { } img)
@@ -354,7 +359,7 @@ public static class DocumentSerializer
                 // exhausted it before a single cell was read.
                 var tb = new TableBlock(1, 1);
                 tb.Indent = d.Indent;
-                tb.MarginTop = d.MarginTop ?? TableBlock.AutoMarginTop; // absent = the editor's own gap
+                tb.MarginTop = d.MarginTop ?? Block.AutoTopMargin; // absent = the editor's own gap
                 tb.MarginBottom = d.MarginBottom ?? 10;
                 tb.Cells.Clear();
                 tb.ColumnWidths.Clear();

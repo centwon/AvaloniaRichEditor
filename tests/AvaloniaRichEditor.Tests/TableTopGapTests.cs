@@ -25,11 +25,27 @@ public class TableTopGapTests
         return doc;
     }
 
+    // Every block kind that is an OBJECT on the page, not text: a picture and a divider butt against the
+    // paragraph above exactly as a table does.
     [AvaloniaFact]
-    public void ANewTableAsksTheEditorForItsTopGap()
+    public void ANewObjectBlockAsksTheEditorForItsTopGap()
     {
         Assert.True(double.IsNaN(new TableBlock().MarginTop));
         Assert.True(double.IsNaN(new TableBlock(3, 2).MarginTop));
+        Assert.True(double.IsNaN(new ImageBlock().MarginTop));
+        Assert.True(double.IsNaN(new DividerBlock().MarginTop));
+        Assert.Equal(0, new Paragraph().MarginTop); // text is not an object: it keeps its plain 0
+    }
+
+    [AvaloniaTheory]
+    [InlineData("image")]
+    [InlineData("divider")]
+    public void APictureAndADividerGetTheSameGap(string kind)
+    {
+        Block block = kind == "image" ? new ImageBlock { Width = 60, Height = 40 } : new DividerBlock();
+        var ed = new RichEditor { Document = DocWith(block) };
+
+        Assert.Equal(ed.AutoBlockTopGap, ed.TopGapOf(block), 3);
     }
 
     // One line gap = the body line box (font size x line spacing) less the text itself.

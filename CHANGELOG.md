@@ -13,8 +13,7 @@ write on, and an RTF from Word or HWP had its own margins dropped, so a document
 differently from what its author saw.
 
 - `RichEditor.PageMargin` and `PageSetup.Margin`, four sides in **millimetres** (`PageMargins`), defaulting
-  to `PageSetup.DefaultMargin` — 12.7 mm (half an inch) left and right, 10.6 mm top and bottom, the sizes
-  this editor has always drawn. Millimetres because that is the unit a page is discussed in: paper sizes
+  to `PageSetup.DefaultMargin` — 15 mm on every side. Millimetres because that is the unit a page is discussed in: paper sizes
   are defined in mm, Word and HWP show margins in mm, and RTF carries them as physical length. A dedicated
   type rather than Avalonia's `Thickness`, which means device pixels everywhere else in a UI framework.
 - They belong to the document: saved in JSON/`.flow` (omitted at the default, so a document that never
@@ -26,9 +25,21 @@ differently from what its author saw.
 - A margin band too thin for the header, footer or page number leaves it undrawn, rather than centring the
   line half off the paper and half over the body text. The margins stay exactly what was asked for.
 - The toolbar's page controls gained a **margin picker** beside paper and orientation, so the person using
-  an app built on `RichEditorView` can change them too: five steps in millimetres (none / 10 / 12.7 / 20 /
-  30), behind a margin icon. Margins that match no preset (a host's, or a document's) select nothing rather
+  an app built on `RichEditorView` can change them too: five steps in millimetres (5 / 10 / 15 / 20 / 30)
+  in a box built like the line-spacing control — the margin icon, the current step, a chevron for the list. Margins that match no preset (a host's, or a document's) select nothing rather
   than showing one that is not the page's. New icon slot `RichEditorIcon.PageMargin`.
+
+### Changed — a table, picture or divider sits one line gap below the text above it (2026-09-21)
+
+Reported from the demo: a table sat flush against the paragraph above, with none of the air the line
+spacing gives between two lines of text. Both ends were at zero — paragraphs carry no bottom margin
+(HWP-style) and these blocks carried no top one.
+
+- `Block.AutoTopMargin` (NaN) is the new default `MarginTop` for `TableBlock`, `ImageBlock` and
+  `DividerBlock`: the editor resolves it to one line gap of body text, so it follows the document's font
+  size and line spacing. A stated margin, **0 included**, is used as given.
+- JSON writes nothing for it and reads a missing top margin back as auto, so a file that never expressed
+  an opinion — every file written before the field existed — gains the gap.
 
 ### Fixed — a table's outline was cut where a page break crossed it (2026-09-20)
 
