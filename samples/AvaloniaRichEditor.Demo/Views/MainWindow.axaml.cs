@@ -32,7 +32,26 @@ public partial class MainWindow : Window
             Editor.IsReadOnly = ReadOnlyToggle.IsChecked == true;
             Editor.ShowFormattingMenu = !Editor.IsReadOnly;
         };
+
+        // Page margins (1.3.0). The view's toolbar has paper and orientation but no margins, and the
+        // margin band is where the header, the footer and the page number are drawn — the asymmetric
+        // preset is the one that tells "four sides" apart from "two", on screen and in print.
+        MarginPicker.ItemsSource = MarginPresets.ConvertAll(p => p.Label);
+        MarginPicker.SelectedIndex = 0;
+        MarginPicker.SelectionChanged += (_, _) =>
+        {
+            int i = MarginPicker.SelectedIndex;
+            if (i >= 0 && i < MarginPresets.Count) Editor.PageMargin = MarginPresets[i].Margin;
+        };
     }
+
+    private static readonly System.Collections.Generic.List<(string Label, Avalonia.Thickness Margin)> MarginPresets =
+    [
+        ("기본 48 / 40", new Avalonia.Thickness(48, 40, 48, 40)),
+        ("좁게 16 / 12", new Avalonia.Thickness(16, 12, 16, 12)),
+        ("넓게 120 / 96", new Avalonia.Thickness(120, 96, 120, 96)),
+        ("비대칭 좌160 상24 우32 하120", new Avalonia.Thickness(160, 24, 32, 120)),
+    ];
 
     protected override void OnOpened(EventArgs e)
     {

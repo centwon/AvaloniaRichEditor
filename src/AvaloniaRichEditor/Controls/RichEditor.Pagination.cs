@@ -258,6 +258,13 @@ public partial class RichEditor
     // Header/footer/page number, drawn inside the paper's margin bands (never the content box, so
     // pagination is unaffected). `paper` is the page rect in the caller's coordinate space — the
     // page-view loop passes view coordinates, RenderPrintPage passes the page at the origin.
+    //
+    // A band too thin to hold the line is left empty (user decision, 2026-09-20). The band was a constant
+    // 40 until the margins became a document setting, so the line always fitted; at a 12 DIP band an 11pt
+    // line is centred from -1 to 13 — drawn off the paper onto the desk at one end and over the body text
+    // at the other (seen in the demo). Skipping keeps the margins EXACTLY what was asked for, which
+    // pushing the body down (Word's answer) would not, and a header that is not there is visible enough to
+    // undo; centring inside a band that fits also keeps the line on the paper by construction.
     private void DrawPageMarginChrome(DrawingContext ctx, Rect paper, int pageIndex, int pageCount)
     {
         var typeface = new Avalonia.Media.Typeface(DefaultFontFamily);
@@ -265,6 +272,8 @@ public partial class RichEditor
         {
             var ft = new Avalonia.Media.FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
                 Avalonia.Media.FlowDirection.LeftToRight, typeface, 11, Avalonia.Media.Brushes.Gray);
+            double band = top ? PagePadTop : PagePadBottom;
+            if (ft.Height > band) return;
             double x = right ? paper.X + PagePadLeft + PaperContentWidth - ft.Width : paper.X + PagePadLeft;
             double bandCenter = top ? paper.Y + PagePadTop / 2 : paper.Bottom - PagePadBottom / 2;
             ctx.DrawText(ft, new Point(x, bandCenter - ft.Height / 2));

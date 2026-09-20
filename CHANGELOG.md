@@ -20,6 +20,8 @@ differently from what its author saw.
   **reads** them, so a file from another word processor keeps its own margins.
 - A margin that would leave no page to write on — negative, NaN, or two sides adding up past the paper — is
   refused: the property keeps its last usable value, and a file falls back to the default.
+- A margin band too thin for the header, footer or page number leaves it undrawn, rather than centring the
+  line half off the paper and half over the body text. The margins stay exactly what was asked for.
 
 ### Added — the keyboard shortcut table is public (2026-09-20)
 
