@@ -355,7 +355,7 @@ public partial class RichEditor : Control
             InvalidateVisual();
         }
         if (change.Property == PageSizeProperty || change.Property == ShowPageBoundariesProperty
-            || change.Property == PageOrientationProperty)
+            || change.Property == PageOrientationProperty || change.Property == PageMarginProperty)
         {
             RecordHostPageSetup(change.Property); // a page property set by code is the host's default (see there)
             CapturePageSetupToDocument(); // persist the page change into the document model

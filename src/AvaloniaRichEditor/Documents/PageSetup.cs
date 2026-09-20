@@ -23,11 +23,29 @@ public class PageSetup
     /// <summary>Whether "page / total" is drawn in the bottom margin.</summary>
     public bool ShowPageNumbers { get; set; }
 
-    /// <summary>The page margin, in DIPs, that the editor draws and that the header/footer band lives in.</summary>
-    // Here rather than on the control because the RTF writer needs it too, and a formatter reaching for a
+    /// <summary>The page margins, in DIPs: the band between the paper's edge and the text, which the
+    /// header, the footer and the page number are drawn in. Four sides, as Word, HWP and RTF have them.
+    /// Defaults to <see cref="DefaultMargin"/>.</summary>
+    public Avalonia.Thickness Margin { get; set; } = DefaultMargin;
+
+    /// <summary>The margins a document starts with: 48 DIP left and right, 40 top and bottom.</summary>
+    public static Avalonia.Thickness DefaultMargin { get; } = new(MarginX, MarginY, MarginX, MarginY);
+
+    // Here rather than on the control because the RTF writer needs them too, and a formatter reaching for a
     // control's statics is how a headless formatter stops being headless.
     internal const double MarginX = 48;
     internal const double MarginY = 40;
+
+    // A margin a document (or an RTF from another word processor) states has to leave a content box to
+    // put text in: negative, NaN/infinite, or two sides that together swallow the paper all describe a
+    // page nothing can be laid out on. Such a value is dropped rather than clamped — a document that
+    // means "no margins" says 0, and silently halving someone's 300 DIP margin is its own surprise.
+    internal static bool IsUsableMargin(Avalonia.Thickness m, double paperW, double paperH)
+    {
+        foreach (double v in new[] { m.Left, m.Top, m.Right, m.Bottom })
+            if (double.IsNaN(v) || double.IsInfinity(v) || v < 0) return false;
+        return m.Left + m.Right < paperW && m.Top + m.Bottom < paperH;
+    }
 
     /// <summary>Paper size in DIPs for a page size + orientation. Single source: the control's layout and
     /// the RTF writer's tab stops must agree, and two copies of a table like this drift.</summary>
@@ -56,6 +74,7 @@ public class PageSetup
         Header = Header,
         Footer = Footer,
         ShowPageNumbers = ShowPageNumbers,
+        Margin = Margin,
     };
 
     /// <summary>True when the setup carries no real information (Continuous paper, no header/footer/page
@@ -67,5 +86,6 @@ public class PageSetup
         PageSize == RichEditorPageSize.Continuous
         && string.IsNullOrEmpty(Header)
         && string.IsNullOrEmpty(Footer)
-        && !ShowPageNumbers;
+        && !ShowPageNumbers
+        && Margin.Equals(DefaultMargin);
 }

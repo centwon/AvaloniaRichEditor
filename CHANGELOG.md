@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — page margins (2026-09-20)
+
+The margins were two constants nothing could reach: a host could pick the paper but not how much of it to
+write on, and an RTF from Word or HWP had its own margins dropped, so a document opened here paginated
+differently from what its author saw.
+
+- `RichEditor.PageMargin` (a `Thickness`, DIPs, four sides) and `PageSetup.Margin`, defaulting to
+  `PageSetup.DefaultMargin` — 48 left and right, 40 top and bottom, the previous constants.
+- They belong to the document: saved in JSON/`.flow` (omitted at the default, so a document that never
+  touched them keeps its bytes) and applied on load, like the paper size.
+- RTF writes them (`\margl`/`\margr`/`\margt`/`\margb`, and the section-level pair HWP reads) and now
+  **reads** them, so a file from another word processor keeps its own margins.
+- A margin that would leave no page to write on — negative, NaN, or two sides adding up past the paper — is
+  refused: the property keeps its last usable value, and a file falls back to the default.
+
 ### Added — the keyboard shortcut table is public (2026-09-20)
 
 A host building its own toolbar or menu could not read the gestures the editor acts on, so it had to write

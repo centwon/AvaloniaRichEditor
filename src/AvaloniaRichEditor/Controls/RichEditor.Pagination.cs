@@ -49,6 +49,7 @@ public partial class RichEditor
         else if (changed == PageHeaderProperty) _hostPageSetup.Header = PageHeader;
         else if (changed == PageFooterProperty) _hostPageSetup.Footer = PageFooter;
         else if (changed == ShowPageNumbersProperty) _hostPageSetup.ShowPageNumbers = ShowPageNumbers;
+        else if (changed == PageMarginProperty) _hostPageSetup.Margin = PageMargin;
     }
 
     // On Document change: a document that specifies a PageSetup drives the control's page properties
@@ -78,6 +79,7 @@ public partial class RichEditor
             PageHeader = ps.Header;
             PageFooter = ps.Footer;
             ShowPageNumbers = ps.ShowPageNumbers;
+            PageMargin = ps.Margin;
         }
         finally { _syncingPageSetup = false; }
     }
@@ -98,6 +100,7 @@ public partial class RichEditor
             Header = PageHeader,
             Footer = PageFooter,
             ShowPageNumbers = ShowPageNumbers,
+            Margin = PageMargin,
         };
         // Null — "no setup", read back as the HOST's — only when the host's defaults are plain too. Under a host
         // that defaults to A4, a document switched to Continuous stored null, saved without a setup and reopened as
@@ -113,15 +116,45 @@ public partial class RichEditor
     // across paper sizes.
     // Aliases of the shared page geometry (Documents.PageSetup): the RTF writer needs the same numbers
     // for its footer tab stop and cannot read them off a control type without dragging the control in.
-    internal const double PagePadX = Documents.PageSetup.MarginX;
-    internal const double PagePadY = Documents.PageSetup.MarginY;
+    /// <summary>The page margins in DIPs — the band between the paper's edge and the text, where the
+    /// header, footer and page number are drawn. Four sides, as Word, HWP and RTF have them; it is part of
+    /// the document's <see cref="Documents.PageSetup"/>, so it is saved with the document and applied on
+    /// load. Only meaningful for a concrete paper size (Continuous reflows to the control's width).</summary>
+    public static readonly StyledProperty<Thickness> PageMarginProperty =
+        AvaloniaProperty.Register<RichEditor, Thickness>(nameof(PageMargin), Documents.PageSetup.DefaultMargin,
+            coerce: CoercePageMargin);
+
+    /// <summary>Gets or sets the page margins (DIPs, four sides). Defaults to
+    /// <see cref="Documents.PageSetup.DefaultMargin"/>.</summary>
+    public Thickness PageMargin
+    {
+        get => GetValue(PageMarginProperty);
+        set => SetValue(PageMarginProperty, value);
+    }
+
+    // A margin that leaves no content box (negative, NaN, or two sides swallowing the paper) would make
+    // the layout width zero or negative, and every page-view measurement divides by it. A styled property
+    // is reachable from XAML and from a binding, so the value is refused HERE rather than guarded at each
+    // of the dozen places that read it; the editor keeps the last usable margins.
+    private static Thickness CoercePageMargin(AvaloniaObject o, Thickness value)
+    {
+        var ed = (RichEditor)o;
+        var (w, h) = Documents.PageSetup.PaperDips(ed.PageSize, ed.PageOrientation);
+        return Documents.PageSetup.IsUsableMargin(value, w, h) ? value : ed.PageMargin;
+    }
+
+    internal double PagePadLeft => PageMargin.Left;
+    internal double PagePadRight => PageMargin.Right;
+    internal double PagePadTop => PageMargin.Top;
+    internal double PagePadBottom => PageMargin.Bottom;
     // Grey-desk gap above the first page and between consecutive pages in page-outline view. Kept thin
     // (~2 pt) so pages sit close together with just a sliver of desk between them, rather than a wide
     // grey band. The whole page-stack layout (MeasureOverride height, PageRectView, MapViewToDoc) is
     // derived from this one constant, so changing it stays consistent.
     internal const double PageGap = 3;
-    internal const double A4ContentWidth = A4PageWidth - 2 * PagePadX;    // 698
-    internal const double A4ContentHeight = A4PageHeight - 2 * PagePadY;  // 1043
+    // Instance properties since the margins became a document setting: 698 x 1043 at the default margins.
+    internal double A4ContentWidth => A4PageWidth - PagePadLeft - PagePadRight;
+    internal double A4ContentHeight => A4PageHeight - PagePadTop - PagePadBottom;
 
     /// <summary>Paper size for the document. <see cref="RichEditorPageSize.Continuous"/> (the default, no
     /// fixed paper) reflows the text column to the control width; any concrete size fixes the column to that
@@ -178,8 +211,8 @@ public partial class RichEditor
 
     internal double PaperWidth => PaperDims.w;
     internal double PaperHeight => PaperDims.h;
-    internal double PaperContentWidth => PaperWidth - 2 * PagePadX;
-    internal double PaperContentHeight => PaperHeight - 2 * PagePadY;
+    internal double PaperContentWidth => PaperWidth - PagePadLeft - PagePadRight;
+    internal double PaperContentHeight => PaperHeight - PagePadTop - PagePadBottom;
 
     /// <summary>The current paper's pixel size at 96 DPI (width × height), accounting for
     /// <see cref="PageOrientation"/>. <see cref="RichEditorPageSize.Continuous"/> reports its A4 print
@@ -232,8 +265,8 @@ public partial class RichEditor
         {
             var ft = new Avalonia.Media.FormattedText(text, System.Globalization.CultureInfo.CurrentCulture,
                 Avalonia.Media.FlowDirection.LeftToRight, typeface, 11, Avalonia.Media.Brushes.Gray);
-            double x = right ? paper.X + PagePadX + PaperContentWidth - ft.Width : paper.X + PagePadX;
-            double bandCenter = top ? paper.Y + PagePadY / 2 : paper.Bottom - PagePadY / 2;
+            double x = right ? paper.X + PagePadLeft + PaperContentWidth - ft.Width : paper.X + PagePadLeft;
+            double bandCenter = top ? paper.Y + PagePadTop / 2 : paper.Bottom - PagePadBottom / 2;
             ctx.DrawText(ft, new Point(x, bandCenter - ft.Height / 2));
         }
         if (!string.IsNullOrEmpty(PageHeader)) DrawSmall(PageHeader!, top: true, right: false);
@@ -257,9 +290,9 @@ public partial class RichEditor
     private double NoChromeColX => Math.Max(0, (Bounds.Width - PaperContentWidth) / 2);
 
     private double PageDeskX => Math.Max(0, (Bounds.Width - PaperWidth) / 2);
-    private double PageContentOffsetX => PageDeskX + PagePadX;
+    private double PageContentOffsetX => PageDeskX + PagePadLeft;
     private Rect PageRectView(int i) => new(PageDeskX, PageGap + i * (PaperHeight + PageGap), PaperWidth, PaperHeight);
-    private double ContentTopView(int i) => PageGap + i * (PaperHeight + PageGap) + PagePadY;
+    private double ContentTopView(int i) => PageGap + i * (PaperHeight + PageGap) + PagePadTop;
 
     // Bare-column mode (paged, no chrome) injects this much whitespace between pages, with the dashed
     // separator centered in it — so consecutive pages read as separate without the full page chrome.
@@ -318,7 +351,7 @@ public partial class RichEditor
             double sliceTop = breaks[pageIndex];
             double sliceBottom = pageIndex + 1 < breaks.Count ? breaks[pageIndex + 1] : double.PositiveInfinity;
             // Same slice clip rule as the page-view render: end the clip where the slice ends.
-            var clip = new Rect(PagePadX, PagePadY, contentW,
+            var clip = new Rect(PagePadLeft, PagePadTop, contentW,
                 Math.Min(contentH, sliceBottom - sliceTop));
             // Print resolution for pictures on the page (the bitmap page, the vector PDF, the print dialog) —
             // the screen's scale would print them at screen sharpness.
@@ -327,7 +360,7 @@ public partial class RichEditor
             try
             {
                 using (ctx.PushClip(clip))
-                using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadX, PagePadY - sliceTop)))
+                using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadLeft, PagePadTop - sliceTop)))
                     DrawDocumentBlocks(ctx, contentW, sliceTop, sliceBottom, chrome: false);
             }
             finally { _imagePixelScale = screenScale; }
