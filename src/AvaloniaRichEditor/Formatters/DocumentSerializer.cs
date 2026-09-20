@@ -210,7 +210,9 @@ public static class DocumentSerializer
                     Rows = tb.Rows,
                     Columns = tb.Columns,
                     Indent = tb.Indent,
-                    MarginTop = tb.MarginTop,
+                    // NaN is "let the editor choose the gap" (TableBlock.AutoMarginTop) and JSON has no
+                    // NaN: it goes out as no field at all, and comes back as NaN on the next read.
+                    MarginTop = double.IsNaN(tb.MarginTop) ? null : tb.MarginTop,
                     MarginBottom = tb.MarginBottom,
                     ColumnWidths = new List<double>(tb.ColumnWidths),
                     RowHeights = new List<double>(tb.RowHeights),
@@ -352,7 +354,7 @@ public static class DocumentSerializer
                 // exhausted it before a single cell was read.
                 var tb = new TableBlock(1, 1);
                 tb.Indent = d.Indent;
-                tb.MarginTop = d.MarginTop ?? 0;
+                tb.MarginTop = d.MarginTop ?? TableBlock.AutoMarginTop; // absent = the editor's own gap
                 tb.MarginBottom = d.MarginBottom ?? 10;
                 tb.Cells.Clear();
                 tb.ColumnWidths.Clear();

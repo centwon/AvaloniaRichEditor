@@ -153,7 +153,8 @@ public partial class RichEditorToolbar
             row.Children.Add(glyph);
         }
 
-        _marginLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, MinWidth = 86 };
+        // 12pt, the size every other page control uses (PageCombo, the line-spacing box).
+        _marginLabel = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, MinWidth = 88 };
         row.Children.Add(_marginLabel);
 
         var presets = new Button
@@ -175,6 +176,7 @@ public partial class RichEditorToolbar
             var item = new Button
             {
                 Content = Loc(label),
+                FontSize = 12,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Background = Brushes.Transparent,

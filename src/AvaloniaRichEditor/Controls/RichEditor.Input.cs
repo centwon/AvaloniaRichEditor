@@ -1803,7 +1803,7 @@ public partial class RichEditor
         bool found = false;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             if (found) return yOffset;
             double h = BlockExtent(block, maxWidth, yOffset, out _, out _);
             found = ReferenceEquals(block, p);
@@ -1818,7 +1818,7 @@ public partial class RichEditor
         double yOffset = 0, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out _, out _);
             // Only image/table blocks are "entered" by Up/Down arrow navigation.

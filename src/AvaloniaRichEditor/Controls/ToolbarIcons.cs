@@ -116,9 +116,11 @@ internal static class ToolbarIcons
             ("M10.5 4 a6.5 6.5 0 1 0 0 13 a6.5 6.5 0 1 0 0 -13 Z", false),
             ("M15.5 15.5 L20.5 20.5", false)),
         // Page margins: the sheet, with the text box inside it — the band between the two IS the margin.
+        // Drawn in the same 20-unit box as the rest, with the sheet at the proportions of the Print sheet
+        // so it reads at the weight of its neighbours rather than as a bigger block.
         RichEditorIcon.PageMargin => Build(20,
-            ("M5 3 H19 V21 H5 Z", false),
-            ("M8.5 7 H15.5 V17 H8.5 Z", false)),
+            ("M6 3 H18 V21 H6 Z", false),
+            ("M9 7 H15 V17 H9 Z", false)),
 
         _ => null,
     };

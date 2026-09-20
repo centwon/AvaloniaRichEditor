@@ -43,7 +43,7 @@ public partial class RichEditor
         double yOffset = 0;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double h = BlockExtent(block, width, yOffset, out _, out _);
             // While the IME composes, the render walk advances by the caret paragraph's height WITH the
             // preedit spliced in, so the extent has to as well — otherwise the scrollable range stays a
@@ -332,7 +332,7 @@ public partial class RichEditor
 
         foreach (var block in Document!.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             // G1 P5: source each block's height + layout objects from the single BlockExtent pass — the
             // same one measure/hit-tests/pagination consume — so the render walk can never drift from
             // them on a block's height. Drawing, culling, caret/selection and the per-cell IME-preedit

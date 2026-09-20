@@ -29,16 +29,26 @@ public class TableBlock : Block
     /// <summary>Creates a 2×2 table.</summary>
     public TableBlock()
     {
+        MarginTop = AutoMarginTop;
         InitializeCells(Rows, Columns);
     }
 
     /// <summary>Creates a <paramref name="rows"/>×<paramref name="cols"/> table.</summary>
     public TableBlock(int rows, int cols)
     {
+        MarginTop = AutoMarginTop;
         Rows = rows;
         Columns = cols;
         InitializeCells(Rows, Columns);
     }
+
+    /// <summary><see cref="Block.MarginTop"/> value meaning "let the editor choose": a table with this
+    /// sits one line gap below whatever precedes it — the white space a line break leaves between two
+    /// lines of body text. Paragraphs carry no bottom margin (HWP-style), so without it a table butts
+    /// straight against the paragraph above. An explicit number, including 0, is used as given.
+    /// <para>NaN as "unset" follows <see cref="Paragraph.LineSpacing"/>; a plain 0 cannot say it, because
+    /// 0 is also a perfectly good margin to ask for.</para></summary>
+    public static double AutoMarginTop => double.NaN;
 
     private void InitializeCells(int rows, int cols)
     {

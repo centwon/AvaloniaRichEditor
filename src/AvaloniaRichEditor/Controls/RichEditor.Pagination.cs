@@ -532,7 +532,7 @@ public partial class RichEditor
 
         foreach (var block in Document.Blocks)
         {
-            y += block.MarginTop;
+            y += TopGapOf(block);
             // Block height + layout objects come from the single source (G1 BlockExtent), so the
             // vertical advance here can never drift from MeasureContentHeight / the hit-tests. Only the
             // *within-block* atom split (table rows, paragraph lines) is pagination-specific and stays.

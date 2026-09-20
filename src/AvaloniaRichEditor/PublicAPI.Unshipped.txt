@@ -110,3 +110,4 @@ AvaloniaRichEditor.Controls.RichEditor.DeleteRow() -> bool
 AvaloniaRichEditor.Controls.RichEditor.InsertColumnLeft() -> bool
 AvaloniaRichEditor.Controls.RichEditor.InsertColumnRight() -> bool
 AvaloniaRichEditor.Controls.RichEditor.DeleteColumn() -> bool
+static AvaloniaRichEditor.Documents.TableBlock.AutoMarginTop.get -> double
