@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — row and column commands a host can call (2026-09-20)
+
+The row/column edits were reachable only from the right-click menu, so a host that builds its own toolbar —
+or fills a document by script — had to edit `TableBlock` itself, which skips the undo checkpoint, the parent
+wiring and the layout invalidation the editor's own commands do.
+
+- Naming the table: `InsertTableRow(table, at)`, `DeleteTableRow`, `InsertTableColumn`, `DeleteTableColumn`.
+  `at` == `Rows`/`Columns` appends.
+- Acting at the caret: `InsertRowAbove()`, `InsertRowBelow()`, `DeleteRow()`, `InsertColumnLeft()`,
+  `InsertColumnRight()`, `DeleteColumn()`. "Below" and "right" go past a merged area, as the menu does.
+- Each call is one undo step and returns whether anything changed: `false` for a read-only editor, an index
+  out of range, a table belonging to another document, or the last row/column of a table (always kept).
+- Works on nested and inline tables. Public API added — the next release is a minor bump.
+
 ### Added — a Find button on the toolbar (2026-09-19)
 
 From the WinUI port. It opens whatever answers Ctrl+F (`RichEditorView`'s find bar, or a host's own find UI via
