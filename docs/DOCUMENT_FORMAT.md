@@ -122,6 +122,7 @@ FlowDocument
 | `ImageBase64` | string? | **v1 레거시 읽기 폴백**: 인라인 base64. `ImageRef`가 풀에서 해석되면 무시 |
 | `MimeType` | string? | `ImageBase64` 바이트의 MIME. 없으면 `image/png`(레거시는 항상 PNG였음) |
 | `Width`, `Height` | number? | 표시 크기 px. NaN이면 생략하고, 없으면 NaN(자연 크기, 렌더 폴백 200) |
+| `Alt` | string? | 대체 텍스트(접근성 설명). null이면 생략 |
 
 #### `Type: "Table"`
 
@@ -145,6 +146,8 @@ FlowDocument
 
 평범한 1문단 셀은 이 래퍼 없이 Paragraph형 BlockDto로 직렬화되어(배경은 그 DTO의 `Background`에) 구 판독기와 호환된다.
 
+셀 세로 정렬 `VAlign`(string?): `"Center"`/`"Bottom"`. 두 형태(래퍼·Paragraph형) 모두 셀 DTO에 `Background`처럼 붙는다. 기본값 Top은 생략하고, 없거나 파싱 실패면 Top.
+
 #### `Type: "Divider"`
 
 공통 필드만 사용한다(수평선). `MarginBottom` 기본 0(높이 자체에 간격 포함).
@@ -164,11 +167,11 @@ FlowDocument
 | `Foreground` | string? | 글자색 (§2.5). 없으면 기본(검정) |
 | `Background` | string? | 형광펜 배경색 |
 | `Underline`, `Strikethrough` | bool | 밑줄/취소선 (둘 다 가능) |
-| `NavigateUri` | string? | 하이퍼링크 URL. 있으면 파랑+밑줄로 렌더, 에디터는 http/https만 연다 |
+| `NavigateUri` | string? | 하이퍼링크 URL. 다른 장식(밑줄·취소선)이 없으면 밑줄로 렌더하고, 색은 `Foreground`를 따른다. 에디터는 http/https만 연다 |
 
 #### `Type: "Image"` (인라인 이미지)
 
-블록 이미지와 동일한 `ImageRef`/`ImageBase64`/`MimeType` 규칙. `Width`/`Height` 없으면 16. 논리 텍스트에서 1글자를 차지한다.
+블록 이미지와 동일한 `ImageRef`/`ImageBase64`/`MimeType`/`Alt` 규칙. `Width`/`Height` 없으면 16. 논리 텍스트에서 1글자를 차지한다.
 
 #### `Type: "Table"` (인라인 표, 마일스톤 B)
 

@@ -54,7 +54,7 @@ Word·HWP·브라우저가 우리 출력을 어떻게 보는지 재현한다. �
 
 **테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off). 픽셀 검증은 `tests/AvaloniaRichEditor.Tests.Render/`(real Skia)가 따로 맡는다.
 
-> NuGet 배포 준비(N0~N5)와 진행 상황은 [`Project_Roadmap.md`](Project_Roadmap.md)의 **"📦 NuGet 배포 계획"** 절 참고.
+> NuGet 배포 준비(N0~N6) 경과는 [`docs/roadmap-archive.md`](docs/roadmap-archive.md)의 **"📦 NuGet 배포 계획"** 절, 릴리스 절차는 [`Project_Roadmap.md`](Project_Roadmap.md) "남은 일" 참고.
 
 ## 비자명한 핵심 규칙 (꼭 지킬 것)
 
