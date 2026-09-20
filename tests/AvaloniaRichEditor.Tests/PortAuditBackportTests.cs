@@ -164,8 +164,8 @@ public class PortAuditBackportTests
     public void CtrlK_IsInTheShortcutTable()
     {
         Assert.True(RichEditorShortcuts.TryMatch(true, false, false, Key.K, out var id));
-        Assert.Equal(ShortcutId.InsertLink, id);
-        Assert.Equal("Ctrl+K", RichEditorShortcuts.Display(ShortcutId.InsertLink));
+        Assert.Equal(RichEditorShortcutId.InsertLink, id);
+        Assert.Equal("Ctrl+K", RichEditorShortcuts.Display(RichEditorShortcutId.InsertLink));
     }
 
     // End to end: the key opens the link dialog on the link the caret is in, and OK re-links that word.
