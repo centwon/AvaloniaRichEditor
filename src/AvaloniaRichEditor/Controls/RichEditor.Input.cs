@@ -865,42 +865,42 @@ public partial class RichEditor
     // Runs a matched command shortcut from the central table. Copy/Cut/Paste/SelectAll/Undo are
     // intercepted earlier in OnKeyDown (they inspect object selection / plain-paste), so they don't reach
     // here; everything routed through this method is editing and is gated by IsReadOnly.
-    private void RunShortcut(ShortcutId id)
+    private void RunShortcut(RichEditorShortcutId id)
     {
         // Find reads, so it works in a viewer too; Find + Replace edits.
-        if (id == ShortcutId.Find) { if (AllowFindReplace) RaiseFindRequested(false); return; }
+        if (id == RichEditorShortcutId.Find) { if (AllowFindReplace) RaiseFindRequested(false); return; }
         if (IsReadOnly) return;
         switch (id)
         {
-            case ShortcutId.FindReplace: if (AllowFindReplace) RaiseFindRequested(true); break;
-            case ShortcutId.Redo: DoRedo(); break;
-            case ShortcutId.Bold: ToggleBold(); break;
-            case ShortcutId.Italic: ToggleItalic(); break;
-            case ShortcutId.Underline: ToggleUnderline(); break;
-            case ShortcutId.Strikethrough: ToggleStrikethrough(); break;
-            case ShortcutId.FontLarger: IncreaseFontSize(); break;
-            case ShortcutId.FontSmaller: DecreaseFontSize(); break;
-            case ShortcutId.IndentIncrease: Indent(20); break;
-            case ShortcutId.IndentDecrease: Indent(-20); break;
-            case ShortcutId.AlignLeft: SetTextAlignment(Avalonia.Media.TextAlignment.Left); break;
-            case ShortcutId.AlignCenter: SetTextAlignment(Avalonia.Media.TextAlignment.Center); break;
-            case ShortcutId.AlignRight: SetTextAlignment(Avalonia.Media.TextAlignment.Right); break;
-            case ShortcutId.AlignJustify: SetTextAlignment(Avalonia.Media.TextAlignment.Justify); break;
-            case ShortcutId.Heading1: SetHeading(1); break;
-            case ShortcutId.Heading2: SetHeading(2); break;
-            case ShortcutId.Heading3: SetHeading(3); break;
-            case ShortcutId.Heading4: SetHeading(4); break;
-            case ShortcutId.Heading5: SetHeading(5); break;
-            case ShortcutId.Heading6: SetHeading(6); break;
-            case ShortcutId.BodyText: SetHeading(0); break;
-            case ShortcutId.BulletList: ToggleBullet(); break;
-            case ShortcutId.NumberedList: ToggleNumbering(); break;
-            case ShortcutId.LineSpacingSingle: SetLineSpacing(1.0); break;
-            case ShortcutId.LineSpacingOneHalf: SetLineSpacing(1.5); break;
-            case ShortcutId.LineSpacingDouble: SetLineSpacing(2.0); break;
+            case RichEditorShortcutId.FindReplace: if (AllowFindReplace) RaiseFindRequested(true); break;
+            case RichEditorShortcutId.Redo: DoRedo(); break;
+            case RichEditorShortcutId.Bold: ToggleBold(); break;
+            case RichEditorShortcutId.Italic: ToggleItalic(); break;
+            case RichEditorShortcutId.Underline: ToggleUnderline(); break;
+            case RichEditorShortcutId.Strikethrough: ToggleStrikethrough(); break;
+            case RichEditorShortcutId.FontLarger: IncreaseFontSize(); break;
+            case RichEditorShortcutId.FontSmaller: DecreaseFontSize(); break;
+            case RichEditorShortcutId.IndentIncrease: Indent(20); break;
+            case RichEditorShortcutId.IndentDecrease: Indent(-20); break;
+            case RichEditorShortcutId.AlignLeft: SetTextAlignment(Avalonia.Media.TextAlignment.Left); break;
+            case RichEditorShortcutId.AlignCenter: SetTextAlignment(Avalonia.Media.TextAlignment.Center); break;
+            case RichEditorShortcutId.AlignRight: SetTextAlignment(Avalonia.Media.TextAlignment.Right); break;
+            case RichEditorShortcutId.AlignJustify: SetTextAlignment(Avalonia.Media.TextAlignment.Justify); break;
+            case RichEditorShortcutId.Heading1: SetHeading(1); break;
+            case RichEditorShortcutId.Heading2: SetHeading(2); break;
+            case RichEditorShortcutId.Heading3: SetHeading(3); break;
+            case RichEditorShortcutId.Heading4: SetHeading(4); break;
+            case RichEditorShortcutId.Heading5: SetHeading(5); break;
+            case RichEditorShortcutId.Heading6: SetHeading(6); break;
+            case RichEditorShortcutId.BodyText: SetHeading(0); break;
+            case RichEditorShortcutId.BulletList: ToggleBullet(); break;
+            case RichEditorShortcutId.NumberedList: ToggleNumbering(); break;
+            case RichEditorShortcutId.LineSpacingSingle: SetLineSpacing(1.0); break;
+            case RichEditorShortcutId.LineSpacingOneHalf: SetLineSpacing(1.5); break;
+            case RichEditorShortcutId.LineSpacingDouble: SetLineSpacing(2.0); break;
             // The dialog opens on the link the caret is in (its address prefilled), else on "https://"; OK applies to
             // the selection or the caret's word, as the menu's Insert Link does.
-            case ShortcutId.InsertLink: _ = EditHyperlinkAsync(CaretLinkUri(), null); break;
+            case RichEditorShortcutId.InsertLink: _ = EditHyperlinkAsync(CaretLinkUri(), null); break;
         }
     }
 

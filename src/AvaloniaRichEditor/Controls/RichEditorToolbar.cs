@@ -278,7 +278,7 @@ public partial class RichEditorToolbar : UserControl
             cb.DropDownClosed += (_, _) => Target?.Focus();
             return cb;
         }
-        Control FindButton() => Btn("🔎", Loc("Find") + " (" + RichEditorShortcuts.Display(ShortcutId.Find) + ")",
+        Control FindButton() => Btn("🔎", Loc("Find") + " (" + RichEditorShortcuts.Display(RichEditorShortcutId.Find) + ")",
             () => Target?.RaiseFindRequested(false), RichEditorIcon.Find);
 
         Control Div() => new Border

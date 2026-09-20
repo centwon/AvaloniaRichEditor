@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the keyboard shortcut table is public (2026-09-20)
+
+A host building its own toolbar or menu could not read the gestures the editor acts on, so it had to write
+"Ctrl+B" again somewhere the editor cannot see — and the two drift the day a binding changes.
+
+- `RichEditorShortcuts.All` lists every shortcut; `Display(id)` gives the hint text ("Ctrl+B"), `Gesture(id)`
+  the primary `KeyGesture` for a menu item.
+- The types are now public as `RichEditorShortcutId` (enum) and `RichEditorShortcut` (record), renamed from
+  the internal `ShortcutId`/`ShortcutSpec` so they carry the same prefix as the rest of the public surface.
+  New commands are appended, so the enum's numeric values keep their meaning.
+- `All` hands out a read-only view: the editor's key handler matches against the same table.
+- Matching a key event to a command stays internal — a host can match against `All` itself, and how the
+  editor routes keys stays free to change.
+
 ### Added — row and column commands a host can call (2026-09-20)
 
 The row/column edits were reachable only from the right-click menu, so a host that builds its own toolbar —

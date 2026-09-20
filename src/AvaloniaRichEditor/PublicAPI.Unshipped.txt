@@ -1,4 +1,56 @@
 ﻿#nullable enable
+AvaloniaRichEditor.Controls.RichEditorShortcut
+AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.get -> bool
+AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.init -> void
+AvaloniaRichEditor.Controls.RichEditorShortcut.Ctrl.get -> bool
+AvaloniaRichEditor.Controls.RichEditorShortcut.Ctrl.init -> void
+AvaloniaRichEditor.Controls.RichEditorShortcut.Display.get -> string!
+AvaloniaRichEditor.Controls.RichEditorShortcut.Display.init -> void
+AvaloniaRichEditor.Controls.RichEditorShortcut.Id.get -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcut.Id.init -> void
+AvaloniaRichEditor.Controls.RichEditorShortcut.Key.get -> Avalonia.Input.Key
+AvaloniaRichEditor.Controls.RichEditorShortcut.Key.init -> void
+AvaloniaRichEditor.Controls.RichEditorShortcut.RichEditorShortcut() -> void
+AvaloniaRichEditor.Controls.RichEditorShortcut.RichEditorShortcut(AvaloniaRichEditor.Controls.RichEditorShortcutId Id, bool Ctrl, bool Shift, bool Alt, Avalonia.Input.Key Key, string! Display) -> void
+AvaloniaRichEditor.Controls.RichEditorShortcut.Shift.get -> bool
+AvaloniaRichEditor.Controls.RichEditorShortcut.Shift.init -> void
+AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.AlignCenter = 16 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.AlignJustify = 18 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.AlignLeft = 15 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.AlignRight = 17 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.BodyText = 25 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Bold = 7 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.BulletList = 26 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Copy = 1 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Cut = 0 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Find = 33 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.FindReplace = 34 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.FontLarger = 11 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.FontSmaller = 12 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Heading1 = 19 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Heading2 = 20 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Heading3 = 21 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Heading4 = 22 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Heading5 = 23 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Heading6 = 24 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.IndentDecrease = 14 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.IndentIncrease = 13 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.InsertLink = 32 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Italic = 8 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.LineSpacingDouble = 30 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.LineSpacingOneHalf = 29 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.LineSpacingSingle = 28 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.NumberedList = 27 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Paste = 2 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.PastePlain = 3 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Redo = 6 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.SelectAll = 4 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.SelectCell = 31 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Strikethrough = 10 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Underline = 9 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcutId.Undo = 5 -> AvaloniaRichEditor.Controls.RichEditorShortcutId
+AvaloniaRichEditor.Controls.RichEditorShortcuts
 AvaloniaRichEditor.Documents.ImageBlock.AltText.get -> string?
 AvaloniaRichEditor.Documents.ImageBlock.AltText.set -> void
 AvaloniaRichEditor.Documents.InlineImage.AltText.get -> string?
@@ -20,6 +72,9 @@ AvaloniaRichEditor.Controls.RichEditorView.HideFindBar() -> void
 AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.get -> bool
 AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.set -> void
 AvaloniaRichEditor.Controls.RichEditorView.ShowFindBar(bool withReplace) -> void
+static AvaloniaRichEditor.Controls.RichEditorShortcuts.All.get -> System.Collections.Generic.IReadOnlyList<AvaloniaRichEditor.Controls.RichEditorShortcut>!
+static AvaloniaRichEditor.Controls.RichEditorShortcuts.Display(AvaloniaRichEditor.Controls.RichEditorShortcutId id) -> string!
+static AvaloniaRichEditor.Controls.RichEditorShortcuts.Gesture(AvaloniaRichEditor.Controls.RichEditorShortcutId id) -> Avalonia.Input.KeyGesture?
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBarProperty -> Avalonia.StyledProperty<bool>!
 AvaloniaRichEditor.Controls.RichEditorIcon.Find = 47 -> AvaloniaRichEditor.Controls.RichEditorIcon
 AvaloniaRichEditor.Controls.RichEditor.InsertTableRow(AvaloniaRichEditor.Documents.TableBlock! table, int at) -> bool

@@ -218,7 +218,7 @@ public partial class RichEditor
             if (!hasSelection && (NestedTableBorderAtPoint(point) ?? TableLeftOrTopBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
                 hasSelection = SelectWholeTableForCopy(roTable);
 
-            var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)) };
+            var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(RichEditorShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.SelectAll)) };
             var roMenu = NewContextMenu();
             roMenu.ItemsSource = roItems;
             _openContextMenu = roMenu;
@@ -377,9 +377,9 @@ public partial class RichEditor
             CopySelectionToClipboard();
             if (!RemoveTableHeldWhole()) DeleteSelection(); // the menu's cut: a table held whole goes whole
             InvalidateVisual();
-        }, hasSelection || canCopy, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(ShortcutId.Cut)));
-        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection || canCopy, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
-        items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste, gesture: RichEditorShortcuts.Gesture(ShortcutId.Paste)));
+        }, hasSelection || canCopy, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(RichEditorShortcutId.Cut)));
+        items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection || canCopy, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(RichEditorShortcutId.Copy)));
+        items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.Paste)));
         items.Add(Mi(Loc("Delete"), () =>
         {
             if (Document != null) PushUndo();
@@ -394,13 +394,13 @@ public partial class RichEditor
     // text, as Ctrl+B does — greying them out without a selection hid a command that works (converged with the
     // WinUI port, 2026-09-13). The same for ClearFormatting.
     private MenuItem CharacterFormatSub(CaretFormat fmt) => Sub(Loc("CharacterFormat"),
-        CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(ShortcutId.Bold)),
-        CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(ShortcutId.Italic)),
-        CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(ShortcutId.Underline)),
-        CheckItem(Loc("Strikethrough"), fmt.Strike, ToggleStrikethrough, true, RichEditorShortcuts.Gesture(ShortcutId.Strikethrough)),
+        CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(RichEditorShortcutId.Bold)),
+        CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(RichEditorShortcutId.Italic)),
+        CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(RichEditorShortcutId.Underline)),
+        CheckItem(Loc("Strikethrough"), fmt.Strike, ToggleStrikethrough, true, RichEditorShortcuts.Gesture(RichEditorShortcutId.Strikethrough)),
         new Separator(),
-        Mi(Loc("FontSizeIncrease"), IncreaseFontSize, true, RichEditorIcon.FontSizeIncrease, RichEditorShortcuts.Gesture(ShortcutId.FontLarger)),
-        Mi(Loc("FontSizeDecrease"), DecreaseFontSize, true, RichEditorIcon.FontSizeDecrease, RichEditorShortcuts.Gesture(ShortcutId.FontSmaller)),
+        Mi(Loc("FontSizeIncrease"), IncreaseFontSize, true, RichEditorIcon.FontSizeIncrease, RichEditorShortcuts.Gesture(RichEditorShortcutId.FontLarger)),
+        Mi(Loc("FontSizeDecrease"), DecreaseFontSize, true, RichEditorIcon.FontSizeDecrease, RichEditorShortcuts.Gesture(RichEditorShortcutId.FontSmaller)),
         new Separator(),
         Mi(Loc("ClearFormatting"), ClearFormatting, true, RichEditorIcon.ClearFormatting));
 
@@ -410,13 +410,13 @@ public partial class RichEditor
     {
         var children = new List<Control>
         {
-            RadioItem(Loc("AlignLeft"), "ctxAlign", fmt.Align == TextAlignment.Left, () => SetTextAlignment(TextAlignment.Left), RichEditorShortcuts.Gesture(ShortcutId.AlignLeft)),
-            RadioItem(Loc("AlignCenter"), "ctxAlign", fmt.Align == TextAlignment.Center, () => SetTextAlignment(TextAlignment.Center), RichEditorShortcuts.Gesture(ShortcutId.AlignCenter)),
-            RadioItem(Loc("AlignRight"), "ctxAlign", fmt.Align == TextAlignment.Right, () => SetTextAlignment(TextAlignment.Right), RichEditorShortcuts.Gesture(ShortcutId.AlignRight)),
-            RadioItem(Loc("AlignJustify"), "ctxAlign", fmt.Align == TextAlignment.Justify, () => SetTextAlignment(TextAlignment.Justify), RichEditorShortcuts.Gesture(ShortcutId.AlignJustify)),
+            RadioItem(Loc("AlignLeft"), "ctxAlign", fmt.Align == TextAlignment.Left, () => SetTextAlignment(TextAlignment.Left), RichEditorShortcuts.Gesture(RichEditorShortcutId.AlignLeft)),
+            RadioItem(Loc("AlignCenter"), "ctxAlign", fmt.Align == TextAlignment.Center, () => SetTextAlignment(TextAlignment.Center), RichEditorShortcuts.Gesture(RichEditorShortcutId.AlignCenter)),
+            RadioItem(Loc("AlignRight"), "ctxAlign", fmt.Align == TextAlignment.Right, () => SetTextAlignment(TextAlignment.Right), RichEditorShortcuts.Gesture(RichEditorShortcutId.AlignRight)),
+            RadioItem(Loc("AlignJustify"), "ctxAlign", fmt.Align == TextAlignment.Justify, () => SetTextAlignment(TextAlignment.Justify), RichEditorShortcuts.Gesture(RichEditorShortcutId.AlignJustify)),
             new Separator(),
-            Mi(Loc("IndentIncrease"), () => Indent(20), true, RichEditorIcon.IndentIncrease, RichEditorShortcuts.Gesture(ShortcutId.IndentIncrease)),
-            Mi(Loc("IndentDecrease"), () => Indent(-20), true, RichEditorIcon.IndentDecrease, RichEditorShortcuts.Gesture(ShortcutId.IndentDecrease)),
+            Mi(Loc("IndentIncrease"), () => Indent(20), true, RichEditorIcon.IndentIncrease, RichEditorShortcuts.Gesture(RichEditorShortcutId.IndentIncrease)),
+            Mi(Loc("IndentDecrease"), () => Indent(-20), true, RichEditorIcon.IndentDecrease, RichEditorShortcuts.Gesture(RichEditorShortcutId.IndentDecrease)),
         };
         // Margin (top-level paragraphs only — cell paragraphs lay out inside the cell).
         if (_caretPosition.Paragraph is { } mp && Document != null && Document.Blocks.IndexOf(mp) >= 0)
@@ -429,13 +429,13 @@ public partial class RichEditor
 
     // ── 목록 (list) — promoted to top level; bullet/number/quote states are checked to reflect the caret.
     private MenuItem ListSub(CaretFormat fmt) => Sub(Loc("List"),
-        CheckItem(Loc("BulletList"), fmt.List == ListKind.Bullet, ToggleBullet, gesture: RichEditorShortcuts.Gesture(ShortcutId.BulletList)),
+        CheckItem(Loc("BulletList"), fmt.List == ListKind.Bullet, ToggleBullet, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.BulletList)),
         Sub(Loc("BulletStyle"),
             Mi("•", () => SetListStyle(ListMarkerStyle.Disc)),
             Mi("◦", () => SetListStyle(ListMarkerStyle.Circle)),
             Mi("▪", () => SetListStyle(ListMarkerStyle.Square)),
             Mi("–", () => SetListStyle(ListMarkerStyle.Dash))),
-        CheckItem(Loc("NumberedList"), fmt.List == ListKind.Ordered, ToggleNumbering, gesture: RichEditorShortcuts.Gesture(ShortcutId.NumberedList)),
+        CheckItem(Loc("NumberedList"), fmt.List == ListKind.Ordered, ToggleNumbering, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.NumberedList)),
         Sub(Loc("NumberStyle"),
             Mi("1.", () => SetListStyle(ListMarkerStyle.Decimal)),
             Mi("1)", () => SetListStyle(ListMarkerStyle.DecimalParen)),
@@ -457,7 +457,7 @@ public partial class RichEditor
     private MenuItem HeadingRadio(string header, int level, int current)
     {
         // Heading1..6 are consecutive enum values; level 0 = body text.
-        var sc = level == 0 ? ShortcutId.BodyText : (ShortcutId)((int)ShortcutId.Heading1 + level - 1);
+        var sc = level == 0 ? RichEditorShortcutId.BodyText : (RichEditorShortcutId)((int)RichEditorShortcutId.Heading1 + level - 1);
         return RadioItem(header, "ctxHeading", current == level, () => SetHeading(level), RichEditorShortcuts.Gesture(sc));
     }
 
@@ -493,9 +493,9 @@ public partial class RichEditor
             // Slim (default): just the quick character toggles, checked to reflect the caret. The rich
             // formatting groups live on the toolbar; opt in with ShowFormattingMenu for a toolbar-less host.
             // Always enabled — see CharacterFormatSub.
-            items.Add(CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(ShortcutId.Bold)));
-            items.Add(CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(ShortcutId.Italic)));
-            items.Add(CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(ShortcutId.Underline)));
+            items.Add(CheckItem(Loc("Bold"), fmt.Bold, ToggleBold, true, RichEditorShortcuts.Gesture(RichEditorShortcutId.Bold)));
+            items.Add(CheckItem(Loc("Italic"), fmt.Italic, ToggleItalic, true, RichEditorShortcuts.Gesture(RichEditorShortcutId.Italic)));
+            items.Add(CheckItem(Loc("Underline"), fmt.Underline, ToggleUnderline, true, RichEditorShortcuts.Gesture(RichEditorShortcutId.Underline)));
         }
 
         items.Add(new Separator());
@@ -509,12 +509,12 @@ public partial class RichEditor
         {
             // Enabled without a selection too: the link goes on the caret's word (SetHyperlink).
             items.Add(Mi(Loc("InsertLink"), () => { _ = EditHyperlinkAsync(null, null); }, true, RichEditorIcon.InsertLink,
-                RichEditorShortcuts.Gesture(ShortcutId.InsertLink)));
+                RichEditorShortcuts.Gesture(RichEditorShortcutId.InsertLink)));
         }
         items.Add(new Separator());
-        items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectAll)));
-        items.Add(Mi(Loc("Undo"), DoUndo, CanUndo, RichEditorIcon.Undo, RichEditorShortcuts.Gesture(ShortcutId.Undo)));
-        items.Add(Mi(Loc("Redo"), DoRedo, CanRedo, RichEditorIcon.Redo, RichEditorShortcuts.Gesture(ShortcutId.Redo)));
+        items.Add(Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.SelectAll)));
+        items.Add(Mi(Loc("Undo"), DoUndo, CanUndo, RichEditorIcon.Undo, RichEditorShortcuts.Gesture(RichEditorShortcutId.Undo)));
+        items.Add(Mi(Loc("Redo"), DoRedo, CanRedo, RichEditorIcon.Redo, RichEditorShortcuts.Gesture(RichEditorShortcutId.Redo)));
         // Block-insert items appear only when the corresponding feature flag is enabled (N3.5). Inside a
         // cell, image/divider/table all insert into the cell (P4-2a/P4-2b nested tables).
         if (AllowTables || AllowImages) items.Add(new Separator());
@@ -535,7 +535,7 @@ public partial class RichEditor
     private void BuildImageMenu(List<Control> items, ImageBlock img)
     {
         // Edit
-        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.RawBytes == null ? img.Image : null, inline: false, img.Width, img.Height); }, HasPicture(img), RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.RawBytes == null ? img.Image : null, inline: false, img.Width, img.Height); }, HasPicture(img), RichEditorIcon.Copy, RichEditorShortcuts.Gesture(RichEditorShortcutId.Copy)));
         // A viewer gets the copy and nothing else. Everything below MUTATES the image — resize, promote
         // to a character, margins, replace, save, delete — so a read-only editor must not offer any of
         // it. Copy is the whole point of reaching this menu in a viewer: it copies the IMAGE, which the
@@ -585,7 +585,7 @@ public partial class RichEditor
     private void BuildInlineImageMenu(List<Control> items, Paragraph p, InlineImage img)
     {
         // Edit
-        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.RawBytes == null ? img.Image : null, inline: true, img.Width, img.Height); }, HasPicture(img), RichEditorIcon.Copy, RichEditorShortcuts.Gesture(ShortcutId.Copy)));
+        items.Add(Mi(Loc("Copy"), () => { _ = CopyImageToClipboardAsync(img.RawBytes, img.RawBytes == null ? img.Image : null, inline: true, img.Width, img.Height); }, HasPicture(img), RichEditorIcon.Copy, RichEditorShortcuts.Gesture(RichEditorShortcutId.Copy)));
         if (IsReadOnly) return; // see BuildImageMenu: everything below mutates the image
         // 개체 모양 (object shape): size preset + 글자처럼 취급.
         items.Add(new Separator());
@@ -654,7 +654,7 @@ public partial class RichEditor
             if (loc is not { } lc) return;
             var (ar, ac) = lc.tb.AnchorOf(lc.r, lc.c);
             SelectCellAsBlock(lc.tb, lc.tb.Cells[ar][ac]);
-        }, loc != null, gesture: RichEditorShortcuts.Gesture(ShortcutId.SelectCell));
+        }, loc != null, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.SelectCell));
     }
 
     // 셀 배경: the toolbar's palette as a swatch grid inside the submenu (as the table-size picker is), plus "none".
