@@ -716,16 +716,8 @@ public partial class RichEditor
         var loc = cell != null ? FindCell(cell) : null;
         int r = loc?.r ?? -1;
         int c = loc?.c ?? -1;
-        // "Below"/"right" of a merged cell means past its whole merged area. At r+1 the new row fell
-        // INSIDE a vertical merge: the merge just grew over it and only the other columns got a row.
-        int rBelow = r + 1, cRight = c + 1;
-        if (loc is { } at)
-        {
-            var (ar, ac) = at.tb.AnchorOf(at.r, at.c);
-            var (cs, rs) = at.tb.SpanOf(ar, ac);
-            rBelow = ar + System.Math.Max(1, rs);
-            cRight = ac + System.Math.Max(1, cs);
-        }
+        // Past the caret cell's whole merged area (PastMerge) — shared with the public caret commands.
+        var (rBelow, cRight) = loc is { } at ? PastMerge(at.tb, at.r, at.c) : (r + 1, c + 1);
         items.Add(Mi(Loc("InsertRowAbove"), () => TableInsertRow(tb, r), r >= 0, RichEditorIcon.InsertRowAbove));
         items.Add(Mi(Loc("InsertRowBelow"), () => TableInsertRow(tb, rBelow), r >= 0, RichEditorIcon.InsertRowBelow));
         items.Add(Mi(Loc("DeleteRow"), () => TableDeleteRow(tb, r), r >= 0 && tb.Rows > 1, RichEditorIcon.DeleteRow));

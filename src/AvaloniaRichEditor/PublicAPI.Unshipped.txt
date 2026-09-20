@@ -22,3 +22,13 @@ AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBar.set -> void
 AvaloniaRichEditor.Controls.RichEditorView.ShowFindBar(bool withReplace) -> void
 static readonly AvaloniaRichEditor.Controls.RichEditorView.ShowBuiltInFindBarProperty -> Avalonia.StyledProperty<bool>!
 AvaloniaRichEditor.Controls.RichEditorIcon.Find = 47 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditor.InsertTableRow(AvaloniaRichEditor.Documents.TableBlock! table, int at) -> bool
+AvaloniaRichEditor.Controls.RichEditor.DeleteTableRow(AvaloniaRichEditor.Documents.TableBlock! table, int at) -> bool
+AvaloniaRichEditor.Controls.RichEditor.InsertTableColumn(AvaloniaRichEditor.Documents.TableBlock! table, int at) -> bool
+AvaloniaRichEditor.Controls.RichEditor.DeleteTableColumn(AvaloniaRichEditor.Documents.TableBlock! table, int at) -> bool
+AvaloniaRichEditor.Controls.RichEditor.InsertRowAbove() -> bool
+AvaloniaRichEditor.Controls.RichEditor.InsertRowBelow() -> bool
+AvaloniaRichEditor.Controls.RichEditor.DeleteRow() -> bool
+AvaloniaRichEditor.Controls.RichEditor.InsertColumnLeft() -> bool
+AvaloniaRichEditor.Controls.RichEditor.InsertColumnRight() -> bool
+AvaloniaRichEditor.Controls.RichEditor.DeleteColumn() -> bool

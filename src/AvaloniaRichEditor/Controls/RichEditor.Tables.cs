@@ -696,9 +696,9 @@ public partial class RichEditor
         return tb.Cells[ar][ac].Para;
     }
 
-    private void TableInsertRow(TableBlock tb, int at)
+    private bool TableInsertRow(TableBlock tb, int at)
     {
-        if (Document == null || at < 0) return;
+        if (Document == null || at < 0) return false;
         PushUndo();
         tb.InsertRow(at);
         UpdateParents(Document);
@@ -711,11 +711,12 @@ public partial class RichEditor
         // later, unrelated edit happened to invalidate it.
         InvalidateMeasure();
         InvalidateVisual();
+        return true;
     }
 
-    private void TableDeleteRow(TableBlock tb, int at)
+    private bool TableDeleteRow(TableBlock tb, int at)
     {
-        if (Document == null || tb.Rows <= 1 || at < 0) return;
+        if (Document == null || tb.Rows <= 1 || at < 0) return false;
         PushUndo();
         tb.DeleteRow(at);
         UpdateParents(Document);
@@ -724,11 +725,12 @@ public partial class RichEditor
         CollapseSelectionToCaret();
         InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
+        return true;
     }
 
-    private void TableInsertColumn(TableBlock tb, int at)
+    private bool TableInsertColumn(TableBlock tb, int at)
     {
-        if (Document == null || at < 0) return;
+        if (Document == null || at < 0) return false;
         PushUndo();
         tb.InsertColumn(at);
         UpdateParents(Document);
@@ -740,11 +742,12 @@ public partial class RichEditor
         // breaks inside MeasureOverride, so it still has to run.
         InvalidateMeasure();
         InvalidateVisual();
+        return true;
     }
 
-    private void TableDeleteColumn(TableBlock tb, int at)
+    private bool TableDeleteColumn(TableBlock tb, int at)
     {
-        if (Document == null || tb.Columns <= 1 || at < 0) return;
+        if (Document == null || tb.Columns <= 1 || at < 0) return false;
         PushUndo();
         tb.DeleteColumn(at);
         UpdateParents(Document);
@@ -753,5 +756,114 @@ public partial class RichEditor
         CollapseSelectionToCaret();
         InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
+        return true;
     }
+
+    // "Below"/"right" of a cell means past its whole merged area: at r+1 a new row would fall INSIDE a
+    // vertical merge, which then just grows over it while only the other columns gain a row. Shared by the
+    // context menu and the public caret commands so the two cannot drift apart.
+    private static (int below, int right) PastMerge(TableBlock tb, int r, int c)
+    {
+        if (r < 0 || c < 0) return (r + 1, c + 1);
+        var (ar, ac) = tb.AnchorOf(r, c);
+        var (cs, rs) = tb.SpanOf(ar, ac);
+        return (ar + Math.Max(1, rs), ac + Math.Max(1, cs));
+    }
+
+    // ---- public structure commands ---------------------------------------------------------------------
+    // The four commands above were reachable only from the context menu, so a host that builds its own
+    // toolbar - or generates a document by script - had to edit TableBlock itself, which skips the undo
+    // checkpoint, the parent wiring and the layout invalidation they do (backlog item, 2026-09-20).
+    //
+    // Two shapes over one body: the Table* pair names the table and the index (scripting), the caret pair
+    // acts where the caret is (a toolbar button). Both return false when nothing changed, and both stop on
+    // a read-only editor, like every other editing command. AllowTables is NOT consulted: it gates CREATING
+    // tables (the insert menu, incoming content), and the context menu's row/column items are not gated by
+    // it either - editing a table the document already has is the same act as typing in it.
+
+    // A caller's table is not trusted: one from another document would push an undo checkpoint for, and
+    // edit, a tree this editor does not show. Every table that IS in the document owns at least one cell
+    // paragraph, and FindCell resolves a paragraph's innermost table through the parent chain - so this
+    // reuses the existing walkers instead of adding a table walker that could drift from them.
+    private bool TableIsInDocument(TableBlock table)
+    {
+        foreach (var p in GetAllParagraphsInOrder())
+            if (FindCell(p) is { } loc && ReferenceEquals(loc.tb, table)) return true;
+        return false;
+    }
+
+    // Insertion accepts one past the end (append); deletion does not.
+    private bool EditableTable(TableBlock? table, int at, int count, bool insert)
+        => table != null && Document != null && !IsReadOnly
+           && at >= 0 && at <= (insert ? count : count - 1)
+           && TableIsInDocument(table);
+
+    /// <summary>Inserts an empty row into <paramref name="table"/> before row <paramref name="at"/>
+    /// (<paramref name="at"/> == <see cref="TableBlock.Rows"/> appends). A cell crossing that boundary as
+    /// part of a vertical merge grows over the new row. One undo step; the caret lands in the new row.</summary>
+    /// <returns><see langword="false"/> when the editor is read-only or has no document, the table is not
+    /// in that document, or <paramref name="at"/> is out of range - nothing changes in those cases.</returns>
+    public bool InsertTableRow(TableBlock table, int at)
+        => EditableTable(table, at, table?.Rows ?? 0, insert: true) && TableInsertRow(table!, at);
+
+    /// <summary>Deletes row <paramref name="at"/> of <paramref name="table"/> with the cells in it.
+    /// One undo step; the caret lands in the row that takes its place.</summary>
+    /// <returns><see langword="false"/> under the same conditions as <see cref="InsertTableRow"/>, plus a
+    /// table of a single row, which always keeps it.</returns>
+    public bool DeleteTableRow(TableBlock table, int at)
+        => EditableTable(table, at, table?.Rows ?? 0, insert: false) && TableDeleteRow(table!, at);
+
+    /// <summary>Inserts an empty column into <paramref name="table"/> before column <paramref name="at"/>
+    /// (<paramref name="at"/> == <see cref="TableBlock.Columns"/> appends), at the default width.
+    /// One undo step; the caret lands in the new column.</summary>
+    /// <returns><see langword="false"/> under the same conditions as <see cref="InsertTableRow"/>.</returns>
+    public bool InsertTableColumn(TableBlock table, int at)
+        => EditableTable(table, at, table?.Columns ?? 0, insert: true) && TableInsertColumn(table!, at);
+
+    /// <summary>Deletes column <paramref name="at"/> of <paramref name="table"/> with the cells in it.
+    /// One undo step; the caret lands in the column that takes its place.</summary>
+    /// <returns><see langword="false"/> under the same conditions as <see cref="InsertTableRow"/>, plus a
+    /// table of a single column, which always keeps it.</returns>
+    public bool DeleteTableColumn(TableBlock table, int at)
+        => EditableTable(table, at, table?.Columns ?? 0, insert: false) && TableDeleteColumn(table!, at);
+
+    // The caret's cell, or null when the caret is not in a table (including a table held whole by its
+    // border, which names no cell - the context menu greys its cell items in exactly that state).
+    private (TableBlock tb, int r, int c)? CaretCell()
+        => _caretPosition.Paragraph is { } p ? FindCell(p) : null;
+
+    /// <summary>Inserts a row above the caret's row. Nothing happens when the caret is not in a table.</summary>
+    /// <returns>Whether a row was inserted.</returns>
+    public bool InsertRowAbove()
+        => CaretCell() is { } at && InsertTableRow(at.tb, at.r);
+
+    /// <summary>Inserts a row below the caret's row - below the whole merged area when the caret's cell
+    /// spans several rows. Nothing happens when the caret is not in a table.</summary>
+    /// <returns>Whether a row was inserted.</returns>
+    public bool InsertRowBelow()
+        => CaretCell() is { } at && InsertTableRow(at.tb, PastMerge(at.tb, at.r, at.c).below);
+
+    /// <summary>Deletes the caret's row. Nothing happens when the caret is not in a table, or when the
+    /// table has a single row.</summary>
+    /// <returns>Whether the row was deleted.</returns>
+    public bool DeleteRow()
+        => CaretCell() is { } at && DeleteTableRow(at.tb, at.r);
+
+    /// <summary>Inserts a column to the left of the caret's column. Nothing happens when the caret is not
+    /// in a table.</summary>
+    /// <returns>Whether a column was inserted.</returns>
+    public bool InsertColumnLeft()
+        => CaretCell() is { } at && InsertTableColumn(at.tb, at.c);
+
+    /// <summary>Inserts a column to the right of the caret's column - right of the whole merged area when
+    /// the caret's cell spans several columns. Nothing happens when the caret is not in a table.</summary>
+    /// <returns>Whether a column was inserted.</returns>
+    public bool InsertColumnRight()
+        => CaretCell() is { } at && InsertTableColumn(at.tb, PastMerge(at.tb, at.r, at.c).right);
+
+    /// <summary>Deletes the caret's column. Nothing happens when the caret is not in a table, or when the
+    /// table has a single column.</summary>
+    /// <returns>Whether the column was deleted.</returns>
+    public bool DeleteColumn()
+        => CaretCell() is { } at && DeleteTableColumn(at.tb, at.c);
 }
