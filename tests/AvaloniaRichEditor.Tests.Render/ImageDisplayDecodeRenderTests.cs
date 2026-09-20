@@ -166,17 +166,39 @@ public class ImageDisplayDecodeRenderTests
         try { rtb2.CopyPixels(new PixelRect(0, 0, (int)W, (int)H), handle.AddrOfPinnedObject(), buf.Length, stride); }
         finally { handle.Free(); }
 
-        var greens = new System.Collections.Generic.List<int>();
+        // Do not name a channel: CopyPixels hands back the backend's own layout, which is BGRA on Windows
+        // and Linux but RGBA on macOS — reading the red stripes at a fixed index found 0 rows there while
+        // the other 40 tests passed, because they only ever compare channels against each other. The
+        // stripes are red: chromatic, one channel far from the other two, unlike the white stripes and the
+        // background. The value tracked is the LOW channel (0 in pure red, mid in pink) — averaging raises
+        // it, and that is what this test measures.
+        var levels = new System.Collections.Generic.List<int>();
         for (int y = 0; y < (int)H; y++)
         {
-            int o = y * stride + 200 * 4; // BGRA, x = 200 is inside the 400px-wide picture
-            if (buf[o + 3] > 200 && buf[o + 2] > 200 && buf[o + 1] < 250) greens.Add(buf[o + 1]);
+            int o = y * stride + 200 * 4; // x = 200 is inside the 400px-wide picture
+            int hi = Math.Max(buf[o], Math.Max(buf[o + 1], buf[o + 2]));
+            int lo = Math.Min(buf[o], Math.Min(buf[o + 1], buf[o + 2]));
+            if (buf[o + 3] > 200 && hi > 200 && lo < 250) levels.Add(lo);
         }
-        Assert.True(greens.Count >= 40, $"found {greens.Count} picture rows — the picture was not drawn where expected");
-        var inner = greens.GetRange(2, greens.Count - 4);
+        Assert.True(levels.Count >= 40,
+            $"found {levels.Count} picture rows — the picture was not drawn where expected. Column x=200:{Dump(buf, stride)}");
+        var inner = levels.GetRange(2, levels.Count - 4);
         int min = int.MaxValue, max = int.MinValue;
         foreach (var g in inner) { min = Math.Min(min, g); max = Math.Max(max, g); }
-        Assert.True(max - min < 40, $"rows range from green {min} to {max}: aliased, not averaged ({string.Join(",", inner.GetRange(0, 16))})");
+        Assert.True(max - min < 40, $"rows range from {min} to {max}: aliased, not averaged ({string.Join(",", inner.GetRange(0, 16))})");
+    }
+
+    // Only read when the scan above finds nothing: a failure should say what WAS drawn in that column,
+    // not only that the picture wasn't.
+    private static string Dump(byte[] buf, int stride)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int y = 0; y < (int)H; y += 40)
+        {
+            int o = y * stride + 200 * 4;
+            sb.Append($" y{y}=[{buf[o]},{buf[o + 1]},{buf[o + 2]},{buf[o + 3]}]");
+        }
+        return sb.ToString();
     }
 
     [AvaloniaFact]
