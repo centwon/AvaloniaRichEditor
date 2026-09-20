@@ -133,19 +133,12 @@ public partial class RichEditorToolbar
         // need not be one of these — then nothing is selected (the zoom combo does the same for an
         // off-grid zoom) and picking an entry is what changes it.
         //
-        // The icon carries the meaning ("여백"/"Margins" spelled out cost more toolbar width than the
-        // values it labelled); the entries name the step and the millimetres it stands for.
-        if ((RichEditorIcons.TryCreate(RichEditorIcon.PageMargin) ?? ToolbarIcons.Create(RichEditorIcon.PageMargin))
-            is { } marginIcon)
-        {
-            marginIcon.Margin = new Thickness(4, 0, 2, 0);
-            marginIcon.VerticalAlignment = VerticalAlignment.Center;
-            ToolTip.SetTip(marginIcon, Loc("MarginTip"));
-            items.Add(marginIcon);
-        }
-        _marginCombo = PageCombo(112, Loc("MarginTip"));
+        // The icon rides INSIDE the combo, on each entry, so the picker reads as one control like the
+        // paper and orientation ones beside it — and the closed box shows the icon with the current step,
+        // which spelling out "여백"/"Margins" only cost width to say.
+        _marginCombo = PageCombo(132, Loc("MarginTip"));
         foreach (var (label, margin) in MarginPresets)
-            _marginCombo.Items.Add(new ComboBoxItem { Content = Loc(label), Tag = margin });
+            _marginCombo.Items.Add(new ComboBoxItem { Content = MarginEntry(Loc(label)), Tag = margin });
         _marginCombo.SelectionChanged += (_, _) =>
         {
             if (_suppress || Target is not { } t || _marginCombo.SelectedItem is not ComboBoxItem { Tag: PageMargins m }) return;
@@ -154,12 +147,27 @@ public partial class RichEditorToolbar
         items.Add(_marginCombo);
     }
 
-    // Five steps in round millimetres, the unit page setup is discussed in. "Normal" is the editor's own
-    // default (12.7 x 10.6 mm = half an inch across, what it drew before margins were settable) and the
+    // One entry: the margin icon, then the step's name. A fresh icon per entry — a control has one parent,
+    // and the ComboBox shows the selected entry's own content in the closed box.
+    private Control MarginEntry(string text)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        if ((RichEditorIcons.TryCreate(RichEditorIcon.PageMargin) ?? ToolbarIcons.Create(RichEditorIcon.PageMargin))
+            is { } icon)
+        {
+            icon.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(icon);
+        }
+        row.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
+        return row;
+    }
+
+    // Five steps, narrowest first, in the millimetres page setup is discussed in. "Normal" is the editor's
+    // own default (12.7 x 10.6 mm — half an inch across, what it drew before margins were settable) and the
     // only asymmetric one; the rest are square, as Word's and HWP's presets are.
     private static readonly (string Label, PageMargins Margin)[] MarginPresets =
     {
-        ("MarginNone", new PageMargins(0)),
+        ("MarginNarrowest", new PageMargins(5)),
         ("MarginNarrow", new PageMargins(10)),
         ("MarginNormal", PageSetup.DefaultMargin),
         ("MarginWide", new PageMargins(20)),
