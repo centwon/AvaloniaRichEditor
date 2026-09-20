@@ -86,6 +86,8 @@ G2(문단 순회 워커 재귀화) · 1.0 준비 P1~P5(상호작용 테스트 �
 - `InvalidateMeasure` 누락 주장 전 체인 확인: `ResetCaretBlink()`→`NotifyStatus()`→`InvalidateMeasure()`, `PushUndo()`는 레이아웃 캐시를 버린다
   (외부 감사 8건 오진의 원인).
 - 프로세스 전역 브러시/펜(정적 필드·속성 기본값)은 `Immutable*` — 스레드 귀속 크래시. 전역 스캔 테스트가 지킨다.
+- **렌더 테스트에서 채널을 이름으로 짚지 말 것.** `CopyPixels`는 백엔드의 배치를 준다 — Skia는 Windows·Linux가 BGRA, macOS가 RGBA다.
+  채널끼리 비교(`max-min`)하거나 알파(두 배치 모두 인덱스 3)를 쓴다. 라운드33에서 이 가정 하나가 macOS CI를 이틀 빨갛게 만들었다.
 - **헤드리스 테스트 함정**: 그림 디코드가 필요하면 `[AvaloniaFact]`(아니면 그림이 조용히 안 들어옴) · 내부 클립보드는 static(복사 전 비울 것) ·
   메뉴 Click만 일으키면 메뉴가 열린 채 남음 · 임포터는 64px 미만을 인라인으로 · 반증 복원을 `Copy-Item`으로 하면 옛 수정 시각 → 증분 빌드가 교란 DLL 사용.
 - 게시 후 nuget.org 패키지 페이지를 눈으로 본다 — README raw HTML이 태그 그대로 찍힌 걸 5주간 몰랐다(1.2.1).
