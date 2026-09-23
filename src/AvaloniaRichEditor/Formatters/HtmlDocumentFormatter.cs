@@ -189,7 +189,7 @@ namespace AvaloniaRichEditor.Formatters
                 if (name == "a")
                 {
                     var href = child.GetAttributeValue("href", "");
-                    if (!string.IsNullOrEmpty(href)) childLink = href;
+                    if (!string.IsNullOrEmpty(href)) childLink = SafeHref(href);
                 }
                 bool hasLink = !string.IsNullOrEmpty(childLink);
 
@@ -669,7 +669,13 @@ namespace AvaloniaRichEditor.Formatters
                 else if (src.StartsWith("file:"))
                 {
                     if (_blockLocalFileImages) return (null, null, 0, 0, null);
-                    var path = new Uri(src).LocalPath;
+                    var uri = new Uri(src);
+                    // A file on ANOTHER machine (file://host/share/…) is a UNC path, and on Windows touching it
+                    // opens an SMB connection that offers the user's NTLM credentials to that host — from a
+                    // paste, with an <img src> the copied page chose. AllowLocalFileImages is about this
+                    // machine's files; a network share is never read (measured: a 21 s connect attempt).
+                    if (uri.IsUnc) return (null, null, 0, 0, null);
+                    var path = uri.LocalPath;
                     if (System.IO.File.Exists(path)) bytes = System.IO.File.ReadAllBytes(path);
                 }
                 if (bytes == null) return (null, null, 0, 0, null);
@@ -688,6 +694,25 @@ namespace AvaloniaRichEditor.Formatters
                 return (bytes, bitmap, w, h, alt);
             }
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (null, null, 0, 0, null); }
+        }
+
+        // A link's address, or null for a script link (javascript:, vbscript:, data:). The text stays; only the
+        // link goes. Kept, a pasted page's script link was written back out as an <a href> — into exported HTML
+        // and the clipboard HTML other applications receive — although the editor itself never launches it
+        // (user decision, 2026-09-23: drop on read). Checked the way a browser reads a scheme: entities decoded,
+        // case ignored, whitespace and control characters (a tab inside "java\tscript:") not counted.
+        internal static string? SafeHref(string href)
+        {
+            var sb = new StringBuilder();
+            foreach (char ch in HtmlEntity.DeEntitize(href))
+            {
+                if (ch <= ' ') continue;
+                if (ch == ':') break;
+                sb.Append(char.ToLowerInvariant(ch));
+                if (sb.Length > 16) break; // longer than any scheme below
+            }
+            string scheme = sb.ToString();
+            return scheme is "javascript" or "vbscript" or "data" ? null : href;
         }
 
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
@@ -739,7 +764,7 @@ namespace AvaloniaRichEditor.Formatters
                 if (name == "a")
                 {
                     var href = child.GetAttributeValue("href", "");
-                    if (!string.IsNullOrEmpty(href)) cu = href;
+                    if (!string.IsNullOrEmpty(href)) cu = SafeHref(href);
                 }
 
                 bool childOwnColor = ownColor || child.GetAttributeValue("data-are-fg", "") == "1";

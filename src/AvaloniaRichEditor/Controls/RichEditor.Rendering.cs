@@ -458,6 +458,9 @@ public partial class RichEditor
 
                 if (fullText == "" && !hasPreedit)
                 {
+                    // An empty line inside a quote (or a shaded run of paragraphs) keeps the bar and the fill —
+                    // returning before them broke the quote bar at every blank line.
+                    DrawParagraphDecor(context, paragraph, px, yOffset, ParagraphWrapWidth(paragraph, maxWidth), beHeight, 0);
                     if (paragraph.ListType != ListKind.None)
                         DrawListMarker(context, paragraph, paragraph.ListType == ListKind.Ordered ? ++orderedIndex : 0, px, yOffset);
                     if (chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph)
@@ -509,11 +512,7 @@ public partial class RichEditor
                     continue;
                 }
 
-                if (paragraph.Background != null)
-                    context.FillRectangle(paragraph.Background, new Rect(px, yOffset, pWidth, layout.Height));
-
-                if (paragraph.IsQuote)
-                    context.FillRectangle(Brushes.Silver, new Rect(Math.Max(0, px - 10), yOffset, 3, layout.Height));
+                DrawParagraphDecor(context, paragraph, px, yOffset, pWidth, layout.Height, 0);
 
                 if (selectedParagraphs?.Contains(paragraph) == true)
                 {
@@ -598,9 +597,10 @@ public partial class RichEditor
                                 _imageHandles.Add((grab, img, width, height, grip));
                         }
                     }
-
-                    yOffset += height + img.MarginBottom;
                 }
+                // Outside the draw: a picture that does not decode still takes its height, as measure and the
+                // hit-tests give it — skipping the advance drew everything after it that much too high.
+                yOffset += height + img.MarginBottom;
             }
             else if (block is DividerBlock dv)
             {
@@ -651,6 +651,16 @@ public partial class RichEditor
         return new Rect(prev.X + prev.Width, prev.Y, 0, prev.Height);
     }
 
+    // A paragraph's background fill and quote bar, shared by the top-level and cell walks. The bar sits 10px left
+    // of the text, never left of `minBarX`.
+    private static void DrawParagraphDecor(DrawingContext context, Paragraph p, double px, double y, double width, double height, double minBarX)
+    {
+        if (p.Background != null)
+            context.FillRectangle(p.Background, new Rect(px, y, width, height));
+        if (p.IsQuote)
+            context.FillRectangle(Brushes.Silver, new Rect(Math.Max(minBarX, px - 10), y, 3, height));
+    }
+
     private void DrawCellBlockList(
         DrawingContext context, System.Collections.Generic.IList<Block> blocks,
         double ox, double oy, double innerW, bool chrome,
@@ -689,6 +699,10 @@ public partial class RichEditor
                             segStart = i + 1;
                         }
                 }
+
+                // A cell paragraph's fill and quote bar: the cell walk drew neither, so 인용 in a cell changed
+                // nothing on screen. The bar stays inside the cell's padding (`ox - 4`), clear of its border.
+                DrawParagraphDecor(context, para, px, blkY, pw, layout.Height, ox - 4);
 
                 if (!cellSelected && !cellRangeActive && selectedParagraphs?.Contains(para) == true)
                 {

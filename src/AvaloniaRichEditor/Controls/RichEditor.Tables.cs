@@ -176,13 +176,7 @@ public partial class RichEditor
             int idx = container.IndexOf(tb);
             RemoveBlockAnywhere(tb);
             UpdateParents(Document); // a paragraph now borders the gap (top level); a cell keeps one
-            Paragraph? landing = null;
-            for (int i = Math.Max(0, idx); i < container.Count && landing == null; i++)
-                if (container[i] is Paragraph p) landing = p;
-            for (int i = Math.Min(idx, container.Count) - 1; i >= 0 && landing == null; i--)
-                if (container[i] is Paragraph p) landing = p;
-            landing ??= GetAllParagraphsInOrder().FirstOrDefault();
-            _caretPosition = new TextPointer(landing, 0);
+            PlaceCaretAtGap(container, idx);
         }
         CollapseSelectionToCaret();
         InvalidateMeasure();
@@ -489,20 +483,23 @@ public partial class RichEditor
         int idx = all.IndexOf(current);
         if (idx < 0) return;
 
+        // The outermost table around the caret (through nested and in-cell inline tables); nested tables don't grow
+        // via Tab — use the right-click menu.
+        var top = tb;
+        while (EnclosingTableOf(top) is { } up) top = up;
+
         if (shift)
         {
             if (idx > 0) FocusCell(all[idx - 1].Para); // else: first cell of the document -> no-op
         }
-        else if (idx + 1 < all.Count)
+        else if (idx + 1 < all.Count && IsWithin(all[idx + 1], top))
         {
             FocusCell(all[idx + 1].Para);
         }
         else
         {
-            // Past the document's last cell: add a row to the TOP-LEVEL table (nested tables don't grow
-            // via Tab — use the right-click menu), walking up the parent chain if the last cell is nested.
-            var top = tb;
-            while (top.Parent is TableCell pcell && pcell.Parent is TableBlock gp) top = gp;
+            // Past this table's last cell: add a row to it (Word/HWP). Only the document's last table used to grow —
+            // from any other, Tab jumped into the next table below (user decision, 2026-09-23).
             if (Document != null) PushUndo();
             top.InsertRow(top.Rows);
             if (Document != null) UpdateParents(Document);
@@ -616,6 +613,7 @@ public partial class RichEditor
         if (atEnd) anchor.Inlines.Add(it);
         else anchor.Inlines.Insert(0, it);
         if (ReferenceEquals(_selectedBlock, tb)) _selectedBlock = null;
+        if (ReferenceEquals(_caretBlock, tb)) _caretBlock = null; // held by its border: the block caret named the removed table
         UpdateParents(Document);
 
         int off = 0;
@@ -638,9 +636,19 @@ public partial class RichEditor
 
         PushUndo();
         var tb = (TableBlock)it.Table.Clone();
+        // The caret (and a whole-table selection) may be in the inline original's cells, which leave the document
+        // with it — typing went nowhere. It goes where the table was, as DeleteInlineTable puts it.
+        bool caretInside = IsWithin(_caretPosition.Paragraph, it.Table)
+            || IsWithin(_selectionStart.Paragraph, it.Table) || IsWithin(_selectionEnd.Paragraph, it.Table);
+        int off = OffsetOfInline(host, it);
         host.Inlines.Remove(it);
         Document.Blocks.Insert(idx + 1, tb);
         UpdateParents(Document);
+        if (caretInside)
+        {
+            _caretPosition = new TextPointer(host, off);
+            CollapseSelectionToCaret();
+        }
         _selectedBlock = tb;
         ResetCaretBlink();
         InvalidateMeasure();

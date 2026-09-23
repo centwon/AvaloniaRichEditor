@@ -128,19 +128,22 @@ public partial class RichEditor
     // around images/tables, so a right margin would be invisible there.
     private MenuItem MarginMenu(Block target)
     {
-        Control[] Presets(Func<double> get, Action<double> set)
+        // `auto`: lead with Block.AutoTopMargin (NaN, one line gap) — the default top of a table, picture or divider,
+        // which no px preset shows checked and nothing else could restore once a preset was picked.
+        Control[] Presets(Func<double> get, Action<double> set, bool auto = false)
         {
             var items = new List<Control>();
-            foreach (double v in new[] { 0d, 5, 10, 20, 30 })
+            foreach (double v in auto ? new[] { Block.AutoTopMargin, 0d, 5, 10, 20, 30 } : new[] { 0d, 5, 10, 20, 30 })
             {
                 var mi = new MenuItem
                 {
-                    Header = $"{v:0} px",
+                    Header = double.IsNaN(v) ? Loc("MarginAuto") : $"{v:0} px",
                     ToggleType = MenuItemToggleType.Radio,
-                    IsChecked = Math.Abs(get() - v) < 0.5,
+                    IsChecked = double.IsNaN(v) ? double.IsNaN(get()) : Math.Abs(get() - v) < 0.5,
                 };
                 mi.Click += (_, _) =>
                 {
+                    if (get().Equals(v)) return; // already in force (NaN included): no undo step that undoes nothing (as the cell v-align radio)
                     if (Document != null) PushUndo();
                     set(v);
                     NotifyStatus(); // content size changed -> re-measure scroll extent
@@ -152,7 +155,7 @@ public partial class RichEditor
         }
         var sides = new List<Control>
         {
-            Sub(Loc("MarginTop"), Presets(() => target.MarginTop, v => target.MarginTop = v)),
+            Sub(Loc("MarginTop"), Presets(() => target.MarginTop, v => target.MarginTop = v, auto: target is not Paragraph)),
             Sub(Loc("MarginBottom"), Presets(() => target.MarginBottom, v => target.MarginBottom = v)),
             Sub(Loc("MarginLeft"), Presets(() => target.Indent, v => target.Indent = v)),
         };
@@ -190,6 +193,9 @@ public partial class RichEditor
     private void ShowContextMenu(Point point)
     {
         if (Document == null) return;
+        // A left press clears the block caret first thing (OnPointerPressed); the right-click leaves before that
+        // line, so it is cleared here. Only the border branch below holds a table again.
+        _caretBlock = null;
 
         bool hasSelection = HasTextOrCellSelection;
 
@@ -464,7 +470,7 @@ public partial class RichEditor
     /// <summary>Inserts a horizontal rule (<see cref="DividerBlock"/>) at the caret position.</summary>
     public void InsertDivider()
     {
-        if (Document == null) return;
+        if (Document == null || IsReadOnly) return;
         PushUndo();
         InsertBlockAtCaret(new DividerBlock());
         InvalidateVisual();

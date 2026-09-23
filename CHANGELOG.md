@@ -6,6 +6,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — audit of the files no test reached (2026-09-23)
+
+Round 34 read the files whose members no test named (context menu, tables, the toolbar's page controls,
+formatting, images, find/replace, then rendering, pagination, hit-testing, object drag and the clipboard,
+then keyboard/pointer input and the RTF and HTML formatters),
+and every suspected defect was reproduced with a failing test before it was fixed.
+
+- **Typing after a table left through its menu went nowhere.** Deleting a table from the right-click menu,
+  or turning an inline table back into a block, left the caret in a cell of the removed table.
+- **A right-click kept a table held by its border.** After the border was clicked, a right-click elsewhere
+  moved the caret but the table stayed held, and a right-click in one of its cells greyed out the cell
+  items. Turning a held table into an inline one left the removed table held too.
+- **Deleting an inline picture, or making it a block, put the caret past the end of the paragraph** when
+  the caret was after the picture.
+- **A host setting the paper size from code had its choice overridden by the toolbar.** Page boundaries
+  were switched on, and a zoom that matched no preset jumped to fit-width.
+- `InsertDivider`, `ReplaceAll` and `ReplaceNext` changed a read-only document; the other editing commands
+  already refuse.
+- Commands that changed nothing no longer leave an undo step that undoes nothing, or mark the document
+  modified: outdent at 0, choosing the current alignment or line spacing, removing a list from text that
+  has none, choosing the current margin, "Original size" on a picture already at that size, and Replace
+  All with no match.
+- **A picture that failed to decode drew the blocks after it too high.** They overlapped the space where
+  the picture should be, while clicks still went to the right places.
+- **Quote bars and paragraph backgrounds were missing** on paragraphs in table cells, so Quote in a cell
+  looked like it did nothing. They were also missing on empty lines, which broke the quote bar at every
+  blank line.
+- **Pasting a picture or spreadsheet cells over a selection** left the selected text in place instead of
+  replacing it, as every other paste does. The deletion and the insert are now one undo step.
+- ↓ from a table held by its border did not enter a row when the caret's column had an inline table
+  inside a cell.
+- Ctrl+drag copied a table or picture even with `AllowTables` / `AllowImages` off. Moving an existing one
+  is still allowed.
+- The HTML put on the clipboard for other applications dropped the top and bottom margins of paragraphs.
+- The raster PDF fallback swapped red and blue where the renderer produces RGBA pixels (Skia on macOS).
+- **Security: pasted HTML could make the editor connect to another machine.** An `<img src>` pointing at
+  a file on a network share (`file://host/share/x.png`) was opened. On Windows that starts an SMB
+  connection, which offers the user's NTLM credentials to that host; the attempt also froze the paste for
+  about 20 seconds. Network shares are now never read, whatever `AllowLocalFileImages` says. That setting
+  only covers files on this machine.
+- **Script links (`javascript:`, `vbscript:`, `data:`) in pasted or loaded HTML are dropped.** The text
+  stays and the link does not. Before, the link was kept and written back out into exported HTML and the
+  clipboard HTML that other applications receive. The editor itself never opened such links. Variants a
+  browser would still accept are caught too: any letter case, leading whitespace, a tab inside the scheme,
+  and HTML entities.
+- Backspace/Delete on a selected inline picture, and Ctrl+X on one, left the caret past the end of its
+  paragraph when the caret was after the picture.
+
+### Changed — margin menu and Tab (2026-09-23)
+
+- The right-click margin menu's **Top** list for a table, picture or divider starts with **Auto (one
+  line)**, the default since the previous change. It is checked when the block uses it. Nothing else
+  could restore it once a size was picked.
+- **A table, picture or divider goes where the caret is.** In the middle of a paragraph the paragraph
+  splits and the block goes between the two halves. At the start of a paragraph the block goes before it,
+  and at the end after it. This applies to paste, the insert buttons and dropped files. Before, every
+  block went after the caret's paragraph, so a picture pasted over a word mid-line landed below the whole
+  paragraph. Dragging an object already worked this way.
+- **The toolbar has a Quote button** beside the lists (new icon slot `RichEditorIcon.Quote`). Before, the
+  default UI had no way to set a quote: the right-click item appeared only with `ShowFormattingMenu`, and
+  there was no shortcut.
+- **Tab in a table's last cell adds a row to that table**, as in Word and HWP. Only the document's last
+  table used to grow; from any other table, Tab jumped into the next table below. In a nested table,
+  Tab still moves on to the next cell of the table around it.
+
 ### Added — page margins (2026-09-20)
 
 The margins were two constants nothing could reach: a host could pick the paper but not how much of it to

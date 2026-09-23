@@ -80,18 +80,10 @@ public partial class RichEditor
         return null;
     }
 
-    // True when paragraph p lives anywhere inside table tb, including inside a nested table (P4-2b).
-    private static bool IsCellOf(TableBlock tb, Paragraph p)
-    {
-        for (int r = 0; r < tb.Rows; r++)
-            for (int c = 0; c < tb.Columns; c++)
-                foreach (var b in tb.Cells[r][c].Blocks)
-                {
-                    if (ReferenceEquals(b, p)) return true;
-                    if (b is TableBlock nt && IsCellOf(nt, p)) return true;
-                }
-        return false;
-    }
+    // True when paragraph p lives anywhere inside table tb, at any depth — nested tables and inline tables in a
+    // cell's paragraph included. Through the parent chain: the cell walk it replaced skipped inline tables, so
+    // ↓ from a table's block caret into a column holding one was judged "not entered" (round 34).
+    private static bool IsCellOf(TableBlock tb, Paragraph p) => IsWithin(p, tb);
 
     // Pixel geometry of one table. Anchor cells get a rect spanning their merged columns/rows;
     // covered cells are absorbed into their anchor and never appear here.

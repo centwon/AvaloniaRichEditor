@@ -2,6 +2,7 @@
 AvaloniaRichEditor.Controls.RichEditor.PageMargin.get -> AvaloniaRichEditor.Documents.PageMargins
 AvaloniaRichEditor.Controls.RichEditor.PageMargin.set -> void
 AvaloniaRichEditor.Controls.RichEditorIcon.PageMargin = 48 -> AvaloniaRichEditor.Controls.RichEditorIcon
+AvaloniaRichEditor.Controls.RichEditorIcon.Quote = 49 -> AvaloniaRichEditor.Controls.RichEditorIcon
 AvaloniaRichEditor.Controls.RichEditorShortcut
 AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.get -> bool
 AvaloniaRichEditor.Controls.RichEditorShortcut.Alt.init -> void

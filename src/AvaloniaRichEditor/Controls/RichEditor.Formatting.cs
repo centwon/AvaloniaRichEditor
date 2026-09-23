@@ -179,12 +179,15 @@ public partial class RichEditor
     // directly: selecting several paragraphs and clicking "center" only aligned the one the caret
     // happened to land on, while the list commands on the same toolbar already applied to the whole
     // selection. NotifyStatus because indent/spacing/heading all change block heights.
-    private void ApplyToSelectedParagraphs(Action<Paragraph> action)
+    // `unchanged`: true when the action would leave that paragraph as it is. When it holds for every target, nothing
+    // is recorded — outdenting at 0 or re-picking the current alignment left an undo step that undid nothing.
+    private void ApplyToSelectedParagraphs(Action<Paragraph> action, Func<Paragraph, bool>? unchanged = null)
     {
         if (_caretPosition.Paragraph == null || IsReadOnly) return;
-        if (Document != null) PushUndo();
         var targets = SelectedParagraphsInOrder();
         if (targets.Count == 0) targets = new List<Paragraph> { _caretPosition.Paragraph };
+        if (unchanged != null && targets.All(unchanged)) return;
+        if (Document != null) PushUndo();
         foreach (var p in targets) action(p);
         InvalidateVisual();
         NotifyStatus();
@@ -193,20 +196,21 @@ public partial class RichEditor
     /// <summary>Adjusts the indent of every selected paragraph by <paramref name="delta"/> pixels
     /// (each clamped 0–400); the caret paragraph alone when nothing is selected.</summary>
     public void Indent(double delta)
-        => ApplyToSelectedParagraphs(p => p.Indent = Math.Clamp(p.Indent + delta, 0, 400));
+        => ApplyToSelectedParagraphs(p => p.Indent = Math.Clamp(p.Indent + delta, 0, 400),
+            p => Math.Clamp(p.Indent + delta, 0, 400) == p.Indent);
     /// <summary>Sets the text alignment of every selected paragraph (the caret paragraph when nothing
     /// is selected).</summary>
     public void SetTextAlignment(TextAlignment align)
-        => ApplyToSelectedParagraphs(p => p.TextAlignment = align);
+        => ApplyToSelectedParagraphs(p => p.TextAlignment = align, p => p.TextAlignment == align);
     /// <summary>Sets the absolute line-box height (px) of every selected paragraph ("exactly" spacing).
     /// Prefer <see cref="SetLineSpacing"/> for proportional spacing that scales with font size.</summary>
     public void SetLineHeight(double height)
-        => ApplyToSelectedParagraphs(p => p.LineHeight = height);
+        => ApplyToSelectedParagraphs(p => p.LineHeight = height, p => p.LineHeight.Equals(height)); // Equals: NaN matches NaN
     /// <summary>Sets proportional line spacing on every selected paragraph as HWP % ÷ 100 — line box =
     /// largest font size × <paramref name="multiplier"/> (1.6 = 160%). <see cref="double.NaN"/> clears it
     /// (back to the HWP default 160%).</summary>
     public void SetLineSpacing(double multiplier)
-        => ApplyToSelectedParagraphs(p => p.LineSpacing = multiplier);
+        => ApplyToSelectedParagraphs(p => p.LineSpacing = multiplier, p => p.LineSpacing.Equals(multiplier));
     /// <summary>Toggles a bullet list on the selected paragraphs.</summary>
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
     /// <summary>Toggles a numbered list on the selected paragraphs.</summary>
@@ -221,10 +225,12 @@ public partial class RichEditor
     public void RemoveList()
     {
         if (_caretPosition.Paragraph == null || Document == null || IsReadOnly) return;
-        PushUndo();
         // Any depth: clearing a list needs no block splicing, so cell paragraphs are cleared too.
         var targets = SelectedParagraphsInOrder();
         if (targets.Count == 0) targets = new List<Paragraph> { _caretPosition.Paragraph };
+        // No list anywhere in it: no undo step that undoes nothing (see ApplyToSelectedParagraphs).
+        if (targets.All(p => p.ListType == ListKind.None && p.ListMarker == ListMarkerStyle.Default && p.ListLevel == 0)) return;
+        PushUndo();
         foreach (var p in targets)
         {
             p.ListType = ListKind.None;
