@@ -56,4 +56,48 @@ public class HtmlAuditTests
         var run = doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Run>()).First(r => r.Text == "click");
         Assert.Equal(href, run.NavigateUri);
     }
+
+    // ---- the same rule on the other ways in (port audit, 2026-09-24) ----------------------------------------
+    // The HTML reader drops script links, but a JSON/.flow file carried them in untouched and the HTML writer
+    // sent them back out. A host's SetHyperlink reaches the writer too, so the writer is the backstop. (This
+    // RTF reader does not read HYPERLINK fields; the port's does, and filters them the same way.)
+
+    private static FlowDocument Linked(string href)
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "click", NavigateUri = href } } });
+        return doc;
+    }
+
+    private static Run Clicked(FlowDocument doc)
+        => doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Run>()).First(r => r.Text.Contains("click"));
+
+    [AvaloniaTheory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("vbscript:msgbox(1)")]
+    public void AScriptLinkInAJsonFile_IsNotCarriedIntoTheDocument(string href)
+    {
+        var doc = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(Linked(href)));
+
+        Assert.Null(Clicked(doc).NavigateUri);
+    }
+
+    [AvaloniaFact]
+    public void AScriptLinkSetByTheHost_IsNotWrittenToHtml()
+    {
+        string html = HtmlDocumentFormatter.ToHtml(Linked("javascript:alert(1)"));
+
+        Assert.DoesNotContain("javascript", html, System.StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("click", html);
+    }
+
+    // The other half, so the guards cannot pass by dropping every link.
+    [AvaloniaFact]
+    public void AWebLink_SurvivesJsonAndTheHtmlWriter()
+    {
+        const string url = "https://example.com/a?b=1";
+
+        Assert.Equal(url, Clicked(DocumentSerializer.Deserialize(DocumentSerializer.Serialize(Linked(url)))).NavigateUri);
+        Assert.Contains("href=\"https://example.com/a?b=1\"", HtmlDocumentFormatter.ToHtml(Linked(url)).Replace("&amp;", "&"));
+    }
 }

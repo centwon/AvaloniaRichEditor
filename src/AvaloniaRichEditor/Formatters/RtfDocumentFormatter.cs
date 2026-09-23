@@ -628,7 +628,7 @@ internal sealed class RtfParser
     // fallback is A4, which is what such a document would be printed on anyway.
     private void ApplyMargins()
     {
-        double Side(int i, double fallback) => _marginTwips[i] >= 0 ? _marginTwips[i] / PageSetup.TwipsPerMm : fallback;
+        double Side(int i, double fallback) => _marginTwips[i] >= 0 ? PageSetup.TwipsToMm(_marginTwips[i]) : fallback;
         var d = PageSetup.DefaultMargin;
         var m = new PageMargins(Side(0, d.Left), Side(1, d.Top), Side(2, d.Right), Side(3, d.Bottom));
         var ps = _doc.PageSetup;

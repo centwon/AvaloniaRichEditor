@@ -59,6 +59,18 @@ public class PageSetup
     internal const double TwipsPerMm = 1440.0 / 25.4;
     internal static int MmToTwips(double mm) => (int)System.Math.Round(mm * TwipsPerMm);
 
+    // The way back. A twip is 0.0176 mm, so twips / TwipsPerMm is almost never the millimetres that were written:
+    // 15 mm goes out as 850 twips and came back as 14.993 - every step of the toolbar's picker missed its own
+    // preset after an RTF round trip, and the JSON then stored a "custom" margin (port audit, 2026-09-24). A value
+    // that is a whole tenth of a millimetre AND writes back to the same twips is taken as what was meant; anything
+    // else (Word's 1.25 inch = 1800 twips = 31.75 mm) keeps its exact length, since rounding it would move it.
+    internal static double TwipsToMm(int twips)
+    {
+        double mm = twips / TwipsPerMm;
+        double tenth = System.Math.Round(mm, 1);
+        return MmToTwips(tenth) == twips ? tenth : mm;
+    }
+
     /// <summary>Paper size in millimetres for a page size + orientation.</summary>
     public static (double W, double H) PaperMillimetres(Controls.RichEditorPageSize size, Controls.RichEditorPageOrientation orientation)
     {

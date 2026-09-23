@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using AvaloniaRichEditor.Controls;
 using AvaloniaRichEditor.Documents;
 using Xunit;
@@ -263,5 +264,69 @@ public class TableStructureApiTests
         Assert.True(ed.InsertRowBelow());
 
         Assert.Equal(3, it.Table.Rows);
+    }
+
+    // ---- an object selected inside what the command removes (port audit, 2026-09-24) -------------------
+    // Pointer, key and menu paths let go of a selected object before they edit; a host call does not. A nested
+    // table or picture selected in a row the host deletes stayed selected after it left the document, and
+    // Delete then pushed an undo step for an edit of the detached row and left the document as it was.
+
+    private static void Press(RichEditor ed, Key key)
+        => ed.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key });
+
+    private static object? Field(RichEditor ed, string name) => typeof(RichEditor).GetField(name, NP)!.GetValue(ed);
+    private static void SetField(RichEditor ed, string name, object? v) => typeof(RichEditor).GetField(name, NP)!.SetValue(ed, v);
+
+    private const string NestedInRow2 =
+        "<table><tr><td>a</td></tr><tr><td><table><tr><td>in</td></tr></table></td></tr></table>";
+
+    [AvaloniaFact]
+    public void DeletingTheRowAroundASelectedNestedTable_LetsGoOfIt()
+    {
+        var ed = Editor(NestedInRow2);
+        var tb = Table(ed);
+        var nested = tb.Cells[1][0].Blocks.OfType<TableBlock>().Single();
+        PlaceCaret(ed, tb.Cells[0][0].Para);
+        SetField(ed, "_selectedBlock", nested);
+
+        Assert.True(ed.DeleteTableRow(tb, 1));
+
+        Assert.Null(Field(ed, "_selectedBlock"));
+    }
+
+    [AvaloniaFact]
+    public void DeletingTheRowAroundASelectedPicture_ThenDelete_ActsAtTheCaret()
+    {
+        var ed = Editor("<table><tr><td>a</td></tr><tr><td>b</td></tr></table>");
+        var tb = Table(ed);
+        var host = tb.Cells[1][0].Para;
+        var img = new InlineImage { Width = 10, Height = 10 };
+        host.Inlines.Add(img);
+        PlaceCaret(ed, tb.Cells[0][0].Para);
+        SetField(ed, "_selectedInline", ((Paragraph, InlineImage)?)(host, img));
+
+        Assert.True(ed.DeleteTableRow(tb, 1));
+        Assert.Null(Field(ed, "_selectedInline"));
+
+        // What a user does next: the key goes to the caret (it deletes "a"), not to an invisible edit of the
+        // detached row that pushed an undo step and left the document as it was.
+        Press(ed, Key.Delete);
+        Assert.Equal("", string.Concat(Table(ed).Cells[0][0].Para.Inlines.OfType<Run>().Select(r => r.Text)));
+    }
+
+    // The other half: an object the edit did NOT remove stays selected, so the fix cannot simply clear every
+    // selection on every command.
+    [AvaloniaFact]
+    public void AnObjectTheEditLeavesInPlace_StaysSelected()
+    {
+        var ed = Editor(NestedInRow2);
+        var tb = Table(ed);
+        var nested = tb.Cells[1][0].Blocks.OfType<TableBlock>().Single();
+        PlaceCaret(ed, tb.Cells[0][0].Para);
+        SetField(ed, "_selectedBlock", nested);
+
+        Assert.True(ed.InsertTableRow(tb, 0));
+
+        Assert.Same(nested, Field(ed, "_selectedBlock"));
     }
 }

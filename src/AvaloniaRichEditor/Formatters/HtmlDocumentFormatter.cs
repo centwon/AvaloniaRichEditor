@@ -1331,7 +1331,10 @@ namespace AvaloniaRichEditor.Formatters
             if (HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)) t = $"<s>{t}</s>";
             if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
             if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
-            if (!string.IsNullOrEmpty(r.NavigateUri)) t = $"<a href=\"{AttrEscape(r.NavigateUri)}\">{t}</a>";
+            // The readers drop script links, but a host's SetHyperlink reaches here without passing one — the
+            // same check, so no script link leaves in exported or clipboard HTML whatever put it in the document.
+            if (!string.IsNullOrEmpty(r.NavigateUri) && SafeHref(r.NavigateUri) is { } href)
+                t = $"<a href=\"{AttrEscape(href)}\">{t}</a>";
             sb.Append(t);
         }
 

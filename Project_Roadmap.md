@@ -64,6 +64,11 @@ FindBar·FindReplace·IncomingContent) 결함 **19건**, 2순위 5개(Rendering�
 - 표 행·열 API(#48)·단축키 표 공개(#49) → [포트 PR #54](https://github.com/centwon/WinUIRichEditor/pull/54). `Gesture(id)`는 Avalonia 전용이라 포트엔 없다.
 - 그림 손잡이 우선순위·`CtrlU_AtALinksEnd_LeavesTheLinkAlone`은 포트에 이미 들어와 있었다(포트 커밋 50a2905 등).
 - 알려진 분기: 포트는 쪽 여백 DIP를 정수 반올림(Win2D 안티앨리어싱 클립), 새 문서 대입이 `IsModified`를 켠다.
+- 포트 감사가 찾은 공통 결함 3건을 역으로 옮김(2026-09-24, 포트 [PR #56](https://github.com/centwon/WinUIRichEditor/pull/56)):
+  표 행·열 공개 API가 지운 행 안의 개체 선택을 남김 · RTF 여백 왕복이 mm를 틂(15 → 14.993, 픽커 5단계 불일치) ·
+  JSON 입력과 HTML 출력에 스크립트 링크 검사가 없음. ⚠ 기존 여백 테스트가 "1 twip 이내"를 계약으로 잡아 결함을
+  가렸다. 상류는 공통 `AfterEdit`가 없어 선택 정리를 행·열 명령 네 곳에만 걸었다(포트는 모든 편집 경로).
+  상류 RTF 읽기는 `HYPERLINK` 필드를 읽지 않아 그 경로는 해당 없음.
 
 **알려진 제한 (의도적으로 둠)**
 - RTF 중첩 표의 열 너비는 가져올 때 기본값(`\cellx`가 무시되는 props 그룹 안에 있다).
