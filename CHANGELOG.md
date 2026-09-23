@@ -49,6 +49,8 @@ half of that line lay on the picture and replaced its outermost half-pen on ever
 a selected picture, and the one around a picture inside a table cell or a selected inline icon, did the
 same with twice the weight. All of them now sit half a pen outside the picture, touching none of its
 pixels. (A table's borders go the other way — see below — because there the line is the table's own ink.)
+That moved the top line of a picture opening a page just above the page's content clip, which cut it off;
+the outline, selection border and handles are now drawn after the page's content, bounded by the paper.
 
 ### Fixed — a table's outline was cut where a page break crossed it (2026-09-20)
 

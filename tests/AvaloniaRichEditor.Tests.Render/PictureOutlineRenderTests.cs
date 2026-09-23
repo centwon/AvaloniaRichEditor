@@ -74,6 +74,69 @@ public class PictureOutlineRenderTests
         return buf;
     }
 
+    // Reported right after the fix above (2026-09-23): a selected picture that OPENS a page showed its border
+    // on three sides only. Moved outside the picture, the top line lay above the page's content box — and
+    // the page clip, which ends exactly at the picture's top, cut it off. The chrome around a picture is now
+    // drawn after the page's content, under the paper's clip.
+    [AvaloniaFact]
+    public void ASelectedPictureAtTheTopOfAPage_KeepsItsTopBorder()
+    {
+        const int w = 900;
+        var ed = new RichEditor
+        {
+            PageSize = RichEditorPageSize.A4,
+            DefaultFontFamily = new Avalonia.Media.FontFamily("avares://Avalonia.Fonts.Inter/Assets#Inter"),
+            ShowPageBoundaries = true,
+        };
+        var doc = new FlowDocument();
+        for (int i = 0; i < 44; i++) // found by sweeping: 42..47 all push the picture to page 2's top
+        {
+            var p = new Paragraph();
+            p.Inlines.Add(new Run { Text = $"Filler line {i}" });
+            doc.Blocks.Add(p);
+        }
+        var img = new ImageBlock { Width = PicW, Height = PicH };
+        img.SetImageData(SolidBmp(PicW, PicH), "image/bmp");
+        doc.Blocks.Add(img);
+        ed.Document = doc;
+        typeof(RichEditor).GetField("_selectedBlock", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(ed, img);
+
+        int paperH = (int)ed.GetPaperPixelSize().Height, h = 2 * paperH + 40;
+        ed.Measure(new Size(w, double.PositiveInfinity));
+        ed.Arrange(new Rect(0, 0, w, Math.Max(h, ed.DesiredSize.Height)));
+        using var rtb = new RenderTargetBitmap(new PixelSize(w, h));
+        rtb.Render(ed);
+        var px = new byte[w * 4 * h];
+        var handle = GCHandle.Alloc(px, GCHandleType.Pinned);
+        try { rtb.CopyPixels(new PixelRect(0, 0, w, h), handle.AddrOfPinnedObject(), px.Length, w * 4); }
+        finally { handle.Free(); }
+
+        // The picture's first washed-red row; the probe column is a quarter in, clear of the handles.
+        int red = -1, top = -1, x = -1;
+        for (int y = paperH; y < h && top < 0; y++) // page 2 only: text fringes on page 1 can pass for red
+            for (int xx = 0; xx < w && top < 0; xx++)
+            {
+                int o = (y * w + xx) * 4;
+                foreach (int c in new[] { 0, 2 })
+                    if (px[o + c] > 150 && px[o + 1] < 80 && px[o + c] - px[o + (2 - c)] > 60)
+                    { red = c; top = y; x = xx + PicW / 4; break; }
+            }
+        Assert.True(top >= 0, "the picture was not drawn at all");
+
+        // It must really open page 2, or this checks nothing: the page's content box starts right there.
+        double contentTop = RichEditor.PageGap + paperH + RichEditor.PageGap + ed.PagePadTop;
+        Assert.InRange(top, contentTop - 1, contentTop + 1);
+
+        // Just above it: the border, strong accent blue — not the paper's white.
+        bool border = false;
+        for (int y = top - 3; y < top; y++)
+        {
+            int o = (y * w + x) * 4;
+            if (px[o + (2 - red)] > 150 && px[o + red] < 120) border = true;
+        }
+        Assert.True(border, "a selected picture opening a page lost the top line of its border");
+    }
+
     // CopyPixels hands back the backend's own channel layout — BGRA on Windows and Linux, RGBA on macOS — so
     // which of channel 0 and 2 holds the picture's red is found from a pixel of the picture, not assumed.
     private static int RedChannel(byte[] px)

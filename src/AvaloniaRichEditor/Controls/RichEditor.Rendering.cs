@@ -187,6 +187,7 @@ public partial class RichEditor
         {
             // Continuous (Free): one walk at the control width.
             (caretPoint, caretHeight, blockCaretRect) = DrawDocumentBlocks(context, Bounds.Width, visTop, visBottom);
+            FlushPictureChrome(context);
         }
         else if (!ShowPageBoundaries)
         {
@@ -216,6 +217,11 @@ public partial class RichEditor
                     if (cp != null) { caretPoint = cp; caretHeight = ch; }
                     if (bcr != null) blockCaretRect = bcr;
                 }
+                // No paper to bound it here: the page's own column, widened into half the gap on each side.
+                using (context.PushClip(new Rect(NoChromeColX - 4, viewTop - NoChromePageGap / 2,
+                                                 PaperContentWidth + 8, clipH + NoChromePageGap)))
+                using (context.PushTransform(Matrix.CreateTranslation(NoChromeColX, viewTop - sliceTop)))
+                    FlushPictureChrome(context);
             }
         }
         else
@@ -253,6 +259,9 @@ public partial class RichEditor
                     if (cp != null) { caretPoint = cp; caretHeight = ch; }
                     if (bcr != null) blockCaretRect = bcr;
                 }
+                using (context.PushClip(paper))
+                using (context.PushTransform(Matrix.CreateTranslation(dx, contentBox.Y - sliceTop)))
+                    FlushPictureChrome(context);
             }
         }
 
@@ -285,6 +294,17 @@ public partial class RichEditor
     // outline is a marker drawn around content that must survive intact.
     private static Rect Around(Rect box, double thickness)
         => box.Inflate(thickness / 2);
+
+    // Picture outlines, selection borders and handles queued by a block walk, in its own coordinates. Drawn
+    // after it under a looser clip than the content's, because they lie OUTSIDE the picture — and a picture
+    // opening a page sits exactly on the page's content clip, which cut its top border off (2026-09-23).
+    private readonly List<Action<DrawingContext>> _pictureChrome = new();
+
+    private void FlushPictureChrome(DrawingContext context)
+    {
+        foreach (var draw in _pictureChrome) draw(context);
+        _pictureChrome.Clear();
+    }
 
     private static Rect InsetTableEdges(Rect cell, Rect table)
     {
@@ -548,26 +568,34 @@ public partial class RichEditor
                     if (chrome)
                     {
                         bool imgSelected = ReferenceEquals(img, _selectedBlock);
-                        if (imgSelected)
+                        // Selection: translucent overlay (inside the picture, so the page clip suits it).
+                        if (imgSelected) context.FillRectangle(AccentFill60, imgRect);
+                        // The outline, selection border and handles lie AROUND the picture, and a picture
+                        // that opens a page sits right on the page's clip — which cut off its top border
+                        // (reported from the demo, 2026-09-23). They are drawn after the page's content, under
+                        // the paper's clip instead (DeferPictureChrome). Only from the replay whose slice holds
+                        // the picture: a selected one is drawn by every page's replay, clipped away elsewhere.
+                        if (imgRect.Bottom > visTop && imgRect.Top < visBottom)
                         {
-                            // Selection: translucent overlay + bold border.
-                            context.FillRectangle(AccentFill60, imgRect);
-                            context.DrawRectangle(null, AccentPen2, Around(imgRect, 2));
+                            var handles = imgSelected ? PictureHandles(imgRect, 12).Select(h => h.knob).ToArray() : null;
+                            _pictureChrome.Add(ctx =>
+                            {
+                                if (handles != null) ctx.DrawRectangle(null, AccentPen2, Around(imgRect, 2));
+                                // A faint outline marks the picture as an object at all times; the resize
+                                // handle appears only once it is SELECTED, the way Word and HWP do it. An
+                                // always-on handle put a solid accent square on every picture — in a read-only
+                                // viewer that cannot resize anything, and in any screenshot of the document.
+                                ctx.DrawRectangle(null, AccentBorderPen, Around(imgRect, 1));
+                                if (handles != null)
+                                    foreach (var knob in handles) ctx.FillRectangle(AccentHandleFill, knob);
+                            });
                         }
-                        // A faint outline marks the picture as an object at all times; the resize handle
-                        // appears only once it is SELECTED, the way Word and HWP do it. An always-on
-                        // handle put a solid accent square on every picture — in a read-only viewer that
-                        // cannot resize anything, and in any screenshot of the document.
-                        context.DrawRectangle(null, AccentBorderPen, Around(imgRect, 1));
                         if (imgSelected)
                         {
                             // Registered with the drawn handles so there is never a grabbable area with
                             // nothing under the pointer to explain it. Slightly larger for easy grabbing.
-                            foreach (var (knob, grab, grip) in PictureHandles(imgRect, 12))
-                            {
-                                context.FillRectangle(AccentHandleFill, knob);
+                            foreach (var (_, grab, grip) in PictureHandles(imgRect, 12))
                                 _imageHandles.Add((grab, img, width, height, grip));
-                            }
                         }
                     }
 
