@@ -116,7 +116,7 @@ for a full editor host.
 
 - Inline and block **images** — insert, resize (corner or single-edge handles), replace, save, alt text
 - Word-style **page view**: `PageSize` (Continuous by default, or A4/A3/A5/B4/B5/Letter/Legal/Tabloid),
-  `PageOrientation`, `PageMargin` (four sides), `ShowPageBoundaries`, line-boundary page breaks,
+  `PageOrientation`, `PageMargin` (four sides, in mm), `ShowPageBoundaries`, line-boundary page breaks,
   headers/footers/page numbers
 - Page setup is **persisted per document** (`FlowDocument.PageSetup`) and re-applied on load, like a word
   processor

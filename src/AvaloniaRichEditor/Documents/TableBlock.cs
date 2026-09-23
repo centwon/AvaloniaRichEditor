@@ -29,16 +29,19 @@ public class TableBlock : Block
     /// <summary>Creates a 2×2 table.</summary>
     public TableBlock()
     {
+        MarginTop = AutoTopMargin;
         InitializeCells(Rows, Columns);
     }
 
     /// <summary>Creates a <paramref name="rows"/>×<paramref name="cols"/> table.</summary>
     public TableBlock(int rows, int cols)
     {
+        MarginTop = AutoTopMargin;
         Rows = rows;
         Columns = cols;
         InitializeCells(Rows, Columns);
     }
+
 
     private void InitializeCells(int rows, int cols)
     {

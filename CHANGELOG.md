@@ -12,14 +12,54 @@ The margins were two constants nothing could reach: a host could pick the paper 
 write on, and an RTF from Word or HWP had its own margins dropped, so a document opened here paginated
 differently from what its author saw.
 
-- `RichEditor.PageMargin` (a `Thickness`, DIPs, four sides) and `PageSetup.Margin`, defaulting to
-  `PageSetup.DefaultMargin` — 48 left and right, 40 top and bottom, the previous constants.
+- `RichEditor.PageMargin` and `PageSetup.Margin`, four sides in **millimetres** (`PageMargins`), defaulting
+  to `PageSetup.DefaultMargin` — 15 mm on every side. Millimetres because that is the unit a page is discussed in: paper sizes
+  are defined in mm, Word and HWP show margins in mm, and RTF carries them as physical length. A dedicated
+  type rather than Avalonia's `Thickness`, which means device pixels everywhere else in a UI framework.
 - They belong to the document: saved in JSON/`.flow` (omitted at the default, so a document that never
   touched them keeps its bytes) and applied on load, like the paper size.
 - RTF writes them (`\margl`/`\margr`/`\margt`/`\margb`, and the section-level pair HWP reads) and now
   **reads** them, so a file from another word processor keeps its own margins.
 - A margin that would leave no page to write on — negative, NaN, or two sides adding up past the paper — is
   refused: the property keeps its last usable value, and a file falls back to the default.
+- A margin band too thin for the header, footer or page number leaves it undrawn, rather than centring the
+  line half off the paper and half over the body text. The margins stay exactly what was asked for.
+- The toolbar's page controls gained a **margin picker** beside paper and orientation, so the person using
+  an app built on `RichEditorView` can change them too: five steps in millimetres (5 / 10 / 15 / 20 / 30)
+  in a box built like the line-spacing control — the margin icon, the current step, a chevron for the list. Margins that match no preset (a host's, or a document's) select nothing rather
+  than showing one that is not the page's. New icon slot `RichEditorIcon.PageMargin`.
+
+### Changed — a table, picture or divider sits one line gap below the text above it (2026-09-21)
+
+Reported from the demo: a table sat flush against the paragraph above, with none of the air the line
+spacing gives between two lines of text. Both ends were at zero — paragraphs carry no bottom margin
+(HWP-style) and these blocks carried no top one.
+
+- `Block.AutoTopMargin` (NaN) is the new default `MarginTop` for `TableBlock`, `ImageBlock` and
+  `DividerBlock`: the editor resolves it to one line gap of body text, so it follows the document's font
+  size and line spacing. A stated margin, **0 included**, is used as given.
+- JSON writes nothing for it and reads a missing top margin back as auto, so a file that never expressed
+  an opinion — every file written before the field existed — gains the gap.
+
+### Fixed — a picture's own outline was painting over its edge (2026-09-23)
+
+Reported from the demo: at a high zoom, a picture looked cut by a pixel or two. Nothing clipped it — a
+picture carries a faint outline marking it as an object, and a pen is centred on the rect it strokes, so
+half of that line lay on the picture and replaced its outermost half-pen on every side. The bold border of
+a selected picture, and the one around a picture inside a table cell or a selected inline icon, did the
+same with twice the weight. All of them now sit half a pen outside the picture, touching none of its
+pixels. (A table's borders go the other way — see below — because there the line is the table's own ink.)
+That moved the top line of a picture opening a page just above the page's content clip, which cut it off;
+the outline, selection border and handles are now drawn after the page's content, bounded by the paper.
+
+### Fixed — a table's outline was cut where a page break crossed it (2026-09-20)
+
+Reported from the demo. A 1px pen is centred on the rect it strokes, so a cell on the table's edge put half
+its line outside the table's own box; a page break lands on that box, and the page's clip cut the line in
+two — part of its weight at the bottom of one page, the rest at the top of the next (measured: 67% of a
+whole line). The edges that are the table's boundary are now drawn half a pen inwards, which keeps a
+table's ink inside the box pagination knows about — and lands those lines on whole pixels, so they come out
+crisper as well. Interior borders, shared by two cells, are unchanged.
 
 ### Added — the keyboard shortcut table is public (2026-09-20)
 

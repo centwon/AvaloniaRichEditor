@@ -23,28 +23,47 @@ public class PageSetup
     /// <summary>Whether "page / total" is drawn in the bottom margin.</summary>
     public bool ShowPageNumbers { get; set; }
 
-    /// <summary>The page margins, in DIPs: the band between the paper's edge and the text, which the
-    /// header, the footer and the page number are drawn in. Four sides, as Word, HWP and RTF have them.
-    /// Defaults to <see cref="DefaultMargin"/>.</summary>
-    public Avalonia.Thickness Margin { get; set; } = DefaultMargin;
+    /// <summary>The page margins, in MILLIMETRES: the band between the paper's edge and the text, which
+    /// the header, the footer and the page number are drawn in. Four sides, as Word, HWP and RTF have
+    /// them. Defaults to <see cref="DefaultMargin"/>.</summary>
+    public PageMargins Margin { get; set; } = DefaultMargin;
 
-    /// <summary>The margins a document starts with: 48 DIP left and right, 40 top and bottom.</summary>
-    public static Avalonia.Thickness DefaultMargin { get; } = new(MarginX, MarginY, MarginX, MarginY);
+    /// <summary>The margins a document starts with: 15 mm on every side.</summary>
+    public static PageMargins DefaultMargin { get; } = new(DefaultMarginMm);
 
     // Here rather than on the control because the RTF writer needs them too, and a formatter reaching for a
     // control's statics is how a headless formatter stops being headless.
-    internal const double MarginX = 48;
-    internal const double MarginY = 40;
+    //
+    // 15 mm, not the 12.7 x 10.6 this editor drew while the margins were two constants in device pixels
+    // (48 x 40 DIP): millimetres are the unit a page is set in, and the default should be a number someone
+    // would choose. It is also the middle step of the toolbar's picker, so a new document shows "Normal".
+    internal const double DefaultMarginMm = 15;
 
     // A margin a document (or an RTF from another word processor) states has to leave a content box to
     // put text in: negative, NaN/infinite, or two sides that together swallow the paper all describe a
     // page nothing can be laid out on. Such a value is dropped rather than clamped — a document that
-    // means "no margins" says 0, and silently halving someone's 300 DIP margin is its own surprise.
-    internal static bool IsUsableMargin(Avalonia.Thickness m, double paperW, double paperH)
+    // means "no margins" says 0, and silently halving someone's 80 mm margin is its own surprise.
+    internal static bool IsUsableMargin(PageMargins m, double paperWmm, double paperHmm)
     {
         foreach (double v in new[] { m.Left, m.Top, m.Right, m.Bottom })
             if (double.IsNaN(v) || double.IsInfinity(v) || v < 0) return false;
-        return m.Left + m.Right < paperW && m.Top + m.Bottom < paperH;
+        return m.Left + m.Right < paperWmm && m.Top + m.Bottom < paperHmm;
+    }
+
+    /// <summary>Device-independent pixels per millimetre: this library lays out at 96 DPI, and page
+    /// geometry is stated in millimetres, so every conversion between the two goes through here.</summary>
+    public const double DipsPerMm = 96.0 / 25.4;
+
+    // 1440 twips per inch, 25.4 mm per inch: page geometry is millimetres in the model and twips in RTF.
+    // Both the writer and the reader convert, and they are separate classes, so it lives with the unit.
+    internal const double TwipsPerMm = 1440.0 / 25.4;
+    internal static int MmToTwips(double mm) => (int)System.Math.Round(mm * TwipsPerMm);
+
+    /// <summary>Paper size in millimetres for a page size + orientation.</summary>
+    public static (double W, double H) PaperMillimetres(Controls.RichEditorPageSize size, Controls.RichEditorPageOrientation orientation)
+    {
+        var (w, h) = PaperDips(size, orientation);
+        return (w / DipsPerMm, h / DipsPerMm);
     }
 
     /// <summary>Paper size in DIPs for a page size + orientation. Single source: the control's layout and

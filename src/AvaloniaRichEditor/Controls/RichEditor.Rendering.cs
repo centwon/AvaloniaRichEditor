@@ -43,7 +43,7 @@ public partial class RichEditor
         double yOffset = 0;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double h = BlockExtent(block, width, yOffset, out _, out _);
             // While the IME composes, the render walk advances by the caret paragraph's height WITH the
             // preedit spliced in, so the extent has to as well — otherwise the scrollable range stays a
@@ -187,6 +187,7 @@ public partial class RichEditor
         {
             // Continuous (Free): one walk at the control width.
             (caretPoint, caretHeight, blockCaretRect) = DrawDocumentBlocks(context, Bounds.Width, visTop, visBottom);
+            FlushPictureChrome(context);
         }
         else if (!ShowPageBoundaries)
         {
@@ -216,6 +217,11 @@ public partial class RichEditor
                     if (cp != null) { caretPoint = cp; caretHeight = ch; }
                     if (bcr != null) blockCaretRect = bcr;
                 }
+                // No paper to bound it here: the page's own column, widened into half the gap on each side.
+                using (context.PushClip(new Rect(NoChromeColX - 4, viewTop - NoChromePageGap / 2,
+                                                 PaperContentWidth + 8, clipH + NoChromePageGap)))
+                using (context.PushTransform(Matrix.CreateTranslation(NoChromeColX, viewTop - sliceTop)))
+                    FlushPictureChrome(context);
             }
         }
         else
@@ -253,6 +259,9 @@ public partial class RichEditor
                     if (cp != null) { caretPoint = cp; caretHeight = ch; }
                     if (bcr != null) blockCaretRect = bcr;
                 }
+                using (context.PushClip(paper))
+                using (context.PushTransform(Matrix.CreateTranslation(dx, contentBox.Y - sliceTop)))
+                    FlushPictureChrome(context);
             }
         }
 
@@ -270,6 +279,43 @@ public partial class RichEditor
 
     // The document block walk: selection highlights, table grids, paragraphs, images, dividers,
     // resize-handle registration and caret geometry, all in continuous document coordinates.
+    // A 1px pen is centred on the rect it strokes, so a cell on the table's edge puts half its line OUTSIDE
+    // the table's own box. A page break lands exactly on that box, and the page's clip then cut the line in
+    // two — part of its weight on one page, the rest on the next (measured 2026-09-20: 67% of a whole line;
+    // reported from the demo). Pulling the edges that ARE the table's boundary half a pen inwards keeps all
+    // of a table's ink inside the box pagination knows about, and lands those lines on whole pixels, so they
+    // also come out crisper. Interior edges are shared by two neighbouring cells and stay centred —
+    // insetting those would draw each shared line twice, a pixel apart.
+    // The rect to stroke so a pen of this thickness lands just OUTSIDE box, touching none of its pixels.
+    // A pen is centred on the rect it strokes, so an outline drawn on a picture's own rect paints over the
+    // picture's outermost half-pen on every side — reported from the demo at a high zoom (2026-09-23) as the
+    // picture being "cut by a pixel or two". A table's borders go the other way (InsetTableEdges): there the
+    // line IS the table's own ink and has to stay inside the box pagination knows about, while a picture's
+    // outline is a marker drawn around content that must survive intact.
+    private static Rect Around(Rect box, double thickness)
+        => box.Inflate(thickness / 2);
+
+    // Picture outlines, selection borders and handles queued by a block walk, in its own coordinates. Drawn
+    // after it under a looser clip than the content's, because they lie OUTSIDE the picture — and a picture
+    // opening a page sits exactly on the page's content clip, which cut its top border off (2026-09-23).
+    private readonly List<Action<DrawingContext>> _pictureChrome = new();
+
+    private void FlushPictureChrome(DrawingContext context)
+    {
+        foreach (var draw in _pictureChrome) draw(context);
+        _pictureChrome.Clear();
+    }
+
+    private static Rect InsetTableEdges(Rect cell, Rect table)
+    {
+        const double half = 0.5, eps = 0.01;
+        double left = cell.X + (Math.Abs(cell.X - table.X) < eps ? half : 0);
+        double top = cell.Y + (Math.Abs(cell.Y - table.Y) < eps ? half : 0);
+        double right = cell.Right - (Math.Abs(cell.Right - table.Right) < eps ? half : 0);
+        double bottom = cell.Bottom - (Math.Abs(cell.Bottom - table.Bottom) < eps ? half : 0);
+        return new Rect(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
+    }
+
     // Page view replays this once per visible page under a clip+translation, with the page's
     // document slice as the cull window; the continuous mode calls it once with the viewport.
     // chrome=false (print/export rendering) draws content only: no selection highlights, caret
@@ -315,7 +361,7 @@ public partial class RichEditor
 
         foreach (var block in Document!.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             // G1 P5: source each block's height + layout objects from the single BlockExtent pass — the
             // same one measure/hit-tests/pagination consume — so the render walk can never drift from
             // them on a block's height. Drawing, culling, caret/selection and the per-cell IME-preedit
@@ -346,6 +392,8 @@ public partial class RichEditor
                 // (Excel/Word style) instead of the linear text run; otherwise fall back to text highlight.
                 var cellBlock = chrome ? SelectedCellRange(tb) : null;
 
+                var tableBox = new Rect(startX, tableTop, tl.TableWidth, tl.TotalHeight);
+
                 foreach (var (r, c, rect) in tl.AnchorRects)
                 {
                     var cell = tb.Cells[r][c];
@@ -353,7 +401,7 @@ public partial class RichEditor
 
                     if (cell.Background != null)
                         context.FillRectangle(cell.Background, rect);
-                    context.DrawRectangle(null, GrayBorderPen, rect);
+                    context.DrawRectangle(null, GrayBorderPen, InsetTableEdges(rect, tableBox));
 
                     // A cell is in "cell-selection mode" when it's part of a multi-cell drag block, or its
                     // whole content is selected (Tab focus / triple-click). Such cells show a fill and NO
@@ -520,26 +568,34 @@ public partial class RichEditor
                     if (chrome)
                     {
                         bool imgSelected = ReferenceEquals(img, _selectedBlock);
-                        if (imgSelected)
+                        // Selection: translucent overlay (inside the picture, so the page clip suits it).
+                        if (imgSelected) context.FillRectangle(AccentFill60, imgRect);
+                        // The outline, selection border and handles lie AROUND the picture, and a picture
+                        // that opens a page sits right on the page's clip — which cut off its top border
+                        // (reported from the demo, 2026-09-23). They are drawn after the page's content, under
+                        // the paper's clip instead (DeferPictureChrome). Only from the replay whose slice holds
+                        // the picture: a selected one is drawn by every page's replay, clipped away elsewhere.
+                        if (imgRect.Bottom > visTop && imgRect.Top < visBottom)
                         {
-                            // Selection: translucent overlay + bold border.
-                            context.FillRectangle(AccentFill60, imgRect);
-                            context.DrawRectangle(null, AccentPen2, imgRect);
+                            var handles = imgSelected ? PictureHandles(imgRect, 12).Select(h => h.knob).ToArray() : null;
+                            _pictureChrome.Add(ctx =>
+                            {
+                                if (handles != null) ctx.DrawRectangle(null, AccentPen2, Around(imgRect, 2));
+                                // A faint outline marks the picture as an object at all times; the resize
+                                // handle appears only once it is SELECTED, the way Word and HWP do it. An
+                                // always-on handle put a solid accent square on every picture — in a read-only
+                                // viewer that cannot resize anything, and in any screenshot of the document.
+                                ctx.DrawRectangle(null, AccentBorderPen, Around(imgRect, 1));
+                                if (handles != null)
+                                    foreach (var knob in handles) ctx.FillRectangle(AccentHandleFill, knob);
+                            });
                         }
-                        // A faint outline marks the picture as an object at all times; the resize handle
-                        // appears only once it is SELECTED, the way Word and HWP do it. An always-on
-                        // handle put a solid accent square on every picture — in a read-only viewer that
-                        // cannot resize anything, and in any screenshot of the document.
-                        context.DrawRectangle(null, AccentBorderPen, imgRect);
                         if (imgSelected)
                         {
                             // Registered with the drawn handles so there is never a grabbable area with
                             // nothing under the pointer to explain it. Slightly larger for easy grabbing.
-                            foreach (var (knob, grab, grip) in PictureHandles(imgRect, 12))
-                            {
-                                context.FillRectangle(AccentHandleFill, knob);
+                            foreach (var (_, grab, grip) in PictureHandles(imgRect, 12))
                                 _imageHandles.Add((grab, img, width, height, grip));
-                            }
                         }
                     }
 
@@ -679,9 +735,9 @@ public partial class RichEditor
                         if (ReferenceEquals(cimg, _selectedBlock))
                         {
                             context.FillRectangle(AccentFill60, ir);
-                            context.DrawRectangle(null, AccentPen2, ir);
+                            context.DrawRectangle(null, AccentPen2, Around(ir, 2));
                         }
-                        context.DrawRectangle(null, AccentBorderPen, ir);
+                        context.DrawRectangle(null, AccentBorderPen, Around(ir, 1));
                         if (ReferenceEquals(cimg, _selectedBlock))   // handle on selection only
                         {
                             foreach (var (knob, grab, grip) in PictureHandles(ir, 12))
@@ -840,7 +896,7 @@ public partial class RichEditor
                     _inlineImageRects.Add((ir, p, ii));
                     if (_selectedInline is { } sel && ReferenceEquals(sel.img, ii))
                     {
-                        context.DrawRectangle(null, AccentPen2, ir);
+                        context.DrawRectangle(null, AccentPen2, Around(ir, 2));
                         foreach (var (knob, grab, grip) in PictureHandles(ir, 10))
                         {
                             context.FillRectangle(Brushes.White, knob);

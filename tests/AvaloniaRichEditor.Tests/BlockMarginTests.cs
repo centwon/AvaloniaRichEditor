@@ -47,14 +47,19 @@ public class BlockMarginTests
     {
         // Documents saved before the margin fields existed: images/tables rendered with a fixed
         // 10px bottom gap, dividers with none — loading must reproduce that.
+        //
+        // The TOP is the exception, and deliberately so (2026-09-21): a file that states no top margin
+        // now gets the editor's own gap — one line of body text — rather than the flat 0 it used to. A
+        // stated margin, 0 included, is still honoured (the test above), so this only changes files that
+        // never expressed an opinion, which is every file written before the field existed.
         var ed = new RichEditor();
         ed.LoadJson("""{"Version":2,"Blocks":[{"Type":"Image","Width":100,"Height":80},{"Type":"Divider"}]}""");
 
         var img = ed.Document!.Blocks.OfType<ImageBlock>().Single();
-        Assert.Equal(0, img.MarginTop);
+        Assert.True(double.IsNaN(img.MarginTop));
         Assert.Equal(10, img.MarginBottom);
         var dv = ed.Document.Blocks.OfType<DividerBlock>().Single();
-        Assert.Equal(0, dv.MarginTop);
+        Assert.True(double.IsNaN(dv.MarginTop));
         Assert.Equal(0, dv.MarginBottom);
     }
 

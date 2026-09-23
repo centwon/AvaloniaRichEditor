@@ -57,7 +57,7 @@ public partial class RichEditor
         double yOffset = 0, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out var ft, out var tl);
             yOffset += h + block.MarginBottom;
@@ -260,6 +260,24 @@ public partial class RichEditor
         return new TableLayout(colX, rowY, colX[cols] - startX, rowY[rows] - top, anchors);
     }
 
+    // The gap above a block, which every walker advances by before the block's own box starts.
+    //
+    // Normally the block's MarginTop. A table whose margin is unset (NaN — TableBlock.AutoMarginTop) gets
+    // ONE LINE GAP instead: the white space a line break leaves between two lines of body text. Without it
+    // a table butts straight against the paragraph above, because paragraphs carry no bottom margin
+    // (HWP-style, round 24) and a table carried no top one, so the two met at zero (reported from the
+    // demo, 2026-09-21). An explicit margin, including 0, is used as given.
+    //
+    // Sized from the DOCUMENT's default typography rather than from the block above: every walker below
+    // iterates blocks without tracking a predecessor, and several `continue` past culled ones, so a
+    // "previous block" would go stale in exactly the walkers that skip — the drift class G1/G2 cleaned up.
+    // The cost is that a table under a big heading gets a body-text gap, not a heading-sized one.
+    internal double TopGapOf(Block block)
+        => double.IsNaN(block.MarginTop) ? AutoBlockTopGap : block.MarginTop;
+
+    // One line gap of body text: the line box (font size x spacing) minus the text it holds.
+    internal double AutoBlockTopGap => Math.Max(0, PtToPx(DefaultFontSize) * (DefaultLineSpacing - 1));
+
     // G1 — single source of a block's vertical extent (height, EXCLUDING MarginTop/MarginBottom) at the
     // given top, plus the layout objects the walkers reuse (a paragraph's TextLayout / a table's
     // TableLayout; null otherwise). Every read-only document walk — measure, hit-tests, block-at-y —
@@ -308,7 +326,7 @@ public partial class RichEditor
         double yOffset = 0, listIndent = 10, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out _, out var tl);
             yOffset += h + block.MarginBottom;
@@ -332,7 +350,7 @@ public partial class RichEditor
         double yOffset = 0, maxWidth = ContentLayoutWidth;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out _, out var tl);
             if (block == target && tl is { } t) return (top, t);
@@ -381,7 +399,7 @@ public partial class RichEditor
         const double m = 4;
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out _, out var tl);
             yOffset += h + block.MarginBottom;
@@ -662,7 +680,7 @@ public partial class RichEditor
 
         foreach (var block in Document.Blocks)
         {
-            yOffset += block.MarginTop;
+            yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out var ft, out var tl);
             yOffset += h + block.MarginBottom;

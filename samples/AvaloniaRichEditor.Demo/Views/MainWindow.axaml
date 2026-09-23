@@ -15,7 +15,17 @@
          behaviour (right-click Copy on a table, the table-border click) can only be checked in a viewer. -->
     <DockPanel>
         <Border DockPanel.Dock="Top" Padding="8,2" BorderThickness="0,0,0,1" BorderBrush="#DDDDDD">
-            <CheckBox x:Name="ReadOnlyToggle" Content="읽기 전용 (IsReadOnly)"/>
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <CheckBox x:Name="ReadOnlyToggle" Content="읽기 전용 (IsReadOnly)"/>
+                <!-- The view's toolbar has paper and orientation but no margins; without this the margin
+                     bands (header/footer/page numbers, print) could not be checked in the demo at all. -->
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="여백 (PageMargin)" VerticalAlignment="Center"/>
+                    <!-- SelectedIndex is set in code, AFTER ItemsSource: setting it here runs first and the
+                         box comes up blank. -->
+                    <ComboBox x:Name="MarginPicker" MinWidth="220"/>
+                </StackPanel>
+            </StackPanel>
         </Border>
         <controls:RichEditorView x:Name="EditorView"/>
     </DockPanel>
