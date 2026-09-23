@@ -59,7 +59,7 @@ public partial class RichEditor
         _trustLayoutCache = true; // hit-testing only — never mutates, as on the drag-select path
         try { tp = GetPositionFromPoint(docPt); }
         finally { _trustLayoutCache = false; }
-        _dropPreview = CanDropObject(_dragObject, tp, copy) ? tp : null;
+        _dropPreview = CanDropObject(_dragObject, tp, copy) && (!copy || MayCreate(_dragObject)) ? tp : null;
         Cursor = _dropPreview != null ? ArrowCursor : NoDropCursor;
         InvalidateVisual();
     }
@@ -119,6 +119,7 @@ public partial class RichEditor
     internal bool DropObject(object obj, TextPointer at, bool copy)
     {
         if (Document == null || at.Paragraph is not { } p || !CanDropObject(obj, at, copy)) return false;
+        if (copy && !MayCreate(obj)) return false;
         return obj switch
         {
             ImageBlock or TableBlock => DropBlock((Block)obj, p, at.Offset, copy),
@@ -126,6 +127,15 @@ public partial class RichEditor
             _ => false,
         };
     }
+
+    // A copy CREATES a table or picture, which AllowTables / AllowImages forbid (as they do for the menu and for
+    // paste); a move only relocates one the document already has, as the row/column commands edit one.
+    private bool MayCreate(object obj) => obj switch
+    {
+        TableBlock or InlineTable => AllowTables,
+        ImageBlock or InlineImage => AllowImages,
+        _ => true,
+    };
 
     private static IList<Block>? BlockListOf(TextElement e) => e.Parent switch
     {

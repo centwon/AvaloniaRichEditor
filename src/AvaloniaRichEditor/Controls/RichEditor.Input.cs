@@ -1070,8 +1070,9 @@ public partial class RichEditor
                 {
                     _ = CopyImageToClipboardAsync(xi.img.RawBytes, xi.img.RawBytes == null ? xi.img.Image : null, inline: true, xi.img.Width, xi.img.Height);
                     PushUndo();
-                    xi.p.Inlines.Remove(xi.img);
+                    RemoveInlineImageCharacter(xi.p, xi.img); // pulls back a caret that sat after it
                     _selectedInline = null;
+                    InvalidateMeasure();
                     ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
                 }
             }
@@ -1295,9 +1296,10 @@ public partial class RichEditor
         }
         else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedInline is { } selInl && Document != null)
         {
-            // A selected inline image deletes as a unit (state was pushed above).
-            selInl.p.Inlines.Remove(selInl.img);
+            // A selected inline image deletes as a unit (state was pushed above), pulling back a caret after it.
+            RemoveInlineImageCharacter(selInl.p, selInl.img);
             _selectedInline = null;
+            InvalidateMeasure();
             ResetCaretBlink(); e.Handled = true;
             return;
         }

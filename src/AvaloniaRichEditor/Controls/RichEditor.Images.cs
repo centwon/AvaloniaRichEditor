@@ -104,6 +104,7 @@ public partial class RichEditor
     private void ResetImageSize(ImageBlock img)
     {
         if (Document == null || NaturalSize(img) is not { } natural) return;
+        if (img.Width == natural.Width && img.Height == natural.Height) return; // already: no undo step that undoes nothing
         PushUndo();
         img.Width = natural.Width;
         img.Height = natural.Height;
@@ -260,7 +261,7 @@ public partial class RichEditor
         var ib = new ImageBlock { Width = im.Width, Height = im.Height };
         if (im.RawBytes != null) ib.SetImageData(im.RawBytes, im.MimeType, im.CachedBitmap);
         else ib.Image = im.Image;
-        p.Inlines.Remove(im);
+        RemoveInlineImageCharacter(p, im);
         Document.Blocks.Insert(idx + 1, ib);
         UpdateParents(Document);
         _selectedInline = null;
@@ -273,14 +274,29 @@ public partial class RichEditor
     {
         if (Document == null) return;
         PushUndo();
-        p.Inlines.Remove(img);
+        RemoveInlineImageCharacter(p, img);
         if (_selectedInline is { } s && ReferenceEquals(s.img, img)) _selectedInline = null;
+        InvalidateMeasure(); // the line box loses the picture's height
         InvalidateVisual();
+    }
+
+    // Takes a picture's one character out of its paragraph, pulling back the caret and selection ends that were
+    // past it. They kept their offsets, so the caret after a trailing picture sat one past the paragraph's end and
+    // the next keys went nowhere.
+    private void RemoveInlineImageCharacter(Paragraph p, InlineImage img)
+    {
+        int off = OffsetOfInline(p, img);
+        p.Inlines.Remove(img);
+        TextPointer Back(TextPointer t) => ReferenceEquals(t.Paragraph, p) && t.Offset > off ? new TextPointer(p, t.Offset - 1) : t;
+        _caretPosition = Back(_caretPosition);
+        _selectionStart = Back(_selectionStart);
+        _selectionEnd = Back(_selectionEnd);
     }
 
     private void ResetInlineImageSize(InlineImage img)
     {
         if (Document == null || NaturalSize(img) is not { } natural) return;
+        if (img.Width == natural.Width && img.Height == natural.Height) return; // see ResetImageSize
         PushUndo();
         img.Width = natural.Width;
         img.Height = natural.Height;

@@ -1846,17 +1846,34 @@ public partial class RichEditor : Control
         return (Document!.Blocks, ti >= 0 ? ti + 1 : Document.Blocks.Count);
     }
 
-    // Inserts a top-level block immediately after the caret's current block (or at the end
-    // when the caret isn't in a normal paragraph), instead of always appending to the document.
+    // Inserts a block where the caret is, in the caret paragraph's own block list (the document, or a cell's):
+    // in the middle of the paragraph it splits and the block goes between the halves; at its start the block goes
+    // before it; at its end (or in an empty one) after it — the rule the object drag has (DropBlock). Every
+    // insert used to go AFTER the paragraph, so a picture pasted over a word mid-line landed below the whole
+    // paragraph (user decision, 2026-09-23).
     private void InsertBlockAtCaret(Block b)
     {
         if (Document == null) return;
-        // A block image / divider / nested table (P4-2b) inserts inside the current cell, after the
-        // caret's paragraph, when the caret is in a cell.
+        bool before = false;
+        if (_caretPosition.Paragraph is { Parent: FlowDocument or TableCell } cp)
+        {
+            int len = GetParagraphLength(cp);
+            int off = Math.Clamp(_caretPosition.Offset, 0, len);
+            if (off > 0 && off < len)
+            {
+                int heading = cp.HeadingLevel;
+                SplitParagraphAtCaret();
+                // The tail continues cp: Enter's "a heading's next line is body text" is a typing rule (as DropBlock).
+                _caretPosition.Paragraph!.HeadingLevel = heading;
+                _caretPosition = new TextPointer(cp, GetParagraphLength(cp)); // the block goes after the head
+            }
+            else if (off == 0 && len > 0) before = true;
+        }
+        // A block image / divider / nested table (P4-2b) inserts inside the current cell when the caret is in one.
         if (_caretPosition.Paragraph?.Parent is TableCell tc)
         {
             int pi = tc.Blocks.IndexOf(_caretPosition.Paragraph);
-            int at = pi >= 0 ? pi + 1 : tc.Blocks.Count;
+            int at = pi < 0 ? tc.Blocks.Count : before ? pi : pi + 1;
             tc.Blocks.Insert(at, b);
             // Guarantee a paragraph after the block so the caret has somewhere to land and type.
             if (at + 1 >= tc.Blocks.Count || tc.Blocks[at + 1] is not Paragraph)
@@ -1878,7 +1895,7 @@ public partial class RichEditor : Control
         if (caretBlock != null)
         {
             int i = Document.Blocks.IndexOf(caretBlock);
-            if (i >= 0) insertIndex = i + 1;
+            if (i >= 0) insertIndex = before && ReferenceEquals(caretBlock, _caretPosition.Paragraph) ? i : i + 1;
         }
         Document.Blocks.Insert(insertIndex, b);
         UpdateParents(Document); // NormalizeBlocks guarantees a paragraph exists after b
@@ -1899,10 +1916,13 @@ public partial class RichEditor : Control
 
     /// <summary>Inserts a block image from a <see cref="Avalonia.Media.Imaging.Bitmap"/> at the caret.
     /// When the encoded bytes are available, prefer <see cref="InsertImageBytes(byte[])"/> to avoid re-encoding.</summary>
-    public void InsertImage(Avalonia.Media.Imaging.Bitmap image)
+    public void InsertImage(Avalonia.Media.Imaging.Bitmap image) => InsertBitmapBlock(image, pushUndo: true);
+
+    // `pushUndo` false: the caller took the checkpoint (see InsertImageBytes).
+    private void InsertBitmapBlock(Avalonia.Media.Imaging.Bitmap image, bool pushUndo)
     {
         if (Document == null || IsReadOnly || !AllowImages) return;
-        PushUndo();
+        if (pushUndo) PushUndo();
         var (w, h) = CapToContentWidth(image.Size.Width, image.Size.Height);
         var ib = new ImageBlock { Image = image, Width = w, Height = h };
         InsertBlockAtCaret(ib);
@@ -2315,11 +2335,44 @@ public partial class RichEditor : Control
     {
         if (Document == null) return;
         PushUndo();
+        IList<Block> container = b.Parent is TableCell cell ? cell.Blocks : Document.Blocks;
+        int idx = container.IndexOf(b);
+        // A table deleted from its menu usually holds the caret (the right-click put it in a cell) or the selection
+        // (its border held it whole). Left there, the keys typed next went into a paragraph no longer in the document.
+        bool caretInside = IsWithin(_caretPosition.Paragraph, b)
+            || IsWithin(_selectionStart.Paragraph, b) || IsWithin(_selectionEnd.Paragraph, b);
         RemoveBlockAnywhere(b);
         _selectedBlock = null;
+        if (ReferenceEquals(_caretBlock, b)) _caretBlock = null;
         UpdateParents(Document); // NormalizeBlocks (top level) + re-wire; a cell keeps its paragraph invariant
+        if (caretInside)
+        {
+            PlaceCaretAtGap(container, idx);
+            CollapseSelectionToCaret();
+        }
         InvalidateMeasure();     // a cell shrank -> the table's row height reflows
         InvalidateVisual();
+    }
+
+    // Whether `e` is `ancestor` or lies inside it (a cell paragraph of a table, at any depth).
+    private static bool IsWithin(TextElement? e, TextElement ancestor)
+    {
+        for (object? cur = e; cur != null; cur = (cur as TextElement)?.Parent)
+            if (ReferenceEquals(cur, ancestor)) return true;
+        return false;
+    }
+
+    // The caret after a block left `container` at `idx`: the paragraph now in its place, else the nearest one
+    // before it, else the document's first.
+    private void PlaceCaretAtGap(IList<Block> container, int idx)
+    {
+        Paragraph? landing = null;
+        for (int i = Math.Max(0, idx); i < container.Count && landing == null; i++)
+            if (container[i] is Paragraph p) landing = p;
+        for (int i = Math.Min(idx, container.Count) - 1; i >= 0 && landing == null; i--)
+            if (container[i] is Paragraph p) landing = p;
+        landing ??= GetAllParagraphsInOrder().FirstOrDefault();
+        _caretPosition = new TextPointer(landing, 0);
     }
 
     // Removes a block from whichever container holds it: the document's top-level list or an enclosing

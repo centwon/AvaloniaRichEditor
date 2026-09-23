@@ -57,7 +57,7 @@ public partial class RichEditorToolbar : UserControl
     private static readonly IBrush ActiveBrush = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse("#90CAF9"));
 
     // Controls that reflect caret state (assigned in Build).
-    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _bulletBtn, _numberBtn, _undoBtn, _redoBtn;
+    private Button? _boldBtn, _italicBtn, _underlineBtn, _strikeBtn, _bulletBtn, _numberBtn, _quoteBtn, _undoBtn, _redoBtn;
     private ComboBox? _fontCombo, _sizeCombo, _headingCombo, _alignCombo;
     private TextBox? _spacingBox; // editable line-spacing %, reflects/sets the caret paragraph
     private TextBlock? _bulletPreview, _numberPreview; // current list marker shown in the list combo boxes
@@ -289,7 +289,7 @@ public partial class RichEditorToolbar : UserControl
         };
 
         // Reset reflected controls to null so Sync() null-guards whatever subset this level builds.
-        _undoBtn = _redoBtn = _boldBtn = _italicBtn = _underlineBtn = _strikeBtn = _bulletBtn = _numberBtn = null;
+        _undoBtn = _redoBtn = _boldBtn = _italicBtn = _underlineBtn = _strikeBtn = _bulletBtn = _numberBtn = _quoteBtn = null;
         _fontCombo = _sizeCombo = _headingCombo = _alignCombo = null;
         _spacingBox = null; _bulletPreview = _numberPreview = null;
         _tableBtn = _imageBtn = _dividerBtn = _findBtn = null;
@@ -422,7 +422,10 @@ public partial class RichEditorToolbar : UserControl
             (ListMarkerStyle.LowerRoman, "i)"));
         _numberBtn = number.Icon; _numberPreview = number.Preview;
         Add(number.Box);
-        // Quote (blockquote) is available via the right-click List menu and ToggleQuote(); no toolbar button.
+        // Quote (blockquote): beside the lists — without it the default UI had no way to set one (the right-click
+        // item exists only with ShowFormattingMenu, and there is no shortcut). User decision, 2026-09-23.
+        _quoteBtn = Btn("❝", Loc("Quote"), () => Target?.ToggleQuote(), RichEditorIcon.Quote);
+        Add(_quoteBtn);
         Add(Btn("→|", Loc("IndentIncrease"), () => Target?.Indent(20), RichEditorIcon.IndentIncrease));
         Add(Btn("|←", Loc("IndentDecrease"), () => Target?.Indent(-20), RichEditorIcon.IndentDecrease));
         Add(Div());
@@ -914,6 +917,7 @@ public partial class RichEditorToolbar : UserControl
         SetActive(_strikeBtn, f.Strike);
         SetActive(_bulletBtn, f.List == ListKind.Bullet);
         SetActive(_numberBtn, f.List == ListKind.Ordered);
+        SetActive(_quoteBtn, f.Quote);
         // List combo previews show the caret paragraph's current marker; dimmed (inactive) when the
         // caret isn't in that list kind, full-ink (active) when it is.
         if (_bulletPreview != null)

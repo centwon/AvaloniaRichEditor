@@ -444,10 +444,12 @@ public partial class RichEditor
         render.GetAwaiter().GetResult();
     }
 
-    // BGRA8888 (RenderTargetBitmap's format) -> packed top-down RGB24. Alpha is always 255 here:
-    // print pages start from an opaque white fill.
+    // BGRA8888 or RGBA8888 -> packed top-down RGB24. Alpha is always 255 here: print pages start from an
+    // opaque white fill. The order is the bitmap's own: Skia renders RGBA on macOS, and reading that as BGRA
+    // swapped red and blue in every raster page.
     private static (int width, int height, byte[] rgb) BitmapToRgb24(Avalonia.Media.Imaging.Bitmap bmp)
     {
+        bool rgbaOrder = bmp.Format == Avalonia.Platform.PixelFormat.Rgba8888;
         var ps = bmp.PixelSize;
         int stride = ps.Width * 4;
         var bgra = new byte[stride * ps.Height];
@@ -459,11 +461,12 @@ public partial class RichEditor
         finally { handle.Free(); }
 
         var rgb = new byte[ps.Width * ps.Height * 3];
+        int r = rgbaOrder ? 0 : 2, b = rgbaOrder ? 2 : 0;
         for (int i = 0, j = 0; i < bgra.Length; i += 4, j += 3)
         {
-            rgb[j] = bgra[i + 2];
+            rgb[j] = bgra[i + r];
             rgb[j + 1] = bgra[i + 1];
-            rgb[j + 2] = bgra[i];
+            rgb[j + 2] = bgra[i + b];
         }
         return (ps.Width, ps.Height, rgb);
     }

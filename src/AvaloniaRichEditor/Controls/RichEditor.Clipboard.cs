@@ -105,16 +105,17 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         var (clipImage, clipBytes, clipMeta) = AllowImages
             ? await TryGetImageAsync(clipboard)
             : ((Avalonia.Media.Imaging.Bitmap?)null, (byte[]?)null, (string?)null);
+        // Like every other paste, 4 and 5 REPLACE a selection — in the same undo step as the insert. They went in
+        // beside it and the selected text stayed (round 34).
         if (clipImage != null)
         {
             var meta = ParseImageMeta(clipMeta);
+            PushUndo();
+            if (_selectionStart != _selectionEnd) DeleteSelection();
             if (meta is { Inline: true } im && clipBytes != null)
-            {
-                PushUndo();
                 InsertInlineImageAtCaret(clipBytes, im.W, im.H);
-            }
-            else if (clipBytes != null) InsertImageBytes(clipBytes, meta?.W ?? 0, meta?.H ?? 0); // keep the original encoding
-            else InsertImage(Downscale(clipImage));                  // raw Bitmap object: no bytes to keep
+            else if (clipBytes != null) InsertImageBytes(clipBytes, meta?.W ?? 0, meta?.H ?? 0, pushUndo: false); // keep the original encoding
+            else InsertBitmapBlock(Downscale(clipImage), pushUndo: false); // raw Bitmap object: no bytes to keep
             ResetCaretBlink(); // image lands just after the caret block — scroll there
             return;
         }
@@ -123,6 +124,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         if (AllowTables && !string.IsNullOrEmpty(text) && LooksTabular(text))
         {
             PushUndo();
+            if (_selectionStart != _selectionEnd) DeleteSelection();
             InsertTableFromTsv(text);
             ResetCaretBlink(); // table lands just after the caret block — scroll there
             return;
@@ -221,8 +223,9 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     public void InsertImageBytes(byte[] bytes) => InsertImageBytes(bytes, 0, 0);
 
     // Core insert with an optional display size (used by paste to restore the copied image's size;
-    // 0 = natural size).
-    private void InsertImageBytes(byte[] bytes, double displayW, double displayH)
+    // 0 = natural size). `pushUndo` false: the caller has taken the checkpoint (paste, which deletes the
+    // selection in the same step).
+    private void InsertImageBytes(byte[] bytes, double displayW, double displayH, bool pushUndo = true)
     {
         if (Document == null || IsReadOnly || !AllowImages) return;
         Avalonia.Media.Imaging.Bitmap bmp;
@@ -249,7 +252,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             ib.SetImageData(bytes, ImageMime.Detect(bytes));
         }
 
-        PushUndo();
+        if (pushUndo) PushUndo();
         InsertBlockAtCaret(ib);
         InvalidateVisual();
     }
@@ -349,12 +352,10 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     // whose single position falls inside the range) of one paragraph.
     private static Paragraph CloneParagraphRange(Paragraph p, int from, int to)
     {
-        var np = new Paragraph
-        {
-            ListType = p.ListType, ListMarker = p.ListMarker, ListLevel = p.ListLevel, HeadingLevel = p.HeadingLevel,
-            TextAlignment = p.TextAlignment, Indent = p.Indent, MarginRight = p.MarginRight,
-            IsQuote = p.IsQuote, Background = p.Background, LineHeight = p.LineHeight, LineSpacing = p.LineSpacing
-        };
+        // The one list of paragraph fields: a hand-picked copy here missed the top/bottom margins, which the HTML
+        // writer emits — a spaced paragraph pasted into Word lost its spacing.
+        var np = new Paragraph();
+        np.CopyFormatFrom(p);
         int idx = 0;
         foreach (var inl in p.Inlines)
         {

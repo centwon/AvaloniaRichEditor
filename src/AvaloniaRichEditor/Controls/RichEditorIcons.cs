@@ -117,6 +117,8 @@ public enum RichEditorIcon
     Find,
     /// <summary>Page margins (the toolbar's margin picker).</summary>
     PageMargin,
+    /// <summary>Quote / blockquote toggle (the toolbar's quote button).</summary>
+    Quote,
 }
 
 /// <summary>

@@ -124,7 +124,8 @@ public partial class RichEditor
     {
         if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
         var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        bool selMatches = _selectionStart.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0
+        // Read-only: only the find half (the bar checks this too, but a host's own find UI calls in directly).
+        bool selMatches = !IsReadOnly && _selectionStart.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0
             && string.Equals(new TextRange(_selectionStart, _selectionEnd).GetText(), query, cmp);
         if (selMatches)
         {
@@ -139,9 +140,11 @@ public partial class RichEditor
     /// Returns the number of replacements made.</summary>
     public int ReplaceAll(string query, string replacement, bool matchCase)
     {
-        if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return 0;
+        if (!AllowFindReplace || Document == null || IsReadOnly || string.IsNullOrEmpty(query)) return 0;
         var paras = GetAllParagraphsInOrder();
-        if (paras.Count == 0) return 0;
+        var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        // Nothing to replace: no undo step and no "modified" flag (both came from the checkpoint below).
+        if (!paras.Exists(p => BuildPlain(p).Contains(query, cmp))) return 0;
         PushUndo();
         _caretPosition = new TextPointer(paras[0], 0);
         CollapseSelectionToCaret();

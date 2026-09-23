@@ -235,12 +235,7 @@ public partial class RichEditorToolbar
 
     /// <summary>Reflects the host's current zoom / fit-width and the editor's paper state onto the built-in
     /// page controls. Call after changing view-level zoom (which the toolbar can't observe directly).</summary>
-    public void RefreshPageControls()
-    {
-        _suppress = true;
-        try { SyncPage(); }
-        finally { _suppress = false; }
-    }
+    public void RefreshPageControls() => SyncPage();
 
     private void OnPaperChanged()
     {
@@ -254,8 +249,19 @@ public partial class RichEditorToolbar
         SyncPage();
     }
 
-    // Reflect the editor's page/zoom state onto the built-in controls (called from Sync()).
+    // Reflect the editor's page/zoom state onto the built-in controls (called from Sync()). Guarded here, not by
+    // each caller: it is also called straight from the target's PageSize change and after a paper pick, and there
+    // setting the combos fired their handlers — a host's paper was answered as a picked one (boundaries forced on),
+    // and emptying the zoom combo for an off-grid zoom read as "Fit".
     private void SyncPage()
+    {
+        bool was = _suppress;
+        _suppress = true;
+        try { SyncPageCore(); }
+        finally { _suppress = was; }
+    }
+
+    private void SyncPageCore()
     {
         if (Target == null) return;
         bool paged = Target.PageSize != RichEditorPageSize.Continuous;

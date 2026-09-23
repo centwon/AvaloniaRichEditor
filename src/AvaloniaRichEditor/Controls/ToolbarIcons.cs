@@ -122,6 +122,11 @@ internal static class ToolbarIcons
             ("M6 3 H18 V21 H6 Z", false),
             ("M9 7 H15 V17 H9 Z", false)),
 
+        // The quote bar the editor draws, beside the lines it marks.
+        RichEditorIcon.Quote => Build(20,
+            ("M5 5 V19", false),
+            ("M9 7 H20 M9 12 H20 M9 17 H16", false)),
+
         _ => null,
     };
 
