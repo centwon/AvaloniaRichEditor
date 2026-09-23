@@ -41,6 +41,15 @@ spacing gives between two lines of text. Both ends were at zero — paragraphs c
 - JSON writes nothing for it and reads a missing top margin back as auto, so a file that never expressed
   an opinion — every file written before the field existed — gains the gap.
 
+### Fixed — a picture's own outline was painting over its edge (2026-09-23)
+
+Reported from the demo: at a high zoom, a picture looked cut by a pixel or two. Nothing clipped it — a
+picture carries a faint outline marking it as an object, and a pen is centred on the rect it strokes, so
+half of that line lay on the picture and replaced its outermost half-pen on every side. The bold border of
+a selected picture, and the one around a picture inside a table cell or a selected inline icon, did the
+same with twice the weight. All of them now sit half a pen outside the picture, touching none of its
+pixels. (A table's borders go the other way — see below — because there the line is the table's own ink.)
+
 ### Fixed — a table's outline was cut where a page break crossed it (2026-09-20)
 
 Reported from the demo. A 1px pen is centred on the rect it strokes, so a cell on the table's edge put half

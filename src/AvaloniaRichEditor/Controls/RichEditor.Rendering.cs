@@ -277,6 +277,15 @@ public partial class RichEditor
     // of a table's ink inside the box pagination knows about, and lands those lines on whole pixels, so they
     // also come out crisper. Interior edges are shared by two neighbouring cells and stay centred —
     // insetting those would draw each shared line twice, a pixel apart.
+    // The rect to stroke so a pen of this thickness lands just OUTSIDE box, touching none of its pixels.
+    // A pen is centred on the rect it strokes, so an outline drawn on a picture's own rect paints over the
+    // picture's outermost half-pen on every side — reported from the demo at a high zoom (2026-09-23) as the
+    // picture being "cut by a pixel or two". A table's borders go the other way (InsetTableEdges): there the
+    // line IS the table's own ink and has to stay inside the box pagination knows about, while a picture's
+    // outline is a marker drawn around content that must survive intact.
+    private static Rect Around(Rect box, double thickness)
+        => box.Inflate(thickness / 2);
+
     private static Rect InsetTableEdges(Rect cell, Rect table)
     {
         const double half = 0.5, eps = 0.01;
@@ -543,13 +552,13 @@ public partial class RichEditor
                         {
                             // Selection: translucent overlay + bold border.
                             context.FillRectangle(AccentFill60, imgRect);
-                            context.DrawRectangle(null, AccentPen2, imgRect);
+                            context.DrawRectangle(null, AccentPen2, Around(imgRect, 2));
                         }
                         // A faint outline marks the picture as an object at all times; the resize handle
                         // appears only once it is SELECTED, the way Word and HWP do it. An always-on
                         // handle put a solid accent square on every picture — in a read-only viewer that
                         // cannot resize anything, and in any screenshot of the document.
-                        context.DrawRectangle(null, AccentBorderPen, imgRect);
+                        context.DrawRectangle(null, AccentBorderPen, Around(imgRect, 1));
                         if (imgSelected)
                         {
                             // Registered with the drawn handles so there is never a grabbable area with
@@ -698,9 +707,9 @@ public partial class RichEditor
                         if (ReferenceEquals(cimg, _selectedBlock))
                         {
                             context.FillRectangle(AccentFill60, ir);
-                            context.DrawRectangle(null, AccentPen2, ir);
+                            context.DrawRectangle(null, AccentPen2, Around(ir, 2));
                         }
-                        context.DrawRectangle(null, AccentBorderPen, ir);
+                        context.DrawRectangle(null, AccentBorderPen, Around(ir, 1));
                         if (ReferenceEquals(cimg, _selectedBlock))   // handle on selection only
                         {
                             foreach (var (knob, grab, grip) in PictureHandles(ir, 12))
@@ -859,7 +868,7 @@ public partial class RichEditor
                     _inlineImageRects.Add((ir, p, ii));
                     if (_selectedInline is { } sel && ReferenceEquals(sel.img, ii))
                     {
-                        context.DrawRectangle(null, AccentPen2, ir);
+                        context.DrawRectangle(null, AccentPen2, Around(ir, 2));
                         foreach (var (knob, grab, grip) in PictureHandles(ir, 10))
                         {
                             context.FillRectangle(Brushes.White, knob);
