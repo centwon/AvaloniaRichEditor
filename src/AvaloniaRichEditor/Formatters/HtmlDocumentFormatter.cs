@@ -401,7 +401,14 @@ namespace AvaloniaRichEditor.Formatters
                 int liHeading = child.GetAttributeValue("data-are-h", 0);
                 if (liHeading >= 1 && liHeading <= 6) p.HeadingLevel = liHeading;
                 ParseInlines(child, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
-                if (p.Inlines.Count > 0) flow.Blocks.Add(p);
+                // An empty item is dropped like any empty element — unless our export marked it as a blank item
+                // the author made (data-are-empty, as for paragraphs), and then the <br> it carries for outside
+                // renderers is rendering, not content. Neither was read here: a blank numbered item came back
+                // holding a line break, and in the port (which writes no <br>) it vanished, letting the items
+                // either side merge into one list and lose a marker (the port's fuzz, seed 8178, 2026-09-24).
+                bool markedEmpty = child.GetAttributeValue("data-are-empty", "") == "1";
+                if (markedEmpty) p.Inlines.Clear();
+                if (p.Inlines.Count > 0 || markedEmpty) flow.Blocks.Add(p);
 
                 // A sublist nested INSIDE the item (the shape most other producers emit) still follows it.
                 foreach (var nested in child.ChildNodes.Where(n => n.Name.Equals("ul", StringComparison.OrdinalIgnoreCase) || n.Name.Equals("ol", StringComparison.OrdinalIgnoreCase)))

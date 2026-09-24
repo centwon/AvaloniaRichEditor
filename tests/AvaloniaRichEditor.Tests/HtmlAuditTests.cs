@@ -70,7 +70,7 @@ public class HtmlAuditTests
     }
 
     private static Run Clicked(FlowDocument doc)
-        => doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Run>()).First(r => r.Text.Contains("click"));
+        => doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Run>()).First(r => r.Text?.Contains("click") == true);
 
     [AvaloniaTheory]
     [InlineData("javascript:alert(1)")]
@@ -99,5 +99,36 @@ public class HtmlAuditTests
 
         Assert.Equal(url, Clicked(DocumentSerializer.Deserialize(DocumentSerializer.Serialize(Linked(url)))).NavigateUri);
         Assert.Contains("href=\"https://example.com/a?b=1\"", HtmlDocumentFormatter.ToHtml(Linked(url)).Replace("&amp;", "&"));
+    }
+    // An empty list item. The writer marks it data-are-empty as it marks a blank paragraph, but the list
+    // reader dropped every empty item regardless — a blank numbered item vanished on the first round trip,
+    // and the items either side could then merge into one list and lose a marker on the second (the port's
+    // fuzz, seed 8178 at 20000 seeds, 2026-09-24). Twice, as round trips are run here.
+    [AvaloniaFact]
+    public void AnEmptyListItem_RoundTrips_ButAForeignEmptyItemIsStillDropped()
+    {
+        static Paragraph Item(string? text)
+        {
+            var p = new Paragraph { ListType = ListKind.Ordered };
+            if (text != null) p.Inlines.Add(new Run { Text = text });
+            return p;
+        }
+        var doc = new FlowDocument();
+        doc.Blocks.Add(Item("a"));
+        doc.Blocks.Add(Item(null));
+        doc.Blocks.Add(Item("b"));
+
+        var once = HtmlDocumentFormatter.ParseHtml(HtmlDocumentFormatter.ToHtml(doc));
+        var twice = HtmlDocumentFormatter.ParseHtml(HtmlDocumentFormatter.ToHtml(once));
+
+        foreach (var back in new[] { once, twice })
+        {
+            var items = back.Blocks.OfType<Paragraph>().Where(p => p.ListType == ListKind.Ordered).ToList();
+            Assert.Equal(3, items.Count);
+            Assert.DoesNotContain(items[1].Inlines.OfType<Run>(), r => !string.IsNullOrEmpty(r.Text));
+        }
+
+        var foreign = HtmlDocumentFormatter.ParseHtml("<ol><li>a</li><li></li><li>b</li></ol>");
+        Assert.Equal(2, foreign.Blocks.OfType<Paragraph>().Count(p => p.ListType == ListKind.Ordered));
     }
 }

@@ -25,6 +25,11 @@ was reproduced here with a failing test before it was fixed.
   JSON or `.flow` file was kept and written back out in exported and clipboard HTML. The JSON reader now
   drops it too, and the HTML writer applies the same check, so a link a host sets with `SetHyperlink`
   does not leave as a script link either.
+- **An empty list item came back as an item holding a line break.** The writer marks an empty item
+  `data-are-empty` and gives it a `<br>` for outside renderers, as it does a blank paragraph, but the list
+  reader honoured neither: the `<br>` was read as content. It now reads an empty item the way it reads a
+  blank paragraph; an unmarked empty item in foreign HTML is still dropped. (The port's reader dropped the
+  item outright, which let the items either side merge into one list and lose a marker — its fuzz found it.)
 
 ### Fixed — audit of the files no test reached (2026-09-23)
 
