@@ -483,7 +483,9 @@ public static class DocumentSerializer
                         Foreground = StringToBrush(id.Foreground),
                         Background = StringToBrush(id.Background),
                         FontFamily = id.FontFamily,
-                        NavigateUri = id.NavigateUri,
+                        // A file is untrusted input: a script link is dropped as the HTML reader drops it
+                        // (port audit, 2026-09-24).
+                        NavigateUri = id.NavigateUri is { } uri ? HtmlDocumentFormatter.SafeHref(uri) : null,
                         TextDecorations = BuildDecorations(id.Underline, id.Strikethrough)
                     });
             }

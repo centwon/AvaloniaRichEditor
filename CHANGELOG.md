@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — found by the WinUIRichEditor port's audit (2026-09-24)
+
+The port audited what it had taken in since its last release (these files among it); each defect below
+was reproduced here with a failing test before it was fixed.
+
+- **The public row/column commands left an object selected after removing it.** A nested table or a
+  picture selected in a row or column that `DeleteTableRow`/`DeleteTableColumn` removed stayed selected
+  outside the document, and Delete then edited the detached row — an undo step that changed nothing
+  visible — instead of acting at the caret. The selection now lets go of an object the edit took out;
+  one still in the document stays selected.
+- **Margins saved to RTF came back a hair off.** RTF stores whole twips, so 15 mm went out as 850 twips
+  and came back as 14.993 mm: after a round trip none of the toolbar's five steps matched its own preset,
+  and the JSON stored a custom margin. A value that is a whole tenth of a millimetre and writes back to
+  the same twips is now read as that value; one between tenths (Word's 1.25 inch, 31.75 mm) keeps its
+  exact length.
+- **Script links (`javascript:`, `vbscript:`, `data:`) were dropped only when reading HTML.** One in a
+  JSON or `.flow` file was kept and written back out in exported and clipboard HTML. The JSON reader now
+  drops it too, and the HTML writer applies the same check, so a link a host sets with `SetHyperlink`
+  does not leave as a script link either.
+- **An empty list item came back as an item holding a line break.** The writer marks an empty item
+  `data-are-empty` and gives it a `<br>` for outside renderers, as it does a blank paragraph, but the list
+  reader honoured neither: the `<br>` was read as content. It now reads an empty item the way it reads a
+  blank paragraph; an unmarked empty item in foreign HTML is still dropped. (The port's reader dropped the
+  item outright, which let the items either side merge into one list and lose a marker — its fuzz found it.)
+
 ### Fixed — audit of the files no test reached (2026-09-23)
 
 Round 34 read the files whose members no test named (context menu, tables, the toolbar's page controls,

@@ -713,6 +713,7 @@ public partial class RichEditor
         int ar = Math.Clamp(at, 0, tb.Rows - 1);
         _caretPosition = new TextPointer(CellCaretTarget(tb, ar, 0), 0);
         CollapseSelectionToCaret();
+        DropDetachedObjectSelection();
         // A row/column changes the table's own height, so the document is taller/shorter than the last
         // measure said. These four take neither ResetCaretBlink nor any other path that re-measures
         // (unlike every other structural edit), so the ScrollViewer kept the pre-edit extent until some
@@ -731,6 +732,7 @@ public partial class RichEditor
         int nr = Math.Clamp(at, 0, tb.Rows - 1);
         _caretPosition = new TextPointer(CellCaretTarget(tb, nr, 0), 0);
         CollapseSelectionToCaret();
+        DropDetachedObjectSelection();
         InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
         return true;
@@ -745,6 +747,7 @@ public partial class RichEditor
         int ac = Math.Clamp(at, 0, tb.Columns - 1);
         _caretPosition = new TextPointer(CellCaretTarget(tb, 0, ac), 0);
         CollapseSelectionToCaret();
+        DropDetachedObjectSelection();
         // See TableInsertRow. A column keeps its own width, so this one usually leaves the height alone
         // (measure reports the AVAILABLE width, not the content's) — but paged mode recomputes the page
         // breaks inside MeasureOverride, so it still has to run.
@@ -762,6 +765,7 @@ public partial class RichEditor
         int nc = Math.Clamp(at, 0, tb.Columns - 1);
         _caretPosition = new TextPointer(CellCaretTarget(tb, 0, nc), 0);
         CollapseSelectionToCaret();
+        DropDetachedObjectSelection();
         InvalidateMeasure(); // see TableInsertRow
         InvalidateVisual();
         return true;
@@ -798,6 +802,30 @@ public partial class RichEditor
         foreach (var p in GetAllParagraphsInOrder())
             if (FindCell(p) is { } loc && ReferenceEquals(loc.tb, table)) return true;
         return false;
+    }
+
+    // Lets go of a selected object that the edit took out of the document. Pointer, key and menu paths clear the
+    // selection before they edit, but a host call does not: DeleteTableRow around a selected nested table or
+    // picture left it selected, and Delete then pushed an undo step for an edit of the detached row, so the next
+    // Undo did nothing visible (port audit, 2026-09-24). Checked by walking DOWN from the document: a deleted
+    // row's cells still name the table as their parent, so a parent chain would call them inside.
+    private void DropDetachedObjectSelection()
+    {
+        if (_selectedBlock == null && _selectedInline == null) return;
+        var paras = GetAllParagraphsInOrder();
+        if (_selectedBlock is { } blk && !BlockIsIn(blk)) _selectedBlock = null;
+        if (_selectedInline is { } si && !(paras.Contains(si.p) && si.p.Inlines.Contains(si.img))) _selectedInline = null;
+
+        // A table owns a cell paragraph (TableIsInDocument); any other block lives in the document's list or in
+        // a cell, and every cell that is in the document holds a paragraph that is too.
+        bool BlockIsIn(Block b)
+        {
+            if (b is TableBlock t) return TableIsInDocument(t);
+            if (Document!.Blocks.Contains(b)) return true;
+            foreach (var p in paras)
+                if (p.Parent is TableCell cell && cell.Blocks.Contains(b)) return true;
+            return false;
+        }
     }
 
     // Insertion accepts one past the end (append); deletion does not.
