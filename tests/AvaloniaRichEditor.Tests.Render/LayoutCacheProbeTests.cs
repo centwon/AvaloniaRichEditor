@@ -113,6 +113,16 @@ public class LayoutCacheProbeTests(ITestOutputHelper output)
     public void D_InAWindow_LoadedThenScrolledToTheEnd()
     {
         if (!Enabled) return;
+        // This app has no theme (the pixel tests want none), and an untemplated ScrollViewer has no viewport,
+        // so culling would see nothing. Only for this probe, and taken out again.
+        var theme = new Avalonia.Themes.Fluent.FluentTheme();
+        Application.Current!.Styles.Add(theme);
+        try { RunWindowScenario(); }
+        finally { Application.Current!.Styles.Remove(theme); }
+    }
+
+    private void RunWindowScenario()
+    {
         foreach (int n in new[] { 2000, 8000 })
         {
             long empty = Managed();
@@ -132,6 +142,7 @@ public class LayoutCacheProbeTests(ITestOutputHelper output)
             double loadMs = sw.Elapsed.TotalMilliseconds;
             long loaded = Managed() - empty;
             int atTop = Cache(ed).Count;
+            Log($"    (scroller extent {scroller.Extent.Height:F0}, viewport {scroller.Viewport.Height:F0}, editor {ed.Bounds.Height:F0})");
 
             sw.Restart();
             int pages = 0;
