@@ -143,6 +143,7 @@ public partial class RichEditor
         bool contentChanged = _textChangedPending;
         // Flush change events after the edit/caret move that scheduled this paint (off the render stack).
         RaisePendingChangeEvents();
+        if (contentChanged) ScheduleLayoutCachePrune(); // an edit may have dropped paragraphs (see there)
         // Transparent fill makes the whole control hit-testable (clicks on empty space below the
         // text must still reach OnPointerPressed). Must cover the full bounds, not a fixed height.
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));

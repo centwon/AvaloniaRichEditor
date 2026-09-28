@@ -1612,6 +1612,36 @@ public partial class RichEditor : Control
             ? BuildTextLayout(p, width, _caretPosition.Offset, _preeditText)
             : BuildTextLayout(p, width);
 
+    // The 10,000-entry cap above was the only thing that ever pruned, and a Dictionary keyed by paragraph keeps a
+    // paragraph an edit removed — with its TextLayout, ~30 KB each, and through the layout's picture callback its
+    // InlineImage's bytes — until then. Measured 2026-09-28 (Tests.Render LayoutCacheProbe, real Skia): a
+    // 2,000-paragraph document rewritten by "select all + type" and a paste, four times, held 346 MB of managed
+    // heap, 76 MB after the prune finally ran; 40 MB of inline pictures deleted by editing stayed alive (undo
+    // history dropped) until the cache was cleared. Now every content edit also schedules a prune, one second
+    // after the last one: the walk costs ~2 ms at 2,000 paragraphs and ~3.4 ms at 8,000, too much per keystroke
+    // and nothing once per pause. A pruned entry was, by definition, not in the document, so nothing reshapes.
+    private DispatcherTimer? _layoutPruneTimer;
+
+    private void ScheduleLayoutCachePrune()
+    {
+        if (_layoutPruneTimer == null)
+        {
+            _layoutPruneTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _layoutPruneTimer.Tick += (_, _) => RunScheduledLayoutCachePrune();
+        }
+        _layoutPruneTimer.Stop();
+        _layoutPruneTimer.Start();
+    }
+
+    // The timer's tick; internal so a test can fire it without waiting a second of real time.
+    internal void RunScheduledLayoutCachePrune()
+    {
+        _layoutPruneTimer?.Stop();
+        PruneLayoutCaches();
+    }
+
+    internal bool LayoutCachePruneScheduled => _layoutPruneTimer?.IsEnabled == true; // test hook
+
     // Drops cache entries for paragraphs/tables no longer in the document (e.g. deleted while editing),
     // keeping the live ones so nothing reshapes on the next frame.
     private void PruneLayoutCaches()
