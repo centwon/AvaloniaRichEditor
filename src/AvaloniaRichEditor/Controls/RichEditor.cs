@@ -1369,9 +1369,14 @@ public partial class RichEditor : Control
     // The marker takes the item's own text styling (its first run: size, family, weight, colour) so a
     // heading / coloured / enlarged list item gets a matching bullet or number instead of a fixed
     // small black default. Instance method so it can fall back to the editor's default font/size.
+    // Test hook: when set, every marker drawn is recorded — numbering is decided by a walk that skips the
+    // paragraphs it culls, and nothing else observable says which number a visible item got.
+    internal List<(Paragraph p, int num)>? DrawnListMarkers;
+
     private void DrawListMarker(DrawingContext context, Paragraph p, int num, double textLeft, double y)
     {
         if (p.ListType == ListKind.None) return;
+        DrawnListMarkers?.Add((p, num));
         string m = ListMarkerText(p.ListType, p.ListMarker, num);
         Run? first = null;
         foreach (var inl in p.Inlines) if (inl is Run r) { first = r; break; }
