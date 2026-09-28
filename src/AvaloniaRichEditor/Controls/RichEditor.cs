@@ -256,10 +256,37 @@ public partial class RichEditor : Control
     private string? _preeditText; // IME composition text shown inline at the caret while composing.
 
     // Per-paragraph TextLayout cache. Building a TextLayout shapes/line-breaks text (the most expensive
-    // step), and Render + Measure + every hit-test would otherwise rebuild every paragraph each frame —
-    // crippling for large documents and the 2 Hz caret blink. Keyed by paragraph; reused while the
-    // paragraph's content signature and wrap width are unchanged.
-    private readonly Dictionary<Paragraph, (long sig, double width, Avalonia.Media.TextFormatting.TextLayout layout)> _layoutCache = new();
+    // step), and Render + every hit-test would otherwise rebuild the paragraphs they touch each frame —
+    // crippling for the 2 Hz caret blink. Keyed by paragraph; reused while the paragraph's content
+    // signature and wrap width are unchanged.
+    //
+    // It holds what was DRAWN or hit-tested, not the document. Measure, pagination and every walk that only
+    // advances past a paragraph read its height from _heightCache instead. They used to take the layout, so
+    // the cache held one for every paragraph: measured 2026-09-28 (Tests.Render LayoutCacheProbe, real Skia)
+    // ~28–39 KB each, 6–9x the document model — 8,000 paragraphs, 236–306 MB of managed heap. And a render
+    // trims it back to the LayoutKeep most recently used (TrimLayoutCache), or scrolling to the end would
+    // fill it all over again.
+    private sealed class LayoutEntry(long sig, double width, Avalonia.Media.TextFormatting.TextLayout layout)
+    {
+        public readonly long Sig = sig; public readonly double Width = width;
+        public readonly Avalonia.Media.TextFormatting.TextLayout Layout = layout;
+        public long Stamp; // last use, for TrimLayoutCache
+    }
+    private readonly Dictionary<Paragraph, LayoutEntry> _layoutCache = new();
+    private long _layoutStamp;
+
+    // A paragraph's height at a wrap width — exactly BuildTextLayout(p, width).Height, under the same
+    // signature and trusted-pass rules — and, once pagination asks, where its lines end. Weak-keyed: a
+    // paragraph an edit removes takes its entry with it (the layout cache needed a prune for that).
+    private sealed class HeightEntry(long sig, double width, double height)
+    {
+        public readonly long Sig = sig; public readonly double Width = width; public readonly double Height = height;
+        public double[]? LineBottoms; // filled lazily by LineBottoms()
+    }
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Paragraph, HeightEntry> _heightCache = new();
+
+    // Kept after a render; the slack keeps the trim from sorting on every frame.
+    private const int LayoutKeep = 256, LayoutTrimSlack = 128;
 
     // When set, BuildTextLayout trusts a same-width cache entry without recomputing ParagraphSig.
     // Only enabled for passes that provably don't mutate content (caret blink / scroll repaint via
@@ -333,8 +360,7 @@ public partial class RichEditor : Control
             _caretPen = null; // rebuild the cached caret pen with the new brush
         if (change.Property == DocumentProperty)
         {
-            _layoutCache.Clear();
-            _tableLayoutCache.Clear();
+            ClearLayoutCaches();
             ResetInteractionState(); // selections/modes point into the document being replaced
             // A host's own model is trusted no more than a file: spans describing no grid crashed the editor or
             // hid cells (see TableBlock.EnsureSpanConsistency). Undo swaps in clones, consistent already.
@@ -349,8 +375,7 @@ public partial class RichEditor : Control
         }
         if (change.Property == DefaultFontFamilyProperty || change.Property == DefaultFontSizeProperty)
         {
-            _layoutCache.Clear(); // default font feeds the cached layouts
-            _tableLayoutCache.Clear();
+            ClearLayoutCaches(); // default font feeds the cached layouts (and heights)
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -360,8 +385,7 @@ public partial class RichEditor : Control
             RecordHostPageSetup(change.Property); // a page property set by code is the host's default (see there)
             CapturePageSetupToDocument(); // persist the page change into the document model
             _pageBreaks = null;   // wrap width / paper changes between modes -> stale break positions
-            _layoutCache.Clear(); // cached layouts were shaped at the other mode's width
-            _tableLayoutCache.Clear();
+            ClearLayoutCaches(); // cached layouts were shaped at the other mode's width
             InvalidateMeasure();
             InvalidateVisual();
         }
@@ -1469,18 +1493,36 @@ public partial class RichEditor : Control
     {
         // IME composition is transient and paragraph-local; never serve/store it from the cache.
         bool hasPreedit = !string.IsNullOrEmpty(preeditText) && preeditOffset >= 0;
-        long sig = 0;
-        if (!hasPreedit)
+        if (hasPreedit) return CreateTextLayout(p, maxWidth, preeditOffset, preeditText);
+
+        // Trusted pass (no content change since the last build): skip the signature hash and reuse
+        // the same-width cached layout directly. Falls through to the verified path on a width/miss.
+        if (_trustLayoutCache && _layoutCache.TryGetValue(p, out var trusted) && trusted.Width == maxWidth)
         {
-            // Trusted pass (no content change since the last build): skip the signature hash and reuse
-            // the same-width cached layout directly. Falls through to the verified path on a width/miss.
-            if (_trustLayoutCache && _layoutCache.TryGetValue(p, out var trusted) && trusted.width == maxWidth)
-                return trusted.layout;
-            sig = ParagraphSig(p);
-            if (_layoutCache.TryGetValue(p, out var cached) && cached.width == maxWidth && cached.sig == sig)
-                return cached.layout;
+            trusted.Stamp = ++_layoutStamp;
+            return trusted.Layout;
+        }
+        long sig = ParagraphSig(p);
+        if (_layoutCache.TryGetValue(p, out var cached) && cached.Width == maxWidth && cached.Sig == sig)
+        {
+            cached.Stamp = ++_layoutStamp;
+            return cached.Layout;
         }
 
+        var layout = CreateTextLayout(p, maxWidth);
+        // Entries for deleted paragraphs are never re-accessed and would linger; past a generous cap,
+        // drop the ones no longer in the document (live entries survive and aren't reshaped) instead
+        // of clearing wholesale. (The per-render bound is TrimLayoutCache; this covers walks with no render.)
+        if (_layoutCache.Count > 10000) PruneLayoutCaches();
+        _layoutCache[p] = new LayoutEntry(sig, maxWidth, layout) { Stamp = ++_layoutStamp };
+        return layout;
+    }
+
+    // Builds a paragraph's TextLayout — NOT cached. BuildTextLayout caches it; ParagraphHeight measures with it
+    // and lets it go, which is what keeps the cache from holding the whole document (see _heightCache).
+    private Avalonia.Media.TextFormatting.TextLayout CreateTextLayout(Paragraph p, double maxWidth,
+        int preeditOffset = -1, string? preeditText = null)
+    {
         var defaultFamily = DefaultFontFamily;
         double defaultSize = DefaultFontSize; // pt; kept in pt for the run-size fallback below
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
@@ -1587,18 +1629,8 @@ public partial class RichEditor : Control
             0,
             0);
 
-        var layout = new Avalonia.Media.TextFormatting.TextLayout(
+        return new Avalonia.Media.TextFormatting.TextLayout(
             new ParagraphTextSource(segs), paraProps, null, Math.Max(1, maxWidth));
-
-        if (!hasPreedit)
-        {
-            // Entries for deleted paragraphs are never re-accessed and would linger; past a generous cap,
-            // drop the ones no longer in the document (live entries survive and aren't reshaped) instead
-            // of clearing wholesale.
-            if (_layoutCache.Count > 10000) PruneLayoutCaches();
-            _layoutCache[p] = (sig, maxWidth, layout);
-        }
-        return layout;
     }
 
     // The layout a paragraph is actually RENDERED with. While the IME composes, the preedit text is
@@ -1611,6 +1643,67 @@ public partial class RichEditor : Control
         => !string.IsNullOrEmpty(_preeditText) && ReferenceEquals(_caretPosition.Paragraph, p)
             ? BuildTextLayout(p, width, _caretPosition.Offset, _preeditText)
             : BuildTextLayout(p, width);
+
+    // A paragraph's layout height at `width` without keeping its layout: what Measure, pagination and the
+    // walks that only step past a paragraph need. Always equal to BuildTextLayout(p, width).Height — the same
+    // trusted-pass shortcut, the same signature check, and a cached layout's own height when there is one.
+    private double ParagraphHeight(Paragraph p, double width) => HeightEntryFor(p, width).Height;
+
+    private HeightEntry HeightEntryFor(Paragraph p, double width)
+    {
+        if (_trustLayoutCache && _heightCache.TryGetValue(p, out var trusted) && trusted.Width == width) return trusted;
+        long sig = ParagraphSig(p);
+        if (_heightCache.TryGetValue(p, out var e) && e.Width == width && e.Sig == sig) return e;
+        double h;
+        if (_layoutCache.TryGetValue(p, out var c) && c.Width == width && c.Sig == sig) h = c.Layout.Height;
+        // A cached layout gone stale is almost always the paragraph being edited, on screen: rebuild it into
+        // the cache, or the render right after this measure would shape it a second time.
+        else if (_layoutCache.ContainsKey(p)) h = BuildTextLayout(p, width).Height;
+        else h = CreateTextLayout(p, width).Height;
+        var entry = new HeightEntry(sig, width, h);
+        _heightCache.AddOrUpdate(p, entry);
+        return entry;
+    }
+
+    // Where each line of the paragraph ends, from its top (the last is the paragraph's height): pagination's
+    // line atoms, from the layout's own line tops — the same geometry Render draws at. Only paragraphs that
+    // straddle a page boundary ask, about one per page, so it is cached with the height rather than per call.
+    private double[] LineBottoms(Paragraph p, double width)
+    {
+        var entry = HeightEntryFor(p, width);
+        if (entry.LineBottoms is { } cached) return cached;
+        var layout = BuildTextLayout(p, width);
+        var lines = layout.TextLines;
+        var bottoms = new double[lines.Count];
+        for (int li = 1; li <= lines.Count; li++)
+            bottoms[li - 1] = li < lines.Count ? layout.HitTestTextPosition(lines[li].FirstTextSourceIndex).Y : layout.Height;
+        return entry.LineBottoms = bottoms;
+    }
+
+    // Everything shaped for the document: layouts, heights and table geometry. For changes the signatures
+    // can't see (the default font, the page width mode) and for a new document.
+    private void ClearLayoutCaches()
+    {
+        _layoutCache.Clear();
+        _heightCache.Clear();
+        _tableLayoutCache.Clear();
+    }
+
+    // After a render: drop the least recently used layouts until LayoutKeep remain — but never one this render
+    // used (stamped after `renderStart`): a visible table draws every cell, and a frame's own working set
+    // evicted would be reshaped on the next caret blink. Without it the cache held every paragraph ever DRAWN,
+    // and scrolling once to the end draws all of them. A dropped paragraph that comes back into view is shaped
+    // again — CPU only; its height is still cached, so nothing moves.
+    private void TrimLayoutCache(long renderStart)
+    {
+        if (_layoutCache.Count <= LayoutKeep + LayoutTrimSlack) return;
+        var old = new List<KeyValuePair<Paragraph, LayoutEntry>>();
+        foreach (var kv in _layoutCache) if (kv.Value.Stamp <= renderStart) old.Add(kv);
+        old.Sort((a, b) => a.Value.Stamp.CompareTo(b.Value.Stamp));
+        for (int i = 0; i < old.Count && _layoutCache.Count > LayoutKeep; i++) _layoutCache.Remove(old[i].Key);
+    }
+
+    internal int LayoutCacheCount => _layoutCache.Count; // test hook
 
     // The 10,000-entry cap above was the only thing that ever pruned, and a Dictionary keyed by paragraph keeps a
     // paragraph an edit removed — with its TextLayout, ~30 KB each, and through the layout's picture callback its
@@ -1646,7 +1739,7 @@ public partial class RichEditor : Control
     // keeping the live ones so nothing reshapes on the next frame.
     private void PruneLayoutCaches()
     {
-        if (Document == null) { _layoutCache.Clear(); _tableLayoutCache.Clear(); return; }
+        if (Document == null) { ClearLayoutCaches(); return; }
         var liveParas = new HashSet<Paragraph>(GetAllParagraphsInOrder());
         foreach (var key in _layoutCache.Keys.ToList())
             if (!liveParas.Contains(key)) _layoutCache.Remove(key);

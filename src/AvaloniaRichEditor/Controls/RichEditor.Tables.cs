@@ -63,7 +63,11 @@ public partial class RichEditor
         for (var cur = t; cur != null; cur = EnclosingTableOf(cur))
         {
             _tableLayoutCache.Remove(cur);
-            if (cur.Parent is InlineTable it && it.Parent is Paragraph host) _layoutCache.Remove(host);
+            if (cur.Parent is InlineTable it && it.Parent is Paragraph host)
+            {
+                _layoutCache.Remove(host);
+                _heightCache.Remove(host); // a trusted pass reads the height without the signature, too
+            }
         }
     }
 

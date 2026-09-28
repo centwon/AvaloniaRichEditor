@@ -539,7 +539,7 @@ public partial class RichEditor
             // Block height + layout objects come from the single source (G1 BlockExtent), so the
             // vertical advance here can never drift from MeasureContentHeight / the hit-tests. Only the
             // *within-block* atom split (table rows, paragraph lines) is pagination-specific and stays.
-            double height = BlockExtent(block, contentWidth, y, out var paraLayout, out var tableLayout);
+            double height = BlockExtent(block, contentWidth, y, out var tableLayout);
             if (tableLayout is { } tl)
             {
                 // Rows are the atoms (Word's default): a table taller than the remaining page
@@ -550,28 +550,31 @@ public partial class RichEditor
                 for (int r = 0; r < ((TableBlock)block).Rows; r++)
                     PlaceAtom(tl.RowY[r + 1] - tl.RowY[r]);
             }
-            else if (paraLayout is { } layout)
+            else if (block is Paragraph para && GetParagraphLength(para) > 0)
             {
                 double paraTop = y;
-                // Line atom boundaries come from the layout's own line-top positions (the same
-                // geometry Render draws at), NOT from summing TextLine.Height — line spacing /
-                // LineHeight overrides make height sums drift from real line tops, which sliced
-                // glyphs in half at page boundaries.
-                var lines = layout.TextLines;
-                double atomTop = 0;
-                for (int li = 1; li <= lines.Count; li++)
+                // A paragraph that ends on the current page adds no break whatever its lines are (every line
+                // ends at or above its bottom), so only one that crosses the boundary needs them — about one per
+                // page. Reading the lines of every paragraph kept a layout for each in the cache.
+                if (paraTop + height > pageStart + pageContentHeight + eps)
                 {
-                    double atomBottom = li < lines.Count
-                        ? layout.HitTestTextPosition(lines[li].FirstTextSourceIndex).Y
-                        : layout.Height;
-                    if (paraTop + atomBottom > pageStart + pageContentHeight + eps && paraTop + atomTop > pageStart)
+                    // Line atom boundaries come from the layout's own line-top positions (the same
+                    // geometry Render draws at), NOT from summing TextLine.Height — line spacing /
+                    // LineHeight overrides make height sums drift from real line tops, which sliced
+                    // glyphs in half at page boundaries.
+                    var bottoms = LineBottoms(para, ParagraphWrapWidth(para, contentWidth));
+                    double atomTop = 0;
+                    foreach (double atomBottom in bottoms)
                     {
-                        breaks.Add(paraTop + atomTop);
-                        pageStart = paraTop + atomTop;
+                        if (paraTop + atomBottom > pageStart + pageContentHeight + eps && paraTop + atomTop > pageStart)
+                        {
+                            breaks.Add(paraTop + atomTop);
+                            pageStart = paraTop + atomTop;
+                        }
+                        atomTop = atomBottom;
                     }
-                    atomTop = atomBottom;
                 }
-                y = paraTop + layout.Height;
+                y = paraTop + height;
             }
             else
             {
