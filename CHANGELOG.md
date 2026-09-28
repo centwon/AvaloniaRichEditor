@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — memory held by paragraphs and pictures an edit removed (2026-09-28)
+
+The per-paragraph layout cache pruned only once it passed 10,000 entries, and it is keyed by paragraph, so a
+paragraph that editing took out of the document stayed reachable — with its text layout (~30 KB), and through
+the layout's picture callback any inline picture's bytes — until then. Measured with the new
+`LayoutCacheProbe` (`tests/AvaloniaRichEditor.Tests.Render`, `RICHEDITOR_PERF=1`, real Skia):
+
+- A 2,000-paragraph document rewritten by "select all + type" and a paste, four times over: managed heap
+  141 → 210 → 278 → **346 MB**, back to 76 MB only when the cap finally pruned. Now **81 MB flat**.
+- 20 inline pictures (40 MB) deleted by editing, undo history aside: **39.5 MB stayed alive**. Now 5.7 MB.
+
+Every content edit now schedules a prune one second after the last one. The walk costs ~1–2 ms at 2,000
+paragraphs and ~3–5 ms at 8,000 — too much per keystroke, nothing once per pause — and it only drops entries
+for paragraphs no longer in the document, so nothing reshapes. Found by measuring what the WinUI port asked
+about after bounding its own caches.
+
+Not changed here: the cache still holds a layout for EVERY paragraph of the document (Measure, Render and
+hit-testing share it) — ~20–40 KB each, 6–9× the document model; 8,000 paragraphs ≈ 240–300 MB. Bounding that
+needs measurement to stop using the cache (the port measures with throwaway layouts and caches heights).
+
 ### Fixed — found by the WinUIRichEditor port's audit (2026-09-24)
 
 The port audited what it had taken in since its last release (these files among it); each defect below
