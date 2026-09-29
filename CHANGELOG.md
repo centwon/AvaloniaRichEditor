@@ -6,6 +6,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the layout cache holds what is on screen, not the whole document (2026-09-30)
+
+Measure, pagination and every walk that only steps past a paragraph (hit-tests, link lookup, block lookup)
+now read its **height** from a separate, weak-keyed height cache instead of taking its text layout, and a
+render builds layouts only for the paragraphs it draws. After each render the layout cache is trimmed back
+to the 256 most recently used — never evicting one the frame itself drew, since a visible table draws every
+cell. Measured with `LayoutCacheProbe` (800×600 window, real Skia):
+
+| | before | after |
+|---|---|---|
+| 8,000 paragraphs, loaded | 8,000 layouts, 270 MB managed | 29 layouts, 39 MB |
+| 8,000 paragraphs, scrolled to the end | 8,000 layouts, 276 MB | 343 layouts, 45 MB |
+| scrolling, per page (8,000 / 2,000 paragraphs) | 29–36 / 10–11 ms | 29–41 / 14–15 ms |
+
+The cost is that a paragraph scrolling back into view is shaped again (the 2,000-paragraph scroll above);
+its height stays cached, so nothing moves. The per-frame walk over all blocks is unchanged and still
+dominates large documents.
+
+Fixed along the way, found by a new fuzz oracle (an edited editor measures what a fresh one given the same
+document measures):
+- **Toggling a bullet or numbered list kept the old height.** The list gutter narrows the wrap width, but the
+  list commands only repainted, so the editor measured as before until something else invalidated it.
+- **A paragraph's signature could miss two changes made in one edit.** Select all + line spacing set both a
+  paragraph's and its inline table cell's line spacing from "default" (NaN) to a value; those differ only in
+  a double's top bits, and the signature hash carried differences only upward, so the two cancelled (1 in 28
+  value/heading pairs) and the paragraph kept its old layout and height. Wide values now go through a
+  full-avalanche mix first.
+
 ### Fixed — memory held by paragraphs and pictures an edit removed (2026-09-28)
 
 The per-paragraph layout cache pruned only once it passed 10,000 entries, and it is keyed by paragraph, so a
@@ -22,9 +50,9 @@ paragraphs and ~3–5 ms at 8,000 — too much per keystroke, nothing once per p
 for paragraphs no longer in the document, so nothing reshapes. Found by measuring what the WinUI port asked
 about after bounding its own caches.
 
-Not changed here: the cache still holds a layout for EVERY paragraph of the document (Measure, Render and
-hit-testing share it) — ~20–40 KB each, 6–9× the document model; 8,000 paragraphs ≈ 240–300 MB. Bounding that
-needs measurement to stop using the cache (the port measures with throwaway layouts and caches heights).
+Not changed here: the cache still held a layout for EVERY paragraph of the document (Measure, Render and
+hit-testing shared it) — ~20–40 KB each, 6–9× the document model; 8,000 paragraphs ≈ 240–300 MB. Bounded by
+the entry above (2026-09-30).
 
 ### Fixed — found by the WinUIRichEditor port's audit (2026-09-24)
 

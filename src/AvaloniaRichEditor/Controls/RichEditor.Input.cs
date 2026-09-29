@@ -1807,7 +1807,7 @@ public partial class RichEditor
         {
             yOffset += TopGapOf(block);
             if (found) return yOffset;
-            double h = BlockExtent(block, maxWidth, yOffset, out _, out _);
+            double h = BlockExtent(block, maxWidth, yOffset, out _);
             found = ReferenceEquals(block, p);
             yOffset += h + block.MarginBottom;
         }
@@ -1822,7 +1822,7 @@ public partial class RichEditor
         {
             yOffset += TopGapOf(block);
             double top = yOffset;
-            double h = BlockExtent(block, maxWidth, top, out _, out _);
+            double h = BlockExtent(block, maxWidth, top, out _);
             // Only image/table blocks are "entered" by Up/Down arrow navigation.
             if ((block is TableBlock || block is ImageBlock) && y >= top && y <= top + h) return block;
             yOffset += h + block.MarginBottom;

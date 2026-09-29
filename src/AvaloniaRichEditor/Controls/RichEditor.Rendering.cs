@@ -44,7 +44,7 @@ public partial class RichEditor
         foreach (var block in Document.Blocks)
         {
             yOffset += TopGapOf(block);
-            double h = BlockExtent(block, width, yOffset, out _, out _);
+            double h = BlockExtent(block, width, yOffset, out _);
             // While the IME composes, the render walk advances by the caret paragraph's height WITH the
             // preedit spliced in, so the extent has to as well — otherwise the scrollable range stays a
             // line short of what is actually drawn and the composition can't be scrolled to at the end
@@ -150,6 +150,7 @@ public partial class RichEditor
         if (Document == null) return;
 
         _trustLayoutCache = !contentChanged;
+        long renderStart = _layoutStamp; // layouts used from here on are this frame's (TrimLayoutCache)
         _imagePixelScale = ScreenPixelScale(); // once per pass: pictures decode for the pixels they cover
         try
         {
@@ -273,7 +274,14 @@ public partial class RichEditor
         if (_tableDrawStart is { } ds && _tableDrawCurrent is { } dc)
             context.DrawRectangle(AccentFill50, AccentPen2, DrawnTableRect(ds, dc));
         }
-        finally { _trustLayoutCache = false; } // never leak the trusted state past this render pass
+        finally
+        {
+            _trustLayoutCache = false; // never leak the trusted state past this render pass
+            // Bound what this frame and the ones before it left behind (see TrimLayoutCache). Nothing holds a
+            // layout across a render, and an evicted layout is never disposed, so a reference kept elsewhere
+            // stays valid — it is only no longer shared.
+            TrimLayoutCache(renderStart);
+        }
     }
 
     private static readonly Avalonia.Media.Immutable.ImmutableSolidColorBrush DeskBrush = new(Color.FromRgb(158, 158, 158));
@@ -367,7 +375,7 @@ public partial class RichEditor
             // same one measure/hit-tests/pagination consume — so the render walk can never drift from
             // them on a block's height. Drawing, culling, caret/selection and the per-cell IME-preedit
             // layout below all stay in render; only the geometry source is unified.
-            double beHeight = BlockExtent(block, maxWidth, yOffset, out var beParaLayout, out var beTableLayout);
+            double beHeight = BlockExtent(block, maxWidth, yOffset, out var beTableLayout);
             if (block is TableBlock tb)
             {
                 orderedIndex = 0;
@@ -474,21 +482,32 @@ public partial class RichEditor
                 }
 
                 double pWidth = ParagraphWrapWidth(paragraph, maxWidth);
-                // Non-preedit: reuse the cached layout BlockExtent already built (same width). The IME path
-                // rebuilds with the inline composition text, which is transient and never cached.
+
+                // Cull check, on the measured height: an off-screen paragraph issues no draw commands and
+                // builds no layout — it advances by its height (BlockExtent). It used to build (and cache) one
+                // anyway, so every render kept the whole document's layouts alive. The caret paragraph always
+                // draws, and it is the only one an IME composition can make taller than its height.
+                bool pVisible = (yOffset + beHeight >= visTop && yOffset <= visBottom)
+                    || (_caretPosition != null && _caretPosition.Paragraph == paragraph);
+                if (!pVisible)
+                {
+                    // The ordered counter still advances, one number per hard line, so visible numbering holds.
+                    if (paragraph.ListType == ListKind.Ordered)
+                        foreach (char ch in fullText) if (ch == '\n') orderedIndex++;
+                    if (paragraph.ListType == ListKind.Ordered) orderedIndex++;
+                    yOffset += beHeight + paragraph.MarginBottom;
+                    continue;
+                }
+
+                // The IME path rebuilds with the inline composition text, which is transient and never cached.
                 var layout = hasPreedit
                     ? BuildTextLayout(paragraph, pWidth, _caretPosition!.Offset, _preeditText)
-                    : (beParaLayout ?? BuildTextLayout(paragraph, pWidth));
-
-                // Cull check: the layout above is still built (cached; its height advances yOffset),
-                // but off-screen paragraphs issue no draw commands. The caret paragraph always draws.
-                bool pVisible = (yOffset + layout.Height >= visTop && yOffset <= visBottom)
-                    || (_caretPosition != null && _caretPosition.Paragraph == paragraph);
+                    : BuildTextLayout(paragraph, pWidth);
 
                 // One marker per hard line (\n): each line of a list paragraph is an item. Ordered lists
                 // number each line; this is what makes "press Enter -> next bullet/number" work given the
                 // editor's "Enter inserts \n in a Run" model (lines aren't separate paragraphs).
-                // The ordered counter must advance even for culled paragraphs so visible numbering holds.
+                // (Culled paragraphs advanced the counter above.)
                 if (paragraph.ListType != ListKind.None)
                 {
                     int segStart = 0;
@@ -497,20 +516,11 @@ public partial class RichEditor
                         if (i == fullText.Length || fullText[i] == '\n')
                         {
                             int marker = paragraph.ListType == ListKind.Ordered ? ++orderedIndex : 0;
-                            if (pVisible)
-                            {
-                                var lcr = layout.HitTestTextPosition(Math.Min(segStart, fullText.Length));
-                                DrawListMarker(context, paragraph, marker, px, yOffset + lcr.Y);
-                            }
+                            var lcr = layout.HitTestTextPosition(Math.Min(segStart, fullText.Length));
+                            DrawListMarker(context, paragraph, marker, px, yOffset + lcr.Y);
                             segStart = i + 1;
                         }
                     }
-                }
-
-                if (!pVisible)
-                {
-                    yOffset += layout.Height + paragraph.MarginBottom;
-                    continue;
                 }
 
                 DrawParagraphDecor(context, paragraph, px, yOffset, pWidth, layout.Height, 0);

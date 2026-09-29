@@ -230,6 +230,14 @@ public class DocumentInvariantFuzzTests
             // Measure between steps: layout is where a broken grid actually throws.
             ed.Measure(new Avalonia.Size(700, double.PositiveInfinity));
             AssertAllInvariants(ed, $"seed {seed}, step {i} ({op}); history: {string.Join(" -> ", log.TakeLast(8))}");
+            // The layout and height caches are invisible: an editor that lived through the edits measures
+            // what one given the same document fresh measures. This oracle found a signature that two
+            // changes in one edit cancelled, and list commands that never invalidated the measure (2026-09-28).
+            var fresh = new RichEditor { Document = (FlowDocument)ed.Document!.Clone(), PageSize = RichEditorPageSize.Continuous };
+            fresh.Measure(new Avalonia.Size(700, double.PositiveInfinity));
+            Assert.True(Math.Abs(fresh.DesiredSize.Height - ed.DesiredSize.Height) < 0.01,
+                $"seed {seed}, step {i} ({op}): edited editor measures {ed.DesiredSize.Height}, a fresh one {fresh.DesiredSize.Height}; " +
+                $"history: {string.Join(" -> ", log.TakeLast(8))}");
         }
     }
 

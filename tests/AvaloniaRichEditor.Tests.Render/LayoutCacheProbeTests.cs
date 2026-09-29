@@ -107,6 +107,59 @@ public class LayoutCacheProbeTests(ITestOutputHelper output)
         }
     }
 
+    // What an app sees: the editor in a ScrollViewer in an 800x600 window, which is what render culling keys on
+    // (A renders with no scroller, so every paragraph counts as visible). Loaded at the top, then paged to the end.
+    [AvaloniaFact]
+    public void D_InAWindow_LoadedThenScrolledToTheEnd()
+    {
+        if (!Enabled) return;
+        // This app has no theme (the pixel tests want none), and an untemplated ScrollViewer has no viewport,
+        // so culling would see nothing. Only for this probe, and taken out again.
+        var theme = new Avalonia.Themes.Fluent.FluentTheme();
+        Application.Current!.Styles.Add(theme);
+        try { RunWindowScenario(); }
+        finally { Application.Current!.Styles.Remove(theme); }
+    }
+
+    private void RunWindowScenario()
+    {
+        foreach (int n in new[] { 2000, 8000 })
+        {
+            long empty = Managed();
+            var ed = new RichEditor { Document = HtmlDocumentFormatter.ParseHtml(BigHtml(n)) };
+            var scroller = new Avalonia.Controls.ScrollViewer { Content = ed };
+            var window = new Avalonia.Controls.Window { Width = 800, Height = 600, Content = scroller };
+            window.Show();
+            void Frame()
+            {
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+                using var rtb = new RenderTargetBitmap(new PixelSize(800, 600));
+                rtb.Render(window);
+            }
+            var sw = Stopwatch.StartNew();
+            Frame();
+            double loadMs = sw.Elapsed.TotalMilliseconds;
+            long loaded = Managed() - empty;
+            int atTop = Cache(ed).Count;
+            Log($"    (scroller extent {scroller.Extent.Height:F0}, viewport {scroller.Viewport.Height:F0}, editor {ed.Bounds.Height:F0})");
+
+            sw.Restart();
+            int pages = 0;
+            while (scroller.Offset.Y + scroller.Viewport.Height < scroller.Extent.Height - 1 && pages < 100_000)
+            {
+                scroller.Offset = new Vector(0, scroller.Offset.Y + scroller.Viewport.Height * 0.9);
+                Frame();
+                pages++;
+            }
+            double scrollMs = sw.Elapsed.TotalMilliseconds;
+            long scrolled = Managed() - empty;
+            Log($"  window {n,5} paras: load+first frame {loadMs,6:F0} ms, managed {loaded / Mb,6:F1} MB, cache {atTop,5} | " +
+                $"scrolled {pages} pages in {scrollMs:F0} ms ({scrollMs / Math.Max(1, pages):F1} ms/page), managed {scrolled / Mb,6:F1} MB, cache {Cache(ed).Count,5}");
+            window.Content = null; // never Close(): the last headless top-level takes the dispatcher with it
+        }
+    }
+
     [AvaloniaFact]
     public void B_ParagraphsAnEditRemoved_StayInTheCache()
     {
