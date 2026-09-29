@@ -1411,11 +1411,13 @@ public partial class RichEditor : Control
             long h = 1469598103934665603; // FNV-1a 64-bit offset basis
             void Mix(long v) { h = (h ^ v) * 1099511628211; }
             void MixStr(string? s) { if (s == null) { Mix(0); return; } foreach (char ch in s) Mix(ch); Mix(s.Length + 1); }
+            // Wide values (a double's bits, a nested signature) through Avalanche first — see there.
+            void MixWide(long v) => Mix(Avalanche(v));
 
             Mix((long)p.TextAlignment);
-            Mix(BitConverter.DoubleToInt64Bits(p.LineHeight));
-            Mix(BitConverter.DoubleToInt64Bits(p.LineSpacing));
-            Mix(BitConverter.DoubleToInt64Bits(p.Indent));
+            MixWide(BitConverter.DoubleToInt64Bits(p.LineHeight));
+            MixWide(BitConverter.DoubleToInt64Bits(p.LineSpacing));
+            MixWide(BitConverter.DoubleToInt64Bits(p.Indent));
             Mix((long)p.ListType);
             Mix((long)p.ListMarker);
             Mix(p.ListLevel);
@@ -1427,7 +1429,7 @@ public partial class RichEditor : Control
                     MixStr(r.Text);
                     MixStr(r.FontFamily);
                     MixStr(r.NavigateUri);
-                    Mix(BitConverter.DoubleToInt64Bits(r.FontSize));
+                    MixWide(BitConverter.DoubleToInt64Bits(r.FontSize));
                     Mix((long)r.FontWeight);
                     Mix((long)r.FontStyle);
                     Mix(r.Foreground?.GetHashCode() ?? 0);
@@ -1438,8 +1440,8 @@ public partial class RichEditor : Control
                 else if (inl is InlineImage img)
                 {
                     Mix(7);
-                    Mix(BitConverter.DoubleToInt64Bits(img.Width));
-                    Mix(BitConverter.DoubleToInt64Bits(img.Height));
+                    MixWide(BitConverter.DoubleToInt64Bits(img.Width));
+                    MixWide(BitConverter.DoubleToInt64Bits(img.Height));
                     // Identity only — never the Image getter here: it lazily decodes RawBytes, and
                     // the signature must stay cheap (and decode-free) on every cache lookup (N6-2).
                     Mix(img.RawBytes?.GetHashCode() ?? img.Image?.GetHashCode() ?? 0);
@@ -1453,13 +1455,13 @@ public partial class RichEditor : Control
                     Mix(13);
                     Mix(it.Table.Rows);
                     Mix(it.Table.Columns);
-                    foreach (var w in it.Table.ColumnWidths) Mix(BitConverter.DoubleToInt64Bits(w));
-                    foreach (var rh in it.Table.RowHeights) Mix(BitConverter.DoubleToInt64Bits(rh));
+                    foreach (var w in it.Table.ColumnWidths) MixWide(BitConverter.DoubleToInt64Bits(w));
+                    foreach (var rh in it.Table.RowHeights) MixWide(BitConverter.DoubleToInt64Bits(rh));
                     // Every block a cell holds, not just its paragraphs: a block image, divider or
                     // nested table in there sizes the cell too, so leaving them out served the host
                     // paragraph's cached layout at the old box after such a block changed.
                     foreach (var (_, _, cell) in it.Table.LogicalCells())
-                        foreach (var b in cell.Blocks) Mix(BlockSig(b));
+                        foreach (var b in cell.Blocks) MixWide(BlockSig(b));
                 }
             }
             return h;
@@ -1473,23 +1475,45 @@ public partial class RichEditor : Control
     {
         unchecked
         {
+            long h = 1469598103934665603;
+            void Mix(long v) { h = (h ^ Avalanche(v)) * 1099511628211; }
             switch (b)
             {
                 case Paragraph p: return ParagraphSig(p);
                 case ImageBlock img:
-                    return 31 ^ BitConverter.DoubleToInt64Bits(img.Width) * 3
-                              ^ BitConverter.DoubleToInt64Bits(img.Height) * 5
-                              ^ (img.RawBytes?.GetHashCode() ?? img.Image?.GetHashCode() ?? 0);
+                    Mix(31);
+                    Mix(BitConverter.DoubleToInt64Bits(img.Width));
+                    Mix(BitConverter.DoubleToInt64Bits(img.Height));
+                    Mix(img.RawBytes?.GetHashCode() ?? img.Image?.GetHashCode() ?? 0);
+                    return h;
                 case DividerBlock: return 37;
                 case TableBlock tb:
-                    long h = 41 ^ (tb.Rows * 397L) ^ tb.Columns;
-                    foreach (var w in tb.ColumnWidths) h = h * 31 + BitConverter.DoubleToInt64Bits(w);
-                    foreach (var rh in tb.RowHeights) h = h * 31 + BitConverter.DoubleToInt64Bits(rh);
+                    Mix(41); Mix(tb.Rows); Mix(tb.Columns);
+                    foreach (var w in tb.ColumnWidths) Mix(BitConverter.DoubleToInt64Bits(w));
+                    foreach (var rh in tb.RowHeights) Mix(BitConverter.DoubleToInt64Bits(rh));
                     foreach (var (_, _, cell) in tb.LogicalCells())
-                        foreach (var cb in cell.Blocks) h = h * 31 + BlockSig(cb);
+                        foreach (var cb in cell.Blocks) Mix(BlockSig(cb));
                     return h;
                 default: return 43;
             }
+        }
+    }
+
+    // SplitMix64's finalizer: every input bit reaches every output bit. FNV's step — xor, then multiply by an
+    // odd constant — only carries a difference UPWARD, so two values that differ only in their high bits (a
+    // double's sign and exponent: NaN vs 1.5 differ in bits 62-63 alone) left the signatures differing only
+    // there, and two such changes in one edit could cancel. Measured 2026-09-28 by the fuzz's height oracle:
+    // select all + line spacing turned a paragraph's AND its inline table's cell LineSpacing from NaN to 1.5,
+    // the host's signature came out unchanged (1 in 28 value/heading pairs), and it kept its old layout and
+    // height. Characters are small and go in plain; everything wide goes through here first.
+    private static long Avalanche(long x)
+    {
+        unchecked
+        {
+            ulong z = (ulong)x;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            return (long)(z ^ (z >> 31));
         }
     }
 

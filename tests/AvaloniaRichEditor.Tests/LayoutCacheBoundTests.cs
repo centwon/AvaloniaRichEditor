@@ -66,7 +66,8 @@ public class LayoutCacheBoundTests
             rtb.Render(Window);
         }
         public void ScrollTo(double y) { Scroller.Offset = new Vector(0, y); Frame(); }
-        public void Close() { Window.Content = null; Window.Close(); }
+        // Content only: closing the last headless top-level shuts the dispatcher down for the tests after it.
+        public void Close() { Window.Content = null; Dispatcher.UIThread.RunJobs(); }
     }
 
     // ---- the height is the layout's height ------------------------------------------------------------
@@ -113,6 +114,55 @@ public class LayoutCacheBoundTests
 
         ((Run)p.Inlines[0]).Text += " and a good deal more text to push it onto further lines of the paragraph";
         Assert.Equal(Layout(ed, p, 200).Height, Height(ed, p, 200), 6);
+    }
+
+    // Select all + line spacing sets a paragraph's LineSpacing AND its inline table's cell's, NaN -> value.
+    // NaN and 1.5 differ only in a double's top bits, and FNV's xor-multiply carries a difference only
+    // upward, so the two changes cancelled in the host's signature (1 in 28 of these pairs) and it kept its
+    // old layout and height. Every pair here must move the signature.
+    [Fact]
+    public void TwoWideChangesInOneEdit_NeverCancelInTheSignature()
+    {
+        var sig = T.GetMethod("ParagraphSig", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var tb = new TableBlock(1, 1);
+        var cell = tb.Cells[0][0].Para;
+        cell.Inlines.Add(new Run { Text = "cell" });
+        var host = new Paragraph { Inlines = { new Run { Text = "ab" }, new InlineTable { Table = tb }, new Run { Text = "cdef" } } };
+        var cancelled = new List<string>();
+        foreach (var v in new[] { 1.0, 1.5, 2.0, 2.5, 3.0, 1.6, 0.8 })
+            foreach (var heading in new[] { 0, 1, 2, 3 })
+            {
+                host.HeadingLevel = heading;
+                host.LineSpacing = cell.LineSpacing = double.NaN;
+                long before = (long)sig.Invoke(null, [host])!;
+                host.LineSpacing = cell.LineSpacing = v;
+                if ((long)sig.Invoke(null, [host])! == before) cancelled.Add($"{v}/h{heading}");
+            }
+        Assert.Empty(cancelled);
+    }
+
+    // Bullets and numbers take a gutter from the wrap width, so toggling a list changes the height; the list
+    // commands repainted without invalidating the measure, and the editor kept the height it had before.
+    [AvaloniaFact]
+    public void TogglingAList_ChangesTheMeasuredHeight()
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Clear();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = string.Concat(Enumerable.Repeat("word ", 400)) } } });
+        var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.Continuous };
+        var size = new Size(300, double.PositiveInfinity);
+        ed.Measure(size);
+        double plain = ed.DesiredSize.Height;
+        T.GetMethod("SelectAll", NP, Type.EmptyTypes)!.Invoke(ed, null);
+
+        ed.ToggleBullet();
+        ed.Measure(size);
+        double bulleted = ed.DesiredSize.Height;
+        Assert.True(bulleted > plain, $"height {plain} -> {bulleted}: the gutter narrowed the lines, so there are more of them");
+
+        ed.ToggleBullet();
+        ed.Measure(size);
+        Assert.Equal(plain, ed.DesiredSize.Height, 2);
     }
 
     // ---- the walks that stopped taking layouts ---------------------------------------------------------

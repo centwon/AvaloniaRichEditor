@@ -238,6 +238,7 @@ public partial class RichEditor
             p.ListLevel = 0;
         }
         UpdateParents(Document);
+        InvalidateMeasure(); // the list gutter moves the wrap width, and so the height
         InvalidateVisual();
     }
 
@@ -269,6 +270,7 @@ public partial class RichEditor
         }
         if (targets.Count == 0)
         {
+            InvalidateMeasure(); // the list gutter moves the wrap width, and so the height
             InvalidateVisual();
             return;
         }
@@ -276,6 +278,7 @@ public partial class RichEditor
         {
             foreach (var tp in targets) tp.ListType = ListKind.None;
             UpdateParents(Document);
+            InvalidateMeasure(); // the list gutter moves the wrap width, and so the height
             InvalidateVisual();
             return;
         }
@@ -313,6 +316,7 @@ public partial class RichEditor
         if (nSe != null) _selectionEnd = nSe;
         if (nCp != null) _caretPosition = nCp;
         UpdateParents(Document);
+        InvalidateMeasure(); // the list gutter moves the wrap width, and so the height
         InvalidateVisual();
     }
 

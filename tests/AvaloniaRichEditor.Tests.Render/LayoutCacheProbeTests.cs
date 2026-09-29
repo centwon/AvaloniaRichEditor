@@ -156,8 +156,7 @@ public class LayoutCacheProbeTests(ITestOutputHelper output)
             long scrolled = Managed() - empty;
             Log($"  window {n,5} paras: load+first frame {loadMs,6:F0} ms, managed {loaded / Mb,6:F1} MB, cache {atTop,5} | " +
                 $"scrolled {pages} pages in {scrollMs:F0} ms ({scrollMs / Math.Max(1, pages):F1} ms/page), managed {scrolled / Mb,6:F1} MB, cache {Cache(ed).Count,5}");
-            window.Content = null;
-            window.Close();
+            window.Content = null; // never Close(): the last headless top-level takes the dispatcher with it
         }
     }
 
