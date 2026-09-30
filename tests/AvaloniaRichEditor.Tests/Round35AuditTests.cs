@@ -419,4 +419,94 @@ public class Round35AuditTests
         Assert.Equal("NEW FILE?", host.Editor.GetPlainText());
         Assert.True(host.Editor.CanUndo);
     }
+
+    // ---- the four left for later, fixed the same day ------------------------------------------------------------
+
+    // Fill bytes before a marker (legal JPEG) were read as a segment length and skipped the frame header: the size
+    // came back (0, 0), and a picture of unknown size is decoded whatever it claims — round the pixel cap.
+    [Fact]
+    public void AJpegWithFillBytesBeforeItsFrameHeader_StillGivesItsSize()
+    {
+        var b = new byte[] { 0xFF, 0xD8, 0xFF, 0xFF, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0xC3, 0x50, 0xEA, 0x60, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        Assert.Equal((60000.0, 50000.0), ImageInfo.GetPixelSize(b));
+        Assert.True(ImageInfo.TooLargeToDecode(b));
+    }
+
+    [Fact]
+    public void AJpegWithAMarkerThatHasNoLength_StillGivesItsSize()
+    {
+        // SOI, then RST0 (no length field), then SOF0 claiming 16 x 8.
+        var b = new byte[] { 0xFF, 0xD8, 0xFF, 0xD0, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x08, 0x00, 0x10, 0x03, 0, 0, 0, 0, 0, 0, 0, 0 };
+        Assert.Equal((16.0, 8.0), ImageInfo.GetPixelSize(b));
+    }
+
+    // TableCell.Para descends into a leading nested table, so merged text went into THAT table's first cell.
+    [Fact]
+    public void MergingIntoACellThatStartsWithANestedTable_KeepsTheTextInTheCell()
+    {
+        var tb = new TableBlock(1, 2);
+        var anchor = tb.Cells[0][0];
+        var nested = new TableBlock(1, 1);
+        anchor.Blocks.Insert(0, nested); // [nested table, empty paragraph] — how the RTF reader builds such a cell
+        tb.Cells[0][1].Para.Inlines.Add(new Run { Text = "moved" });
+
+        tb.MergeCells(0, 0, 0, 1);
+
+        static bool Holds(TableCell c) => c.Blocks.OfType<Paragraph>().Any(p => p.Inlines.OfType<Run>().Any(r => r.Text == "moved"));
+        Assert.True(Holds(anchor));
+        Assert.False(Holds(nested.Cells[0][0]));
+    }
+
+    [Fact]
+    public void AFontNameWithASemicolon_DoesNotEndItsFontTableEntry()
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "x", FontFamily = "A;B" }, new Run { Text = "y", FontFamily = "C" } } });
+        string rtf = RtfDocumentFormatter.Write(doc);
+        string fonttbl = rtf.Substring(rtf.IndexOf(@"{\fonttbl", StringComparison.Ordinal));
+        fonttbl = fonttbl.Substring(0, fonttbl.IndexOf(@"{\colortbl", StringComparison.Ordinal));
+        Assert.DoesNotContain("A;B", fonttbl);
+        Assert.Contains(@"\f1\fnil AB;}", fonttbl);
+        Assert.Contains(@"\f2\fnil C;}", fonttbl); // the entry after it is where it should be
+    }
+
+    // Every MergeCells call scanned the whole grid, and the RTF reader makes one per flagged cell: 20,000 two-row
+    // merges in a 200x200 table (1.4 MB of RTF) froze the paste for 30 s. Now ~0.4 s; the bound is loose on purpose
+    // (slow CI machines), since what it has to catch is the quadratic one.
+    [Fact]
+    public void ManyVerticalMergesInRtf_ParseInLinearTime()
+    {
+        const int n = 200;
+        var sb = new StringBuilder(@"{\rtf1\ansi ");
+        for (int r = 0; r < n; r++)
+        {
+            sb.Append(@"\trowd");
+            for (int c = 1; c <= n; c++) sb.Append(r % 2 == 0 ? @"\clvmgf" : @"\clvmrg").Append(@"\cellx").Append(c * 100);
+            for (int c = 0; c < n; c++) sb.Append(@"\pard\intbl x\cell");
+            sb.Append(@"\row ");
+        }
+        sb.Append(@"\pard end\par}");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var tb = RtfDocumentFormatter.Parse(sb.ToString()).Blocks.OfType<TableBlock>().Single();
+        Assert.True(sw.Elapsed.TotalSeconds < 10, $"{sw.Elapsed.TotalSeconds:F1} s");
+        Assert.Equal((1, 2), tb.SpanOf(0, 0)); // precondition: the merges really happened
+    }
+
+    // The fast path's premise: a range of plain cells can still sit next to a merge, and must not absorb it.
+    [Fact]
+    public void MergingPlainCellsBesideAMerge_LeavesThatMergeAlone()
+    {
+        var tb = new TableBlock(3, 3);
+        tb.MergeCells(0, 0, 1, 0); // column 0, rows 0-1
+        tb.MergeCells(0, 1, 0, 2); // row 0, columns 1-2: plain cells beside the first merge
+        Assert.Equal((1, 2), tb.SpanOf(0, 0));
+        Assert.Equal((2, 1), tb.SpanOf(0, 1));
+        tb.MergeCells(1, 1, 2, 1); // plain cells below the second merge
+        Assert.Equal((1, 2), tb.SpanOf(1, 1));
+        Assert.Equal((2, 1), tb.SpanOf(0, 1));
+        // And a range that DOES touch a merge still grows over it: (2,1) is covered by the rows 1-2 merge, which
+        // reaches the column-0 merge, which reaches the row-0 one — the whole grid.
+        tb.MergeCells(2, 0, 2, 1);
+        Assert.Equal((3, 3), tb.SpanOf(0, 0));
+    }
 }

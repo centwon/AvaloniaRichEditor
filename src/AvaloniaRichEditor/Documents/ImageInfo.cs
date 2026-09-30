@@ -35,6 +35,11 @@ internal static class ImageInfo
             {
                 if (b[i] != 0xFF) { i++; continue; }
                 byte marker = b[i + 1];
+                // A marker may be preceded by any number of 0xFF fill bytes, and a few markers carry no length.
+                // Reading either as a segment length skipped past the frame header, and a picture whose size could
+                // not be read was decoded whatever it claimed — the pixel cap's way round (round 35).
+                if (marker == 0xFF) { i++; continue; }
+                if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD9)) { i += 2; continue; }
                 // SOF0..SOF15 except DHT(C4)/JPG(C8)/DAC(CC) carry frame dimensions.
                 if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
                     return (BE16(b, i + 7), BE16(b, i + 5));

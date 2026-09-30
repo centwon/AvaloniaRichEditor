@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace AvaloniaRichEditor.Documents;
 
@@ -313,7 +314,11 @@ public class TableBlock : Block
         // formatter, and enough of them leave a table with no logical cells at all. A covered slot
         // reports (0,0) and is therefore skipped here: its anchor is elsewhere in the grid and pulls
         // the range over on its own iteration.
-        bool grew = true;
+        // Every pass scans the whole grid, and the RTF reader merges once per flagged cell: 20,000 two-row merges in
+        // a 200x200 table (1.4 MB of RTF) took 30 s (round 35). A range of plain cells alone cannot straddle a merge —
+        // one reaching into it would leave a covered cell, or an anchor spanning more than one, inside it — so then
+        // the scan is skipped.
+        bool grew = !AllPlain(r0, c0, r1, c1);
         while (grew)
         {
             grew = false;
@@ -339,7 +344,14 @@ public class TableBlock : Block
             for (int c = c0; c <= c1; c++) { ColSpans[r][c] = 1; RowSpans[r][c] = 1; }
 
         var anchorCell = Cells[r0][c0];
-        var anchor = anchorCell.Para;
+        // The anchor cell's OWN first paragraph. Para descends into a leading nested table, so the merged text went
+        // into that table's first cell instead of the cell being merged into (round 35).
+        var anchor = anchorCell.Blocks.OfType<Paragraph>().FirstOrDefault();
+        if (anchor == null)
+        {
+            anchor = new Paragraph { Inlines = { new Run { Text = "" } }, Parent = anchorCell };
+            anchorCell.Blocks.Add(anchor);
+        }
         for (int r = r0; r <= r1; r++)
             for (int c = c0; c <= c1; c++)
             {
@@ -384,6 +396,14 @@ public class TableBlock : Block
         ColSpans[r0][c0] = c1 - c0 + 1;
         RowSpans[r0][c0] = r1 - r0 + 1;
         StampCovered(r0, c0, c1 - c0 + 1, r1 - r0 + 1);
+    }
+
+    private bool AllPlain(int r0, int c0, int r1, int c1)
+    {
+        for (int r = r0; r <= r1; r++)
+            for (int c = c0; c <= c1; c++)
+                if (SpanOf(r, c) != (1, 1)) return false;
+        return true;
     }
 
     /// Splits a merged anchor back into 1×1 cells (covered cells become empty anchors).

@@ -1193,8 +1193,10 @@ internal sealed class RtfWriter
         var sb = new StringBuilder();
         sb.Append(@"{\rtf1\ansi\ansicpg1252\deff0");
         sb.Append(@"{\fonttbl");
+        // A ';' ends a font table entry and RTF has no escape for one inside a name: "A;B" came out as the font "A"
+        // followed by stray text (round 35). It goes, as the HTML writer drops quotes from a family.
         for (int i = 0; i < _fonts.Count; i++)
-            sb.Append($@"{{\f{i}\fnil ").Append(EscapeText(_fonts[i].Length == 0 ? "Default" : _fonts[i])).Append(";}");
+            sb.Append($@"{{\f{i}\fnil ").Append(EscapeText(_fonts[i].Length == 0 ? "Default" : _fonts[i].Replace(";", ""))).Append(";}");
         sb.Append('}');
         sb.Append(@"{\colortbl;");
         foreach (var c in _colors) sb.Append($@"\red{c.R}\green{c.G}\blue{c.B};");
