@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace AvaloniaRichEditor.Documents;
 
@@ -67,6 +68,18 @@ public class TableBlock : Block
     }
 
     private TableCell NewCell() => new TableCell { Parent = this };
+
+    // Bounds for a table an IMPORTER builds. Every reader pads short rows out to the widest one, so a file can
+    // make rows x columns cells out of a few that exist: one wide row over many one-cell rows, a colspan, a run of
+    // \cellx boundaries (1,500 columns from a few KB, measured round 35) — a few MB of input for a billion cells.
+    // No real document is near either number; Word stops at 63 columns.
+    internal const int MaxImportColumns = 1000;
+    internal const int MaxImportCells = 250_000;
+
+    // The column count an imported table of `rows` rows keeps: its own, within both bounds. Cells past it are
+    // dropped — hostile input only.
+    internal static int ImportColumns(int rows, int columns)
+        => Math.Clamp(Math.Min(columns, MaxImportCells / Math.Max(1, rows)), 1, MaxImportColumns);
 
     // ---- Span helpers ------------------------------------------------------
 

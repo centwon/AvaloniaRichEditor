@@ -873,8 +873,14 @@ internal sealed class RtfParser
     // \itap<N> switches nesting depth. Going deeper closes the text collected so far as a paragraph of
     // the cell being filled, so "text, then a nested table" keeps that order instead of the text being
     // swallowed into the nested table's first cell.
+    // Tables nested deeper than this are read as this deep. \itap had no bound, and every level is one more round
+    // of the renderer's recursion: a few hundred levels — tens of KB of RTF — overflowed the stack, which no
+    // handler can catch (round 35). The HTML reader bounds the same thing through its DOM depth.
+    internal const int MaxNesting = 32;
+
     private void SetItap(int depth)
     {
+        depth = Math.Clamp(depth, 1, MaxNesting);
         if (depth == _itap) return;
         if (depth > _itap)
         {
@@ -956,14 +962,15 @@ internal sealed class RtfParser
         var grid = UnionGrid(cellxRows);
         if (grid != null && cellxRows != null)
         {
+            var gridIndex = GridIndex(grid);
             for (int r = 0; r < tb.Rows && r < cellxRows.Count; r++)
             {
                 var bounds = cellxRows[r];
                 int prev = 0;
                 foreach (int right in bounds)
                 {
-                    int start = prev == 0 ? 0 : grid.IndexOf(prev) + 1;
-                    int end = grid.IndexOf(right);
+                    int start = prev == 0 ? 0 : gridIndex.GetValueOrDefault(prev, -1) + 1;
+                    int end = gridIndex.GetValueOrDefault(right, -1);
                     prev = right;
                     if (start < 0 || end < 0 || end <= start || start >= tb.Columns) continue;
                     if (end >= tb.Columns) end = tb.Columns - 1;
@@ -1010,6 +1017,15 @@ internal sealed class RtfParser
         return all.Count > 0 ? new List<int>(all) : null;
     }
 
+    // Boundary -> its column in the grid. The readers used List.IndexOf once per cell, quadratic in a row's
+    // boundaries, and a file can declare as many as it likes.
+    private static Dictionary<int, int> GridIndex(List<int>? grid)
+    {
+        var index = new Dictionary<int, int>();
+        if (grid != null) for (int i = 0; i < grid.Count; i++) index[grid[i]] = i;
+        return index;
+    }
+
     // Rows of cells -> a TableBlock. Shared by the top-level table and the nested ones, so both get the
     // same shape (spans reset to 1 here — ApplyMerges stamps them — and widths from the union grid).
     private static TableBlock? BuildTable(List<List<TableCell>>? rows, List<List<int>>? cellxRows)
@@ -1022,6 +1038,8 @@ internal sealed class RtfParser
         // this did before merges could be read off the geometry at all.
         foreach (var r in rows) if (r.Count > cols) cols = r.Count;
         if (cols == 0) return null;
+        cols = TableBlock.ImportColumns(rows.Count, cols); // cells past it are not placed (the `at < cols` below)
+        var gridIndex = GridIndex(grid);
 
         var tb = new TableBlock(rows.Count, cols);
         tb.Cells.Clear();
@@ -1039,7 +1057,7 @@ internal sealed class RtfParser
                 int prev = 0;
                 for (int i = 0; i < src.Count && i < bounds.Count; i++)
                 {
-                    int at = grid.IndexOf(prev);          // prev is the boundary to this cell's left
+                    int at = gridIndex.GetValueOrDefault(prev, -1); // prev is the boundary to this cell's left
                     at = prev == 0 ? 0 : (at < 0 ? -1 : at + 1);
                     if (at >= 0 && at < cols) cells[at] = src[i];
                     prev = bounds[i];
@@ -1096,7 +1114,7 @@ internal sealed class RtfParser
         Avalonia.Media.Imaging.Bitmap? bmp = null;
         if (w <= 0 || h <= 0)
         {
-            try { bmp = new Avalonia.Media.Imaging.Bitmap(new System.IO.MemoryStream(bytes)); }
+            try { bmp = ImageInfo.Decode(bytes); } // bounded: see ImageInfo.MaxDecodePixels
             // not a decodable PNG/JPEG after all
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
             w = bmp.Size.Width; h = bmp.Size.Height;

@@ -67,6 +67,7 @@ internal sealed class ImageDisplayCache
         try
         {
             var (natW, natH) = ImageInfo.GetPixelSize(rawBytes);
+            if (natW * natH > ImageInfo.MaxDecodePixels) return (null, true); // DecodeToWidth decodes whole first
             using var ms = new System.IO.MemoryStream(rawBytes);
             double s = natW > 0 && natH > 0 ? Math.Max(boxW / natW, boxH / natH) : 1;
             if (s >= 1) return (new Bitmap(ms), true);

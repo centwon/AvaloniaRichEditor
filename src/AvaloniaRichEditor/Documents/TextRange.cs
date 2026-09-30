@@ -90,7 +90,10 @@ public class TextRange
                 int eIdx = all.IndexOf(ep);
                 if (sIdx >= 0 && eIdx > sIdx)
                     for (int i = sIdx + 1; i < eIdx; i++)
-                        DeleteInParagraph(all[i], 0, GetParagraphLength(all[i]));
+                    {
+                        var (from, to) = CoveredSpan(all[i]);
+                        DeleteInParagraph(all[i], from, to);
+                    }
             }
         }
 
@@ -125,8 +128,8 @@ public class TextRange
         for (int i = startIdx + 1; i < endIdx; i++)
         {
             sb.Append('\n');
-            int pLen = GetParagraphLength(allParagraphs[i]);
-            sb.Append(GetParagraphText(allParagraphs[i], 0, pLen));
+            var (from, to) = CoveredSpan(allParagraphs[i]);
+            sb.Append(GetParagraphText(allParagraphs[i], from, to));
         }
 
         sb.Append('\n');
@@ -162,7 +165,8 @@ public class TextRange
         for (int i = startIdx + 1; i < endIdx; i++)
         {
             result.Add(new Run { Text = "\n" });
-            result.AddRange(GetParagraphRuns(allParagraphs[i], 0, GetParagraphLength(allParagraphs[i])));
+            var (from, to) = CoveredSpan(allParagraphs[i]);
+            result.AddRange(GetParagraphRuns(allParagraphs[i], from, to));
         }
         result.Add(new Run { Text = "\n" });
         result.AddRange(GetParagraphRuns(ep, 0, _end.Offset));
@@ -219,7 +223,8 @@ public class TextRange
         for (int i = si + 1; i < ei; i++)
         {
             result.Add(new Run { Text = "\n" });
-            result.AddRange(GetParagraphInlines(all[i], 0, GetParagraphLength(all[i])));
+            var (from, to) = CoveredSpan(all[i]);
+            result.AddRange(GetParagraphInlines(all[i], from, to));
         }
         result.Add(new Run { Text = "\n" });
         result.AddRange(GetParagraphInlines(ep, 0, _end.Offset));
@@ -278,8 +283,8 @@ public class TextRange
 
             for (int i = startIdx + 1; i < endIdx; i++)
             {
-                int pLen = GetParagraphLength(allParagraphs[i]);
-                ApplyStyleToParagraph(allParagraphs[i], 0, pLen, styleAction);
+                var (from, to) = CoveredSpan(allParagraphs[i]);
+                ApplyStyleToParagraph(allParagraphs[i], from, to, styleAction);
             }
 
             ApplyStyleToParagraph(ep, 0, _end.Offset, styleAction);
@@ -427,6 +432,37 @@ public class TextRange
             if (te is Block b && ReferenceEquals(te.Parent, doc)) return b;
             current = te.Parent;
         }
+        return null;
+    }
+
+    // The part of a paragraph lying strictly between the two endpoints that the range covers. Document order puts
+    // an inline table's cells right AFTER their host paragraph, so a range ending in such a cell has the whole host
+    // between its endpoints — and the host's text after the table, which the range never reached, was covered
+    // with it: deleting from a paragraph into a cell of the next line's inline table deleted that whole line,
+    // table included. The host of the END is covered only up to the table holding it, the host of the START only
+    // from the table holding it on (round 35).
+    private (int from, int to) CoveredSpan(Paragraph p)
+    {
+        int from = 0, to = GetParagraphLength(p);
+        if (HostedAt(p, _end.Paragraph) is int e) to = e;
+        if (HostedAt(p, _start.Paragraph) is int s) from = s + 1;
+        return (from, Math.Max(from, to));
+    }
+
+    // The offset in `host` of the inline table that `inner` lies inside, at any depth; null when it does not.
+    private static int? HostedAt(Paragraph host, Paragraph? inner)
+    {
+        for (object? cur = inner; cur is TextElement te; cur = te.Parent)
+            if (te is InlineTable it && ReferenceEquals(it.Parent, host))
+            {
+                int off = 0;
+                foreach (var inl in host.Inlines)
+                {
+                    if (ReferenceEquals(inl, it)) return off;
+                    off += InlineLen(inl);
+                }
+                return null;
+            }
         return null;
     }
 

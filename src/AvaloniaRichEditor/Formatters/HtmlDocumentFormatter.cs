@@ -87,10 +87,58 @@ namespace AvaloniaRichEditor.Formatters
             if (System.Text.RegularExpressions.Regex.IsMatch(html, "<tr[\\s>]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
                 && !System.Text.RegularExpressions.Regex.IsMatch(html, "<table", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 html = "<table>" + html + "</table>";
-            var doc = new HtmlDocument();
+            // No id index: nothing here looks elements up by id, and keeping it makes removing a subtree walk that
+            // subtree recursively (HtmlNode.RemoveAllIDforNode) — the very overflow CapDepth exists to prevent.
+            var doc = new HtmlDocument { OptionUseIdAttribute = false };
             doc.LoadHtml(html);
+            CapDepth(doc.DocumentNode);
             return doc;
         }
+
+        // How deep the walkers below may recurse. They recurse once per DOM level, and 2,000 nested <div>s — 11 KB
+        // of markup — overflowed the stack (measured, round 35): a StackOverflowException cannot be caught, so
+        // one paste took the host application down. Far deeper than any real page, and also the bound on how
+        // deeply imported tables nest (a table is three levels: table, tr, td), which the renderer recurses through too.
+        internal const int MaxDomDepth = 128;
+
+        // Anything deeper than MaxDomDepth is flattened to its text, in place. Walked with an explicit stack, since
+        // the point is not to recurse; HtmlAgilityPack itself parses and enumerates such a tree without trouble.
+        private static void CapDepth(HtmlNode root)
+        {
+            var stack = new Stack<(HtmlNode node, int depth)>();
+            stack.Push((root, 0));
+            while (stack.Count > 0)
+            {
+                var (node, depth) = stack.Pop();
+                if (depth < MaxDomDepth)
+                {
+                    foreach (var child in node.ChildNodes) stack.Push((child, depth + 1));
+                    continue;
+                }
+                // Text inside a <tr> or a <ul> is dropped by the table and list readers, so the flattening happens
+                // at the nearest element that holds text — the cell or item around it — or it would be lost.
+                while (node.ParentNode != null && node.Name.ToLowerInvariant() is "table" or "thead" or "tbody"
+                       or "tfoot" or "tr" or "colgroup" or "ul" or "ol")
+                    node = node.ParentNode;
+                if (!node.HasChildNodes) continue;
+                var text = new StringBuilder();
+                var inner = new Stack<HtmlNode>();
+                for (int i = node.ChildNodes.Count - 1; i >= 0; i--) inner.Push(node.ChildNodes[i]);
+                while (inner.Count > 0)
+                {
+                    var n = inner.Pop();
+                    if (n.NodeType == HtmlNodeType.Text) { text.Append(n.InnerText); continue; }
+                    if (IsIgnored(n.Name)) continue;
+                    for (int i = n.ChildNodes.Count - 1; i >= 0; i--) inner.Push(n.ChildNodes[i]);
+                }
+                node.RemoveAllChildren();
+                node.AppendChild(node.OwnerDocument.CreateTextNode(text.ToString()));
+            }
+        }
+
+        // Elements whose content is never document text.
+        private static bool IsIgnored(string name) => name.ToLowerInvariant() is
+            "#comment" or "script" or "style" or "head" or "meta" or "link" or "template" or "title";
 
         private static FlowDocument BuildDocument(HtmlDocument doc, string html)
         {
@@ -301,7 +349,7 @@ namespace AvaloniaRichEditor.Formatters
                         pendingSpace = true;
                     }
                 }
-                else if (name == "#comment" || name == "script" || name == "style" || name == "head" || name == "meta" || name == "link")
+                else if (IsIgnored(name))
                 {
                     // ignore
                 }
@@ -396,7 +444,7 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 if (!child.Name.Equals("li", StringComparison.OrdinalIgnoreCase)) continue;
 
-                var p = new Paragraph { ListType = kind, ListLevel = level, ListMarker = marker };
+                var p = new Paragraph { ListType = kind, ListLevel = Math.Min(level, 8), ListMarker = marker }; // RTF's and JSON's range
                 // An <li> that was also a heading (see the export's data-are-h): HTML has no tag for both.
                 int liHeading = child.GetAttributeValue("data-are-h", 0);
                 if (liHeading >= 1 && liHeading <= 6) p.HeadingLevel = liHeading;
@@ -548,7 +596,7 @@ namespace AvaloniaRichEditor.Formatters
 
         // Ceiling on the column count an imported table may claim. Foreign HTML controls colspan, and
         // the grid is allocated from it. Far beyond any real document (Word tops out at 63 columns).
-        private const int MaxTableColumns = 1000;
+        private const int MaxTableColumns = TableBlock.MaxImportColumns;
 
         private static TableBlock? ParseTable(HtmlNode node)
         {
@@ -579,6 +627,9 @@ namespace AvaloniaRichEditor.Formatters
                 int col = 0;
                 foreach (var td in cellNodes[r])
                 {
+                    // Past the widest a table may be, nothing more of this row can be placed — and each <td>
+                    // would still grow the occupancy grid by up to its colspan.
+                    if (col >= MaxTableColumns) break;
                     Ensure(occupied[r], col);
                     while (col < occupied[r].Count && occupied[r][col]) col++;
                     // Both spans are attacker-controlled (any pasted web page is foreign input) and the
@@ -599,7 +650,7 @@ namespace AvaloniaRichEditor.Formatters
                 }
             }
             if (colCount == 0) return null;
-            if (colCount > MaxTableColumns) colCount = MaxTableColumns;
+            colCount = TableBlock.ImportColumns(R, colCount);
 
             var tb = new TableBlock(R, colCount);
             // Restore per-column widths from <colgroup><col style="width:Npx">, if the export emitted them
@@ -619,6 +670,9 @@ namespace AvaloniaRichEditor.Formatters
             for (int r = 0; r < R; r++)
                 foreach (var (col, cs, rs, td) in placements[r])
                 {
+                    // A cell that starts past the columns kept has nowhere to go: indexing it threw
+                    // ArgumentOutOfRangeException out of ParseHtml for any row wider than the cap (round 35).
+                    if (col >= colCount) continue;
                     if (cs > 1 || rs > 1) tb.SetSpan(r, col, cs, rs);
                     var cell = tb.Cells[r][col];
                     cell.Background = ReadBackground(td); // cell-level background lives on the cell
@@ -686,8 +740,7 @@ namespace AvaloniaRichEditor.Formatters
                     if (System.IO.File.Exists(path)) bytes = System.IO.File.ReadAllBytes(path);
                 }
                 if (bytes == null) return (null, null, 0, 0, null);
-                using var ms = new System.IO.MemoryStream(bytes);
-                var bitmap = new Avalonia.Media.Imaging.Bitmap(ms);
+                var bitmap = ImageInfo.Decode(bytes); // bounded: a pasted page chooses the picture (ImageInfo.MaxDecodePixels)
                 // Only ONE of width/height declared is the common case in foreign HTML, and it means
                 // "scale to this" — the other axis follows the aspect ratio. Taking the natural size for
                 // the missing axis stretched a 200-wide thumbnail of a 1000-tall photo to 200x1000.
@@ -758,6 +811,9 @@ namespace AvaloniaRichEditor.Formatters
                 if (name == "br") { p.Inlines.Add(new Run { Text = "\n" }); continue; }
                 // Nested lists are block-level (handled by ParseList) — don't fold their text inline.
                 if (name == "ul" || name == "ol") continue;
+                // The block walk skips these, but a paragraph's own content came through here, and a page's
+                // <script> or <style> inside it landed in the document as text (round 35).
+                if (IsIgnored(name)) continue;
 
                 if (name == "b" || name == "strong") cw = FontWeight.Bold;
                 if (name == "i" || name == "em") cs = FontStyle.Italic;
@@ -1013,6 +1069,7 @@ namespace AvaloniaRichEditor.Formatters
             void CloseAll() { while (listStack.Count > 0) CloseOne(); }
             void SyncList(ListKind kind, ListMarkerStyle marker, int level)
             {
+                level = Math.Clamp(level, 0, 8); // a host's model is not clamped by any reader (see ListNesting.Sync)
                 while (listStack.Count > level + 1) CloseOne();
                 if (listStack.Count == level + 1 && listStack[^1] != kind) CloseOne();
                 // Explicit list-style-type: Word's clipboard import otherwise renders <ol> as bullets
@@ -1083,6 +1140,10 @@ namespace AvaloniaRichEditor.Formatters
 
             public void Sync(ListKind kind, ListMarkerStyle marker, int level)
             {
+                // The readers clamp the level to 0..8; a host's own model need not be. Below 0 this closed every
+                // list and then read the top of the empty stack — an exception out of the export, and so out of
+                // every copy — and a huge level opened that many lists (round 35).
+                level = Math.Clamp(level, 0, 8);
                 while (_open.Count > level + 1) CloseOne();
                 if (_open.Count == level + 1 && _open[^1] != kind) CloseOne();
                 while (_open.Count < level + 1)
@@ -1435,7 +1496,7 @@ namespace AvaloniaRichEditor.Formatters
             if (raw != null)
             {
                 data = raw;
-                m = mime ?? "image/png";
+                m = ImageMime.Safe(mime ?? "image/png", raw); // it goes into the attribute as it is
             }
             else if (bmp != null)
             {

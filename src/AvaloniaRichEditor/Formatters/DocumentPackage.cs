@@ -17,6 +17,9 @@ namespace AvaloniaRichEditor.Formatters;
 /// interchange.</summary>
 public static class DocumentPackage
 {
+    // The largest picture entry read back. Well past any photograph's encoded size.
+    internal const long MaxPictureBytes = 256L * 1024 * 1024;
+
     /// <summary>Writes <paramref name="document"/> to <paramref name="destination"/> as a .flow
     /// package. The stream is left open.</summary>
     public static void Save(FlowDocument document, Stream destination)
@@ -94,19 +97,24 @@ public static class DocumentPackage
                 dto = JsonSerializer.Deserialize(s, DocumentJsonContext.Default.FlowDocumentDto);
 
             // Blocks referencing the same hash share one byte[] instance, like the JSON pool path.
+            // Only the pictures the document USES are read, each up to MaxPictureBytes: every images/ entry used to
+            // be inflated whole, so a 63 KB package held 64 MB of zeros nothing referred to (round 35) — a zip bomb
+            // needs no more than that.
+            var used = DocumentSerializer.ImageRefs(dto);
             foreach (var entry in zip.Entries)
             {
                 if (!entry.FullName.StartsWith("images/", StringComparison.Ordinal)) continue;
                 string key = entry.FullName.Substring("images/".Length);
-                if (key.Length == 0) continue;
+                if (key.Length == 0 || !used.Contains(key)) continue;
                 using var es = entry.Open();
                 using var ms = new MemoryStream();
-                es.CopyTo(ms);
+                var chunk = new byte[81920];
+                int n;
+                while ((n = es.Read(chunk, 0, chunk.Length)) > 0 && ms.Length <= MaxPictureBytes) ms.Write(chunk, 0, n);
+                if (ms.Length > MaxPictureBytes) continue; // not a picture anyone took; the reference stays unresolved
                 var bytes = ms.ToArray();
                 // A null pool entry ("k": null) threw NullReferenceException out of the load.
-                string mime = dto?.Images != null && dto.Images.TryGetValue(key, out var meta) && meta?.MimeType is { } m
-                    ? m
-                    : ImageMime.Detect(bytes);
+                string mime = ImageMime.Safe(dto?.Images != null && dto.Images.TryGetValue(key, out var meta) ? meta?.MimeType : null, bytes);
                 pool[key] = (bytes, mime);
             }
             return (dto, pool);
