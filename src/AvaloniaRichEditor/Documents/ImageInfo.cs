@@ -72,6 +72,30 @@ internal static class ImageInfo
         return (0, 0);
     }
 
+    // Pictures whose header claims more pixels than this are not decoded — treated as undecodable bytes are: paste,
+    // import and insert refuse them, and one already in a document keeps its bytes (a save writes them back) but is
+    // not drawn. A few hundred KB of PNG can claim 40000x40000; decoding it took 1.6 GB, and a
+    // decode "to a small width" took more (2 GB for 20000x20000 — Skia decodes whole, then scales), measured on
+    // real Skia in round 35. 100 MP is past every camera but the 200 MP phone modes.
+    internal const double MaxDecodePixels = 100_000_000;
+
+    /// <summary>True when the header says decoding would exceed <see cref="MaxDecodePixels"/>. An unrecognised
+    /// header says nothing, and is decoded as before.</summary>
+    internal static bool TooLargeToDecode(byte[] b)
+    {
+        var (w, h) = GetPixelSize(b);
+        return w * h > MaxDecodePixels;
+    }
+
+    /// <summary>Decodes <paramref name="b"/> whole, or throws — for too large a picture as for undecodable bytes,
+    /// so every caller's existing failure path handles both.</summary>
+    internal static Avalonia.Media.Imaging.Bitmap Decode(byte[] b)
+    {
+        if (TooLargeToDecode(b)) throw new System.InvalidOperationException($"The picture claims more than {MaxDecodePixels:0} pixels.");
+        using var ms = new System.IO.MemoryStream(b);
+        return new Avalonia.Media.Imaging.Bitmap(ms);
+    }
+
     private static int BE16(byte[] b, int i) => (b[i] << 8) | b[i + 1];
     private static long BE32(byte[] b, int i) => ((long)b[i] << 24) | ((long)b[i + 1] << 16) | ((long)b[i + 2] << 8) | b[i + 3];
     private static int LE16(byte[] b, int i) => b[i] | (b[i + 1] << 8);

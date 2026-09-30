@@ -135,7 +135,7 @@ public partial class RichEditor
 
     private void InsertTableDrawn(int rows, int cols, double totalWidth, double totalHeight)
     {
-        if (Document == null || IsReadOnly || !AllowTables) return;
+        if (Document == null || IsReadOnly || !AllowTables || rows < 1 || cols < 1) return; // see InsertTable
         PushUndo();
         var tb = new TableBlock(rows, cols);
         double w = Math.Max(20, totalWidth / cols);

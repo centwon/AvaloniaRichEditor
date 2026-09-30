@@ -6,6 +6,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — round 35: a full audit; the size and depth of untrusted input (2026-10-01)
+
+Every source file was read. Most of what turned up is one axis earlier rounds never measured: how LARGE and how
+DEEP a pasted or opened document may be. Tests: `Round35AuditTests`; every fix was reverted once to see its test
+go red (the depth ones take the test host down, which is the point).
+
+**Crashes no handler can catch (stack overflow = the host application exits)**
+- **2,000 nested `<div>`s — 11 KB of HTML — killed the process on paste.** The HTML walkers recurse once per DOM
+  level. The DOM is now flattened to its text below 128 levels (walked without recursion), and
+  HtmlAgilityPack's id index — whose subtree removal recursed too — is off. 20,000 levels now parse in ~3 s.
+- **Deeply nested tables overflowed the renderer** (150 levels drew, 400 did not), and RTF's `\itap` had no bound:
+  a few tens of KB of RTF built them. RTF nesting is read at most 32 deep; HTML's is bounded by the DOM depth.
+
+**Data loss**
+- **Deleting a selection that ended inside an inline table deleted the whole line holding that table** — its text
+  after the table, and the table itself — though the selection never reached either. Document order puts an
+  inline table's cells after their host paragraph, so the host counted as "between" the ends. A drag or
+  Shift+→ from the line above makes that selection. The host now contributes only its text before the table
+  (after it, for a selection that starts inside one) — for delete, copy text and formatting alike.
+- **A host that opened a file by assigning `Document` left the previous file undoable**: Ctrl+Z put the OLD file
+  back, for the next save to write over the new one. Assigning a document now starts a new history; undo and
+  redo, which swap documents through the same property, keep theirs.
+- **Pasting one paragraph that held an inline table among text dropped the table** (HTML or RTF paste — e.g. from
+  another instance of this editor).
+
+**Security**
+- **A picture's MIME type from a JSON or `.flow` file went into `<img src="data:…">` unescaped**, so
+  `image/png" onerror="…` became an attribute of the exported — and clipboard — HTML. Types that are not a plain
+  `image/…` are replaced by what the bytes say, on reading and again on writing.
+
+**Memory and time from a few bytes**
+- **A picture header claiming 40000×40000 — 1.5 MB of PNG — took 1.6 GB to decode** (real Skia), and pastes kept
+  that bitmap on the model. Decoding "to a small width" was worse: 2 GB for 20000×20000 (Skia decodes whole first).
+  Pictures claiming over **100 million pixels** are not decoded: paste and import refuse them, and one already in
+  a document keeps its bytes but is not drawn.
+- **Imported tables are bounded to 1,000 columns and 250,000 cells.** Every reader padded short rows to the widest,
+  so one wide row over many narrow ones (JSON), a `colspan` (HTML) or a run of `\cellx` (RTF) multiplied a few MB
+  into a billion cells. RTF also looked each boundary up with a linear search per cell.
+- **A `.flow` package inflated every `images/` entry, used or not**: 63 KB held 64 MB of zeros. Only the pictures
+  the document refers to are read, each up to 256 MB.
+- An HTML row with more than 1,000 cells threw `ArgumentOutOfRangeException` out of `ParseHtml`.
+
+**Smaller**
+- A table with no rows (from JSON, or a host's model) is dropped: arrowing into such an inline table threw out of
+  the key handler. `InsertTable` with a size below 1 inserts nothing (a negative one overflowed in Measure).
+- A `ListLevel` outside 0–8 from JSON (or a host) threw out of the HTML export at -1, and at a million wrote a
+  million `<ul>`s. It is read as 0–8, as RTF already did, and written clamped.
+- `<script>`/`<style>` inside a paragraph's content came in as text.
+
 ### Changed — the layout cache holds what is on screen, not the whole document (2026-09-30)
 
 Measure, pagination and every walk that only steps past a paragraph (hit-tests, link lookup, block lookup)

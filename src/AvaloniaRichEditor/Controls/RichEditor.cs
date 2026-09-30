@@ -366,6 +366,10 @@ public partial class RichEditor : Control
             // hid cells (see TableBlock.EnsureSpanConsistency). Undo swaps in clones, consistent already.
             if (Document != null) NormalizeTableSpans(Document.Blocks);
             if (Document != null) UpdateParents(Document);
+            // A new document starts a new history. Undo and redo swap documents through this property too, and
+            // only those keep it: a host that opened a file by assigning it left the previous file's edits
+            // undoable, so Ctrl+Z brought the OLD file back into the new one, for the next save to write (round 35).
+            if (!_swappingHistoryState) _undoManager = new UndoManager();
             SyncPageSetupOnDocumentChanged(); // apply the loaded doc's page setup to the page properties
             _textChangedPending = true; // wholesale content swap
             SetModified(true);          // a raw Document assignment is a change; Load*/Clear reset it below
@@ -451,12 +455,22 @@ public partial class RichEditor : Control
         _inlineHandles.Clear();
     }
 
+    // Set while undo/redo swaps a snapshot in, so the Document change keeps the history (see OnPropertyChanged).
+    private bool _swappingHistoryState;
+
+    private void SwapInHistoryState(FlowDocument doc)
+    {
+        _swappingHistoryState = true;
+        try { Document = doc; }
+        finally { _swappingHistoryState = false; }
+    }
+
     private void DoUndo()
     {
         if (Document == null) return;
         var state = _undoManager.Undo(Document, _caretPosition);
         if (state == null) return;
-        Document = state.Value.Document;
+        SwapInHistoryState(state.Value.Document);
         UpdateParents(Document);
         _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
         _caretPosition.Offset = state.Value.CaretOffset;
@@ -472,7 +486,7 @@ public partial class RichEditor : Control
         if (Document == null) return;
         var state = _undoManager.Redo(Document, _caretPosition);
         if (state == null) return;
-        Document = state.Value.Document;
+        SwapInHistoryState(state.Value.Document);
         UpdateParents(Document);
         _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
         _caretPosition.Offset = state.Value.CaretOffset;
@@ -854,6 +868,10 @@ public partial class RichEditor : Control
     // table/image at a cell's edge would otherwise be unreachable).
     private static void NormalizeBlockList(System.Collections.Generic.IList<Block> blocks, object parent)
     {
+        // A grid with no cell to hold is not a table: every caret walk takes a table's first or last cell, and
+        // arrowing into an empty inline table from a file threw out of the key handler (round 35).
+        for (int i = blocks.Count - 1; i >= 0; i--)
+            if (blocks[i] is TableBlock t && !HasGrid(t)) blocks.RemoveAt(i);
         if (blocks.Count == 0 || blocks[0] is not Paragraph)
             blocks.Insert(0, new Paragraph { Parent = parent });
         if (blocks[blocks.Count - 1] is not Paragraph)
@@ -870,10 +888,21 @@ public partial class RichEditor : Control
             // inlines, so this walk never reached them: a deserialized inline-table cell holding only an
             // image stayed paragraph-less and the caret could not enter it.
             else if (b is Paragraph par)
+            {
+                par.Inlines.RemoveAll(inl => inl is InlineTable e && !HasGrid(e.Table));
                 foreach (var inl in par.Inlines)
                     if (inl is InlineTable it)
                         NormalizeTableCells(it.Table);
+            }
         }
+    }
+
+    // Rows and columns of cells, as Rows/Columns say. (The span grids are made to match elsewhere.)
+    private static bool HasGrid(TableBlock t)
+    {
+        if (t.Rows < 1 || t.Columns < 1 || t.Cells.Count < t.Rows) return false;
+        for (int r = 0; r < t.Rows; r++) if (t.Cells[r].Count < t.Columns) return false;
+        return true;
     }
 
     private static void NormalizeTableCells(TableBlock tb)
@@ -1867,12 +1896,13 @@ public partial class RichEditor : Control
         if (Document == null) return;
 
         // Inline-only single paragraph: paste inline at the caret to keep the current line's flow.
-        // Carries runs AND inline images so a pasted single-line fragment keeps its pictures.
+        // Carries every inline — runs, pictures and inline tables. Taking only the first two dropped an
+        // inline table pasted with text around it, from another instance of this editor (round 35); the
+        // capability filter (AdaptToCapabilities) has already run by now.
         if (parsed.Blocks.Count == 1 && parsed.Blocks[0] is Paragraph sp && _caretPosition.Paragraph != null)
         {
             var inlines = new List<Inline>();
-            foreach (var inl in sp.Inlines)
-                if (inl is Run or InlineImage) inlines.Add((Inline)inl.Clone());
+            foreach (var inl in sp.Inlines) inlines.Add((Inline)inl.Clone());
             if (inlines.Count > 0) { InsertInlines(inlines); return; }
         }
 
@@ -2085,6 +2115,9 @@ public partial class RichEditor : Control
     public void InsertTable(int rows, int cols)
     {
         if (Document == null || IsReadOnly || !AllowTables) return;
+        // A table has a cell. A negative size overflowed an array in the next Measure, and a zero one put an
+        // empty grid in the document for the caret walks to fall over (round 35).
+        if (rows < 1 || cols < 1) return;
         PushUndo();
         // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
         // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
@@ -2245,8 +2278,7 @@ public partial class RichEditor : Control
             // No display size in the meta — fall back to the natural size when decodable.
             try
             {
-                using var ms = new System.IO.MemoryStream(bytes);
-                var bmp = new Avalonia.Media.Imaging.Bitmap(ms);
+                using var bmp = ImageInfo.Decode(bytes); // bounded: see ImageInfo.MaxDecodePixels
                 if (w <= 0) im.Width = bmp.Size.Width;
                 if (h <= 0) im.Height = bmp.Size.Height;
             }

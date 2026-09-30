@@ -229,11 +229,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     {
         if (Document == null || IsReadOnly || !AllowImages) return;
         Avalonia.Media.Imaging.Bitmap bmp;
-        try
-        {
-            using var ms = new System.IO.MemoryStream(bytes);
-            bmp = new Avalonia.Media.Imaging.Bitmap(ms);
-        }
+        try { bmp = ImageInfo.Decode(bytes); } // bounded: see ImageInfo.MaxDecodePixels
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
 
         var scaled = Downscale(bmp);
@@ -442,7 +438,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             // The Bitmap representation is best-effort (for other apps); never let it break the copy.
             try
             {
-                if (bmp == null) { using var ms = new System.IO.MemoryStream(bytes); bmp = new Bitmap(ms); }
+                bmp ??= ImageInfo.Decode(bytes);
                 item.Set(DataFormat.Bitmap, bmp);
             }
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
@@ -503,7 +499,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 }
                 if (own != null)
                 {
-                    try { using var ms = new System.IO.MemoryStream(own); return (new Bitmap(ms), own, meta); }
+                    try { return (ImageInfo.Decode(own), own, meta); }
                     catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
                 }
             }
@@ -532,7 +528,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     }
                     if (bytes is { Length: > 0 })
                     {
-                        try { using var ms = new System.IO.MemoryStream(bytes); return (new Avalonia.Media.Imaging.Bitmap(ms), bytes, null); }
+                        try { return (ImageInfo.Decode(bytes), bytes, null); }
                         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
                     }
                 }

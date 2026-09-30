@@ -29,11 +29,7 @@ public class InlineImage : Inline
         {
             if (_cachedBitmap == null && RawBytes != null && !_decodeFailed)
             {
-                try
-                {
-                    using var ms = new System.IO.MemoryStream(RawBytes);
-                    _cachedBitmap = new Bitmap(ms);
-                }
+                try { _cachedBitmap = ImageInfo.Decode(RawBytes); } // bounded: see ImageInfo.MaxDecodePixels
                 // undecodable now: stop retrying, but keep the bytes
                 catch (System.Exception ex) { RichEditorDiagnostics.Report(ex); _decodeFailed = true; }
             }

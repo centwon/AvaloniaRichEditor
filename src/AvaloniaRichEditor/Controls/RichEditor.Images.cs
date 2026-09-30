@@ -172,8 +172,7 @@ public partial class RichEditor
             using var ms = new System.IO.MemoryStream();
             await s.CopyToAsync(ms);
             var bytes = ms.ToArray();
-            using var ms2 = new System.IO.MemoryStream(bytes);
-            using (new Avalonia.Media.Imaging.Bitmap(ms2)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
+            using (ImageInfo.Decode(bytes)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
             if (Document != null) PushUndo();
             img.SetImageData(bytes, ImageMime.Detect(bytes));
             InvalidateVisual();
@@ -201,8 +200,7 @@ public partial class RichEditor
         {
             await using var s = await file.OpenWriteAsync();
             if (bmp != null) { bmp.Save(s, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default); return; }
-            using var ms = new System.IO.MemoryStream(rawBytes!);
-            using var decoded = new Avalonia.Media.Imaging.Bitmap(ms);
+            using var decoded = ImageInfo.Decode(rawBytes!);
             decoded.Save(s, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
@@ -337,8 +335,7 @@ public partial class RichEditor
             using var ms = new System.IO.MemoryStream();
             await s.CopyToAsync(ms);
             var bytes = ms.ToArray();
-            using var ms2 = new System.IO.MemoryStream(bytes);
-            using (new Avalonia.Media.Imaging.Bitmap(ms2)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
+            using (ImageInfo.Decode(bytes)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
             if (Document != null) PushUndo();
             img.SetImageData(bytes, ImageMime.Detect(bytes));
             InvalidateVisual();
