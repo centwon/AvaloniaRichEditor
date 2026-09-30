@@ -55,6 +55,16 @@ go red (the depth ones take the test host down, which is the point).
   million `<ul>`s. It is read as 0–8, as RTF already did, and written clamped.
 - `<script>`/`<style>` inside a paragraph's content came in as text.
 
+**Follow-up, the same day — the four the audit had left for later, measured and fixed**
+- **A JPEG could slip past the pixel cap.** Fill bytes before a marker — legal JPEG — were read as a segment
+  length, the frame header was skipped, the size came back unknown, and a picture of unknown size is decoded
+  whatever it claims. Markers without a length field are stepped over too.
+- **An RTF paste with many vertical merges froze**: 20,000 two-row merges (1.4 MB) took 29.6 s, because each
+  merge scanned the whole grid. A range of plain cells cannot straddle a merge, so it no longer scans: 0.38 s,
+  and 2.7 s at the import bound (500×500, 8.7 MB).
+- Merging into a cell that starts with a nested table put the merged text into that table's first cell.
+- A font name containing `;` ended its RTF font table entry early; the `;` is dropped from the name.
+
 ### Changed — the layout cache holds what is on screen, not the whole document (2026-09-30)
 
 Measure, pagination and every walk that only steps past a paragraph (hit-tests, link lookup, block lookup)
