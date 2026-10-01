@@ -11,6 +11,8 @@ HTML 입출력(`ToHtml`/`LoadHtml`)은 **교환용**이며 손실이 있을 수 
 
 > 구현 소스: [`DocumentSerializer.cs`](../src/AvaloniaRichEditor/Formatters/DocumentSerializer.cs), [`DocumentPackage.cs`](../src/AvaloniaRichEditor/Formatters/DocumentPackage.cs). 이 명세와 코드가 다르면 코드가 우선이고, 이 문서를 고친다.
 
+> **WinUI 포트와 같은 형식, 같은 바이트**: WinUIRichEditor는 같은 형식을 읽고 쓰고, 2026-10-01부터 한 문서를 **같은 바이트로** 쓴다(둘 다 로드 시 같은 서식의 이웃 run을 합치고, 색은 `#AARRGGBB` 대문자, 필드 순서도 같다). 두 레포가 같은 정본 파일 [`format-1.0-interchange.json`](../tests/AvaloniaRichEditor.Tests/Fixtures/format-1.0-interchange.json)(모든 필드를 쓰는 문서)을 두고 "읽고 다시 쓰면 바이트 동일"을 각자 테스트한다 — 어느 쪽이 쓰는 방식을 바꾸면 바꾼 쪽에서 빨개진다.
+
 ---
 
 ## 1. 문서 모델 개요
@@ -49,6 +51,7 @@ FlowDocument
 - **판독기가 없을 때 가정하는 값과 같은 필드는 쓰지 않는다**(아래 필드 표의 "읽기 기본값"). `Type`이 `"Paragraph"`/`"Run"`이면
   `Type`도 생략한다. 이 규칙으로 쓴 문서는 1.0 이후의 **모든 판독기가 그대로 읽는다**(구 판독기로 직접 확인함 — §4).
 - **판독기는 모르는 필드를 무시해야 한다**(System.Text.Json 기본 동작). 전방 호환의 근거.
+- **같은 서식의 이웃 run은 로드할 때 합친다**(HTML·RTF 가져오기와 같은 규칙, 2026-10-01부터 JSON·`.flow`도). 파일이 한 줄을 몇 개의 run으로 나눴든 같은 모델이 된다 — 텍스트와 오프셋은 그대로다.
 - **손상된 입력은 예외다.** 유효하지 않은 JSON은 `JsonException`, `Blocks`가 없는 JSON(다른 앱의 파일)은 에디터의 로드 경로
   (`LoadJson`·`LoadJsonAsync`·`LoadPackageAsync`)에서 `JsonException`이다 — 빈 문서로 읽으면 호스트가 원본을 덮어쓰게 되기 때문.
   리터럴 `null`은 빈 문서다.
@@ -92,6 +95,7 @@ FlowDocument
 | `2` | 문서 수준 `Images` 풀 도입. 블록은 `ImageRef`(SHA-256 hex 키)로 참조. 동일 이미지 1회 저장 | v1 필드(`ImageBase64`, `IsListItem`)는 읽기 폴백 유지 |
 | `"1.0"` (현재) | 안정 기준선. 정수→SemVer 표기 전환 + 이미지 풀 + **글자 크기 pt** + **비례 줄 간격(`LineSpacing`)** | 레거시 정수 버전 문서를 그대로 읽음 |
 | `"1.0"` (2026-10-01 작성기) | **스키마 변경 없음.** 작성기가 기본값 필드·기본 `Type`·1뿐인 병합 격자·`Rows`/`Columns`를 생략하고, 들여쓰지 않고, 한글을 이스케이프하지 않는다. 같은 문서가 4~12분의 1(corpus 실측 240.6 → 37.7 KB, 3,043 → 378 KB) | 1.0 이후 모든 판독기가 그대로 읽음 |
+| `"1.0"` (2026-10-01, 같은 날 뒤) | **스키마 변경 없음.** 로드 시 같은 서식의 run을 합침. 색을 `#AARRGGBB` 대문자로 씀(이전 판은 알려진 색을 이름 `"Red"`으로, 나머지를 소문자로 썼다). `Alt`·`VAlign` 필드 순서를 포트와 맞춤 | 1.0 이후 모든 판독기가 그대로 읽음 |
 
 - 풀 키 = **원본 인코딩 바이트의 SHA-256, 대문자 16진 문자열** (`Convert.ToHexString`).
 - 로드 시 풀 항목은 한 번만 디코드되고, 같은 키를 참조하는 모든 블록이 **동일한 `byte[]` 인스턴스를 공유**한다.
@@ -150,6 +154,7 @@ FlowDocument
 | `ColSpans`, `RowSpans` | int[][]? | 셀 병합 격자(밀집, `Cells`와 같은 크기). 앵커 셀=병합 칸 수(평범한 셀은 1), **가려진(covered) 셀=0**. 없으면 전부 1×1 — **병합이 없는 표는 쓰지 않는다** |
 
 가져오기 상한(신뢰할 수 없는 입력, 2026-10-01 라운드35): 표는 **1,000열·25만 셀**까지 읽고 넘는 셀은 버린다(가장 넓은 행이 모든 행을 채우는 증폭 방지).
+행이 하나도 없는 표(`"Cells": []`)는 표가 아니다 — 블록이든 인라인이든 읽지 않는다(두 에디터 공통).
 
 병합 규약: 병합 영역의 왼쪽-위 셀이 **앵커**이며 `ColSpans[r][c]`/`RowSpans[r][c]`에 병합 크기를 갖는다. 영역 내 나머지 칸은 두 배열 모두 0으로 마킹되고, 그 칸의 `Cells` 내용은 무시된다(빈 문단 권장). 격자는 항상 직사각형이어야 한다.
 
@@ -200,7 +205,7 @@ FlowDocument
 
 ### 2.5 색상 문자열
 
-`Avalonia.Media.Color.ToString()` 출력 = **`#AARRGGBB`** 16진 문자열(예: 불투명 빨강 `#ffff0000`). 읽기는 `Color.Parse`이므로 `#RRGGBB`, 명명 색상(`"Red"`)도 허용되지만, **쓰기는 항상 `#AARRGGBB`로 통일**한다. 파싱 실패 시 null(기본색) 처리. 단색(SolidColorBrush)만 직렬화된다 — 그라데이션 등은 저장 시 탈락.
+**`#AARRGGBB`** 대문자 16진 문자열(예: 불투명 빨강 `#FFFF0000`). 읽기는 `Color.Parse`이므로 `#RRGGBB`, 소문자, 명명 색상(`"Red"`)도 허용되지만, **쓰기는 항상 `#AARRGGBB` 대문자**다(WinUI 포트와 같은 표기). 2026-10-01 이전 판은 `Color.ToString()`을 그대로 써서 알려진 색을 이름(`"Red"`)으로, 나머지를 소문자 16진으로 기록했다 — 두 판독기 모두 그 표기를 읽는다. 파싱 실패 시 null(기본색) 처리. 단색(SolidColorBrush)만 직렬화된다 — 그라데이션 등은 저장 시 탈락.
 
 ### 2.6 예제
 

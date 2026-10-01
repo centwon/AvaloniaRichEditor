@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — one document is the same bytes in both editors (2026-10-01)
+
+- JSON and `.flow` loads join equal-format neighbouring runs, as the HTML and RTF readers already did and as the port
+  does: a file split one line into any number of runs, and the same content now loads as the same model.
+- Colours are written `#AARRGGBB` in upper case, as the format states and the port writes. `Color.ToString()` wrote a
+  known colour's NAME (`"Red"`) and anything else in lower case. Every reader takes either.
+- `Alt` and `VAlign` are written where the port writes them (field order is the written order).
+- `tests/…/Fixtures/format-1.0-interchange.json` uses every field in the canonical form. The port holds the same file
+  and the same test — read it, write it back, byte for byte — so a change to what either editor writes fails in the
+  repository that made it.
+
 ### Changed — the JSON writer leaves out what every reader assumes (2026-10-01)
 
 **The schema is unchanged** (still `"1.0"`), and every reader since 1.0 reads the new output exactly as before —
