@@ -187,6 +187,10 @@ public static class DocumentSerializer
                 ShowPageNumbers = psd.ShowPageNumbers,
                 Margin = ReadMargin(psd),
             };
+        // Equal-format neighbours are joined here too, as the HTML and RTF readers already do: a file may split a
+        // line into any number of runs (another writer, an older build), and the same content should load as the
+        // same model whatever the split. The port does the same, so both write the same bytes for one document.
+        TextRange.CoalesceAll(doc);
         return doc;
     }
 
@@ -603,8 +607,10 @@ public static class DocumentSerializer
         return c;
     }
 
+    // "#AARRGGBB", as the format states and the port writes. Color.ToString() gives a known colour's NAME
+    // ("Red") and lowercase hex otherwise, so the same colour was spelled two ways across the two editors.
     private static string? BrushToString(IBrush? brush) =>
-        brush is ISolidColorBrush s ? s.Color.ToString() : null;
+        brush is ISolidColorBrush s ? $"#{s.Color.A:X2}{s.Color.R:X2}{s.Color.G:X2}{s.Color.B:X2}" : null;
 
     private static IBrush? StringToBrush(string? value)
     {
@@ -722,13 +728,14 @@ internal class BlockDto
     public int? ListLevel { get; set; }
 
     // Image block
+    // Declaration order is the written order, and it matches the port's (WinUIRichEditor) so the two
+    // editors write one document as the same bytes.
     public string? ImageRef { get; set; } // v2: key into FlowDocumentDto.Images
-    public string? Alt { get; set; } // accessibility description; omitted when null (format unchanged)
-    public string? VAlign { get; set; } // cell vertical alignment; omitted when Top (the default)
     public string? ImageBase64 { get; set; } // v1 legacy: inline base64 (read fallback)
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public string? Alt { get; set; } // accessibility description; omitted when null (format unchanged)
 
     // Table block
     public int? Rows { get; set; } // not written: readers rebuild it from Cells
@@ -743,6 +750,7 @@ internal class BlockDto
     // Only emitted for multi-block or non-paragraph cells; plain one-paragraph cells use the legacy
     // single-paragraph DTO form for backward compatibility.
     public List<BlockDto>? Blocks { get; set; }
+    public string? VAlign { get; set; } // cell vertical alignment; omitted when Top (the default)
 }
 
 internal class InlineDto
@@ -763,11 +771,11 @@ internal class InlineDto
 
     // Inline image
     public string? ImageRef { get; set; } // v2: key into FlowDocumentDto.Images
-    public string? Alt { get; set; } // accessibility description; omitted when null
     public string? ImageBase64 { get; set; } // v1 legacy: inline base64 (read fallback)
     public string? MimeType { get; set; } // of ImageBase64 bytes; absent in legacy docs => image/png
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public string? Alt { get; set; } // accessibility description; omitted when null
 
     // Inline table (Type == "Table", milestone B): the wrapped grid serialized as a block table DTO, so
     // nested tables / multi-block cells / spans all round-trip via the same recursive machinery.

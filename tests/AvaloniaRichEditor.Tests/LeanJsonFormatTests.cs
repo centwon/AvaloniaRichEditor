@@ -101,6 +101,45 @@ public class LeanJsonFormatTests
         Assert.Equal((2, 1), DocumentSerializer.Deserialize(merged).Blocks.OfType<TableBlock>().Single().SpanOf(0, 0));
     }
 
+    // ---- one document, one spelling, in both editors (the port writes the same) ------------------------------
+
+    // Color.ToString() spells a known colour by NAME ("Red") and anything else as lowercase hex; the format says
+    // #AARRGGBB, which is what the port writes. Both readers take either, so this is about the bytes.
+    [AvaloniaFact]
+    public void Colours_AreWrittenAsUppercaseArgbHex()
+    {
+        var red = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Avalonia.Media.Colors.Red);
+        var other = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Avalonia.Media.Color.FromArgb(0x80, 0x12, 0xAB, 0xCD));
+        string json = DocumentSerializer.Serialize(OneParagraph(new Run { Text = "a", Foreground = red, Background = other }));
+        Assert.Contains("\"Foreground\":\"#FFFF0000\"", json);
+        Assert.Contains("\"Background\":\"#8012ABCD\"", json);
+        var r = (Run)((Paragraph)DocumentSerializer.Deserialize(json).Blocks[0]).Inlines[0];
+        Assert.Equal(Avalonia.Media.Colors.Red, ((Avalonia.Media.ISolidColorBrush)r.Foreground!).Color);
+    }
+
+    // A file may split one line into any number of runs; it loads as one model whatever the split (as HTML and
+    // RTF already did, and as the port does).
+    [AvaloniaFact]
+    public void EqualRunsInAFile_LoadAsOne()
+    {
+        const string split = "{\"Version\":\"1.0\",\"Blocks\":[{\"Inlines\":[{\"Text\":\"ab\"},{\"Text\":\"cd\"},{\"Text\":\"e\",\"Bold\":true},{\"Text\":\"f\",\"Bold\":true}]}]}";
+        var p = (Paragraph)DocumentSerializer.Deserialize(split).Blocks[0];
+        Assert.Equal(new[] { "abcd", "ef" }, p.Inlines.OfType<Run>().Select(r => r.Text));
+    }
+
+    // The interchange contract with the port: one document using every field, in the canonical form. The port
+    // (WinUIRichEditor) holds the same file and the same test, so a change to what either editor writes — a
+    // field's order, a colour's spelling, a default — fails in the repository that made it.
+    [AvaloniaFact]
+    public void TheInterchangeDocument_ReadsAndWritesBackByteForByte()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "format-1.0-interchange.json");
+        string canonical = File.ReadAllText(path);
+        string written = DocumentSerializer.Serialize(DocumentSerializer.Deserialize(canonical));
+        if (written != canonical) File.WriteAllText(Path.Combine(Path.GetTempPath(), "interchange-actual.json"), written);
+        Assert.Equal(canonical, written);
+    }
+
     // The format as 1.0-1.3 wrote it — every field, indented — written by the tree before this change from the
     // fixpoint suite's kitchen-sink document. Reading it must give what the document is.
     [AvaloniaFact]
@@ -108,7 +147,8 @@ public class LeanJsonFormatTests
     {
         string verbose = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "format-1.0-verbose-kitchen-sink.json"));
         Assert.Contains("\"Italic\": false", verbose); // precondition: it is the old, verbose form
-        Assert.Equal(DocumentSerializer.Serialize(Build("kitchen-sink")), DocumentSerializer.Serialize(DocumentSerializer.Deserialize(verbose)));
+        Assert.Equal(DocumentSerializer.Serialize(DocumentSerializer.Deserialize(DocumentSerializer.Serialize(Build("kitchen-sink")))),
+                     DocumentSerializer.Serialize(DocumentSerializer.Deserialize(verbose)));
     }
 
     [AvaloniaFact]

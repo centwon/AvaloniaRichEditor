@@ -49,7 +49,8 @@ public class FlowPackageTests
         var doc = SampleDoc();
         using var ms = SaveToStream(doc);
         var doc2 = DocumentPackage.Load(ms);
-        Assert.Equal(DocumentSerializer.Serialize(doc), DocumentSerializer.Serialize(doc2));
+        // Against the JSON load, not the built model: loading joins equal neighbouring runs either way.
+        Assert.Equal(DocumentSerializer.Serialize(DocumentSerializer.Deserialize(DocumentSerializer.Serialize(doc))), DocumentSerializer.Serialize(doc2));
     }
 
     [Fact]
