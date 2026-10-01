@@ -123,7 +123,7 @@ public class DocumentSerializerTests
     public void Serialize_WritesSchemaVersion()
     {
         var json = DocumentSerializer.Serialize(SampleDoc());
-        Assert.Contains($"\"Version\": \"{DocumentSerializer.CurrentSchemaVersion}\"", json);
+        Assert.Contains($"\"Version\":\"{DocumentSerializer.CurrentSchemaVersion}\"", json);
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public class DocumentSerializerTests
         Assert.Equal("hi", Assert.IsType<Paragraph>(doc.Blocks[0]).Text());
 
         var json = DocumentSerializer.Serialize(doc);
-        Assert.Contains("\"Version\": \"1.0\"", json);
+        Assert.Contains("\"Version\":\"1.0\"", json);
     }
 
     [Fact]
