@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a heading's bold and size are on its text, as in the WinUI port (2026-10-01)
+
+⚠ **Behaviour change.** A heading was drawn bold and at its level's size whatever its runs said, so its bold could
+not be turned off and 10 pt could not be shown in one. Now applying a heading writes bold and the level's size onto
+its text — each time, re-applying the same level included — and in between they are ordinary character formats.
+The port has worked this way since 2026-09-13, and the two editors disagreed on the same file: a port document whose
+heading text the user had un-bolded showed bold here, and saving it dropped the port's `"HeadingFormat": 1` marker,
+so the port then re-bolded it for real.
+- Files without the marker (everything written before) look as before: the editor writes the old look onto the
+  runs once when it receives the document. The marker then travels with it (saved files, undo), so text the user
+  un-bolded stays un-bolded. The readers themselves load a file as it was saved.
+- Ctrl+B in a heading now toggles; ClearFormatting there returns to the heading's look; Enter's body paragraph
+  leaves the heading's format behind; text typed into an empty heading gets it; picking the level already shown in
+  the toolbar re-applies it. A block inserted mid-heading leaves the tail a heading in its own format.
+- HTML: un-bolded heading text is written `font-weight:normal`, and the reader now honours `font-weight:normal`
+  (Google Docs wraps a paste in `<b style="font-weight:normal">`, and everything came in bold). A 10 pt run inside a
+  heading is written with its size. RTF: heading runs are written as they are (no forced `\b`).
+- Tests: `HeadingStyleTests` (the port's 12 plus the mid-heading insert), three older tests changed to the new rule.
+  Each of 15 changes undone on its own turns its test red.
+
 ### Changed — one document is the same bytes in both editors (2026-10-01)
 
 - JSON and `.flow` loads join equal-format neighbouring runs, as the HTML and RTF readers already did and as the port

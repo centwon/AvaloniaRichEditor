@@ -554,7 +554,7 @@ public class TextRange
     // Mirror of the control's ParagraphsInBlocks: fully recursive through table cells (nested tables) and
     // through inline tables hanging off a paragraph's inlines, using logical (anchor) cells only so the
     // index-based range loops agree with the control's order on merged tables.
-    private static void CollectParagraphs(IEnumerable<Block> blocks, List<Paragraph> result)
+    internal static void CollectParagraphs(IEnumerable<Block> blocks, List<Paragraph> result)
     {
         foreach (var block in blocks)
         {

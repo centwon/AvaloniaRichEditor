@@ -74,7 +74,9 @@ public static class DocumentSerializer
     {
         var blocks = new List<BlockDto>();
         foreach (var block in document.Blocks) blocks.Add(BlockToDto(block, images));
-        var dto = new FlowDocumentDto { Version = CurrentSchemaVersion, Blocks = blocks };
+        // The marker only for a document that really carries its heading formats: a host's own model that no
+        // editor has converted yet must stay "legacy" in the file, or it would load back with plain headings.
+        var dto = new FlowDocumentDto { Version = CurrentSchemaVersion, Blocks = blocks, HeadingFormat = document.HeadingFormatsApplied ? 1 : null };
         // A document with no page setup is written without one, so plain documents keep their original format.
         // One that CARRIES a setup is written even when it looks default: an editor whose host defaults to A4
         // keeps a chosen Continuous on the document, and dropping it here reopened the file as A4 (measured in
@@ -169,7 +171,7 @@ public static class DocumentSerializer
     // base64 or read from package entries).
     internal static FlowDocument FromDto(FlowDocumentDto? dto, Dictionary<string, (byte[] Bytes, string Mime)> pool)
     {
-        var doc = new FlowDocument();
+        var doc = new FlowDocument { HeadingFormatsApplied = dto?.HeadingFormat >= 1 };
         if (dto?.Blocks != null)
             foreach (var bd in dto.Blocks)
             {
@@ -677,6 +679,11 @@ internal class FlowDocumentDto
     public Dictionary<string, ImagePoolDto>? Images { get; set; }
     // Optional page setup; absent for plain (Continuous) documents, so the format is unchanged for them.
     public PageSetupDto? PageSetup { get; set; }
+    // 1 = heading formatting is on the runs (bold and the heading size, written when the heading was set).
+    // Absent in files written before 2026-10-01 (the port: 2026-09-12), whose renderers forced both; the EDITOR
+    // then writes them onto the runs once when it receives the document (HeadingStyle.Materialize) — the reader
+    // leaves the model as it was saved. Older readers ignore it.
+    public int? HeadingFormat { get; set; }
 }
 
 // Enums are serialized as their names (matching the rest of the format), so unknown future values degrade

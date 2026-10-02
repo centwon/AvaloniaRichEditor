@@ -21,10 +21,11 @@ public class RichEditorHeadingTests
     }
 
     [AvaloniaFact]
-    public void SetHeading_ResetsRunSizesToBodyDefault_ButNotWeights()
+    public void SetHeading_WritesTheHeadingsFormatOntoEveryRun()
     {
-        // Like applying a Word style: a size baked into the runs would pin the text, so the heading
-        // size (applied at layout to body-default runs) would never show. Weight is left alone.
+        // Like applying a Word style: every run gets the heading's look — bold and the level's size —
+        // whatever it had (HeadingStyle; it used to reset sizes to the body default for the renderer to
+        // enlarge, and leave weights to a renderer that forced bold).
         var p = TestHelpers.Para(
             new Run { Text = "a", FontSize = 14 },
             new Run { Text = "big", FontSize = 30 });
@@ -33,9 +34,9 @@ public class RichEditorHeadingTests
         ed.SetHeading(1);
 
         Assert.Equal(1, p.HeadingLevel);
-        Assert.Equal(10, ((Run)p.Inlines[0]).FontSize, 3);
-        Assert.Equal(10, ((Run)p.Inlines[1]).FontSize, 3);
-        Assert.Equal(FontWeight.Normal, ((Run)p.Inlines[0]).FontWeight);
+        Assert.Equal(20, ((Run)p.Inlines[0]).FontSize, 3);
+        Assert.Equal(20, ((Run)p.Inlines[1]).FontSize, 3);
+        Assert.Equal(FontWeight.Bold, ((Run)p.Inlines[0]).FontWeight);
     }
 
     [AvaloniaFact]

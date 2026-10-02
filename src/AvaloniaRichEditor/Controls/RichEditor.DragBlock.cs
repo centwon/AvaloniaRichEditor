@@ -167,9 +167,9 @@ public partial class RichEditor
         if (off > 0 && off < len)
         {
             _caretPosition = new TextPointer(p, off);
-            SplitParagraphAtCaret(); // head stays p, its tail right after it
-            // The tail continues p: Enter's "a heading's next line is body text" is a typing rule.
-            if (target[at + 1] is Paragraph tail) tail.HeadingLevel = p.HeadingLevel;
+            // Head stays p, its tail right after it. The tail continues p: Enter's "a heading's next line is
+            // body text" is a typing rule.
+            SplitParagraphAtCaret(keepHeading: true);
             at++;
         }
         else if (off == len) at++;

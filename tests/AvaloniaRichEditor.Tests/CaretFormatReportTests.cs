@@ -274,26 +274,36 @@ public class CaretFormatReportTests
         Assert.True(ed.GetCaretFormat().Bold);
     }
 
+    // A heading's bold is on its runs (HeadingStyle, as the WinUI port since 2026-09-13): written when the
+    // heading is set, an ordinary attribute after that. So Ctrl+B takes it off — with an undo step, and the
+    // report follows — and a second press puts it back. It used to do nothing: the renderer forced the bold.
     [AvaloniaFact]
-    public void CtrlB_OnAHeading_DoesNothing()
+    public void CtrlB_OnAHeading_TurnsItsBoldOff_AndBackOn()
     {
         var ed = Editor(Para(1, Plain("Title")));
         var p = Paras(ed)[0];
         Select(ed, p, 0, p, 5);
         ed.ToggleBold();
-        Assert.False(ed.CanUndo);
+        Assert.True(ed.CanUndo);
         Assert.Equal(FontWeight.Normal, RunAt(Paras(ed)[0], 1).FontWeight);
+        Assert.False(ed.GetCaretFormat().Bold);
+        p = Paras(ed)[0];
+        Select(ed, p, 0, p, 5);
+        ed.ToggleBold();
+        Assert.Equal(FontWeight.Bold, RunAt(Paras(ed)[0], 1).FontWeight);
     }
 
+    // With no word at the caret the toggle arms a pending style, in a heading as anywhere: the next
+    // keystroke comes out un-bolded, and the heading's own text is left alone.
     [AvaloniaFact]
-    public void CtrlB_AtAnEmptyCaretInAHeading_ArmsNothing()
+    public void CtrlB_AtAnEmptyCaretInAHeading_UnboldsTheNextKeystroke()
     {
         var ed = Editor(Para(1, Plain("Title ")));
         Caret(ed, Paras(ed)[0], 6);
         ed.ToggleBold();
-        Assert.Null(T.GetField("_pendingCaretStyles", NP)!.GetValue(ed));
         ed.InsertText("Z");
         Assert.Equal(FontWeight.Normal, RunAt(Paras(ed)[0], 6).FontWeight);
+        Assert.Equal(FontWeight.Bold, RunAt(Paras(ed)[0], 0).FontWeight);
     }
 
     [AvaloniaFact]

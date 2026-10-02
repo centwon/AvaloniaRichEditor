@@ -60,8 +60,7 @@ public partial class RichEditor
 
     /// <summary>Toggles bold on the current selection (or the caret run).</summary>
     public void ToggleBold() => ToggleCharacterFormat(
-        r => r.FontWeight == FontWeight.Bold, (r, on) => r.FontWeight = on ? FontWeight.Bold : FontWeight.Normal,
-        forced: (_, p) => p.HeadingLevel is >= 1 and <= 6); // a heading is drawn bold (DrawnBold)
+        r => r.FontWeight == FontWeight.Bold, (r, on) => r.FontWeight = on ? FontWeight.Bold : FontWeight.Normal);
     /// <summary>Toggles italic on the current selection (or the caret run).</summary>
     public void ToggleItalic() => ToggleCharacterFormat(
         r => r.FontStyle == FontStyle.Italic, (r, on) => r.FontStyle = on ? FontStyle.Italic : FontStyle.Normal);
@@ -70,8 +69,8 @@ public partial class RichEditor
     // character already has it, otherwise on for all. Flipping run by run turned "normal BOLD normal"
     // into "BOLD normal BOLD".
     //
-    // `forced`: where the renderer draws the format whatever the run says (a heading's bold, a plain
-    // link's underline). Such text counts as having it — the toggle judges what is SHOWN, as the toolbar
+    // `forced`: where the renderer draws the format whatever the run says (a plain link's underline — a
+    // heading's bold was one until it became a run attribute, see HeadingStyle). Such text counts as having it — the toggle judges what is SHOWN, as the toolbar
     // reports it — and when every targeted character is forced the toggle does nothing and records no undo
     // step: no change it could make would show. It used to flip a hidden flag in a heading (bold on, bold
     // off, the screen unchanged), and push an empty undo step on a link. (Backported from the WinUI port.)
@@ -409,16 +408,16 @@ public partial class RichEditor
 
     /// <summary>Sets the heading level of every selected paragraph (1–6 = h1–h6, 0 = body); the caret
     /// paragraph alone when nothing is selected.
-    /// The heading's larger, bold look is applied at layout time to runs at the body default size, so
-    /// applying a heading (1–6) resets its runs to that default, like applying a Word style: a size
-    /// baked into the runs (an imported &lt;h1&gt;, an earlier manual size) would otherwise pin the text
-    /// and switching Heading 1 → Heading 2 would not change it. Reverting to body (0) touches no run.</summary>
+    /// Setting a level writes the heading's format onto its text, like applying a Word style: bold and the
+    /// level's size on every run — on first application, on a level change, and on re-applying the same
+    /// level (which restores the look after the text was changed). After that they are ordinary run
+    /// attributes: bold can be turned off, any size set. Back to body (0) takes both off again; body to body
+    /// touches no run.</summary>
     public void SetHeading(int level)
         => ApplyToSelectedParagraphs(p =>
         {
+            HeadingStyle.Retype(p, p.HeadingLevel, level, DefaultFontSize);
             p.HeadingLevel = level;
-            if (level is >= 1 and <= 6)
-                foreach (var inl in p.Inlines) if (inl is Run r) r.FontSize = BodyFontSizePt;
         });
 
     /// <summary>Toggles blockquote styling (indented, with a quote bar) on every selected paragraph
@@ -507,12 +506,13 @@ public partial class RichEditor
     {
         ApplyStyleToSelection(r =>
         {
-            r.FontWeight = FontWeight.Normal;
+            // Back to the paragraph's own look: body text to the host default, heading text to the heading's
+            // preset (bold, its size) — the format the heading applied when it was set (HeadingStyle). Writing
+            // DefaultFontSize in a heading shrank an H1 from 20 to 14 with a host default of 14.
+            int level = r.Parent is Paragraph hp && HeadingStyle.IsHeading(hp.HeadingLevel) ? hp.HeadingLevel : 0;
+            r.FontWeight = level > 0 ? FontWeight.Bold : FontWeight.Normal;
             r.FontStyle = FontStyle.Normal;
-            // "Unstyled": in a heading that is the body-default size, which draws at the heading's size
-            // (DrawnRunSize). DefaultFontSize there was an explicit size — with a host default of 14,
-            // clearing an H1 shrank it from 20 to 14. (Backported from the WinUI port.)
-            r.FontSize = r.Parent is Paragraph { HeadingLevel: >= 1 and <= 6 } ? BodyFontSizePt : DefaultFontSize;
+            r.FontSize = level > 0 ? HeadingStyle.Size(level) : DefaultFontSize;
             r.Foreground = Brushes.Black;
             r.Background = null;
             r.FontFamily = null;

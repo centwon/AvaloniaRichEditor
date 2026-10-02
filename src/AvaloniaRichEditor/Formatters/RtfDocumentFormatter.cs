@@ -1385,8 +1385,6 @@ internal sealed class RtfWriter
 
         if (p.ListType != ListKind.None) WriteListMarker(p, ordered);
 
-        bool heading = p.HeadingLevel is >= 1 and <= 6;
-        double headingSize = heading ? HeadingSize(p.HeadingLevel) : 0;
         foreach (var inline in p.Inlines)
         {
             // RTF has no inline table, so one splits its host paragraph: the text before it, then the
@@ -1406,29 +1404,31 @@ internal sealed class RtfWriter
                 _body.Append(@"\pard ");
                 continue;
             }
-            WriteInline(inline, heading, headingSize);
+            WriteInline(inline);
         }
         _body.Append(@"\par").Append('\n');
     }
 
-    private void WriteInline(Inline inline, bool heading, double headingSize)
+    private void WriteInline(Inline inline)
     {
-        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r, heading, headingSize);
+        if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r);
         else if (inline is InlineImage img && (img.RawBytes != null || img.Image != null))
             WritePict(img.RawBytes, img.MimeType, img.Image, img.Width, img.Height);
     }
 
-    private void WriteRun(Run r, bool heading, double headingSize)
+    // A heading's bold and size are on its runs (HeadingStyle), so a run is written as it is. This used to add
+    // \b to every heading run and the heading size to unsized ones, mirroring the renderer that forced them —
+    // which would now re-bold heading text the user un-bolded.
+    private void WriteRun(Run r)
     {
         _body.Append('{');
-        if (r.FontWeight == FontWeight.Bold || heading) _body.Append(@"\b");
+        if (r.FontWeight == FontWeight.Bold) _body.Append(@"\b");
         if (r.FontStyle == FontStyle.Italic) _body.Append(@"\i");
         if (HasDecoration(r.TextDecorations, TextDecorationLocation.Underline) || !string.IsNullOrEmpty(r.NavigateUri)) _body.Append(@"\ul");
         if (HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)) _body.Append(@"\strike");
         int f = FontIndex(r.FontFamily);
         if (f > 0) _body.Append($@"\f{f}");
         double size = r.FontSize <= 0 ? 10 : r.FontSize; // pt; body default
-        if (heading && (r.FontSize <= 0 || Math.Abs(r.FontSize - 10) < 0.01)) size = headingSize;
         _body.Append($@"\fs{(int)Math.Round(size * 2)}"); // \fs is half-points; model size is already pt
         int c = ColorIndex(r.Foreground);
         if (c > 0) _body.Append($@"\cf{c}");
@@ -1560,8 +1560,6 @@ internal sealed class RtfWriter
                 // matter what it was — while the identical paragraph at the top level exported correctly.
                 WriteParagraphPropsBody(cpara);
                 if (cpara.ListType != ListKind.None) WriteListMarker(cpara, 1);
-                bool heading = cpara.HeadingLevel is >= 1 and <= 6;
-                double headingSize = heading ? HeadingSize(cpara.HeadingLevel) : 0;
                 foreach (var inline in cpara.Inlines)
                 {
                     if (inline is InlineTable it)
@@ -1571,7 +1569,7 @@ internal sealed class RtfWriter
                         wroteNested = true;
                         ReopenCell(); // the rest of this paragraph belongs to THIS cell, not the inner table
                     }
-                    else WriteInline(inline, heading, headingSize);
+                    else WriteInline(inline);
                 }
             }
             else if (blk is TableBlock nested)
@@ -1661,10 +1659,6 @@ internal sealed class RtfWriter
         _colorIndex[key] = i;
         return i;
     }
-
-    // Heading sizes in points (pt), mirroring RichEditor.HeadingFontSize.
-    private static double HeadingSize(int level)
-        => level switch { 1 => 20, 2 => 16, 3 => 14, 4 => 12, 5 => 11, 6 => 10, _ => 10 };
 
     private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
     {
