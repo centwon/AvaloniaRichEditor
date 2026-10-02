@@ -390,6 +390,22 @@ public partial class RichEditorToolbar : UserControl
             if (_suppress || _headingCombo.SelectedIndex < 0) return;
             Target?.SetHeading(_headingCombo.SelectedIndex);
         };
+        // Re-picking the level already shown re-applies it — that restores a heading's bold and size after the
+        // user changed them (HeadingStyle.Retype). SelectionChanged cannot see that pick: the selection does not
+        // change. The press records whether the item was ALREADY the selected one and the release applies only
+        // then, so picking a different level is applied once, by SelectionChanged. (As the WinUI port.)
+        bool reapply = false;
+        foreach (var item in System.Linq.Enumerable.OfType<ComboBoxItem>(_headingCombo.Items))
+        {
+            item.AddHandler(PointerPressedEvent, (s, _) => reapply = ReferenceEquals(_headingCombo.SelectedItem, s),
+                Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+            item.AddHandler(PointerReleasedEvent, (s, _) =>
+            {
+                if (!reapply || s is not ComboBoxItem ci) return;
+                reapply = false;
+                Target?.SetHeading(_headingCombo.Items.IndexOf(ci));
+            }, Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
+        }
         Add(_headingCombo);
 
         _alignCombo = Combo(Loc("Alignment"));

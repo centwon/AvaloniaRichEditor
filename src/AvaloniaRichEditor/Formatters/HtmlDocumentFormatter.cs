@@ -164,6 +164,10 @@ namespace AvaloniaRichEditor.Formatters
             // export then welds those neighbours back into a single text node, so importing our own export
             // twice gave two different run lists for the same text.
             TextRange.CoalesceAll(flowDoc);
+            // The reader writes every heading's bold and size onto its runs (HeadingSize, from the <h1>..<h6> it
+            // came from), so the document is marked as carrying them: the editor must not convert it again —
+            // that would re-bold heading text this library exported un-bolded (font-weight:normal).
+            flowDoc.HeadingFormatsApplied = true;
             return flowDoc;
         }
 
@@ -891,10 +895,15 @@ namespace AvaloniaRichEditor.Formatters
             if (fw.Success)
             {
                 string v = fw.Groups[1].Value.Trim();
-                if (v.Contains("bold") // bold / bolder
-                    || (double.TryParse(v, System.Globalization.NumberStyles.Float,
-                            System.Globalization.CultureInfo.InvariantCulture, out double n) && n >= 600))
+                bool numeric = double.TryParse(v, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double n);
+                if (v.Contains("bold") || (numeric && n >= 600)) // bold / bolder
                     weight = FontWeight.Bold;
+                // Normal UN-bolds what an enclosing element made bold — CSS does, and this library's own export
+                // relies on it for un-bolded heading text (<h1> is bold). It was ignored: Google Docs wraps a
+                // paste in <b style="font-weight:normal">, and everything came in bold.
+                else if (v is "normal" or "lighter" || (numeric && n < 600))
+                    weight = FontWeight.Normal;
             }
             if (s.Contains("font-style:italic") || s.Contains("font-style: italic")) style = FontStyle.Italic;
             if (System.Text.RegularExpressions.Regex.IsMatch(s, "text-decoration[^;]*underline")) underline = true;
@@ -1202,7 +1211,7 @@ namespace AvaloniaRichEditor.Formatters
             if (p.Inlines.Count == 0) extraAttr += " data-are-empty=\"1\"";
             sb.Append($"<{tag}{extraAttr} style=\"{pStyle}\">");
             for (int i = 0; i < p.Inlines.Count; i++)
-                EmitInline(sb, p.Inlines[i], i == 0, i == p.Inlines.Count - 1);
+                EmitInline(sb, p.Inlines[i], i == 0, i == p.Inlines.Count - 1, tag[0] == 'h' ? p.HeadingLevel : 0);
             // The marker alone told only THIS reader about the blank line. An element with no content has
             // zero height, so in a browser the author's blank line was invisible — measured: the gap
             // across it was the same 16px as between any two adjacent paragraphs. The <br> is what gives
@@ -1347,7 +1356,7 @@ namespace AvaloniaRichEditor.Formatters
         // `opensParagraph`/`closesParagraph` mark the first and last inline of their paragraph. The first
         // drives the "this opened its own paragraph" marker on images and tables; the last gates the
         // trailing-space encoding, because HTML drops whitespace at the end of a block.
-        private static void EmitInline(StringBuilder sb, Inline inline, bool opensParagraph = false, bool closesParagraph = false)
+        private static void EmitInline(StringBuilder sb, Inline inline, bool opensParagraph = false, bool closesParagraph = false, int heading = 0)
         {
             if (inline is InlineImage im && (im.RawBytes != null || im.Image != null))
             {
@@ -1378,9 +1387,16 @@ namespace AvaloniaRichEditor.Formatters
             // and Word/HWP then drop the ENTIRE style declaration — taking size/colour with it.
             if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:'{AttrEscape(r.FontFamily).Replace("'", "")}'");
             // Size in pt, not px: Word/HWP clipboard import ignores px font-size (a well-known quirk) but
-            // honours pt. The model already stores pt, so emit it directly (skip the 10pt body default).
-            if (r.FontSize > 0 && System.Math.Abs(r.FontSize - 10) > 0.01)
+            // honours pt. The model already stores pt, so emit it directly — when it differs from what the
+            // reader assumes for this element: the body default, or inside <h1>..<h6> the heading's size, which
+            // the reader gives everything in it. 10pt in a heading would be dropped as "the default" and come
+            // back at the heading's size.
+            bool inHeading = HeadingStyle.IsHeading(heading);
+            double assumed = inHeading ? HeadingStyle.Size(heading) : 10;
+            if (r.FontSize > 0 && System.Math.Abs(r.FontSize - assumed) > 0.01)
                 styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt");
+            // <h1>..<h6> is bold to every reader (browsers, Word, this one), so un-bolded heading text says so.
+            if (inHeading && r.FontWeight != FontWeight.Bold) styles.Add("font-weight:normal");
             if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
             if (r.Background is ISolidColorBrush bg) styles.Add($"background-color:{CssColor(bg.Color)}");
 

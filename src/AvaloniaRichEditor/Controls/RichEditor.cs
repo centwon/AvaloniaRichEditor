@@ -365,6 +365,10 @@ public partial class RichEditor : Control
             // A host's own model is trusted no more than a file: spans describing no grid crashed the editor or
             // hid cells (see TableBlock.EnsureSpanConsistency). Undo swaps in clones, consistent already.
             if (Document != null) NormalizeTableSpans(Document.Blocks);
+            // A document from before heading formats lived on their runs (an older file, a host's own model) gets
+            // them now, once — the flag rides along in undo snapshots and saved files, so text the user
+            // un-bolded is never re-bolded. See HeadingStyle.Materialize.
+            if (Document != null) HeadingStyle.Materialize(Document);
             if (Document != null) UpdateParents(Document);
             // A new document starts a new history. Undo and redo swap documents through this property too, and
             // only those keep it: a host that opened a file by assigning it left the previous file's edits
@@ -779,9 +783,9 @@ public partial class RichEditor : Control
         bool heading = p is { HeadingLevel: >= 1 and <= 6 };
         double headingSize = heading ? HeadingFontSize(p!.HeadingLevel) : 0;
         return new CaretFormat(
-            // As DRAWN (DrawnBold): a heading is drawn bold whatever its runs say. The raw weight showed the
-            // bold button off over a bold heading. (Underline: HasDeco already applies the link rule.)
-            run != null ? DrawnBold(run, heading) : heading,
+            // As DRAWN (DrawnBold). With no run at all, text typed into a heading takes the heading's preset
+            // (InsertText), so that is the report. (Underline: HasDeco already applies the link rule.)
+            run != null ? DrawnBold(run) : heading,
             run?.FontStyle == FontStyle.Italic,
             HasDeco(run, TextDecorationLocation.Underline),
             HasDeco(run, TextDecorationLocation.Strikethrough),
@@ -789,7 +793,7 @@ public partial class RichEditor : Control
             // and IncreaseFontSize steps from it. The raw run size read 10 for unset text drawn at the
             // host's DefaultFontSize and for a heading's unstyled runs drawn at the heading size — and
             // "larger" then SHRANK both to 10.5. (Backported 2026-09-12 from the WinUI port.)
-            run != null ? DrawnRunSize(run, heading, headingSize, DefaultFontSize)
+            run != null ? DrawnRunSize(run, DefaultFontSize)
                         : heading ? headingSize : DefaultFontSize,
             run?.FontFamily,
             p?.TextAlignment ?? TextAlignment.Left,
@@ -1159,6 +1163,9 @@ public partial class RichEditor : Control
             return;
         }
         var run = src != null ? (Run)src.Clone() : new Run();
+        // No text in the paragraph to take a format from: in a heading the typed text gets the heading's
+        // preset, which the caret report and the caret size already assume.
+        if (src == null && HeadingStyle.IsHeading(p.HeadingLevel)) HeadingStyle.ApplyPreset(run, p.HeadingLevel);
         run.Text = text;
         run.Parent = p;
         if (!link) run.NavigateUri = null;
@@ -1294,8 +1301,7 @@ public partial class RichEditor : Control
         }
     }
 
-    // The body (non-heading) default font size, in points. Single source for the magic value that
-    // marks a run as "unstyled" so it inherits a heading paragraph's size (see RunSizeIsBodyDefault).
+    // The body (non-heading) default font size, in points — Run.FontSize's default (HeadingStyle.BodySize).
     internal const double BodyFontSizePt = 10;
 
     // Font sizes in the model / public API / serialization are points (pt). Avalonia's TextLayout and
@@ -1307,27 +1313,20 @@ public partial class RichEditor : Control
     // Paragraph.LineSpacing is HWP's "글자에 따라" ratio: line box = largest font size × ratio.
     internal const double DefaultLineSpacing = 1.6;
 
-    // The layout font size (pt) for a heading paragraph (1–6 = h1–h6); 0/other = body. Applied at layout
-    // time to runs left at the body default, so the heading look never has to be baked into the model.
-    internal static double HeadingFontSize(int level)
-        => level switch { 1 => 20, 2 => 16, 3 => 14, 4 => 12, 5 => 11, 6 => 10, _ => BodyFontSizePt };
-
-    // A run is at the "body default" size (and so inherits a heading paragraph's size) when its size
-    // is unset (<=0) or the 10 pt model default. An explicitly-sized run keeps its own size.
-    private static bool RunSizeIsBodyDefault(Run r) => r.FontSize <= 0 || Math.Abs(r.FontSize - BodyFontSizePt) < 0.01;
+    // A heading's preset size (pt) for its level (1–6 = h1–h6); 0/other = body. Written onto the runs when a
+    // heading is set (HeadingStyle); used here only where there is no run to read (an empty heading).
+    internal static double HeadingFontSize(int level) => HeadingStyle.Size(level);
 
     // The size (pt) a run is DRAWN at — the one rule, used by BuildTextLayout to draw it, by
     // CaretTextHeight to size the caret, and by GetCaretFormat to report it, so the toolbar cannot show a
-    // size the text is not shown at (and
-    // IncreaseFontSize, which steps from the reported size, cannot shrink text it means to grow). In a
-    // heading an unstyled run takes the heading's size; otherwise an unset size (<= 0) falls back to
-    // DefaultFontSize.
-    private static double DrawnRunSize(Run r, bool heading, double headingSize, double defaultSize)
-        => heading && RunSizeIsBodyDefault(r) ? headingSize : r.FontSize <= 0 ? defaultSize : r.FontSize;
+    // size the text is not shown at (and IncreaseFontSize, which steps from the reported size, cannot shrink
+    // text it means to grow). An unset size (<= 0) falls back to DefaultFontSize. A heading no longer
+    // overrides it: its size is on its runs (HeadingStyle).
+    private static double DrawnRunSize(Run r, double defaultSize) => r.FontSize <= 0 ? defaultSize : r.FontSize;
 
     // Whether a run is DRAWN bold — same pairing as DrawnRunSize: BuildTextLayout draws with it and
-    // GetCaretFormat reports it. A heading is drawn bold whatever its runs say.
-    private static bool DrawnBold(Run r, bool heading) => heading || r.FontWeight == FontWeight.Bold;
+    // GetCaretFormat reports it. A heading's bold used to be forced; it is a run attribute now (HeadingStyle).
+    private static bool DrawnBold(Run r) => r.FontWeight == FontWeight.Bold;
 
     // Width reserved to the left of list-item text for its bullet/number marker.
     private const double ListMarkerWidth = 22;
@@ -1412,11 +1411,11 @@ public partial class RichEditor : Control
         double size = first is { FontSize: > 0 } ? first.FontSize : DefaultFontSize;
         var family = first != null && !string.IsNullOrEmpty(first.FontFamily) ? new FontFamily(first.FontFamily) : DefaultFontFamily;
         var weight = first?.FontWeight ?? FontWeight.Normal;
-        // Match the heading look applied to the text in BuildTextLayout, so a heading list item's
-        // bullet/number isn't left small and thin beside its enlarged text.
-        if (p.HeadingLevel is >= 1 and <= 6)
+        // The marker follows the first run, heading or not (a heading's format is on its runs). With no run
+        // yet, it takes the heading's preset — the format the first typed character will get.
+        if (first == null && p.HeadingLevel is >= 1 and <= 6)
         {
-            if (first == null || RunSizeIsBodyDefault(first)) size = HeadingFontSize(p.HeadingLevel);
+            size = HeadingFontSize(p.HeadingLevel);
             weight = FontWeight.Bold;
         }
         var brush = first?.Foreground ?? Brushes.Black;
@@ -1586,7 +1585,8 @@ public partial class RichEditor : Control
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
             new Typeface(defaultFamily), PtToPx(defaultSize), null, Brushes.Black);
 
-        // Heading look (bigger + bold) is applied here, not baked into the runs (see SetHeading).
+        // A heading's look is on its runs (HeadingStyle); the preset here is only for text not typed yet — the
+        // composition fallback and the line height of an empty heading.
         bool heading = p.HeadingLevel is >= 1 and <= 6;
         double headingSize = heading ? HeadingFontSize(p.HeadingLevel) : 0;
 
@@ -1597,11 +1597,11 @@ public partial class RichEditor : Control
             if (inline is Run r && !string.IsNullOrEmpty(r.Text))
             {
                 var family = string.IsNullOrEmpty(r.FontFamily) ? defaultFamily : new FontFamily(r.FontFamily);
-                var weight = DrawnBold(r, heading) ? FontWeight.Bold : r.FontWeight;
+                var weight = r.FontWeight;
                 var typeface = new Typeface(family, r.FontStyle, weight);
                 TextDecorationCollection? decos = r.TextDecorations;
                 if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
-                double size = DrawnRunSize(r, heading, headingSize, defaultSize); // pt
+                double size = DrawnRunSize(r, defaultSize); // pt
                 if (size > maxRunPt) maxRunPt = size;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,
@@ -2043,10 +2043,8 @@ public partial class RichEditor : Control
             int off = Math.Clamp(_caretPosition.Offset, 0, len);
             if (off > 0 && off < len)
             {
-                int heading = cp.HeadingLevel;
-                SplitParagraphAtCaret();
                 // The tail continues cp: Enter's "a heading's next line is body text" is a typing rule (as DropBlock).
-                _caretPosition.Paragraph!.HeadingLevel = heading;
+                SplitParagraphAtCaret(keepHeading: true);
                 _caretPosition = new TextPointer(cp, GetParagraphLength(cp)); // the block goes after the head
             }
             else if (off == 0 && len > 0) before = true;
@@ -2145,7 +2143,9 @@ public partial class RichEditor : Control
 
     // Splits the caret's (top-level) paragraph at the caret into a new following paragraph, which
     // inherits list/indent/alignment/background (not heading level). Used by Enter.
-    private void SplitParagraphAtCaret()
+    // `keepHeading`: the tail CONTINUES the paragraph (a block dropped or inserted mid-heading) — it keeps the
+    // level and its text the heading's format. Enter's "a heading's next line is body text" is a typing rule.
+    private void SplitParagraphAtCaret(bool keepHeading = false)
     {
         var p = _caretPosition.Paragraph;
         if (Document == null || p == null) return;
@@ -2166,7 +2166,7 @@ public partial class RichEditor : Control
         // a normal paragraph (core rule #3).
         var np = new Paragraph();
         np.CopyFormatFrom(p);
-        np.HeadingLevel = 0;
+        np.HeadingLevel = keepHeading ? p.HeadingLevel : 0;
         while (p.Inlines.Count > insertAt)
         {
             var inl = p.Inlines[insertAt];
@@ -2174,8 +2174,11 @@ public partial class RichEditor : Control
             inl.Parent = np;
             np.Inlines.Add(inl);
         }
-        if (np.Inlines.Count == 0) np.Inlines.Add(new Run { Text = "" });
-        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
+        // The text carried into the new body paragraph leaves the heading's format behind; a heading left
+        // empty keeps it on its empty run, so typing there still writes heading text.
+        if (!keepHeading) HeadingStyle.Retype(np, p.HeadingLevel, 0, DefaultFontSize);
+        if (np.Inlines.Count == 0) np.Inlines.Add(keepHeading ? HeadingStyle.EmptyRun(np.HeadingLevel) : new Run { Text = "" });
+        if (p.Inlines.Count == 0) p.Inlines.Add(HeadingStyle.EmptyRun(p.HeadingLevel));
         np.Parent = p.Parent;
         container.Insert(idx + 1, np);
         _caretPosition = new TextPointer(np, 0);
