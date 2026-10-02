@@ -55,7 +55,7 @@ public static class DocumentPackage
 
         var docEntry = zip.CreateEntry("document.json", CompressionLevel.Optimal); // text deflates well
         using (var s = docEntry.Open())
-            JsonSerializer.Serialize(s, dto, DocumentJsonContext.Default.FlowDocumentDto);
+            JsonSerializer.Serialize(s, dto, DocumentJsonContext.Wire.FlowDocumentDto);
         foreach (var (key, img) in images)
         {
             // Already-compressed image bytes: store as-is (deflate would cost CPU for ~0% gain).

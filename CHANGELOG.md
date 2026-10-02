@@ -6,6 +6,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — one document is the same bytes in both editors (2026-10-01)
+
+- JSON and `.flow` loads join equal-format neighbouring runs, as the HTML and RTF readers already did and as the port
+  does: a file split one line into any number of runs, and the same content now loads as the same model.
+- Colours are written `#AARRGGBB` in upper case, as the format states and the port writes. `Color.ToString()` wrote a
+  known colour's NAME (`"Red"`) and anything else in lower case. Every reader takes either.
+- `Alt` and `VAlign` are written where the port writes them (field order is the written order).
+- `tests/…/Fixtures/format-1.0-interchange.json` uses every field in the canonical form. The port holds the same file
+  and the same test — read it, write it back, byte for byte — so a change to what either editor writes fails in the
+  repository that made it.
+
+### Changed — the JSON writer leaves out what every reader assumes (2026-10-01)
+
+**The schema is unchanged** (still `"1.0"`), and every reader since 1.0 reads the new output exactly as before —
+checked directly: the tree before this change read 18 documents written the new way (the fixpoint set and corpus
+pages) and produced, byte for byte, what it produces from its own output, as JSON and as `.flow`.
+
+- Fields equal to the value a reader assumes when they are absent are not written: a run's `Bold`/`Italic`/
+  `Underline`/`Strikethrough` false and `FontSize` 10, a paragraph's `HeadingLevel`, `ListLevel`, `Indent`, `IsQuote`,
+  `MarginRight`, `ListType` `None`, `TextAlignment` `Left`, each block kind's own default bottom margin, `Type`
+  `Paragraph`/`Run`, a table's `Rows`/`Columns` (readers rebuild them) and its span grids when nothing is merged.
+  The legacy `IsListItem` — documented as never written — had been written on every paragraph.
+- **Non-ASCII text is written as it is.** Korean went out as `정보…`, six bytes a character and unreadable
+  in a diff. Characters HTML is sensitive to (`< > & ' "`) are still escaped, so the JSON can be embedded in a page.
+- **Not indented.** Indentation was half of every document.
+- Measured on `tests/corpus`: 240.6 → 37.7 KB, 3,043 → 378 KB; the kitchen-sink document 15.9 → 1.3 KB. A `.flow`
+  package changes little on disk (its `document.json` was already deflated).
+- ⚠ **Hosts that compare saved JSON byte for byte** (snapshot tests) will see the new form.
+
+Also:
+- **A newer major format is refused** by `LoadJson`, `LoadJsonAsync` and `LoadPackageAsync` (`JsonException`, like a
+  damaged file): it would come in with what this reader does not know turned into empty paragraphs, and a save would
+  write that over the file. `DocumentSerializer.Deserialize` stays lenient. An unknown block or inline `Type` within
+  the same major is read as text and reported to `RichEditorDiagnostics`.
+- A paragraph whose `MarginTop` a host set to `Block.AutoTopMargin` (NaN) threw on save — JSON has no NaN.
+- `docs/DOCUMENT_FORMAT.md` caught up with the code: damaged input throws (it said "empty document"), the default page
+  margin is 15 mm (it said 12.7/10.6), an absent `MarginTop` on a table, picture or divider is automatic (it said 0),
+  and the round-35 import bounds.
+
 ### Fixed — round 35: a full audit; the size and depth of untrusted input (2026-10-01)
 
 Every source file was read. Most of what turned up is one axis earlier rounds never measured: how LARGE and how
