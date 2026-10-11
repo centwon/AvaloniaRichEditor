@@ -6,14 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — `RichEditor.TextForeground`, the colour of text that has none (2026-10-11)
+### Added — `RichEditor.DefaultForeground`, the colour of text that has none (2026-10-11)
 
 Text without its own colour was drawn black, whatever the host's theme, so a dark-theme host showed black text on a
-dark page. `TextForeground` (default black, so nothing changes unless a host sets it) now colours unstyled runs,
+dark page. `DefaultForeground` (default black, so nothing changes unless a host sets it) now colours unstyled runs,
 the list markers that follow them, an empty heading's caret line and IME composition text. ClearFormatting now
 leaves the colour unset instead of writing black, so cleared text follows the host's brush too.
-Same name and behaviour as the WinUI port's `TextForeground`. Contributed in the fork
-[olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor) (as `DefaultForeground`) and ported here.
+Named after its siblings `DefaultFontFamily`/`DefaultFontSize`; the WinUI port's `TextForeground` is renamed to
+match. Contributed in the fork [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor) and ported here.
 
 ### Fixed — host buttons in `RichEditorToolbar.TrailingItems` took focus (2026-10-11)
 
@@ -23,7 +23,7 @@ both slots. Found in the same fork.
 ### Added — "Automatic (default)" in the toolbar's text-colour picker (2026-10-11)
 
 The picker had no way back to the default colour short of ClearFormatting (only the highlight picker had a "none"
-button). It now clears the run's colour, so the text follows `TextForeground`; `SetForeground` accepts `null` for
+button). It now clears the run's colour, so the text follows `DefaultForeground`; `SetForeground` accepts `null` for
 that (`IBrush?`, source- and binary-compatible). Same button and API shape as the WinUI port.
 
 - Tests: `ToolbarFocusTests`, `ToolbarClickInteractionTests` (focus, the automatic colour), `CaretFormatReportTests` (ClearFormatting), and a pixel

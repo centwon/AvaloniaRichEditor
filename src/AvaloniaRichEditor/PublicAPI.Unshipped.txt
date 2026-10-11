@@ -112,8 +112,8 @@ AvaloniaRichEditor.Controls.RichEditor.InsertColumnLeft() -> bool
 AvaloniaRichEditor.Controls.RichEditor.InsertColumnRight() -> bool
 AvaloniaRichEditor.Controls.RichEditor.DeleteColumn() -> bool
 static AvaloniaRichEditor.Documents.Block.AutoTopMargin.get -> double
-AvaloniaRichEditor.Controls.RichEditor.TextForeground.get -> Avalonia.Media.IBrush!
-AvaloniaRichEditor.Controls.RichEditor.TextForeground.set -> void
-static readonly AvaloniaRichEditor.Controls.RichEditor.TextForegroundProperty -> Avalonia.StyledProperty<Avalonia.Media.IBrush!>!
+AvaloniaRichEditor.Controls.RichEditor.DefaultForeground.get -> Avalonia.Media.IBrush!
+AvaloniaRichEditor.Controls.RichEditor.DefaultForeground.set -> void
+static readonly AvaloniaRichEditor.Controls.RichEditor.DefaultForegroundProperty -> Avalonia.StyledProperty<Avalonia.Media.IBrush!>!
 *REMOVED*AvaloniaRichEditor.Controls.RichEditor.SetForeground(Avalonia.Media.IBrush! brush) -> void
 AvaloniaRichEditor.Controls.RichEditor.SetForeground(Avalonia.Media.IBrush? brush) -> void

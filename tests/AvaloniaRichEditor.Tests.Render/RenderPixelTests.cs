@@ -339,11 +339,11 @@ public partial class RenderPixelTests
             $"the second (non-current) match should still be tinted, got {colTwo} vs {colOne}");
     }
 
-    // TextForeground: unstyled text and its list marker are drawn in the host's brush, not black, while
+    // DefaultForeground: unstyled text and its list marker are drawn in the host's brush, not black, while
     // a run with its own colour keeps it. A dark-theme host otherwise got black text on a dark page.
     // (Contributed by olivierjc/AvaloniaRichEditor.)
     [AvaloniaFact]
-    public void TextForeground_PaintsUnstyledTextAndMarkers_ButNotExplicitColours()
+    public void DefaultForeground_PaintsUnstyledTextAndMarkers_ButNotExplicitColours()
     {
         // Colour by channel dominance, not exact values: glyph edges are antialiased (subpixel on Windows,
         // greyscale on macOS), so few pixels are pure red even where the brush is.
@@ -362,7 +362,7 @@ public partial class RenderPixelTests
         }
 
         var ed = MakeEditor("<ul><li>Plain</li></ul><p><span style=\"color:#0000FF\">Blue</span></p>");
-        ed.TextForeground = Brushes.Red;
+        ed.DefaultForeground = Brushes.Red;
         const int w = 400, h = 60;
         var px = Render(ed, w, h);
 
@@ -391,8 +391,8 @@ public partial class RenderPixelTests
                 if (a > 40 && samples.Length < 200) samples.Append($"({x},{y}) bgra {b},{g},{r},{a}; ");
             }
         Assert.True(redGain > 100 && redGain > 2 * green,
-            $"the bullet should be drawn in TextForeground — {diag}, red gain {redGain}, green {green}, {samples}");
-        Assert.True(Count(px, w, bx1, w, 0, split, Reddish) > 20, "unstyled text should be drawn in TextForeground — " + diag);
+            $"the bullet should be drawn in DefaultForeground — {diag}, red gain {redGain}, green {green}, {samples}");
+        Assert.True(Count(px, w, bx1, w, 0, split, Reddish) > 20, "unstyled text should be drawn in DefaultForeground — " + diag);
         Assert.True(Count(px, w, 0, w, split, h, Bluish) > 20, "a run's own colour should still win — " + diag);
         Assert.Equal(0, Count(px, w, 0, w, split, h, Reddish));
     }

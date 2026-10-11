@@ -47,10 +47,11 @@ PR #48·#49·#50), 실기 후속도 PR #52로 들어왔다. 남은 것은 게시
 `v1.3.0` 태그 push(**사람이 실행**, Trusted Publishing) → **nuget.org 패키지 페이지 육안 확인**.
 
 **1c. 포크 기여 2건 반영 (2026-10-11)** — [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor)(09-20 포크,
-`OlivierJC.AvaloniaRichEditor 1.2.1-fork.*`로 자체 게시)가 고친 것을 현재 main에 다시 적용: **`TextForeground`**(색 없는 글자·목록 기호·
+`OlivierJC.AvaloniaRichEditor 1.2.1-fork.*`로 자체 게시)가 고친 것을 현재 main에 다시 적용: **`DefaultForeground`**(색 없는 글자·목록 기호·
 IME 조합 글자의 색, 기본 검정 — 다크 테마 호스트용, 서식 지우기는 이제 색을 비움) · **`TrailingItems` 버튼이 포커스를 가져가던 결함**.
-공개 API 1건 추가(Unshipped). 포트에는 같은 속성이 이미 `TextForeground`로 있어 포크 이름(`DefaultForeground`) 대신 **포트 이름을 따랐다** —
-포트의 서식 지우기(색 비움)·툴바 포커스 패스 순서도 이미 맞아 포트 작업은 없다.
+공개 API 1건 추가(Unshipped). 포트에는 같은 속성이 `TextForeground`로 있었으나, `DefaultFontFamily`/`DefaultFontSize`와 한 묶음이 되도록
+**상류 이름(`DefaultForeground`)으로 통일하고 포트를 개명**(사용자 결정 10-12: 포트는 사용자층이 적어 별칭 없이 개명) —
+포트의 서식 지우기(색 비움)·툴바 포커스 패스 순서는 이미 맞았다. 포트 개명은 WinUIRichEditor 별도 PR.
 포트와 남았던 차이도 맞춤: 글자색 피커에 **"자동(기본색)"** 버튼 + `SetForeground(IBrush?)`(null = 기본색, 호환 변경 — Unshipped에 `*REMOVED*` 짝).
 
 **1b. JSON 작성기 경량화 (2026-10-01)** — 스키마 그대로, 작성기만: 기본값 필드 생략·한글 비이스케이프·들여쓰기 없음.

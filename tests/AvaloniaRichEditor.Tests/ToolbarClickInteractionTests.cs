@@ -74,7 +74,7 @@ public class ToolbarClickInteractionTests : IDisposable
         Assert.Equal("Xabc", ((Paragraph)host.Editor.Document!.Blocks[0]).Text());
     }
 
-    // The text-colour picker's "Automatic (default)" clears the run's colour, so it follows TextForeground
+    // The text-colour picker's "Automatic (default)" clears the run's colour, so it follows DefaultForeground
     // (a dark-theme host's light brush) instead of being stamped black — as in the WinUI port.
     [AvaloniaFact]
     public void TheTextColourPickersAutomaticButtonClearsTheColour()
