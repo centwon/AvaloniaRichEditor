@@ -55,6 +55,25 @@ public class ToolbarClickInteractionTests : IDisposable
         Assert.Same(host.Editor, host.FocusedElement);
     }
 
+    // A host button in TrailingItems (the slot an app puts its own commands in) behaves like a built-in one.
+    [AvaloniaFact]
+    public void ClickingATrailingHostButtonLeavesFocusInTheEditor()
+    {
+        var (host, toolbar) = Setup();
+        bool clicked = false;
+        var mine = new Button { Content = "mine" };
+        mine.Click += (_, _) => clicked = true;
+        toolbar.TrailingItems.Add(mine);
+        host.Pump();
+
+        host.ClickControl(mine);
+        host.Type("X");
+
+        Assert.True(clicked);
+        Assert.Same(host.Editor, host.FocusedElement);
+        Assert.Equal("Xabc", ((Paragraph)host.Editor.Document!.Blocks[0]).Text());
+    }
+
     // The consequence the user actually saw: typing stopped going into the document.
     [AvaloniaFact]
     public void TypingStillReachesTheDocumentAfterAToolbarClick()

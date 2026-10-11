@@ -39,6 +39,22 @@ public class ToolbarFocusTests
         Assert.Empty(focusable);
     }
 
+    // Host items carry the same guarantee (class docs). The trailing ones were added after the pass that
+    // clears Focusable, so they kept it. Reported and fixed in olivierjc/AvaloniaRichEditor.
+    [AvaloniaFact]
+    public void HostSuppliedLeadingAndTrailingButtonsRefuseFocus()
+    {
+        var ed = new RichEditor();
+        var lead = new Button { Content = "lead" };
+        var trail = new Button { Content = "trail" };
+        var tb = new RichEditorToolbar { Target = ed };
+        tb.LeadingItems.Add(lead);
+        tb.TrailingItems.Add(trail);
+
+        Assert.False(lead.Focusable);
+        Assert.False(trail.Focusable);
+    }
+
     [AvaloniaFact]
     public void TheToolbarHasButtonsToCheck()
     {

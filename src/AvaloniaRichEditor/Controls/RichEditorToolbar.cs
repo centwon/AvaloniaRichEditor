@@ -481,14 +481,15 @@ public partial class RichEditorToolbar : UserControl
         foreach (var c in LeadingItems) AddHost(c);
         if (LeadingItems.Count > 0) wrap.Children.Add(Div());
         foreach (var c in items) wrap.Children.Add(c);
+        if (TrailingItems.Count > 0) wrap.Children.Add(Div());
+        foreach (var c in TrailingItems) AddHost(c);
         // No toolbar button may take focus. The caret is only painted while the editor is focused, so a
         // click hid it and sent the next keystroke to the button — the command still ran against the
         // remembered caret position, which is why the buttons looked like they worked while typing had
         // stopped. Done as one pass over the assembled strip rather than a flag in each factory, because
-        // several pickers (colour, lists, spacing, table insert) build their buttons inline.
+        // several pickers (colour, lists, spacing, table insert) build their buttons inline. Runs after
+        // the trailing host items are in, so they get the same guarantee as the leading ones.
         foreach (var c in wrap.Children) DisableButtonFocus(c);
-        if (TrailingItems.Count > 0) wrap.Children.Add(Div());
-        foreach (var c in TrailingItems) AddHost(c);
 
         Content = new Border
         {

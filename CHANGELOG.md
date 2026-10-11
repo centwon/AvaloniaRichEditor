@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `RichEditor.DefaultForeground`, the colour of text that has none (2026-10-11)
+
+Text without its own colour was drawn black, whatever the host's theme, so a dark-theme host showed black text on a
+dark page. `DefaultForeground` (default black, so nothing changes unless a host sets it) now colours unstyled runs,
+the list markers that follow them, an empty heading's caret line and IME composition text. ClearFormatting now
+leaves the colour unset instead of writing black, so cleared text follows the host's brush too.
+Contributed in the fork [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor) and ported here.
+
+### Fixed — host buttons in `RichEditorToolbar.TrailingItems` took focus (2026-10-11)
+
+The pass that clears `Focusable` on the strip ran before the trailing host items were added, so clicking one took
+focus from the editor (the caret disappeared and the next keystroke went to the button). The class docs promised
+both slots. Found in the same fork.
+- Tests: `ToolbarFocusTests`, `ToolbarClickInteractionTests`, `CaretFormatReportTests` (ClearFormatting), and a pixel
+  test in `RenderPixelTests` (marker and text in the brush, an explicit colour still wins).
+
 ### Changed — a heading's bold and size are on its text, as in the WinUI port (2026-10-01)
 
 ⚠ **Behaviour change.** A heading was drawn bold and at its level's size whatever its runs said, so its bold could

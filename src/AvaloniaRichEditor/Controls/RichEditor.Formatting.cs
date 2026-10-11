@@ -513,7 +513,7 @@ public partial class RichEditor
             r.FontWeight = level > 0 ? FontWeight.Bold : FontWeight.Normal;
             r.FontStyle = FontStyle.Normal;
             r.FontSize = level > 0 ? HeadingStyle.Size(level) : DefaultFontSize;
-            r.Foreground = Brushes.Black;
+            r.Foreground = null; // DefaultForeground, so a cleared run follows the host theme
             r.Background = null;
             r.FontFamily = null;
             r.TextDecorations = null;
