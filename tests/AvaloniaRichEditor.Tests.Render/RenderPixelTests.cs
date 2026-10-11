@@ -43,7 +43,29 @@ public partial class RenderPixelTests
         var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
         try { rtb.CopyPixels(new PixelRect(0, 0, w, h), handle.AddrOfPinnedObject(), buf.Length, stride); }
         finally { handle.Free(); }
+        // The bitmap is in the platform's native order: BGRA on Windows, RGBA on macOS (measured in CI — a red
+        // bullet read back as blue). Px reads BGRA, so swap where a calibration pixel says the order is RGBA.
+        if (CopiesRgba())
+            for (int i = 0; i < buf.Length; i += 4) (buf[i], buf[i + 2]) = (buf[i + 2], buf[i]);
         return buf;
+    }
+
+    private static bool? _copiesRgba;
+
+    // Renders one pure-red pixel and looks at which byte the red lands in.
+    private static bool CopiesRgba()
+    {
+        if (_copiesRgba is { } known) return known;
+        var probe = new Avalonia.Controls.Border { Width = 1, Height = 1, Background = Brushes.Red };
+        probe.Measure(new Size(1, 1));
+        probe.Arrange(new Rect(0, 0, 1, 1));
+        var rtb = new RenderTargetBitmap(new PixelSize(1, 1));
+        rtb.Render(probe);
+        var px = new byte[4];
+        var handle = GCHandle.Alloc(px, GCHandleType.Pinned);
+        try { rtb.CopyPixels(new PixelRect(0, 0, 1, 1), handle.AddrOfPinnedObject(), 4, 4); }
+        finally { handle.Free(); }
+        return (_copiesRgba = px[0] > px[2]).Value;
     }
 
     private static (byte b, byte g, byte r, byte a) Px(byte[] bgra, int w, int x, int y)
