@@ -323,29 +323,41 @@ public partial class RenderPixelTests
     [AvaloniaFact]
     public void TextForeground_PaintsUnstyledTextAndMarkers_ButNotExplicitColours()
     {
-        static int Count(byte[] px, int w, int x0, int x1, int y0, int y1, Func<byte, byte, byte, bool> hit)
+        // Colour by channel dominance, not exact values: glyph edges are antialiased (subpixel on Windows,
+        // greyscale on macOS), so few pixels are pure red even where the brush is.
+        static bool Reddish(byte b, byte g, byte r, byte a) => a > 60 && r > g + 60 && r > b + 60;
+        static bool Bluish(byte b, byte g, byte r, byte a) => a > 60 && b > r + 60 && b > g + 60;
+        static int Count(byte[] px, int w, int x0, int x1, int y0, int y1, Func<byte, byte, byte, byte, bool> hit)
         {
             int n = 0;
             for (int y = y0; y < y1; y++)
                 for (int x = x0; x < x1; x++)
                 {
                     var (b, g, r, a) = Px(px, w, x, y);
-                    if (a > 200 && hit(b, g, r)) n++;
+                    if (hit(b, g, r, a)) n++;
                 }
             return n;
         }
-        static bool Red(byte b, byte g, byte r) => r > 180 && g < 80 && b < 80;
-        static bool Blue(byte b, byte g, byte r) => b > 180 && r < 80 && g < 80;
 
         var ed = MakeEditor("<ul><li>Plain</li></ul><p><span style=\"color:#0000FF\">Blue</span></p>");
         ed.TextForeground = Brushes.Red;
         const int w = 400, h = 60;
         var px = Render(ed, w, h);
 
-        // Line 1 (y < 22) is the list item: bullet left of x = 28, its text right of it. Line 2 is the blue run.
-        Assert.True(Count(px, w, 0, 28, 0, 22, Red) > 3, "the bullet should be drawn in TextForeground");
-        Assert.True(Count(px, w, 28, w, 0, 22, Red) > 20, "unstyled text should be drawn in TextForeground");
-        Assert.True(Count(px, w, 0, w, 22, h, Blue) > 20, "a run's own colour should still win");
-        Assert.Equal(0, Count(px, w, 0, w, 22, h, Red));
+        // Line 1 is the list item; its first run of ink columns is the bullet (font metrics differ per
+        // platform, so find it rather than assume where it is). Line 2 is the blue run.
+        bool InkRow(int y) { for (int x = 0; x < w; x++) if (IsInk(px, w, x, y)) return true; return false; }
+        int split = 0; while (split < h && !InkRow(split)) split++;
+        while (split < h && InkRow(split)) split++; // first blank row after line 1
+        bool InkCol(int x) { for (int y = 0; y < split; y++) if (IsInk(px, w, x, y)) return true; return false; }
+        int bx0 = 0; while (bx0 < w && !InkCol(bx0)) bx0++;
+        int bx1 = bx0; while (bx1 < w && InkCol(bx1)) bx1++;
+        string diag = $"line 1 ends at y {split}, bullet cols {bx0}..{bx1}, ink {InkCount(px, w, h)}";
+
+        Assert.True(bx1 < w, "no ink on the list line — " + diag);
+        Assert.True(Count(px, w, bx0, bx1, 0, split, Reddish) > 0, "the bullet should be drawn in TextForeground — " + diag);
+        Assert.True(Count(px, w, bx1, w, 0, split, Reddish) > 20, "unstyled text should be drawn in TextForeground — " + diag);
+        Assert.True(Count(px, w, 0, w, split, h, Bluish) > 20, "a run's own colour should still win — " + diag);
+        Assert.Equal(0, Count(px, w, 0, w, split, h, Reddish));
     }
 }
