@@ -317,11 +317,11 @@ public partial class RenderPixelTests
             $"the second (non-current) match should still be tinted, got {colTwo} vs {colOne}");
     }
 
-    // DefaultForeground: unstyled text and its list marker are drawn in the host's brush, not black, while
+    // TextForeground: unstyled text and its list marker are drawn in the host's brush, not black, while
     // a run with its own colour keeps it. A dark-theme host otherwise got black text on a dark page.
     // (Contributed by olivierjc/AvaloniaRichEditor.)
     [AvaloniaFact]
-    public void DefaultForeground_PaintsUnstyledTextAndMarkers_ButNotExplicitColours()
+    public void TextForeground_PaintsUnstyledTextAndMarkers_ButNotExplicitColours()
     {
         static int Count(byte[] px, int w, int x0, int x1, int y0, int y1, Func<byte, byte, byte, bool> hit)
         {
@@ -338,13 +338,13 @@ public partial class RenderPixelTests
         static bool Blue(byte b, byte g, byte r) => b > 180 && r < 80 && g < 80;
 
         var ed = MakeEditor("<ul><li>Plain</li></ul><p><span style=\"color:#0000FF\">Blue</span></p>");
-        ed.DefaultForeground = Brushes.Red;
+        ed.TextForeground = Brushes.Red;
         const int w = 400, h = 60;
         var px = Render(ed, w, h);
 
         // Line 1 (y < 22) is the list item: bullet left of x = 28, its text right of it. Line 2 is the blue run.
-        Assert.True(Count(px, w, 0, 28, 0, 22, Red) > 3, "the bullet should be drawn in DefaultForeground");
-        Assert.True(Count(px, w, 28, w, 0, 22, Red) > 20, "unstyled text should be drawn in DefaultForeground");
+        Assert.True(Count(px, w, 0, 28, 0, 22, Red) > 3, "the bullet should be drawn in TextForeground");
+        Assert.True(Count(px, w, 28, w, 0, 22, Red) > 20, "unstyled text should be drawn in TextForeground");
         Assert.True(Count(px, w, 0, w, 22, h, Blue) > 20, "a run's own colour should still win");
         Assert.Equal(0, Count(px, w, 0, w, 22, h, Red));
     }

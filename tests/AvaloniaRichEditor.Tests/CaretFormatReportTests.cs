@@ -339,7 +339,7 @@ public class CaretFormatReportTests
         Assert.Equal(14, ed.GetCaretFormat().FontSize);
     }
 
-    // Cleared text has no colour of its own, so it follows DefaultForeground (a dark-theme host's light
+    // Cleared text has no colour of its own, so it follows TextForeground (a dark-theme host's light
     // brush) instead of being pinned to black.
     [AvaloniaFact]
     public void ClearFormatting_LeavesTheColourUnset()

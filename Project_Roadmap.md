@@ -47,9 +47,10 @@ PR #48·#49·#50), 실기 후속도 PR #52로 들어왔다. 남은 것은 게시
 `v1.3.0` 태그 push(**사람이 실행**, Trusted Publishing) → **nuget.org 패키지 페이지 육안 확인**.
 
 **1c. 포크 기여 2건 반영 (2026-10-11)** — [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor)(09-20 포크,
-`OlivierJC.AvaloniaRichEditor 1.2.1-fork.*`로 자체 게시)가 고친 것을 현재 main에 다시 적용: **`DefaultForeground`**(색 없는 글자·목록 기호·
+`OlivierJC.AvaloniaRichEditor 1.2.1-fork.*`로 자체 게시)가 고친 것을 현재 main에 다시 적용: **`TextForeground`**(색 없는 글자·목록 기호·
 IME 조합 글자의 색, 기본 검정 — 다크 테마 호스트용, 서식 지우기는 이제 색을 비움) · **`TrailingItems` 버튼이 포커스를 가져가던 결함**.
-공개 API 1건 추가(Unshipped). **포트에도 같은 속성을 넣어야 형식·API 일치** — 포트는 아직.
+공개 API 1건 추가(Unshipped). 포트에는 같은 속성이 이미 `TextForeground`로 있어 포크 이름(`DefaultForeground`) 대신 **포트 이름을 따랐다** —
+포트의 서식 지우기(색 비움)·툴바 포커스 패스 순서도 이미 맞아 포트 작업은 없다.
 남긴 것: 툴바 글자색 "자동"은 여전히 명시적 검정을 쓴다(`SetForeground`가 null을 받지 않는 시그니처라 API 변경이 필요).
 
 **1b. JSON 작성기 경량화 (2026-10-01)** — 스키마 그대로, 작성기만: 기본값 필드 생략·한글 비이스케이프·들여쓰기 없음.

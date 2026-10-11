@@ -210,18 +210,18 @@ public partial class RichEditor : Control
         set => SetValue(DefaultFontSizeProperty, value);
     }
 
-    /// <inheritdoc cref="DefaultForeground"/>
-    public static readonly StyledProperty<IBrush> DefaultForegroundProperty =
+    /// <inheritdoc cref="TextForeground"/>
+    public static readonly StyledProperty<IBrush> TextForegroundProperty =
         AvaloniaProperty.Register<RichEditor, IBrush>(
-            nameof(DefaultForeground),
+            nameof(TextForeground),
             new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Colors.Black));
 
     /// <summary>Foreground brush used for runs that don't specify one (and for list markers that follow
     /// them). A dark-theme host sets this to a light brush. Default: black.</summary>
-    public IBrush DefaultForeground
+    public IBrush TextForeground
     {
-        get => GetValue(DefaultForegroundProperty);
-        set => SetValue(DefaultForegroundProperty, value);
+        get => GetValue(TextForegroundProperty);
+        set => SetValue(TextForegroundProperty, value);
     }
 
     // Cached system font list. The OS reports family names localized to the UI language (e.g.
@@ -261,7 +261,7 @@ public partial class RichEditor : Control
 
     static RichEditor()
     {
-        AffectsRender<RichEditor>(DocumentProperty, SelectionBrushProperty, CaretBrushProperty, DefaultForegroundProperty);
+        AffectsRender<RichEditor>(DocumentProperty, SelectionBrushProperty, CaretBrushProperty, TextForegroundProperty);
         // ReadOnly drives the caret/IME/undo optimization. See RichEditor.Modes.cs.
         IsReadOnlyProperty.Changed.AddClassHandler<RichEditor>((x, e) => x.OnReadOnlyChanged(e.GetNewValue<bool>()));
     }
@@ -396,7 +396,7 @@ public partial class RichEditor : Control
             InvalidateVisual();
         }
         if (change.Property == DefaultFontFamilyProperty || change.Property == DefaultFontSizeProperty ||
-            change.Property == DefaultForegroundProperty)
+            change.Property == TextForegroundProperty)
         {
             ClearLayoutCaches(); // default font feeds the cached layouts (and heights)
             InvalidateMeasure();
@@ -1433,7 +1433,7 @@ public partial class RichEditor : Control
             size = HeadingFontSize(p.HeadingLevel);
             weight = FontWeight.Bold;
         }
-        var brush = first?.Foreground ?? DefaultForeground;
+        var brush = first?.Foreground ?? TextForeground;
         var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), PtToPx(size), brush);
         const double gap = 6;
@@ -1598,7 +1598,7 @@ public partial class RichEditor : Control
         var defaultFamily = DefaultFontFamily;
         double defaultSize = DefaultFontSize; // pt; kept in pt for the run-size fallback below
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-            new Typeface(defaultFamily), PtToPx(defaultSize), null, DefaultForeground);
+            new Typeface(defaultFamily), PtToPx(defaultSize), null, TextForeground);
 
         // A heading's look is on its runs (HeadingStyle); the preset here is only for text not typed yet — the
         // composition fallback and the line height of an empty heading.
@@ -1622,7 +1622,7 @@ public partial class RichEditor : Control
                     typeface,
                     PtToPx(size),
                     decos,
-                    r.Foreground ?? DefaultForeground,
+                    r.Foreground ?? TextForeground,
                     r.Background);
                 segs.Add(new LayoutSeg { Text = r.Text, Props = props });
             }
@@ -1667,12 +1667,12 @@ public partial class RichEditor : Control
             // the IME committed. An empty paragraph has no run to read, hence the heading-aware fallback.
             var fallback = heading
                 ? new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-                    new Typeface(defaultFamily, FontStyle.Normal, FontWeight.Bold), PtToPx(headingSize), null, DefaultForeground)
+                    new Typeface(defaultFamily, FontStyle.Normal, FontWeight.Bold), PtToPx(headingSize), null, TextForeground)
                 : defaultProps;
             var src = PreeditSourceProps(segs, preeditOffset, fallback);
             var preeditProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                 src.Typeface, src.FontRenderingEmSize, TextDecorations.Underline,
-                src.ForegroundBrush ?? DefaultForeground, src.BackgroundBrush);
+                src.ForegroundBrush ?? TextForeground, src.BackgroundBrush);
             SplicePreedit(segs, preeditOffset, preeditText!, preeditProps);
         }
 

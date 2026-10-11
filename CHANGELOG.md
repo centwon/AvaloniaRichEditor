@@ -6,13 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — `RichEditor.DefaultForeground`, the colour of text that has none (2026-10-11)
+### Added — `RichEditor.TextForeground`, the colour of text that has none (2026-10-11)
 
 Text without its own colour was drawn black, whatever the host's theme, so a dark-theme host showed black text on a
-dark page. `DefaultForeground` (default black, so nothing changes unless a host sets it) now colours unstyled runs,
+dark page. `TextForeground` (default black, so nothing changes unless a host sets it) now colours unstyled runs,
 the list markers that follow them, an empty heading's caret line and IME composition text. ClearFormatting now
 leaves the colour unset instead of writing black, so cleared text follows the host's brush too.
-Contributed in the fork [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor) and ported here.
+Same name and behaviour as the WinUI port's `TextForeground`. Contributed in the fork
+[olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor) (as `DefaultForeground`) and ported here.
 
 ### Fixed — host buttons in `RichEditorToolbar.TrailingItems` took focus (2026-10-11)
 
