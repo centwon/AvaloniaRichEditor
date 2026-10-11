@@ -355,7 +355,21 @@ public partial class RenderPixelTests
         string diag = $"line 1 ends at y {split}, bullet cols {bx0}..{bx1}, ink {InkCount(px, w, h)}";
 
         Assert.True(bx1 < w, "no ink on the list line — " + diag);
-        Assert.True(Count(px, w, bx0, bx1, 0, split, Reddish) > 0, "the bullet should be drawn in TextForeground — " + diag);
+        // The bullet is small, so its colour is read against the same render in the default black rather than
+        // by threshold: with the brush it has to carry clearly more red than green.
+        var black = Render(MakeEditor("<ul><li>Plain</li></ul><p><span style=\"color:#0000FF\">Blue</span></p>"), w, h);
+        long redGain = 0, green = 0;
+        var samples = new System.Text.StringBuilder();
+        for (int y = 0; y < split; y++)
+            for (int x = bx0; x < bx1; x++)
+            {
+                var (b, g, r, a) = Px(px, w, x, y);
+                var (_, _, r0, _) = Px(black, w, x, y);
+                redGain += r - r0; green += g;
+                if (a > 40 && samples.Length < 200) samples.Append($"({x},{y}) bgra {b},{g},{r},{a}; ");
+            }
+        Assert.True(redGain > 100 && redGain > 2 * green,
+            $"the bullet should be drawn in TextForeground — {diag}, red gain {redGain}, green {green}, {samples}");
         Assert.True(Count(px, w, bx1, w, 0, split, Reddish) > 20, "unstyled text should be drawn in TextForeground — " + diag);
         Assert.True(Count(px, w, 0, w, split, h, Bluish) > 20, "a run's own colour should still win — " + diag);
         Assert.Equal(0, Count(px, w, 0, w, split, h, Reddish));
