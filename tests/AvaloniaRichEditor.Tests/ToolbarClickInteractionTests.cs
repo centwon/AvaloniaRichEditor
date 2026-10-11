@@ -74,6 +74,26 @@ public class ToolbarClickInteractionTests : IDisposable
         Assert.Equal("Xabc", ((Paragraph)host.Editor.Document!.Blocks[0]).Text());
     }
 
+    // The text-colour picker's "Automatic (default)" clears the run's colour, so it follows TextForeground
+    // (a dark-theme host's light brush) instead of being stamped black — as in the WinUI port.
+    [AvaloniaFact]
+    public void TheTextColourPickersAutomaticButtonClearsTheColour()
+    {
+        var (host, toolbar) = Setup("<p><span style=\"color:#FF0000\">abc</span></p>");
+        host.Key(Avalonia.Input.Key.A, Avalonia.Input.RawInputModifiers.Control);
+        var colourBtn = Buttons(toolbar).First(b =>
+            ToolTip.GetTip(b) is string t && t == RichEditorLocalization.GetString("TextColor"));
+        var panel = (Panel)((Flyout)colourBtn.Flyout!).Content!;
+        var auto = panel.Children.OfType<Button>().Single(b =>
+            Equals(b.Content, RichEditorLocalization.GetString("AutoColor")));
+
+        auto.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+
+        var runs = ((Paragraph)host.Editor.Document!.Blocks[0]).Inlines.OfType<Run>().ToList();
+        Assert.NotEmpty(runs);
+        Assert.All(runs, r => Assert.Null(r.Foreground));
+    }
+
     // The consequence the user actually saw: typing stopped going into the document.
     [AvaloniaFact]
     public void TypingStillReachesTheDocumentAfterAToolbarClick()

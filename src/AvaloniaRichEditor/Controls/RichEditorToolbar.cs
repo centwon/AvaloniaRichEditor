@@ -600,9 +600,9 @@ public partial class RichEditorToolbar : UserControl
             if (Target == null) return;
             IBrush? brush = c.HasValue ? new SolidColorBrush(c.Value) : null;
             if (highlight) Target.SetHighlight(brush);
-            else Target.SetForeground(brush ?? Brushes.Black);
-            // Reflect the chosen colour on the button (cleared highlight -> light grey).
-            ReflectPickerColor(highlight, c.HasValue ? new SolidColorBrush(c.Value) : NoColorBrush);
+            else Target.SetForeground(brush); // null = back to the automatic default (theme-aware)
+            // Reflect the chosen colour on the button (cleared highlight -> light grey, automatic text -> black).
+            ReflectPickerColor(highlight, c.HasValue ? new SolidColorBrush(c.Value) : highlight ? NoColorBrush : Brushes.Black);
             (btn.Flyout as FlyoutBase)?.Hide();
         }
 
@@ -624,12 +624,11 @@ public partial class RichEditorToolbar : UserControl
         var panel = new StackPanel { Spacing = 6, Width = 200 };
         panel.Children.Add(grid);
 
-        if (highlight)
-        {
-            var none = new Button { Content = Loc("NoHighlight"), HorizontalAlignment = HorizontalAlignment.Stretch };
-            none.Click += (_, _) => Apply(null);
-            panel.Children.Add(none);
-        }
+        // "No highlight" / "Automatic (default)": both clear the explicit colour back to null. The foreground
+        // previously had no way back to the automatic default short of ClearFormatting (as in the WinUI port).
+        var none = new Button { Content = Loc(highlight ? "NoHighlight" : "AutoColor"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        none.Click += (_, _) => Apply(null);
+        panel.Children.Add(none);
 
         var hexRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         var hexBox = new TextBox { PlaceholderText = "#RRGGBB", Width = 110 };

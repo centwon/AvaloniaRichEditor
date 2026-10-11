@@ -20,7 +20,13 @@ Same name and behaviour as the WinUI port's `TextForeground`. Contributed in the
 The pass that clears `Focusable` on the strip ran before the trailing host items were added, so clicking one took
 focus from the editor (the caret disappeared and the next keystroke went to the button). The class docs promised
 both slots. Found in the same fork.
-- Tests: `ToolbarFocusTests`, `ToolbarClickInteractionTests`, `CaretFormatReportTests` (ClearFormatting), and a pixel
+### Added — "Automatic (default)" in the toolbar's text-colour picker (2026-10-11)
+
+The picker had no way back to the default colour short of ClearFormatting (only the highlight picker had a "none"
+button). It now clears the run's colour, so the text follows `TextForeground`; `SetForeground` accepts `null` for
+that (`IBrush?`, source- and binary-compatible). Same button and API shape as the WinUI port.
+
+- Tests: `ToolbarFocusTests`, `ToolbarClickInteractionTests` (focus, the automatic colour), `CaretFormatReportTests` (ClearFormatting), and a pixel
   test in `RenderPixelTests` (marker and text in the brush, an explicit colour still wins).
 
 ### Changed — a heading's bold and size are on its text, as in the WinUI port (2026-10-01)
