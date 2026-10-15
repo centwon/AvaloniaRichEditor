@@ -524,8 +524,21 @@ namespace AvaloniaRichEditor.Formatters
         // Block-level content only — BlockOrMedia without <img>. The distinction is what separates "this
         // element is a container of paragraphs" from "this element IS a paragraph that happens to hold a
         // picture", and only the second can carry its formatting onto what the walk produces.
-        private static bool HasBlockChild(HtmlNode n) => n.Descendants()
-            .Any(d => BlockOrMedia.Contains(d.Name) && !d.Name.Equals("img", StringComparison.OrdinalIgnoreCase));
+        // Our own INLINE table is not block content either: it sits on its paragraph's text line, and the <p>s in its
+        // cells belong to the table, not to the element holding it. Counted as a block (and descended into), it made an
+        // <h1> or a styled <p> holding an inline table a mere container, so the heading level, style and alignment were
+        // dropped and the next cycle wrote a plain <p> (fuzz seeds 1008 and 4857).
+        private static bool HasBlockChild(HtmlNode n)
+        {
+            foreach (var c in n.ChildNodes)
+            {
+                if (c.Name.Equals("table", StringComparison.OrdinalIgnoreCase) && c.GetAttributeValue("data-are-inline", "") == "1")
+                    continue;
+                if ((BlockOrMedia.Contains(c.Name) && !c.Name.Equals("img", StringComparison.OrdinalIgnoreCase))
+                    || HasBlockChild(c)) return true;
+            }
+            return false;
+        }
 
         // The paragraph-level formatting an element carries. Only values the element actually states are
         // written, so applying this to a paragraph the walk already produced cannot clobber that
@@ -1210,8 +1223,14 @@ namespace AvaloniaRichEditor.Formatters
                 extraAttr += $" data-are-m=\"{Px(p.MarginTop)},{Px(p.MarginBottom)},{Px(p.MarginRight)}\"";
             if (p.Inlines.Count == 0) extraAttr += " data-are-empty=\"1\"";
             sb.Append($"<{tag}{extraAttr} style=\"{pStyle}\">");
+            // "First" means the first inline that writes anything: an empty run before the table writes nothing, and
+            // counting it left the table unmarked, so the reader merged it into the paragraph above.
+            bool opens = true;
             for (int i = 0; i < p.Inlines.Count; i++)
-                EmitInline(sb, p.Inlines[i], i == 0, i == p.Inlines.Count - 1, tag[0] == 'h' ? p.HeadingLevel : 0);
+            {
+                EmitInline(sb, p.Inlines[i], opens, i == p.Inlines.Count - 1, tag[0] == 'h' ? p.HeadingLevel : 0);
+                if (!EmitsNothing(p.Inlines[i])) opens = false;
+            }
             // The marker alone told only THIS reader about the blank line. An element with no content has
             // zero height, so in a browser the author's blank line was invisible — measured: the gap
             // across it was the same 16px as between any two adjacent paragraphs. The <br> is what gives
@@ -1235,6 +1254,10 @@ namespace AvaloniaRichEditor.Formatters
                || (!double.IsNaN(p.LineSpacing) && p.LineSpacing > 0)
                || (!double.IsNaN(p.LineHeight) && p.LineHeight > 0)
                || p.MarginTop != 0 || p.MarginBottom != DefaultMarginBottom || p.MarginRight != 0;
+
+        // An inline the reader gets nothing back from: an empty run (at most an empty <b></b>), or a picture with no image.
+        private static bool EmitsNothing(Inline inline)
+            => inline is Run { Text: null or "" } || (inline is InlineImage im && im.RawBytes == null && im.Image == null);
 
         // Emits a table as an HTML <table>. Shared by block tables and inline tables (milestone B). Cell
         // content emits every paragraph (separated by <br>), block images, and nested tables (recursing),
@@ -1331,8 +1354,12 @@ namespace AvaloniaRichEditor.Formatters
                             prevWasBareParagraph = true;
                             // Same boundary rule as a top-level paragraph: a <td>'s content is parsed as
                             // inline, so a space at its end is dropped unless it goes out non-breaking.
+                            bool opens = true; // as for a top-level paragraph
                             for (int i = 0; i < cpara.Inlines.Count; i++)
-                                EmitInline(sb, cpara.Inlines[i], i == 0, i == cpara.Inlines.Count - 1);
+                            {
+                                EmitInline(sb, cpara.Inlines[i], opens, i == cpara.Inlines.Count - 1);
+                                if (!EmitsNothing(cpara.Inlines[i])) opens = false;
+                            }
                         }
                         else if (cblk is ImageBlock cib && (cib.RawBytes != null || cib.Image != null))
                         { cellLists.CloseAll(); AppendImgTag(sb, cib.RawBytes, cib.MimeType, cib.RawBytes == null ? cib.Image : null, cib.Width, cib.Height, cib.AltText); prevWasBareParagraph = false; }

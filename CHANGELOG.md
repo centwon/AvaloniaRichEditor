@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — data loss and a save that never succeeds (2026-10-15)
+
+- **A number past the range of a double (`1e400`) in a JSON document read as infinity**, which JSON cannot spell: the
+  document opened, and every save of it then failed. Such a document is now refused on open (`JsonException`), like any
+  other value of the wrong type.
+- **HTML: a heading or formatted paragraph holding an inline table lost its formatting on every round trip.** The
+  reader counted the inline table (and the `<p>` in its cell) as block content, so it read the `<h1>`/`<p>` as a mere
+  container and dropped the heading level, alignment and spacing; the writer, after an empty run, left the table
+  unmarked as the start of its paragraph, so the reader merged it into the paragraph above.
+- **Copying from the middle of a paragraph, across a table, into the middle of another, then pasting in the editor
+  brought back the unselected text of both end paragraphs.** The copy takes what is selected now.
+- Tests: `DataLossFixesTests` (JSON, HTML), `DataLossFixesEditorTests` (copy) — each red before its fix.
+
 ### Added — `RichEditor.DefaultForeground`, the colour of text that has none (2026-10-11)
 
 Text without its own colour was drawn black, whatever the host's theme, so a dark-theme host showed black text on a

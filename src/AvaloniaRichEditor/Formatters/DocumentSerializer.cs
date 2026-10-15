@@ -10,7 +10,8 @@ using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Formatters;
 
-[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    Converters = new[] { typeof(FiniteDoubleConverter) })]
 [JsonSerializable(typeof(FlowDocumentDto))]
 internal partial class DocumentJsonContext : JsonSerializerContext
 {
@@ -800,10 +801,27 @@ internal sealed class SchemaVersionConverter : JsonConverter<string>
             JsonTokenType.String => reader.GetString() ?? "1",
             JsonTokenType.Number => reader.TryGetInt64(out var n)
                 ? n.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                : reader.GetDouble().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                : FiniteDoubleConverter.ReadFinite(ref reader).ToString(System.Globalization.CultureInfo.InvariantCulture),
             _ => "1"
         };
 
     public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
         => writer.WriteStringValue(value);
+}
+
+// A number past double's range (1e400) parsed as infinity, which the writer cannot write: the file opened and every
+// save of it threw. Refused on read like any other value of the wrong type, so the whole document fails (2026-10-15).
+internal sealed class FiniteDoubleConverter : JsonConverter<double>
+{
+    internal static double ReadFinite(ref Utf8JsonReader reader)
+    {
+        double value = reader.GetDouble();
+        return double.IsFinite(value) ? value : throw new JsonException("A number is outside the range of a double.");
+    }
+
+    public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => ReadFinite(ref reader);
+
+    public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options)
+        => writer.WriteNumberValue(value);
 }

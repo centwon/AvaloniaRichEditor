@@ -2426,9 +2426,21 @@ public partial class RichEditor : Control
 
         if (!spansMultiple && !hasNonParagraph) return null; // plain inline selection
 
+        // The end paragraphs are trimmed to the selection: cloned whole, a copy from the middle of one paragraph, across
+        // a table, into the middle of another brought back the unselected text of both on an in-app paste (2026-10-15).
+        // An endpoint inside a paragraph's inline table takes that paragraph from its start / to its end.
         var blocks = new List<Block>();
         for (int k = si; k <= ei; k++)
-            if (Document.Blocks[k].Clone() is Block cl) blocks.Add(cl);
+        {
+            var b = Document.Blocks[k];
+            if (b is Paragraph para)
+            {
+                int from = k == si && ReferenceEquals(para, range.Start.Paragraph) ? range.Start.Offset : 0;
+                int to = k == ei && ReferenceEquals(para, range.End.Paragraph) ? range.End.Offset : GetParagraphLength(para);
+                blocks.Add(CloneParagraphRange(para, from, to));
+            }
+            else if (b.Clone() is Block cl) blocks.Add(cl);
+        }
         return blocks.Count > 0 ? blocks : null;
     }
 
