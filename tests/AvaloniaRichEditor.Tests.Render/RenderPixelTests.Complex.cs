@@ -99,7 +99,7 @@ public partial class RenderPixelTests
     {
         var doc = new FlowDocument();
         doc.Blocks.Add(tb);
-        return new RichEditor { Document = doc, PageSize = size, DefaultFontFamily = Inter };
+        return new RichEditor { ViewMode = RichEditorViewMode.Page, Document = doc, PageSize = size, DefaultFontFamily = Inter };
     }
 
     // A grid whose every cell carries its own "rc" text, so cells are distinguishable in ink terms.

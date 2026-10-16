@@ -21,7 +21,7 @@ public class PaginationTests
 
     private static RichEditor EditorWith(params Block[] blocks)
     {
-        var ed = new RichEditor();
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page };
         var doc = new FlowDocument();
         foreach (var b in blocks) doc.Blocks.Add(b);
         ed.Document = doc;
@@ -174,7 +174,7 @@ public class PaginationTests
     {
         // 10 rows forced to exactly 100px each (RowHeights override beats empty-cell content);
         // page capacity 250 holds 2 rows -> breaks at 200/400/600/800, all row boundaries.
-        var ed = new RichEditor();
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page };
         ed.LoadHtml("<table>" + string.Concat(Enumerable.Repeat("<tr><td></td></tr>", 10)) + "</table>");
         var tb = ed.Document!.Blocks.OfType<TableBlock>().Single();
         for (int r = 0; r < 10; r++) tb.RowHeights.Add(100);
@@ -246,7 +246,7 @@ public class PaginationTests
     {
         // Default paper is Continuous (reflow to width), unified with the WinUI port. ShowPageBoundaries
         // stays true by default but is irrelevant until a concrete paper size is chosen.
-        var ed = new RichEditor();
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page };
         Assert.Equal(RichEditorPageSize.Continuous, ed.PageSize);
         Assert.False(ed.IsPaged);
     }

@@ -199,8 +199,22 @@ public partial class RichEditor
         set => SetValue(PageOrientationProperty, value);
     }
 
-    // A concrete paper size fixes the text-column width; Continuous reflows to the control width.
-    internal bool IsPaged => PageSize != RichEditorPageSize.Continuous;
+    /// <inheritdoc cref="ViewMode"/>
+    public static readonly StyledProperty<RichEditorViewMode> ViewModeProperty =
+        AvaloniaProperty.Register<RichEditor, RichEditorViewMode>(nameof(ViewMode));
+
+    /// <summary>How the document shows on screen: <see cref="RichEditorViewMode.Continuous"/> (the default) reflows the
+    /// text to the control's width whatever paper the document names; <see cref="RichEditorViewMode.Page"/> draws pages at
+    /// <see cref="PageSize"/> (<see cref="RichEditorView"/> opens in it). Not part of the document: the page setup is kept,
+    /// saved and printed either way.</summary>
+    public RichEditorViewMode ViewMode
+    {
+        get => GetValue(ViewModeProperty);
+        set => SetValue(ViewModeProperty, value);
+    }
+
+    // Pages are drawn only in page view, at a concrete paper size; otherwise the text reflows to the control width.
+    internal bool IsPaged => ViewMode == RichEditorViewMode.Page && PageSize != RichEditorPageSize.Continuous;
     // Paged AND showing chrome -> the gap-injecting page-stack layout. Paged without chrome -> a
     // fixed-width centered column flowing continuously (no desk, no inter-page gaps).
     private bool PagedChrome => IsPaged && ShowPageBoundaries;

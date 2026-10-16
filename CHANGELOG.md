@@ -33,6 +33,46 @@ taken back out to see the test go red again.
   table's order nor the document's.
 - Tests: `Release13AuditTests` (unit), `Release13RenderAuditTests` (real Skia).
 
+### Changed — ⚠ a bare editor shows every document continuous; pages are drawn in page view (2026-10-17)
+
+**`RichEditor.ViewMode`** (`RichEditorViewMode.Continuous`, the default, or `Page`) decides how the document shows on
+screen; the page setup stays the document's and is kept, saved and printed either way, like a word processor's draft
+view against its print layout. Before, the paper a document named decided the screen too, so an A4 file opened in a
+small editing box drew an A4 page on a grey desk. `RichEditorView` opens in page view, so a host using it sees no
+change. The toolbar offers paper, orientation and margins only while its target is in page view (they change nothing a
+continuous editor shows), and brings them back when the host turns it on.
+
+- ⚠ **A host that sets `PageSize` on a bare `RichEditor` to show pages now also sets `ViewMode = Page`.**
+- Tests: `ViewModeTests` — each of the three changes undone turns its test red. The tests that drew pages on a bare
+  editor (21) set page view and keep their meaning.
+
+### Added — `RichEditor.NotifyDocumentChanged()`, for a host that edits the document in place (2026-10-17)
+
+The model raises no change notifications (`Paragraph.Inlines` and a cell's `Blocks` are plain lists), so a host that
+changed `Document` itself — adding or removing blocks, inlines or run text — left the editor working on what it
+had last seen. Measured: removing the paragraph that held the caret made the next typed text go into the removed
+paragraph (lost, while `IsModified` turned on); Enter in an added paragraph became a line break, because the
+paragraph had no parent to split in; a table added at the end had no paragraph after it, so text typed at the end went
+into its last cell. Assigning the same document again does nothing, and assigning it through `null` clears the
+undo history. `NotifyDocumentChanged()` re-wires and normalizes the document, drops the layout caches, keeps the caret
+and selection in their paragraphs when those are still there (offset clamped) and moves them to the end of the
+document otherwise. Undo history is kept; the next keystroke starts a new undo step, so the host's edit is not taken
+back with the typing before it.
+
+### Fixed — `InsertText` was not an undo step (2026-10-17)
+
+The editor's own callers record an undo checkpoint before they insert, so the public method recorded none. Ctrl+Z
+after a host's `InsertText` undid the edit before it, taking the inserted text along, or did nothing when there was
+none. Each call is its own undo step now.
+
+A space after a list prefix (`-`, `*`, `1.`) turns the paragraph into a list, and that took an undo checkpoint of its
+own on top of the one just taken: the same document twice, so one Ctrl+Z did nothing (found in the 1.3.0 audit). It
+happened through `InsertText(" ")` and, already before, when the space was typed after the caret had moved away from
+the prefix and back. The list now takes its own step only when nothing else has just taken it.
+
+- Tests: `HostModelMutationTests` — red without the call, without the run reset and without the checkpoint;
+  `SpaceAfterAListPrefix_UndoesStepByStep` red without the fresh-checkpoint check (2 of 3 ways).
+
 ### Fixed — data loss and a save that never succeeds (2026-10-15)
 
 - **A number past the range of a double (`1e400`) in a JSON document read as infinity**, which JSON cannot spell: the

@@ -4,25 +4,19 @@ WPF의 `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 
 PTS(비관리형 C++) 엔진을 못 쓰므로 렌더링/레이아웃/히트테스트를 직접 구현한다.
 
 - **현재 진행 상황과 보류 항목은 항상 [`Project_Roadmap.md`](Project_Roadmap.md)를 먼저 확인**할 것. 작업 후 이 파일을 갱신한다.
+- **1.x 유지보수 규칙**(2026-10-17): 1.3.0 뒤로는 **보안·데이터 손실·크래시 신고만** 고친다. 감사·외부 평가 검토·리팩토링·
+  새 기능·새 공개 API는 먼저 벌이지 않는다 — 사용자가 신고가 아닌 일을 꺼내면 이 규칙을 먼저 짚는다.
 
-## 기술 기반 (Tech Stack)
+## 기술 기반 — 함정만
 
-> 대상 프레임워크·Avalonia 버전·의존성은 `.csproj`가 단일 출처다. 여기 옮겨 적지 말 것 — 코드가 앞서가면
-> 이 문서만 틀린 채로 남는다.
+> 대상 프레임워크·Avalonia 버전·의존성은 `.csproj`가 단일 출처다. 여기 옮겨 적지 말 것.
 
-- **핵심 Avalonia API 사용처** (직접 구현 엔진이라 의존도가 높음):
-  - `Avalonia.Media.TextFormatting`: `TextLayout`(+ `ITextSource`), `TextCharacters`, `DrawableTextRun`(인라인 이미지), `GenericTextRunProperties`/`GenericTextParagraphProperties`. → 렌더·커서·히트테스트·선택의 단일 출처.
-  - 렌더링: `Control.Render(DrawingContext)` 직접 오버라이드. `DrawingContext.DrawText/DrawImage/DrawRectangle/FillRectangle`.
-  - 입력: `OnPointerPressed/Moved/Released`, `OnKeyDown`, `OnTextInput`. IME: `TextInputMethodClient` + `TextInputMethodClientRequestedEvent`.
-  - 클립보드(Avalonia 12 신 API): `IClipboard.TryGetDataAsync()` → `IAsyncDataTransfer`/`IAsyncDataTransferItem.TryGetRawAsync(DataFormat)`. (구 `GetFormatsAsync/GetDataAsync` 없음.)
-  - 파일: `TopLevel.StorageProvider`(저장/열기 피커).
-- **플랫폼/주의**: 현재 Windows 타깃. 클립보드 HTML은 Windows **CF_HTML**(헤더 제거 필요), 워드 그림은 **VML**(미지원). JSON 직렬화는 AOT 대비 Source-Generated 컨텍스트(`DocumentJsonContext`) 사용.
-
-> API 사용상의 함정(예: `FormattedText`엔 히트테스트가 없어 `TextLayout` 사용)은 아래 **비자명한 핵심 규칙** 참고.
+- 클립보드는 Avalonia 12 신 API: `IClipboard.TryGetDataAsync()` → `IAsyncDataTransfer`/`IAsyncDataTransferItem.TryGetRawAsync(DataFormat)`.
+  구 `GetFormatsAsync/GetDataAsync`는 없다.
+- 클립보드 HTML은 Windows **CF_HTML**(헤더 제거 필요). 워드 그림은 **VML**이라 미지원.
+- JSON 직렬화는 AOT 대비 Source-Generated 컨텍스트(`DocumentJsonContext`).
 
 ## 빌드 / 실행
-
-**솔루션은 2개 프로젝트로 분리됨**(2026-06-08): `src/AvaloniaRichEditor`(라이브러리=컨트롤+모델+포매터, NuGet 배포 대상) + `samples/AvaloniaRichEditor.Demo`(WinExe 데모/테스트 앱=툴바·창).
 
 ```
 dotnet build AvaloniaRichEditor.slnx
@@ -33,87 +27,31 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
   `Get-Process -Name "AvaloniaRichEditor.Demo" -ErrorAction SilentlyContinue | Stop-Process -Force`
   (빌드 에러 MSB3027/잠김 메시지가 나오면 컴파일은 성공했고 복사만 실패한 것.)
 - GUI 동작 검증은 직접 못 하므로, 백그라운드로 `dotnet run` 후 사용자에게 테스트를 요청한다.
-- 커밋 메시지 끝에 `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+- 커밋 메시지 끝에 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## 구조
 
-**라이브러리** `src/AvaloniaRichEditor/` (네임스페이스 `AvaloniaRichEditor.*`, XAML 없음 — 전부 코드 컨트롤):
-- `Documents/` — 문서 모델. `FlowDocument.Blocks`(AvaloniaList<Block>)에 `Paragraph`/`TableBlock`/`ImageBlock`이 **형제(sibling)**로 들어감.
-  - `Paragraph.Inlines`: `Run`(텍스트) 또는 `InlineImage`(인라인 아이콘).
-  - `TextPointer`(Paragraph+Offset), `TextRange`(삭제/복사/서식/구조).
-- `Controls/RichEditor.cs` — 핵심 컨트롤(`partial`, 본체는 속성/이벤트·undo·편집 코어·`BuildTextLayout` 레이아웃 캐시). 부분 클래스 분리: `Input`(포인터·키보드·IME·블록 횡단 캐럿), `HitTesting`(GetPositionFromPoint 등 + `LayoutTable` 공유 표 기하), `Formatting`(서식 명령·리스트·하이퍼링크·포맷 페인터), `DocumentApi`(HTML/JSON/.flow 입출력), `Tables`(셀 탐색·Tab·행/열 연산), `Images`(크기/교체/블록↔인라인 변환), `FindReplace`, `ContextMenu`(우클릭 메뉴), `Clipboard`(붙여넣기·드래그드롭), `Rendering`(Measure/Render/AutomationPeer), `Modes`(`IsReadOnly`·`Allow*` 기능 플래그·이미지 소프트 제한 — `EditorMode` enum은 제거됨), `Pagination`(페이지 브레이크·용지 DP·`FlowDocument.PageSetup` 동기화, 기본 용지 `Continuous`). 내부 헬퍼 `UndoManager`(타이핑 코얼레싱), `InputDialog`(internal), `RichEditorShortcuts`(Word 표준 중앙 단축키 테이블: 키핸들러·컨텍스트 메뉴 힌트·툴바 툴팁 단일 출처). 접근성 `RichEditorAutomationPeer`(IValueProvider). 호스트 교체용 아이콘 훅 `RichEditorIcons`(전역 Provider). 툴바 `RichEditorToolbar`(+`.PageFile`: `ToolbarLevel` 밀도·페이지/줌·Export/Import/Print 내장, 줌은 호스트 훅), 드롭인 `RichEditorView`가 위임.
-- `Formatters/` — `DocumentSerializer`(JSON), `HtmlDocumentFormatter`(HTML 입출력 파서), `RtfDocumentFormatter`(RTF), `PdfWriter`(래스터 PDF), `DocumentPackage`(`.flow` zip).
-
-**데모/테스트 앱** `samples/AvaloniaRichEditor.Demo/` (네임스페이스 `AvaloniaRichEditor.Demo.*`):
-- `RoundTripHarness`(`--roundtrip` HTML 왕복 검증)·`BenchHarness`(`--bench`/`--bench-text`/`--bench-table` 성능 실측) — 개발 도구라 라이브러리가 아니라 여기 있다.
-- `Views/MainWindow` — 툴바 + 컨트롤 호스팅. `App`/`Program`/`ViewLocator`/`ViewModels`/`Assets`. `NativeEditor`(웹 에디터 호환 래퍼)는 데모 전용.
-
-**상호운용 재현 도구** `tools/rtfgen/` — **솔루션에 없다**(빌드·CI 대상 아님, 손으로 돌리는 개발 도구).
-Word·HWP·브라우저가 우리 출력을 어떻게 보는지 재현한다. 사용법·함정은 그 폴더의
-[`CLAUDE.md`](tools/rtfgen/CLAUDE.md)와 [`README.md`](tools/rtfgen/README.md)에 있다.
-
-**테스트** `tests/AvaloniaRichEditor.Tests/` (xUnit v3): 모델/포매터(일반) + 컨트롤(Avalonia.Headless, `[AvaloniaFact]`, 병렬화 off). 픽셀 검증은 `tests/AvaloniaRichEditor.Tests.Render/`(real Skia)가 따로 맡는다.
-
-> NuGet 배포 준비(N0~N6) 경과는 [`docs/roadmap-archive.md`](docs/roadmap-archive.md)의 **"📦 NuGet 배포 계획"** 절, 릴리스 절차는 [`Project_Roadmap.md`](Project_Roadmap.md) "남은 일" 참고.
+- `src/AvaloniaRichEditor/` — 라이브러리(NuGet 배포 대상, XAML 없음): `Documents/`(모델) · `Controls/`(`RichEditor` partial 클래스들,
+  툴바, `RichEditorView`) · `Formatters/`(JSON·HTML·RTF·`.flow`·PDF).
+- `samples/AvaloniaRichEditor.Demo/` — 데모 앱(`RichEditorView` 하나) + 개발 하네스(`--roundtrip`, `--bench*`).
+- `tests/AvaloniaRichEditor.Tests/`(헤드리스, 병렬화 off) · `tests/AvaloniaRichEditor.Tests.Render/`(real Skia 픽셀·메모리).
+- `tools/rtfgen/` — **솔루션에 없다**(Word·HWP·브라우저 상호운용 재현 도구, 사용법은 그 폴더의 `CLAUDE.md`).
+- 파일별 상세 지도는 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## 비자명한 핵심 규칙 (꼭 지킬 것)
 
 1. **단일 `TextLayout`가 진실의 원천**: 렌더·커서·히트테스트·선택영역은 모두 `BuildTextLayout`(per-run `ITextSource`)에서 나온 하나의 `TextLayout`을 쓴다. `FormattedText`로 폭을 따로 재면 글자 단위 off-by-one이 생긴다. (Avalonia 12 `FormattedText`엔 `HitTestPoint`/`HitTestTextPosition` 없음 — `TextLayout`에 있음.)
 2. **오프셋 모델 = "이미지는 1글자"**: `InlineImage`는 논리적으로 1글자(`U+FFFC` placeholder, `ImageTextRun : DrawableTextRun`로 그림). 길이/오프셋 계산은 전부 `InlineLen()`/`BuildPlain()`을 쓴다. 새 오프셋 로직 추가 시 `Run.Text.Length`만 더하지 말 것.
 3. **Enter = 새 `Paragraph`**: Enter는 커서 위치에서 문단을 분할해 새 Paragraph를 만든다(`SplitParagraphAtCaret`, 컨테이너 일반화 — `Document.Blocks` 또는 `TableCell.Blocks`). 새 문단은 리스트/들여쓰기/정렬/배경을 물려받고 제목 레벨은 본문(0)으로. **표 셀도 sibling 문단을 가진다**(마일스톤 A/P3): `TableCell.Blocks`가 블록 리스트라 셀 안 Enter도 문단 분할이며, 셀이 커지면 표 행 높이가 재계산된다(`InvalidateMeasure`). Shift+Enter는 최상위·셀 공통으로 한 문단 안 소프트 `\n`. (로드 문서·붙여넣기로 들어온 `\n`도 한 문단 여러 줄로 렌더되며 줄마다 처리되는 곳들이 이를 지원.)
-4. **블록 vs 인라인 이미지 / 셀=재귀 컨테이너**: 큰 이미지=`ImageBlock`(독립 블록), 작은 아이콘(<64px)=`InlineImage`(문단 내). 표/큰 이미지에는 텍스트를 직접 넣을 수 없다(문단이 아님) — "표앞/표뒤"는 인접 문단의 끝/시작이다. **셀은 문단·블록이미지·구분선·중첩 표를 담는 블록 리스트**(마일스톤 A): 렌더 `DrawCellBlockList`↔`DrawNestedTable`, 히트테스트 `HitTestBlockList`, 측정 `MeasureCellContentHeight`가 `LayoutTable`과 임의 깊이로 상호 재귀한다(셀 안 표 = 같은 프리미티브 재사용). 셀 경계 "블록 캐럿"(`_caretBlock`)은 top-level 블록 전용 — 중첩 표 경계는 평면 문단 순서(`ParagraphsInBlocks`)·기하 이동으로 넘는다.
+4. **블록 vs 인라인 이미지 / 셀=재귀 컨테이너**: 큰 이미지=`ImageBlock`(독립 블록), 작은 아이콘(<64px)=`InlineImage`(문단 내). 표/큰 이미지에는 텍스트를 직접 넣을 수 없다 — "표앞/표뒤"는 인접 문단의 끝/시작이다. **셀은 블록 리스트**라 렌더(`DrawCellBlockList`↔`DrawNestedTable`)·히트테스트(`HitTestBlockList`)·측정(`MeasureCellContentHeight`)이 `LayoutTable`과 임의 깊이로 상호 재귀한다. 블록 캐럿(`_caretBlock`)은 top-level 블록 전용 — 중첩 표 경계는 평면 문단 순서(`ParagraphsInBlocks`)·기하 이동으로 넘는다.
 5. **`NormalizeBlocks`**: 문서 처음/끝과 "연속된 비문단 블록 사이"에만 문단을 보장(빈 줄 강제 안 함). 캐럿이 모든 블록 앞뒤에 닿게 하는 장치. `UpdateParents`에서 호출됨.
 6. **선택/삭제**: 텍스트는 `TextRange`; 큰 이미지/표는 클릭하면 `_selectedBlock` 선택(파란 테두리) 후 Delete/Backspace. 표는 단일클릭=전체선택, 더블클릭=셀 편집.
 7. **클립보드**: 붙여넣기 우선순위 = 내부 리치(블록 구조 보존) → 외부 HTML(`ParseHtml`, 재귀 순회) → 평문. 워드 그림은 VML이라 미지원.
 8. **문서 모델 객체는 UI 스레드에서만 생성**: 모델에 들어가는 `SolidColorBrush`/`TextDecoration` 등은 Avalonia 스레드 친화 객체라, `Task.Run` 안에서 만들면 첫 렌더에서 컴포지터가 크래시한다("calling thread cannot access this object"). 비동기 로더는 파싱(DTO+바이트, `ParseJson`/`ReadPackage`)까지만 백그라운드, `FromDto`(모델 생성)는 UI 스레드에서. 직렬화기가 만드는 브러시는 `ImmutableSolidColorBrush`(친화성 없음) 사용.
 
-## 안드레 카파시(Andrej Karpathy)의 코딩 스킬
+## 일하는 방식 (Karpathy 지침 압축 — 출처: https://americanopeople.tistory.com/514)
 
-LLM의 일반적인 코딩 실수를 줄이기 위한 행동 지침이다. **위의 프로젝트별 지침이 있을 경우 본 가이드라인과 병합하여 사용한다.**
-
-트레이드오프: 본 지침은 속도보다 신중함에 우선순위를 둔다. 사소한 작업은 상황에 맞게 판단한다.
-
-### 1. 구현 전 사고 (Think Before Coding)
-가정하지 않는다. 모호함을 숨기지 않는다. 트레이드오프를 명확히 밝힌다. 구현을 시작하기 전 다음을 준수한다:
-- 자신의 가정을 명시적으로 기술한다. 불확실한 경우 질문한다.
-- 해석의 여지가 여러 가지라면 임의로 선택하지 말고 대안들을 제시한다.
-- 더 간단한 접근 방식이 있다면 제안한다. 정당한 사유가 있다면 사용자의 요청에 반대 의견을 제시한다.
-- 불분명한 부분이 있다면 작업을 중단한다. 혼란스러운 부분을 구체적으로 언급하며 질문한다.
-
-### 2. 단순성 우선 (Simplicity First)
-- 문제를 해결하는 최소한의 코드만 작성한다. 추측에 기반한 코드는 배제한다.
-- 요청되지 않은 기능은 추가하지 않는다.
-- 일회성 코드를 위해 추상화 계층을 만들지 않는다.
-- 요청되지 않은 유연성이나 설정 가능성을 고려하지 않는다.
-- 발생 불가능한 시나리오에 대한 예외 처리를 하지 않는다.
-- 200줄의 코드를 50줄로 줄일 수 있다면 코드를 다시 작성한다.
-- "시니어 엔지니어가 보기에 이 코드가 지나치게 복잡한가?"라고 자문한다. 그렇다면 단순화한다.
-
-### 3. 정밀한 수정 (Surgical Changes)
-필요한 부분만 수정한다. 본인이 만든 코드의 뒷정리만 수행한다. 기존 코드를 편집할 때 다음을 준수한다:
-- 인접한 코드, 주석, 포맷을 임의로 개선하지 않는다.
-- 망가지지 않은 부분을 리팩토링하지 않는다.
-- 본인의 스타일과 다르더라도 기존 스타일을 따른다.
-- 작업과 무관한 데드 코드를 발견하면 보고하되 직접 삭제하지 않는다.
-
-수정으로 인해 사용되지 않게 된 요소가 발생할 경우:
-- 본인의 수정으로 인해 불필요해진 임포트, 변수, 함수는 제거한다.
-- 기존에 존재하던 데드 코드는 요청이 없는 한 그대로 둔다.
-- 테스트 기준: 변경된 모든 라인은 사용자의 요청사항과 직접적으로 연결되어야 한다.
-
-### 4. 목표 중심 실행 (Goal-Driven Execution)
-성공 기준을 정의한다. 검증될 때까지 반복한다. 작업을 검증 가능한 목표로 변환한다:
-- "유효성 검사 추가" → "잘못된 입력에 대한 테스트 작성 후 통과 확인"
-- "버그 수정" → "버그를 재현하는 테스트 작성 후 통과 확인"
-- "X 리팩토링" → "리팩토링 전후의 테스트 통과 확인"
-
-다단계 작업의 경우 간략한 계획을 수립한다:
-1. [단계] → 검증: [확인 사항]
-2. [단계] → 검증: [확인 사항]
-3. [단계] → 검증: [확인 사항]
-
-성공 기준이 명확해야 독립적인 작업이 가능하다. "작동하게 만들기"와 같은 모호한 기준은 불필요한 재질의를 야기한다.
-
-지침 작동 확인: Diff 내 불필요한 변경 감소, 복잡성으로 인한 재작성 빈도 감소, 구현 전 질문을 통한 명확한 의사결정 증대.
-
-출처: https://americanopeople.tistory.com/514 [복세편살:티스토리]
+- **구현 전 사고**: 가정을 밝히고, 해석이 갈리면 고르지 말고 묻는다. 더 단순한 길이 있으면 제안한다.
+- **단순성 우선**: 문제를 푸는 최소한의 코드. 요청 안 된 기능·유연성·일어날 수 없는 경우의 처리는 넣지 않는다.
+- **정밀한 수정**: 변경된 모든 줄이 요청과 직접 이어져야 한다. 주변 코드·주석·포맷을 손보지 않고, 무관한 데드 코드는 보고만 한다.
+- **목표 중심 실행**: 버그는 재현 테스트(빨강)부터 → 수정 → **수정을 되돌려 다시 빨강인지 반증**. 다단계 작업은 단계마다 검증 기준을 둔다.

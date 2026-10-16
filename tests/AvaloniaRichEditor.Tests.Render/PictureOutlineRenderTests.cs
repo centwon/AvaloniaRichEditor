@@ -84,6 +84,7 @@ public class PictureOutlineRenderTests
         const int w = 900;
         var ed = new RichEditor
         {
+            ViewMode = RichEditorViewMode.Page,
             PageSize = RichEditorPageSize.A4,
             DefaultFontFamily = new Avalonia.Media.FontFamily("avares://Avalonia.Fonts.Inter/Assets#Inter"),
             ShowPageBoundaries = true,

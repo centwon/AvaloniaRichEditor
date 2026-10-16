@@ -402,6 +402,13 @@ public partial class RichEditor : Control
             InvalidateMeasure();
             InvalidateVisual();
         }
+        if (change.Property == ViewModeProperty)
+        {
+            _pageBreaks = null;  // a view change, not a page-setup change: nothing is recorded or captured
+            ClearLayoutCaches(); // shaped at the other mode's width
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
         if (change.Property == PageSizeProperty || change.Property == ShowPageBoundariesProperty
             || change.Property == PageOrientationProperty || change.Property == PageMarginProperty)
         {
@@ -590,7 +597,12 @@ public partial class RichEditor : Control
     // Set by any edit; flushed (as TextChanged) from Render, off the render stack, so handlers see the
     // already-mutated document and can't re-enter the render pass. Also flips the IsModified flag.
     private bool _textChangedPending;
-    private void MarkTextChanged() { _textChangedPending = true; SetModified(true); }
+    private void MarkTextChanged() { _textChangedPending = true; SetModified(true); _checkpointFresh = false; }
+
+    // True from an undo checkpoint until the next text change: the document is still what that checkpoint holds, so a
+    // step that would checkpoint again (the auto-list) must not — the same document twice made a Ctrl+Z that did
+    // nothing (1.3.0 audit). Cleared by MarkTextChanged, which every typed or deleted character goes through.
+    private bool _checkpointFresh;
 
     // Kind of edit currently coalescing into one undo checkpoint. A run of same-kind edits shares
     // a single full-document clone (the first-keystroke clone was measured at 162 ms on a
@@ -607,6 +619,7 @@ public partial class RichEditor : Control
     private void PushUndo()
     {
         if (Document != null) _undoManager.PushState(Document, _caretPosition);
+        _checkpointFresh = true;
         _textChangedPending = true;
         SetModified(true);
         _editRun = EditRunKind.None;
@@ -633,6 +646,7 @@ public partial class RichEditor : Control
         if (_editRun != EditRunKind.Typing)
         {
             if (Document != null) _undoManager.PushState(Document, _caretPosition);
+            _checkpointFresh = true;
             _editRun = EditRunKind.Typing;
         }
         _textChangedPending = true;
@@ -979,8 +993,18 @@ public partial class RichEditor : Control
 
     /// <summary>Inserts plain text at the caret, replacing any current selection.
     /// Triggers smart-list detection when <paramref name="text"/> is a space
-    /// following a list-prefix pattern at the start of a line.</summary>
+    /// following a list-prefix pattern at the start of a line. Each call is its own undo step.</summary>
     public void InsertText(string text)
+    {
+        if (Document == null || IsReadOnly || _caretPosition.Paragraph == null || string.IsNullOrEmpty(text)) return;
+        // The internal callers checkpoint before they call TypeText (typing coalesces its keystrokes into one); a
+        // host's call had nobody to, so Ctrl+Z skipped the inserted text and undid the edit before it as well.
+        PushUndo();
+        TypeText(text);
+    }
+
+    // The typing primitive behind InsertText. Pushes no undo checkpoint: every caller has already pushed one.
+    private void TypeText(string text)
     {
         if (Document == null || IsReadOnly || _caretPosition.Paragraph == null) return;
         // Normalize pasted/external line endings to the model's '\n' (a run may hold soft '\n'; the
@@ -1037,9 +1061,13 @@ public partial class RichEditor : Control
         else if (System.Text.RegularExpressions.Regex.IsMatch(prefix, @"^\d+\.$")) kind = ListKind.Ordered;
         else return false;
 
-        if (Document != null) PushUndo();
+        // Its own undo step after the typed prefix (Ctrl+Z gives the "-" back), unless the checkpoint the caller has just
+        // taken is that step. Either way what is typed next starts a step of its own, as after any checkpoint.
+        if (Document != null && !_checkpointFresh) PushUndo();
+        _editRun = EditRunKind.None;
         DeleteLocalText(p, 0, prefix.Length);
         p.ListType = kind;
+        MarkTextChanged();
         _caretPosition = new TextPointer(p, 0);
         _selectionStart = new TextPointer(p, 0);
         _selectionEnd = new TextPointer(p, 0);

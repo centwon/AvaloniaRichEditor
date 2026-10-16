@@ -134,7 +134,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         if (!string.IsNullOrEmpty(text))
         {
             PushUndo();
-            InsertText(text);
+            TypeText(text);
             ResetCaretBlink(); // caret sits at the end of the pasted text — scroll it into view
         }
     }
@@ -151,7 +151,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
         if (string.IsNullOrEmpty(text)) return;
         PushUndo();
-        InsertText(text);
+        TypeText(text);
         ResetCaretBlink();
     }
 

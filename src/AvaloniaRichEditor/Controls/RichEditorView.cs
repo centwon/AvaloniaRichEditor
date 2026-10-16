@@ -124,6 +124,7 @@ public partial class RichEditorView : UserControl
     public RichEditorView()
     {
         // The View is the full host, so its toolbar carries everything: page/zoom + file actions.
+        Editor.ViewMode = RichEditorViewMode.Page; // the view shows pages; a bare editor reflows
         Toolbar = new RichEditorToolbar { Target = Editor, ToolbarLevel = ToolbarLevel.Maximum };
         // Zoom is view-level here (a LayoutTransform around the editor), so the toolbar's zoom combo is
         // driven through these hooks rather than the editor directly.
@@ -171,6 +172,7 @@ public partial class RichEditorView : UserControl
         Editor.PropertyChanged += (_, e) =>
         {
             if (e.Property == RichEditor.PageSizeProperty
+                || e.Property == RichEditor.ViewModeProperty
                 || e.Property == RichEditor.ShowPageBoundariesProperty
                 || e.Property == RichEditor.PageOrientationProperty)
             {
@@ -236,7 +238,7 @@ public partial class RichEditorView : UserControl
         // the top/inter-page gap (was hardcoded 24, leaving a wide grey band even after PageGap shrank).
         const double deskGap = RichEditor.PageGap;
         double target;
-        if (Editor.PageSize == RichEditorPageSize.Continuous)
+        if (!Editor.IsPaged)
             target = 0;
         else
         {

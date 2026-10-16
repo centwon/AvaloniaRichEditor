@@ -26,7 +26,7 @@ public partial class RenderPixelTests
 
     private static RichEditor MakeEditor(string html, RichEditorPageSize size = RichEditorPageSize.Continuous)
     {
-        var ed = new RichEditor { PageSize = size, DefaultFontFamily = Inter };
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page, PageSize = size, DefaultFontFamily = Inter };
         ed.LoadHtml(html);
         return ed;
     }

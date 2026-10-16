@@ -117,3 +117,10 @@ AvaloniaRichEditor.Controls.RichEditor.DefaultForeground.set -> void
 static readonly AvaloniaRichEditor.Controls.RichEditor.DefaultForegroundProperty -> Avalonia.StyledProperty<Avalonia.Media.IBrush!>!
 *REMOVED*AvaloniaRichEditor.Controls.RichEditor.SetForeground(Avalonia.Media.IBrush! brush) -> void
 AvaloniaRichEditor.Controls.RichEditor.SetForeground(Avalonia.Media.IBrush? brush) -> void
+AvaloniaRichEditor.Controls.RichEditor.NotifyDocumentChanged() -> void
+AvaloniaRichEditor.Controls.RichEditor.ViewMode.get -> AvaloniaRichEditor.Controls.RichEditorViewMode
+AvaloniaRichEditor.Controls.RichEditor.ViewMode.set -> void
+static readonly AvaloniaRichEditor.Controls.RichEditor.ViewModeProperty -> Avalonia.StyledProperty<AvaloniaRichEditor.Controls.RichEditorViewMode>!
+AvaloniaRichEditor.Controls.RichEditorViewMode
+AvaloniaRichEditor.Controls.RichEditorViewMode.Continuous = 0 -> AvaloniaRichEditor.Controls.RichEditorViewMode
+AvaloniaRichEditor.Controls.RichEditorViewMode.Page = 1 -> AvaloniaRichEditor.Controls.RichEditorViewMode
