@@ -12,11 +12,9 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
 
 ## ✅ 현재 상태 (2026-10-17)
 
-- **게시**: `v1.2.1`(2026-09-08) — nuget.org. 이력: 0.9.0(07-12) → 1.0.0(07-31, API 동결) → 1.1.0(08-08) → 1.2.0/1.2.1(09-08).
-- **미릴리스 = 1.3.0**(`CHANGELOG.md` `[Unreleased]`): 09-09 이후 라운드(대체 텍스트 ~ 라운드34·35), 호스트 API(표 행·열 · 단축키 표 ·
-  쪽 여백 · `DefaultForeground` · `NotifyDocumentChanged` · `ViewMode`), JSON 경량화·제목 모델, 데이터 손실 수정, 1.3.0 마지막 감사(#70).
-  공개 API는 **추가 + 소스 호환 변경 1건**(`SetForeground(IBrush?)`, Unshipped의 `*REMOVED*` 짝), 그리고 **⚠ 동작 변경** 여럿
-  (맨 컨트롤의 `ViewMode`, 제목 서식, JSON 바이트, 줄 간격, 블록 위 간격) → **minor(1.3.0)**, 게시 PR에서 CHANGELOG 맨 위에 업그레이드 요약.
+- **게시**: `v1.3.0`(2026-10-17) — nuget.org, 1.x의 마지막 기능 릴리스. 이력: 0.9.0(07-12) → 1.0.0(07-31, API 동결) → 1.1.0(08-08) →
+  1.2.0/1.2.1(09-08) → 1.3.0(10-17). 이후 1.x는 보안·데이터 손실·크래시 신고만 받는다.
+- **미릴리스**: 없음(`CHANGELOG.md` `[Unreleased]` 비어 있음).
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).
@@ -43,12 +41,9 @@ G2(문단 순회 워커 재귀화) · 1.0 준비 P1~P5(상호작용 테스트 �
 
 ## 🎯 남은 일
 
-**1. 1.3.0 게시** — 사용자 결정(10-17): 마지막 감사(1f) 뒤 **1.3.0으로 게시**(WinUI도 1.3, 별칭 없이). 1.3.0이 1.x의 마지막
-기능 릴리스이고, 그 뒤로는 신고만 받는다. 내용은 전부 main에 들어왔다. **게시 시점은 사용자가 정한다** — 먼저 제안하지 말 것.
-**게시 PR 준비됨(10-17)**: 버전 1.3.0, Unshipped → Shipped(124줄 이관, `*REMOVED*` 짝 1줄 정리), CHANGELOG `[1.3.0]` + 업그레이드 요약, 패키지 릴리스 노트. 남은 것은 태그 push(사람)와 패키지 페이지 확인.
-
-게시 절차: `<Version>` → Unshipped를 Shipped로 이관 → CHANGELOG `[Unreleased]` → 버전 → README 배지(en/ko) → PR로 3-OS CI →
-`v1.3.0` 태그 push(**사람이 실행**, Trusted Publishing) → **nuget.org 패키지 페이지 육안 확인**.
+**1. 1.3.0 게시 — 끝(2026-10-17)**: PR #72 머지 → `v1.3.0` 태그(`7d76812`) → 3-OS CI + Trusted Publishing 게시 성공 →
+nuget.org 공개(약 4분 뒤), 패키지 페이지 육안 확인(README 그림 3장·링크 정상). 게시 절차는 그대로: `<Version>` → Unshipped를 Shipped로 →
+CHANGELOG `[Unreleased]` → 버전 → PR로 3-OS CI → `v*` 태그 push → 패키지 페이지 확인.
 
 **1f. 1.3.0 마지막 감사 (2026-10-17)** — 사용자가 고른 범위: `src` 전체(약 21,700줄) 다시 읽기. 결함 **7건**, 전부 빨강 먼저 →
 수정 → 수정을 되돌려 빨강 확인. 테스트: `Release13AuditTests`·`Release13RenderAuditTests`. 경과는 CHANGELOG.
