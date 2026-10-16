@@ -259,6 +259,7 @@ FlowDocument
 - 이미지 엔트리는 이미 압축된 형식(JPEG/PNG)이므로 **무압축(Stored)** 으로 저장한다.
 - 로드 시: `images/` 엔트리의 MIME은 풀 메타에서 읽고, 메타가 없거나 평범한 `image/…` 형식이 아니면 **매직 넘버 스니핑**(png/jpeg/gif/bmp/webp)으로 결정한다.
 - 로드 시 **문서가 참조하는 `images/` 엔트리만** 읽고, 엔트리 하나가 256 MB를 넘으면 읽지 않는다(zip 폭탄 방지, 라운드35).
+- `document.json`도 풀었을 때 **256 MB**를 넘으면 읽지 않고 손상 파일과 같은 `InvalidDataException`을 던진다(1.3.0 감사 — 379 KB 항목이 1.9 GB로 풀렸다).
 - **손상은 예외다**: ZIP이 아니거나 깨졌으면 `InvalidDataException`, `document.json`이 없으면(다른 zip — .docx 등) `InvalidDataException`, `document.json`이 유효한 JSON이 아니면 `JsonException`.
 - 파일 식별: 데모는 ZIP 매직 `PK`(0x50 0x4B) 스니핑으로 `.flow`와 일반 JSON을 구분한다.
 - `meta.json`은 **컨테이너 포맷** 버전 마커다(`document.json`의 문서 포맷 버전과 같은 값으로 기록). 컨테이너 레이아웃이 독립적으로 진화할 여지를 남기고, 너무 새로운 패키지를 판독기가 구분할 수 있게 한다. 현재 판독기는 로직에서 사용하지 않으며 **없어도 무방**(이전 버전 `.flow`와 하위호환).

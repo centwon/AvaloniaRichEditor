@@ -32,7 +32,7 @@
 
 
 > 공개 API는 고정되었으며 [SemVer](https://semver.org)를 따릅니다: 주 버전(Major) 변경 없이는 호환성을 깨는
-> 변경(Breaking change)이 없습니다. [`CHANGELOG.md`](CHANGELOG.md)와
+> 변경(Breaking change)이 없습니다. 동작이 바뀌는 변경은 변경 기록에 ⚠로 표시합니다. [`CHANGELOG.md`](CHANGELOG.md)와
 > [`Project_Roadmap.md`](Project_Roadmap.md)를 참고하세요.
 
 ## 요구 사항 (Requirements)
@@ -77,6 +77,10 @@ Editor.LoadHtml("<p>Hello <b>world</b></p>");
 string html = Editor.ToHtml();
 string json = Editor.ToJson();
 
+// 모델을 코드로 직접 고쳤다면(Document.Blocks, Paragraph.Inlines, Run.Text) 에디터에 알리기
+Editor.Document!.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "코드로 추가" } } });
+Editor.NotifyDocumentChanged();
+
 // 변경 사항에 반응
 Editor.TextChanged      += (_, _) => MarkDirty();
 Editor.SelectionChanged += (_, _) => UpdateToolbar();
@@ -84,6 +88,7 @@ Editor.SelectionChanged += (_, _) => UpdateToolbar();
 // 외관 사용자 정의
 Editor.SelectionBrush    = Brushes.LightSkyBlue;
 Editor.CaretBrush        = Brushes.Black;
+Editor.DefaultForeground = Brushes.WhiteSmoke;                       // 자기 색이 없는 글자의 색(다크 테마)
 Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // 우클릭 폰트 메뉴
 ```
 
@@ -103,7 +108,7 @@ Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // �
 ### 텍스트와 문단
 
 - 인라인 서식: 굵게 / 기울임 / 밑줄 / 취소선, 글꼴 및 크기, 글자색 및 배경(하이라이트) 색, 하이퍼링크
-- 문단 서식: 정렬, 줄 간격, 들여쓰기, 제목(headings), 글머리 기호 / 번호 매기기 목록
+- 문단 서식: 정렬, 줄 간격, 들여쓰기, 제목(headings), 인용, 글머리 기호 / 번호 매기기 목록
 - 한국어/CJK **IME** 조합 (인라인 preedit)
 - 찾기 막대(`Ctrl+F` / `Ctrl+H` / `F3`)로 찾기 / 바꾸기, 실행 취소 / 다시 실행
 
@@ -118,6 +123,7 @@ Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // �
 - **드래그하여 표 삽입**: 그리드에서 행 × 열을 고른 뒤 문서 위에서 드래그해 크기를 직접 지정합니다
   (클릭하면 기본 크기)
 - 셀 세로 정렬, 표(테두리)나 그림을 끌어 옮기기(`Ctrl`을 누르면 복사)
+- 호스트가 부르는 행·열 명령(`InsertRowAbove`/`Below`, `InsertColumnLeft`/`Right`, `DeleteRow`, `DeleteColumn`)
 
 ### 이미지와 페이지 레이아웃
 
@@ -143,7 +149,8 @@ Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // �
 
 - **드롭인 `RichEditorView`**: 에디터 + 서식 툴바(페이지/확대 컨트롤과 Export/Import/Print 파일 동작 내장)
   + 상태 표시줄
-- 독립형 `RichEditorToolbar`와 밀도 조절 `ToolbarLevel`(Auto/Minimal/Normal/Maximum)
+- 독립형 `RichEditorToolbar`와 밀도 조절 `ToolbarLevel`(Auto/Minimal/Normal/Maximum). 용지·방향·여백 칸은
+  에디터가 쪽 보기일 때 나타납니다
 - 기능 활성화는 `IsReadOnly`(뷰어 전환)와 `Allow*` 플래그로 직접 제어합니다
 - **Word 표준 키보드 단축키**를 단일 소스(`RichEditorShortcuts`)에서 — 키 핸들러, 메뉴 힌트, 툴바 툴팁이
   같은 표를 공유합니다. B/I/U/S, 제목 `Ctrl+Alt+1..6`, 정렬 `Ctrl+L/E/R/J`, 목록, 줄 간격 `Ctrl+1/5/2`,
@@ -198,6 +205,8 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 | `samples/AvaloniaRichEditor.Demo` | WinExe 데모/테스트 앱: 툴바, 창, 샘플 문서. |
 | `tests/` | xUnit v3: 모델/포매터, 헤드리스 컨트롤 테스트, 실제 Skia 렌더 테스트. |
 | `tools/rtfgen` | 상호운용 재현 도구 — 문서를 생성하고 Word COM으로 측정합니다. |
+
+라이브러리의 파일별 지도는 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)에 있습니다.
 
 ## 기여 (Contributing)
 

@@ -9,8 +9,8 @@ namespace AvaloniaRichEditor.Formatters;
 
 // Minimal raster PDF writer (P-milestone Phase 4): each page is one full-bleed FlateDecode RGB
 // image. No external dependencies — zlib framing comes from System.IO.Compression.ZLibStream.
-// Vector text output is out of scope (Avalonia exposes no DrawingContext->PDF backend); see the
-// roadmap's P-milestone notes.
+// The FALLBACK since 2026-09: RichEditor.SavePdf writes vector pages through Skia's PDF backend
+// (SKDocument + PdfFontSubsetter) and comes here only where that path is unavailable.
 internal static class PdfWriter
 {
     // getPage(i) returns one rendered page as raw 24-bit RGB, top-down. Pages are pulled lazily so

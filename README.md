@@ -27,7 +27,7 @@ Every frame is the control rendering real input — see
 [tools/readme-shots](https://github.com/centwon/AvaloniaRichEditor/tree/main/tools/readme-shots).*
 
 > The public API is frozen and follows [SemVer](https://semver.org): no breaking change without a major
-> bump. See the
+> bump. A change in behaviour is marked ⚠ in the changelog. See the
 > [changelog](https://github.com/centwon/AvaloniaRichEditor/blob/main/CHANGELOG.md) and the
 > [roadmap](https://github.com/centwon/AvaloniaRichEditor/blob/main/Project_Roadmap.md).
 
@@ -73,6 +73,10 @@ Editor.LoadHtml("<p>Hello <b>world</b></p>");
 string html = Editor.ToHtml();
 string json = Editor.ToJson();
 
+// Edited the model yourself (Document.Blocks, Paragraph.Inlines, Run.Text)? Tell the editor
+Editor.Document!.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "Added by code" } } });
+Editor.NotifyDocumentChanged();
+
 // React to changes
 Editor.TextChanged      += (_, _) => MarkDirty();
 Editor.SelectionChanged += (_, _) => UpdateToolbar();
@@ -80,6 +84,7 @@ Editor.SelectionChanged += (_, _) => UpdateToolbar();
 // Customize appearance
 Editor.SelectionBrush    = Brushes.LightSkyBlue;
 Editor.CaretBrush        = Brushes.Black;
+Editor.DefaultForeground = Brushes.WhiteSmoke;                       // text with no colour of its own (dark themes)
 Editor.FontFamilyChoices = new[] { "Segoe UI", "Arial", "맑은 고딕" }; // right-click font menu
 ```
 
@@ -96,7 +101,7 @@ for a full editor host.
 
 - Inline formatting: bold / italic / underline / strikethrough, font family and size, foreground and
   highlight colors, hyperlinks
-- Paragraphs with alignment, line spacing, indentation, headings, and bullet / numbered lists
+- Paragraphs with alignment, line spacing, indentation, headings, quotes, and bullet / numbered lists
 - Korean/CJK **IME** composition with inline preedit
 - Find / replace with a find bar (`Ctrl+F` / `Ctrl+H` / `F3`), undo / redo
 
@@ -111,6 +116,7 @@ for a full editor host.
 - **Draw-to-size insertion**: pick rows × columns from the grid, then drag on the document to set the
   size (or click for the default)
 - Vertical cell alignment; drag a table (by its border) or a picture to move it (hold `Ctrl` to copy)
+- Row and column commands a host can call (`InsertRowAbove`/`Below`, `InsertColumnLeft`/`Right`, `DeleteRow`, `DeleteColumn`)
 
 ### Images and page layout
 
@@ -137,7 +143,8 @@ for a full editor host.
 
 - **Drop-in `RichEditorView`**: editor + formatting toolbar with built-in page/zoom controls and
   Export/Import/Print file actions + status bar
-- Standalone `RichEditorToolbar` with a `ToolbarLevel` density knob (Auto/Minimal/Normal/Maximum)
+- Standalone `RichEditorToolbar` with a `ToolbarLevel` density knob (Auto/Minimal/Normal/Maximum); its paper,
+  orientation and margin fields appear while the editor is in page view
 - Capability is expressed directly through `IsReadOnly` (viewer switch) plus the `Allow*` feature flags
 - **Word-standard keyboard shortcuts** from a single source (`RichEditorShortcuts`) shared by the key
   handler, menu hints, and toolbar tooltips — B/I/U/S, headings `Ctrl+Alt+1..6`, alignment `Ctrl+L/E/R/J`,
@@ -193,6 +200,8 @@ dotnet run --project samples/AvaloniaRichEditor.Demo/AvaloniaRichEditor.Demo.csp
 | `samples/AvaloniaRichEditor.Demo` | A WinExe demo/test app: toolbar, window, sample document. |
 | `tests/` | xUnit v3 suites: model/formatters, headless control tests, and real-Skia render tests. |
 | `tools/rtfgen` | Interop reproduction tool — generates documents and measures them in Word over COM. |
+
+A file-by-file map of the library is in [docs/ARCHITECTURE.md](https://github.com/centwon/AvaloniaRichEditor/blob/main/docs/ARCHITECTURE.md).
 
 ## Contributing
 
