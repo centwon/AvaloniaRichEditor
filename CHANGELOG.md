@@ -25,7 +25,13 @@ The editor's own callers record an undo checkpoint before they insert, so the pu
 after a host's `InsertText` undid the edit before it, taking the inserted text along, or did nothing when there was
 none. Each call is its own undo step now.
 
-- Tests: `HostModelMutationTests` — red without the call, without the run reset and without the checkpoint.
+A space after a list prefix (`-`, `*`, `1.`) turns the paragraph into a list, and that took an undo checkpoint of its
+own on top of the one just taken: the same document twice, so one Ctrl+Z did nothing (found in the 1.3.0 audit). It
+happened through `InsertText(" ")` and, already before, when the space was typed after the caret had moved away from
+the prefix and back. The list now takes its own step only when nothing else has just taken it.
+
+- Tests: `HostModelMutationTests` — red without the call, without the run reset and without the checkpoint;
+  `SpaceAfterAListPrefix_UndoesStepByStep` red without the fresh-checkpoint check (2 of 3 ways).
 
 ### Fixed — data loss and a save that never succeeds (2026-10-15)
 

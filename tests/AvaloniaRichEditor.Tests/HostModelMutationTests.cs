@@ -156,4 +156,36 @@ public class HostModelMutationTests
         ed.Undo();
         Assert.Equal("one", ed.GetPlainText());
     }
+
+    // InsertText became an undo step of its own — a checkpoint before the text. A space after "-" at a paragraph's start
+    // then turns the paragraph into a list, and the auto-list took a checkpoint of its own as well: the same document,
+    // twice, so a Ctrl+Z did nothing (measured in the 1.3.0 audit). Every way to the space undoes the same three steps:
+    // the "x" typed after, the list, the "-". (A space typed after the caret has moved starts its own typing step —
+    // the third way, which took the same double checkpoint.)
+    [AvaloniaTheory]
+    [InlineData(0)] // typed right after the "-"
+    [InlineData(1)] // typed after the caret went away and back
+    [InlineData(2)] // the host's InsertText
+    public void SpaceAfterAListPrefix_UndoesStepByStep(int way)
+    {
+        var host = InteractionHost.Create(new RichEditor { Document = new FlowDocument() });
+        var ed = host.Editor;
+        ed.FocusDocumentEnd();
+        host.Type("-");
+        if (way == 1) { host.Key(Key.Left); host.Key(Key.Right); }
+        if (way == 2) ed.InsertText(" "); else host.Type(" ");
+        host.Type("x");
+        var p = (Paragraph)ed.Document!.Blocks[0];
+        Assert.Equal(ListKind.Bullet, p.ListType); // precondition: it became a list
+        Assert.Equal("x", ed.GetPlainText());
+
+        ed.Undo();
+        Assert.Equal(ListKind.Bullet, ((Paragraph)ed.Document!.Blocks[0]).ListType);
+        Assert.Equal("", ed.GetPlainText());
+        ed.Undo();
+        Assert.Equal(ListKind.None, ((Paragraph)ed.Document!.Blocks[0]).ListType);
+        Assert.Equal("-", ed.GetPlainText());
+        ed.Undo();
+        Assert.Equal("", ed.GetPlainText());
+    }
 }
