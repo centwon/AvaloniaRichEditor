@@ -112,6 +112,11 @@ public partial class RichEditorToolbar
         };
         items.Add(_zoomCombo);
 
+        // Paper, orientation and margins only in page view: a continuous editor draws no pages, so changing them would
+        // change nothing on screen. A host that wants them turns page view on (RichEditor.ViewMode).
+        _marginLabel = null; _marginBox = null;
+        if (Target?.ViewMode != RichEditorViewMode.Page) return;
+
         // Paper size — "Continuous" reflows to width; a concrete size fixes the column and shows the outline.
         _paperCombo = PageCombo(100, Loc("PaperTip"));
         foreach (var (size, label) in PaperSizes)

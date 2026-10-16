@@ -40,6 +40,7 @@ public class PageChromeBandRenderTests
     {
         var ed = new RichEditor
         {
+            ViewMode = RichEditorViewMode.Page,
             PageSize = RichEditorPageSize.A4,
             DefaultFontFamily = Inter,
             PageHeader = "HEADER TEXT",

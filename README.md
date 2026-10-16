@@ -117,7 +117,8 @@ for a full editor host.
 - Inline and block **images** — insert, resize (corner or single-edge handles), replace, save, alt text
 - Word-style **page view**: `PageSize` (Continuous by default, or A4/A3/A5/B4/B5/Letter/Legal/Tabloid),
   `PageOrientation`, `PageMargin` (four sides, in mm), `ShowPageBoundaries`, line-boundary page breaks,
-  headers/footers/page numbers
+  headers/footers/page numbers. Pages are drawn in `ViewMode = Page` (`RichEditorView` opens in it); a bare editor
+  reflows any document to its width and keeps the paper for saving and printing
 - Page setup is **persisted per document** (`FlowDocument.PageSetup`) and re-applied on load, like a word
   processor
 - **Print and PDF**: per-page rendering (`RenderPrintPage`, 300 DPI) and PDF export (`SavePdf`) with

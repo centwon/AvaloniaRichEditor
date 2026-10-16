@@ -289,7 +289,7 @@ public class PortBackportBundleTests
     [AvaloniaFact]
     public void TheToolbarsPaperPicker_EditsTheDocument_NotTheHostDefault()
     {
-        var ed = new RichEditor { Document = new FlowDocument() };
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page, Document = new FlowDocument() };
         ed.PageSize = RichEditorPageSize.A4; // host
         var tb = new RichEditorToolbar { Target = ed, ToolbarLevel = ToolbarLevel.Maximum }; // page controls live at Maximum
         var combo = (ComboBox?)typeof(RichEditorToolbar).GetField("_paperCombo", NP)!.GetValue(tb);

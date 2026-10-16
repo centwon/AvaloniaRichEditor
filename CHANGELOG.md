@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — ⚠ a bare editor shows every document continuous; pages are drawn in page view (2026-10-17)
+
+**`RichEditor.ViewMode`** (`RichEditorViewMode.Continuous`, the default, or `Page`) decides how the document shows on
+screen; the page setup stays the document's and is kept, saved and printed either way, like a word processor's draft
+view against its print layout. Before, the paper a document named decided the screen too, so an A4 file opened in a
+small editing box drew an A4 page on a grey desk. `RichEditorView` opens in page view, so a host using it sees no
+change. The toolbar offers paper, orientation and margins only while its target is in page view (they change nothing a
+continuous editor shows), and brings them back when the host turns it on.
+
+- ⚠ **A host that sets `PageSize` on a bare `RichEditor` to show pages now also sets `ViewMode = Page`.**
+- Tests: `ViewModeTests` — each of the three changes undone turns its test red. The tests that drew pages on a bare
+  editor (21) set page view and keep their meaning.
+
 ### Fixed — data loss and a save that never succeeds (2026-10-15)
 
 - **A number past the range of a double (`1e400`) in a JSON document read as infinity**, which JSON cannot spell: the

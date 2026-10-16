@@ -48,6 +48,12 @@ PR #48·#49·#50), 실기 후속도 PR #52로 들어왔다. 남은 것은 게시
 게시 절차: `<Version>` → Unshipped를 Shipped로 이관 → CHANGELOG `[Unreleased]` → 버전 → README 배지(en/ko) → PR로 3-OS CI →
 `v1.3.0` 태그 push(**사람이 실행**, Trusted Publishing) → **nuget.org 패키지 페이지 육안 확인**.
 
+**1e. 보기 모드 (2026-10-17)** — `RichEditor.ViewMode`(기본 `Continuous`): 맨 컨트롤은 어떤 문서든 연속으로 그리고, 쪽은
+`ViewMode = Page`에서만(`RichEditorView`는 `Page`로 연다). 용지 설정은 문서 것으로 보존·저장·인쇄. 툴바의 용지·방향·여백 칸은
+쪽 보기일 때만. ⚠ 맨 컨트롤에 `PageSize`로 쪽을 보이던 호스트는 `ViewMode = Page`를 더한다. 사용자 결정(10-17): KanuDoc에서
+정한 구조(`control-restructure.md` S13)를 1.3에 맞춤 — "새 일은 KanuDoc" 규칙의 예외. KanuDoc이 함께 고친 "같은 값의 호스트
+쪽 설정을 기록 못 함" 빈틈은 넣지 않았다(별개 결함, 1.x 미측정). WinUI 1.x는 그쪽 세션에서 정한다.
+
 **1c. 포크 기여 2건 반영 (2026-10-11)** — [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor)(09-20 포크,
 `OlivierJC.AvaloniaRichEditor 1.2.1-fork.*`로 자체 게시)가 고친 것을 현재 main에 다시 적용: **`DefaultForeground`**(색 없는 글자·목록 기호·
 IME 조합 글자의 색, 기본 검정 — 다크 테마 호스트용, 서식 지우기는 이제 색을 비움) · **`TrailingItems` 버튼이 포커스를 가져가던 결함**.

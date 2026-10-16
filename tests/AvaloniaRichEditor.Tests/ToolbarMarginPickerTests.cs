@@ -33,7 +33,7 @@ public class ToolbarMarginPickerTests : IDisposable
 
     private (RichEditor ed, RichEditorToolbar tb) Paged()
     {
-        var (host, tb) = InteractionHost.CreateWithToolbar(new RichEditor { Document = Doc() });
+        var (host, tb) = InteractionHost.CreateWithToolbar(new RichEditor { ViewMode = RichEditorViewMode.Page, Document = Doc() });
         _hosts.Add(host);
         tb.ToolbarLevel = ToolbarLevel.Maximum; // the page controls live at Maximum (and in the view toolbar)
         host.Editor.PageSize = RichEditorPageSize.A4;

@@ -402,6 +402,13 @@ public partial class RichEditor : Control
             InvalidateMeasure();
             InvalidateVisual();
         }
+        if (change.Property == ViewModeProperty)
+        {
+            _pageBreaks = null;  // a view change, not a page-setup change: nothing is recorded or captured
+            ClearLayoutCaches(); // shaped at the other mode's width
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
         if (change.Property == PageSizeProperty || change.Property == ShowPageBoundariesProperty
             || change.Property == PageOrientationProperty || change.Property == PageMarginProperty)
         {

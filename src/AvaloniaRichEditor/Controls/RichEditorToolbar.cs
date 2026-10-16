@@ -202,6 +202,7 @@ public partial class RichEditorToolbar : UserControl
     {
         if (e.Property == RichEditor.FontFamilyChoicesProperty) { Build(); Sync(); }
         else if (e.Property == RichEditor.IsReadOnlyProperty) { Build(); Sync(); } // editable vs view toolbar differ structurally
+        else if (e.Property == RichEditor.ViewModeProperty) { Build(); Sync(); } // the paper fields come and go with page view
         else if (e.Property == RichEditor.AllowImagesProperty
               || e.Property == RichEditor.AllowTablesProperty
               || e.Property == RichEditor.AllowFindReplaceProperty) ApplyFlags();

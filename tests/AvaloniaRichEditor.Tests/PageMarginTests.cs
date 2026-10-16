@@ -31,7 +31,7 @@ public class PageMarginTests
     [AvaloniaFact]
     public void TheContentColumnFollowsTheMargins()
     {
-        var ed = new RichEditor { Document = A4Doc(), PageSize = RichEditorPageSize.A4 };
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page, Document = A4Doc(), PageSize = RichEditorPageSize.A4 };
         double before = ed.ContentLayoutWidth;
 
         ed.PageMargin = Wide;
@@ -48,7 +48,7 @@ public class PageMarginTests
         var blocks = Enumerable.Range(0, 40).Select(_ => (Block)TestHelpers.Para(new Run { Text = "line" })).ToArray();
         var doc = new FlowDocument();
         foreach (var b in blocks) doc.Blocks.Add(b);
-        var ed = new RichEditor { Document = doc, PageSize = RichEditorPageSize.A4 };
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page, Document = doc, PageSize = RichEditorPageSize.A4 };
         ed.Measure(new Size(900, 1200));
         int before = ed.GetPrintPageCount();
 
@@ -62,7 +62,7 @@ public class PageMarginTests
     [AvaloniaFact]
     public void TheMarginsAreCapturedIntoTheDocument_AndRoundTripThroughJson()
     {
-        var ed = new RichEditor { Document = A4Doc(), PageSize = RichEditorPageSize.A4 };
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page, Document = A4Doc(), PageSize = RichEditorPageSize.A4 };
 
         ed.PageMargin = Wide;
 
@@ -75,7 +75,7 @@ public class PageMarginTests
     [AvaloniaFact]
     public void OpeningADocumentAppliesItsMargins()
     {
-        var ed = new RichEditor();
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page };
 
         ed.Document = A4Doc(Wide);
 
@@ -175,7 +175,7 @@ public class PageMarginTests
     [InlineData(double.PositiveInfinity, 10.0)]
     public void AMarginThatLeavesNoPage_IsRefusedByTheProperty(double x, double y)
     {
-        var ed = new RichEditor { Document = A4Doc(), PageSize = RichEditorPageSize.A4 };
+        var ed = new RichEditor { ViewMode = RichEditorViewMode.Page, Document = A4Doc(), PageSize = RichEditorPageSize.A4 };
 
         ed.PageMargin = new PageMargins(x, y, x, y);
 
