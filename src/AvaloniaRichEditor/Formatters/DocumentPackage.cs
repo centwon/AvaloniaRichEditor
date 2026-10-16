@@ -20,6 +20,11 @@ public static class DocumentPackage
     // The largest picture entry read back. Well past any photograph's encoded size.
     internal const long MaxPictureBytes = 256L * 1024 * 1024;
 
+    // The largest document.json read back — the same bound (user decision, 2026-10-17). Without pictures, which are
+    // entries of their own, a document's JSON is a few MB; inflated without a bound, a 379 KB package came out at
+    // 400 million characters and 1.9 GB (1.3.0 audit).
+    internal const long MaxDocumentBytes = 256L * 1024 * 1024;
+
     /// <summary>Writes <paramref name="document"/> to <paramref name="destination"/> as a .flow
     /// package. The stream is left open.</summary>
     public static void Save(FlowDocument document, Stream destination)
@@ -93,8 +98,21 @@ public static class DocumentPackage
             // from the WinUI port, where it was a user decision.)
             if (docEntry == null) throw new InvalidDataException("The zip has no document.json.");
             FlowDocumentDto? dto;
-            using (var s = docEntry.Open())
-                dto = JsonSerializer.Deserialize(s, DocumentJsonContext.Default.FlowDocumentDto);
+            using (var json = new MemoryStream())
+            {
+                using (var s = docEntry.Open())
+                {
+                    var chunk = new byte[81920];
+                    int n;
+                    while ((n = s.Read(chunk, 0, chunk.Length)) > 0)
+                    {
+                        json.Write(chunk, 0, n);
+                        if (json.Length > MaxDocumentBytes) throw new InvalidDataException("The package's document.json is too large.");
+                    }
+                }
+                json.Position = 0;
+                dto = JsonSerializer.Deserialize(json, DocumentJsonContext.Default.FlowDocumentDto);
+            }
 
             // Blocks referencing the same hash share one byte[] instance, like the JSON pool path.
             // Only the pictures the document USES are read, each up to MaxPictureBytes: every images/ entry used to

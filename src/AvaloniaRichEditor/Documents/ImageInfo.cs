@@ -22,8 +22,9 @@ internal static class ImageInfo
         // BMP: BITMAPINFOHEADER width @18 / height @22 (signed 32-bit LE; height may be negative=top-down).
         if (b[0] == (byte)'B' && b[1] == (byte)'M' && b.Length >= 26)
         {
-            int w = (int)LE32(b, 18);
-            int h = (int)LE32(b, 22);
+            // Widened before Abs: Math.Abs(int.MinValue) throws, and the image menus read this outside any catch.
+            long w = (int)LE32(b, 18);
+            long h = (int)LE32(b, 22);
             return (System.Math.Abs(w), System.Math.Abs(h));
         }
 

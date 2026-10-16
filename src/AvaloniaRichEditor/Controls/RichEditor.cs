@@ -1585,10 +1585,20 @@ public partial class RichEditor : Control
         // Entries for deleted paragraphs are never re-accessed and would linger; past a generous cap,
         // drop the ones no longer in the document (live entries survive and aren't reshaped) instead
         // of clearing wholesale. (The per-render bound is TrimLayoutCache; this covers walks with no render.)
-        if (_layoutCache.Count > 10000) PruneLayoutCaches();
+        if (_layoutCache.Count > _layoutPruneAt)
+        {
+            PruneLayoutCaches();
+            // A prune that leaves the cache over the cap — every entry live — must not run again on the next build:
+            // one render of a table with more than 10,000 cells builds a layout per cell, so each build walked the
+            // whole document for nothing, and 20,000 cells took 77 s to draw (1.3.0 audit). Doubling keeps it amortized.
+            _layoutPruneAt = Math.Max(LayoutPruneCap, 2 * _layoutCache.Count);
+        }
         _layoutCache[p] = new LayoutEntry(sig, maxWidth, layout) { Stamp = ++_layoutStamp };
         return layout;
     }
+
+    private const int LayoutPruneCap = 10000;
+    private int _layoutPruneAt = LayoutPruneCap;
 
     // Builds a paragraph's TextLayout — NOT cached. BuildTextLayout caches it; ParagraphHeight measures with it
     // and lets it go, which is what keeps the cache from holding the whole document (see _heightCache).

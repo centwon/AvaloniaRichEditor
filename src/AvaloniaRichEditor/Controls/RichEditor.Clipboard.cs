@@ -181,6 +181,9 @@ public partial class RichEditor  // doc comment lives on the primary declaration
 
         int cols = 1;
         foreach (var l in lines) cols = Math.Max(cols, l.Split('\t').Length);
+        // The bounds every other importer applies (round 35): one line of tabs over many short lines made rows x
+        // widest-row cells — 4.5 KB of text was 451,500 of them, and the editor did not come back (1.3.0 audit).
+        cols = TableBlock.ImportColumns(lines.Count, cols);
 
         // The constructor builds Cells/ColumnWidths/span grids consistently; just fill the cells'
         // text in place (rebuilding Cells alone would desync the span grids).

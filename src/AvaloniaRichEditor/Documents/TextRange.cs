@@ -53,7 +53,7 @@ public class TextRange
             var doc = GetFlowDocument(sp);
             if (doc == null) return;
 
-            int p1Len = GetParagraphLength(sp);
+            int p1Len = StartParagraphEnd(sp);
             DeleteInParagraph(sp, _start.Offset, p1Len);
             DeleteInParagraph(ep, 0, _end.Offset);
 
@@ -122,7 +122,7 @@ public class TextRange
         int endIdx = allParagraphs.IndexOf(ep);
 
         var sb = new StringBuilder();
-        int p1Len = GetParagraphLength(sp);
+        int p1Len = StartParagraphEnd(sp);
         sb.Append(GetParagraphText(sp, _start.Offset, p1Len));
 
         for (int i = startIdx + 1; i < endIdx; i++)
@@ -161,7 +161,7 @@ public class TextRange
         int startIdx = allParagraphs.IndexOf(sp);
         int endIdx = allParagraphs.IndexOf(ep);
 
-        result.AddRange(GetParagraphRuns(sp, _start.Offset, GetParagraphLength(sp)));
+        result.AddRange(GetParagraphRuns(sp, _start.Offset, StartParagraphEnd(sp)));
         for (int i = startIdx + 1; i < endIdx; i++)
         {
             result.Add(new Run { Text = "\n" });
@@ -219,7 +219,7 @@ public class TextRange
         var all = GetAllParagraphsInOrder(doc);
         int si = all.IndexOf(sp), ei = all.IndexOf(ep);
 
-        result.AddRange(GetParagraphInlines(sp, _start.Offset, GetParagraphLength(sp)));
+        result.AddRange(GetParagraphInlines(sp, _start.Offset, StartParagraphEnd(sp)));
         for (int i = si + 1; i < ei; i++)
         {
             result.Add(new Run { Text = "\n" });
@@ -278,7 +278,7 @@ public class TextRange
             int startIdx = allParagraphs.IndexOf(sp);
             int endIdx = allParagraphs.IndexOf(ep);
 
-            int p1Len = GetParagraphLength(sp);
+            int p1Len = StartParagraphEnd(sp);
             ApplyStyleToParagraph(sp, _start.Offset, p1Len, styleAction);
 
             for (int i = startIdx + 1; i < endIdx; i++)
@@ -448,6 +448,12 @@ public class TextRange
         if (HostedAt(p, _start.Paragraph) is int s) from = s + 1;
         return (from, Math.Max(from, to));
     }
+
+    // Where the range leaves its START paragraph: that paragraph's end — or, when the end lies inside one of the start
+    // paragraph's own inline tables, that table. A selection from "a|bc[table]def" into the table's cell covered the
+    // start to the line's end, so Delete took the table and "def" with "bc" (1.3.0 audit; CoveredSpan is the same
+    // rule for the paragraphs between the ends).
+    private int StartParagraphEnd(Paragraph sp) => HostedAt(sp, _end.Paragraph) ?? GetParagraphLength(sp);
 
     // The offset in `host` of the inline table that `inner` lies inside, at any depth; null when it does not.
     private static int? HostedAt(Paragraph host, Paragraph? inner)

@@ -1866,7 +1866,7 @@ public partial class RichEditor
             // Inside an inline table: step to the next paragraph/cell within the table; from its last
             // paragraph, exit to the host just after the table's ObjChar. (GetNextParagraph is NOT used
             // for the cells — they're not in the linear nav order.)
-            if (ImmediateInlineTable(_caretPosition.Paragraph) is { } enc)
+            if (EnclosingInlineTable(_caretPosition.Paragraph) is { } enc)
             {
                 var inTable = ParasInInlineTable(enc.it);
                 int i = inTable.IndexOf(_caretPosition.Paragraph);
@@ -1910,7 +1910,7 @@ public partial class RichEditor
         {
             // Inside an inline table: step to the previous paragraph/cell within the table; from its
             // first paragraph, exit to the host just before the table's ObjChar.
-            if (ImmediateInlineTable(_caretPosition.Paragraph) is { } enc)
+            if (EnclosingInlineTable(_caretPosition.Paragraph) is { } enc)
             {
                 var inTable = ParasInInlineTable(enc.it);
                 int i = inTable.IndexOf(_caretPosition.Paragraph);
@@ -1981,14 +1981,16 @@ public partial class RichEditor
         return null;
     }
 
-    // If cellPara sits directly in an inline table's cell, returns (wrapper, host paragraph, the table's
-    // ObjChar offset in the host). Only the immediate enclosing table is inline-aware here; a block table
-    // (nested or top-level) returns null so the existing cell navigation handles it.
-    private static (InlineTable it, Paragraph host, int objOffset)? ImmediateInlineTable(Paragraph cellPara)
+    // The nearest inline table cellPara lies in — directly in one of its cells, or in a block table nested in one —
+    // as (wrapper, host paragraph, the table's ObjChar offset in the host); null outside every inline table, where
+    // the document's navigation order applies. Only the DIRECT case was recognised, and a paragraph of a table
+    // nested in an inline table's cell is in neither order (ParagraphsInBlocksNav leaves inline tables out), so
+    // ←/→ stopped dead at its edge (1.3.0 audit). ParasInInlineTable already lists such paragraphs.
+    private static (InlineTable it, Paragraph host, int objOffset)? EnclosingInlineTable(Paragraph cellPara)
     {
-        if (cellPara.Parent is TableCell cell && cell.Parent is TableBlock tb
-            && tb.Parent is InlineTable it && it.Parent is Paragraph host)
-            return (it, host, OffsetOfInline(host, it));
+        for (object? cur = cellPara.Parent; cur is TextElement te; cur = te.Parent)
+            if (te is InlineTable it)
+                return it.Parent is Paragraph host ? (it, host, OffsetOfInline(host, it)) : null;
         return null;
     }
 

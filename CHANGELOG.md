@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the last audit before 1.3.0: two crashes, a hang, data loss (2026-10-17)
+
+The whole of `src` read again after rounds 34 and 35; every defect below was measured red first, fixed, and the fix
+taken back out to see the test go red again.
+
+- **Sizes a document states could add up to infinity, and the host's window threw at its next measure.** Each number is
+  finite — the JSON reader refuses `1e400` since 2026-10-15 — but two pictures 1e308 high, two paragraphs with a 1e308
+  top margin, or a run of size 1e308 at 160% line spacing summed past a double's range, and Avalonia's layout pass throws
+  on an infinite desired size. Pasted HTML reached it without any file: `<img width="Infinity" height="Infinity">`, a
+  `line-height:Infinity`, and our own spacing marker were taken as they came. The editor's measured height is kept finite.
+- **Deleting a selection from a line's own text into its inline table deleted the table and the rest of the line.**
+  Round 35 fixed a selection reaching the table from the line above; one starting before the table on the same line
+  still covered that line to its end. Copy and formatting had the same overreach.
+- **A table of more than 10,000 cells all but stopped the editor.** The layout cache pruned itself on every build past
+  10,000 entries, walking the whole document each time to find nothing to drop, because a table draws every cell in one
+  render: 20,000 cells took 77 s to draw. Now 1.3 s; 250,000 cells (the import bound) 7.4 s.
+- **Tab-separated text pasted as a table had no size bound.** Every other importer applies one (round 35); 4.5 KB of
+  clipboard text — one line of 1,500 tabs over 300 short lines — made 451,500 cells and did not come back. Bounded the
+  same: 1,000 columns, 250,000 cells.
+- **A `.flow` package's `document.json` was inflated without a bound.** Round 35 bounded the picture entries; a 379 KB
+  package inflated its document to 400 million characters and 1.9 GB. Now refused past 256 MB, like a damaged package.
+- **A BMP header claiming `int.MinValue` pixels threw `OverflowException`** out of the picture size menus (original size,
+  presets, treat as character), which read the size outside any handler.
+- **←/→ in a table nested in an inline table's cell did nothing at its edge**: the caret was in neither the inline
+  table's order nor the document's.
+- Tests: `Release13AuditTests` (unit), `Release13RenderAuditTests` (real Skia).
+
 ### Fixed — data loss and a save that never succeeds (2026-10-15)
 
 - **A number past the range of a double (`1e400`) in a JSON document read as infinity**, which JSON cannot spell: the

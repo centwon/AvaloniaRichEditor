@@ -90,15 +90,21 @@ public partial class RichEditor
                 double cw = PaperContentWidth;
                 _pageBreaks = ComputePageBreaks(cw, PaperContentHeight);
                 double contentH = MeasureContentHeight(cw) + (_pageBreaks.Count - 1) * NoChromePageGap;
-                _measuredHeight = Math.Max(MinHeight, contentH);
+                _measuredHeight = Math.Max(MinHeight, FiniteExtent(contentH));
                 return new Size(noWidth ? cw : Math.Max(availableSize.Width, cw), _measuredHeight);
             }
             double w = noWidth ? A4ContentWidth : availableSize.Width;
-            _measuredHeight = Math.Max(MinHeight, MeasureContentHeight(w));
+            _measuredHeight = Math.Max(MinHeight, FiniteExtent(MeasureContentHeight(w)));
             return new Size(w, _measuredHeight);
         }
         finally { _trustLayoutCache = false; } // never leak the trusted state past this measure pass
     }
+
+    // Every size and margin a document states is finite — the JSON reader refuses 1e400 — but two of them can add
+    // up past double's range, and a font size times its line spacing can on its own. An infinite or NaN desired
+    // size is an exception out of Avalonia's layout pass, so a file with two 1e308-high pictures took the host's
+    // window down at its first measure (1.3.0 audit, 2026-10-17).
+    private static double FiniteExtent(double h) => double.IsNaN(h) ? 0 : Math.Min(h, double.MaxValue);
 
     // The peer is created lazily (only when assistive tech attaches); kept so state changes
     // (read-only toggle) can be surfaced to it. Null until then.

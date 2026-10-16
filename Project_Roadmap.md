@@ -48,6 +48,22 @@ PR #48·#49·#50), 실기 후속도 PR #52로 들어왔다. 남은 것은 게시
 게시 절차: `<Version>` → Unshipped를 Shipped로 이관 → CHANGELOG `[Unreleased]` → 버전 → README 배지(en/ko) → PR로 3-OS CI →
 `v1.3.0` 태그 push(**사람이 실행**, Trusted Publishing) → **nuget.org 패키지 페이지 육안 확인**.
 
+**1d. 1.3.0 마지막 감사 (2026-10-17)** — 사용자가 고른 범위: `src` 전체(약 21,700줄) 다시 읽기. 결함 **7건**, 전부 빨강 먼저 →
+수정 → 수정을 되돌려 빨강 확인. 테스트: `Release13AuditTests`·`Release13RenderAuditTests`. 경과는 CHANGELOG.
+- 크래시 2: 문서가 말하는 크기의 **합**이 무한대(JSON 1e308 두 개, 붙여넣은 HTML `width="Infinity"`) → Avalonia 측정 예외 ·
+  BMP 헤더 `int.MinValue` → 그림 크기 메뉴에서 `OverflowException`.
+- 데이터 손실 1: 줄 안 글자에서 **그 줄의** 인라인 표 셀까지 선택 후 삭제 → 표와 줄 나머지 삭제(라운드35는 윗줄에서 들어오는 경우만 고침).
+- 멈춤·메모리 3: 셀 1만 개 넘는 표 = 레이아웃 캐시 prune이 매 빌드마다 문서 전체 순회(2만 셀 77 s → 1.3 s) · TSV 붙여넣기에
+  가져오기 표 상한 누락(4.5 KB → 451,500셀) · `.flow` document.json 압축 해제 무제한(379 KB → 1.9 GB).
+- 조작 1: 인라인 표 셀 안 중첩 표에서 ←/→가 가장자리에서 멈춤.
+- **사용자 결정(10-17)**: `.flow` document.json 상한 **256 MB**(그림 항목과 같은 값) · 접근성 `SetValue`는 기록만(아래 알려진 제한).
+- PR #67(호스트 모델 편집)에서 실측한 빈 undo 단계(목록 접두사 뒤 `InsertText(" ")` — 체크포인트 두 번)는 그 브랜치에서 고침
+  (사용자 결정). 뿌리가 같은 키보드 경로(캐럿이 접두사를 떠났다 돌아온 뒤의 공백)도 함께 고쳐졌다.
+- 기각(실측): Avalonia `OpenWriteAsync`가 기존 파일을 자르지 않아 내보내기가 꼬리를 남긴다는 의심 — 자른다(100 B → 3 B) ·
+  `<col width="Infinity">`·`line-height:1e308%`는 높이가 무한대에 닿지 않음 · PR #68(보기 모드)은 읽어서 결함 없음.
+- 교훈: 이번에도 공허한 초록 3번 — 새 `RichEditor`는 `Document`가 null이라 `InsertHtml`이 그냥 반환, 첫 렌더가 스톱워치
+  시작 전(`InteractionHost.Create`)에 일어남, 창에 직접 넣은 편집기는 무한 높이 측정을 받지 않음(실제 호스트는 ScrollViewer).
+
 **1c. 포크 기여 2건 반영 (2026-10-11)** — [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor)(09-20 포크,
 `OlivierJC.AvaloniaRichEditor 1.2.1-fork.*`로 자체 게시)가 고친 것을 현재 main에 다시 적용: **`DefaultForeground`**(색 없는 글자·목록 기호·
 IME 조합 글자의 색, 기본 검정 — 다크 테마 호스트용, 서식 지우기는 이제 색을 비움) · **`TrailingItems` 버튼이 포커스를 가져가던 결함**.
@@ -114,6 +130,8 @@ FindBar·FindReplace·IncomingContent) 결함 **19건**, 2순위 5개(Rendering�
   `data-are-empty`와 그 `<br>`을 보지 않아 빈 항목이 줄바꿈 든 항목으로 돌아왔다(포트는 항목이 통째로 사라짐).
 
 **알려진 제한 (의도적으로 둠)**
+- 접근성 `ValuePattern.SetValue`(화면 낭독기·받아쓰기 도구)는 `LoadHtml`을 탄다 — undo 기록이 지워지고 `IsModified`가 false가 된다
+  (1.3.0 감사, 사용자 결정 10-17: 기록만).
 - RTF 중첩 표의 열 너비는 가져올 때 기본값(`\cellx`가 무시되는 props 그룹 안에 있다).
 - RTF는 비대칭: 인라인 표·대체 텍스트는 RTF 자리가 없음(인라인 표는 `{\*\arinline}`로 자체 왕복만 복원).
 - ~~붙여넣기 배선은 헤드리스에 클립보드가 없어 테스트 밖~~ — **틀린 기록이었다**(라운드34): 헤드리스 `TopLevel.Clipboard`가
