@@ -141,6 +141,47 @@ public partial class RichEditor
         return sb.ToString().ReplaceLineEndings();
     }
 
+    /// <summary>Tells the editor that the host changed <see cref="Document"/> in place — added, removed or edited
+    /// blocks, inlines or run text — rather than through the editor's own commands. The model raises no change
+    /// notifications, so call this after such an edit and before the user goes on editing. Without it the caret can
+    /// keep pointing at a removed paragraph (what the user types next is lost), Enter in an added paragraph becomes a
+    /// line break, and a table added at the end has no paragraph after it to type into.
+    /// <para>The caret and selection stay where they were if their paragraph is still in the document, and go to the
+    /// end of the document otherwise. Undo history is kept, but the host's edit is not an undo step of its own:
+    /// undoing an edit made before it restores the document as it was then, without the host's edit.</para></summary>
+    public void NotifyDocumentChanged()
+    {
+        if (Document == null) return;
+        // What assigning a document runs (see OnPropertyChanged), minus what only a new document needs.
+        NormalizeTableSpans(Document.Blocks);
+        UpdateParents(Document);
+        ClearLayoutCaches();
+        ResetInteractionState(); // a selected block or picture, a drag, a cell mark: any may have been removed
+
+        var paras = GetAllParagraphsInOrder();
+        var live = new System.Collections.Generic.HashSet<Paragraph>(paras);
+        TextPointer? Keep(TextPointer tp) => tp.Paragraph != null && live.Contains(tp.Paragraph)
+            ? new TextPointer(tp.Paragraph, System.Math.Clamp(tp.Offset, 0, GetParagraphLength(tp.Paragraph)))
+            : null;
+        var caret = Keep(_caretPosition);
+        TextPointer? start = Keep(_selectionStart), end = Keep(_selectionEnd);
+        if (caret == null)
+        {
+            var last = paras.LastOrDefault();
+            caret = new TextPointer(last, last != null ? GetParagraphLength(last) : 0);
+        }
+        _caretPosition = caret;
+        if (start == null || end == null) CollapseSelectionToCaret();
+        else { _selectionStart = start; _selectionEnd = end; }
+
+        // End a coalescing run, so the next keystroke checkpoints a document that has the host's edit in it.
+        _editRun = EditRunKind.None;
+        _editRunRearm = EditRunKind.None;
+        MarkTextChanged();
+        InvalidateVisual();
+        NotifyStatus();
+    }
+
     /// <summary>True if there is an edit to undo.</summary>
     public bool CanUndo => _undoManager.CanUndo;
 

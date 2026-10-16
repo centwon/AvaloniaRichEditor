@@ -117,3 +117,4 @@ AvaloniaRichEditor.Controls.RichEditor.DefaultForeground.set -> void
 static readonly AvaloniaRichEditor.Controls.RichEditor.DefaultForegroundProperty -> Avalonia.StyledProperty<Avalonia.Media.IBrush!>!
 *REMOVED*AvaloniaRichEditor.Controls.RichEditor.SetForeground(Avalonia.Media.IBrush! brush) -> void
 AvaloniaRichEditor.Controls.RichEditor.SetForeground(Avalonia.Media.IBrush? brush) -> void
+AvaloniaRichEditor.Controls.RichEditor.NotifyDocumentChanged() -> void

@@ -10,14 +10,14 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
 
 ---
 
-## ✅ 현재 상태 (2026-09-23)
+## ✅ 현재 상태 (2026-10-17)
 
 - **게시**: `v1.2.1`(2026-09-08) — nuget.org. 이력: 0.9.0(07-12) → 1.0.0(07-31, API 동결) → 1.1.0(08-08) → 1.2.0/1.2.1(09-08).
 - **미릴리스**: 09-09 이후 라운드(대체 텍스트 ~ 라운드34), **호스트 API 3건**, 여백 실기 후속(PR #52)이 전부 `CHANGELOG.md` `[Unreleased]`.
   공개 API **추가만**(`PublicAPI.Unshipped.txt`, 제거·시그니처 변경 없음) → 다음은 **minor(1.3.0)**.
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
-- **검증**: 빌드 0 warn · unit **1287** + render **56** 그린(2026-10-01, 라운드35) · 3-OS CI(Windows/Linux/macOS) 그린(라운드34 전 기준).
+- **검증**: 빌드 0 warn · unit **1344** + render **56** 그린(2026-10-17) · 3-OS CI(Windows/Linux/macOS) 그린(라운드34 전 기준).
 - **레이아웃 캐시 = 화면에 있는 것만** (2026-09-30): 측정·페이지 나눔·지나가는 워크는 높이 캐시를 읽고, 렌더 뒤 LRU 256개로 트림.
   8,000문단 270 → 39 MB. 대가: 다시 화면에 들어온 문단은 재셰이핑(2,000문단 스크롤 +4 ms/쪽). 퍼즈에 **높이 오라클**
   (편집한 편집기 = 새 편집기 측정 높이)이 생겨 목록 토글 측정 누락·서명 해시 상쇄를 잡았다. 포트에 같은 두 결함이 있는지는 미측정.
@@ -47,6 +47,16 @@ PR #48·#49·#50), 실기 후속도 PR #52로 들어왔다. 남은 것은 게시
 
 게시 절차: `<Version>` → Unshipped를 Shipped로 이관 → CHANGELOG `[Unreleased]` → 버전 → README 배지(en/ko) → PR로 3-OS CI →
 `v1.3.0` 태그 push(**사람이 실행**, Trusted Publishing) → **nuget.org 패키지 페이지 육안 확인**.
+
+**1d. 호스트가 문서를 직접 고치는 경로 (2026-10-17)** — 외부 평가가 짚은 "모델 불변식이 컨트롤 편집 경로에만 있다"를
+측정했다. 모델은 변경 알림이 없다(`Paragraph.Inlines`·`TableCell.Blocks`는 `List`, `Run.Text`는 자동 속성, 지워진 요소의
+`Parent`도 그대로). 호스트가 직접 고치면: 캐럿 문단 제거 후 타이핑이 **사라짐**, 추가한 문단에서 Enter가 줄바꿈(부모 미연결),
+끝에 추가한 표 뒤에 문단이 없음. `Run.Text` 변경 후 재측정은 원래 맞았다. 같은 문서 재대입은 무시, `null` 경유는 undo가 지워져 우회로도 없었다.
+수정: 공개 `NotifyDocumentChanged()`(Unshipped 추가 — 재연결·정규화·캐시 비움·떨어져 나간 캐럿은 문서 끝, undo 유지, 묶기 끊기).
+사용자 결정(10-17): 셋(공개 메서드 / `CollectionChanged` 자동 감지 / 방어만) 중 **공개 메서드** — 편집 경로에 비용이 없고, 자동 감지는
+`List`라서 최상위 `Blocks`만 볼 수 있다. 측정 중 함께 나온 **공개 `InsertText`가 undo 체크포인트를 안 남기던 결함**도 같이 고침
+(내부 호출부 5곳은 전부 먼저 남기고 있어 private `TypeText`로 분리). 테스트 `HostModelMutationTests`, 세 수정 각각 반증.
+포트(WinUIRichEditor)에 같은 결함이 있는지는 미측정 — 이름은 상류를 따른다.
 
 **1c. 포크 기여 2건 반영 (2026-10-11)** — [olivierjc/AvaloniaRichEditor](https://github.com/olivierjc/AvaloniaRichEditor)(09-20 포크,
 `OlivierJC.AvaloniaRichEditor 1.2.1-fork.*`로 자체 게시)가 고친 것을 현재 main에 다시 적용: **`DefaultForeground`**(색 없는 글자·목록 기호·
@@ -171,6 +181,8 @@ FindBar·FindReplace·IncomingContent) 결함 **19건**, 2순위 5개(Rendering�
   무의존성(PBKDF2 600k = 124ms). **미결**: Argon2id용 의존성 1개 수용 여부.
 - 단락 경계 넘는 Find(줄바꿈 포함 검색어만, 실사용 극저) · HWP/XLS(구) 붙여넣기 · blockquote/중첩 목록 깊이 정밀화
 - 인라인 객체 공통 추상(`InlineObject`) — 세 번째 인라인 타입이 실제로 생기면
+- **2.0 후보: 모델이 자기 불변식을 지키기** — `Paragraph.Inlines`·`TableCell.Blocks`를 알림 컬렉션으로, 넣을 때 `Parent` 연결·뺄 때 해제,
+  문서가 변경 이벤트 하나를 올림 → 편집기는 그것만 듣는다. 공개 타입 변경이라 1.x 불가(10-17 결정). 그때 `NotifyDocumentChanged`는 호환용으로 남는다.
 - 의도적 보류(측정상 저가치): 델타 Undo · `ComputePageBreaks` 캐시 · HTML `HasBlockOrMedia` O(n²) · `ReplaceAll` O(N²) · G1 P2(BlockBox 캐싱)
 
 ---

@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `RichEditor.NotifyDocumentChanged()`, for a host that edits the document in place (2026-10-17)
+
+The model raises no change notifications (`Paragraph.Inlines` and a cell's `Blocks` are plain lists), so a host that
+changed `Document` itself — adding or removing blocks, inlines or run text — left the editor working on what it
+had last seen. Measured: removing the paragraph that held the caret made the next typed text go into the removed
+paragraph (lost, while `IsModified` turned on); Enter in an added paragraph became a line break, because the
+paragraph had no parent to split in; a table added at the end had no paragraph after it, so text typed at the end went
+into its last cell. Assigning the same document again does nothing, and assigning it through `null` clears the
+undo history. `NotifyDocumentChanged()` re-wires and normalizes the document, drops the layout caches, keeps the caret
+and selection in their paragraphs when those are still there (offset clamped) and moves them to the end of the
+document otherwise. Undo history is kept; the next keystroke starts a new undo step, so the host's edit is not taken
+back with the typing before it.
+
+### Fixed — `InsertText` was not an undo step (2026-10-17)
+
+The editor's own callers record an undo checkpoint before they insert, so the public method recorded none. Ctrl+Z
+after a host's `InsertText` undid the edit before it, taking the inserted text along, or did nothing when there was
+none. Each call is its own undo step now.
+
+- Tests: `HostModelMutationTests` — red without the call, without the run reset and without the checkpoint.
+
 ### Fixed — data loss and a save that never succeeds (2026-10-15)
 
 - **A number past the range of a double (`1e400`) in a JSON document read as infinity**, which JSON cannot spell: the

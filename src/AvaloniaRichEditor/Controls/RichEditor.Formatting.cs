@@ -564,10 +564,10 @@ public partial class RichEditor
         if (url.Length == 0) return;
         bool blank = targetRun == null && _selectionStart.CompareTo(_selectionEnd) == 0
             && _caretPosition.Paragraph is { } p && CaretWord(p) == null;
-        // InsertText is the typing primitive and pushes no checkpoint of its own (the key path coalesces them), so
+        // TypeText is the typing primitive and pushes no checkpoint of its own (the key path coalesces them), so
         // the inserted link is one undo step only with this one.
         if (blank && Document != null) PushUndo();
         SetHyperlink(url, targetRun); // blank: arms the link for the text typed next
-        if (blank) InsertText(url);   // …which is the address
+        if (blank) TypeText(url);     // …which is the address
     }
 }

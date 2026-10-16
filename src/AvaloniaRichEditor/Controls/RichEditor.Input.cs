@@ -858,7 +858,7 @@ public partial class RichEditor
         _selectedBlock = null;
         _caretBlock = null;
         PushUndoTyping(); // coalesce consecutive keystrokes into one undo checkpoint
-        InsertText(e.Text);
+        TypeText(e.Text);
         e.Handled = true;
     }
 

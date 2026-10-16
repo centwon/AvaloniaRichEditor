@@ -979,8 +979,18 @@ public partial class RichEditor : Control
 
     /// <summary>Inserts plain text at the caret, replacing any current selection.
     /// Triggers smart-list detection when <paramref name="text"/> is a space
-    /// following a list-prefix pattern at the start of a line.</summary>
+    /// following a list-prefix pattern at the start of a line. Each call is its own undo step.</summary>
     public void InsertText(string text)
+    {
+        if (Document == null || IsReadOnly || _caretPosition.Paragraph == null || string.IsNullOrEmpty(text)) return;
+        // The internal callers checkpoint before they call TypeText (typing coalesces its keystrokes into one); a
+        // host's call had nobody to, so Ctrl+Z skipped the inserted text and undid the edit before it as well.
+        PushUndo();
+        TypeText(text);
+    }
+
+    // The typing primitive behind InsertText. Pushes no undo checkpoint: every caller has already pushed one.
+    private void TypeText(string text)
     {
         if (Document == null || IsReadOnly || _caretPosition.Paragraph == null) return;
         // Normalize pasted/external line endings to the model's '\n' (a run may hold soft '\n'; the
