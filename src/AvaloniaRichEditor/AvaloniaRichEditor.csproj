@@ -21,7 +21,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <!-- Shown on the package page: the dependency floor moved, and a consumer pinned to Avalonia 12.0.x
          will see a restore error rather than a silent problem. Say why in the place they look first. -->
-    <PackageReleaseNotes>The last 1.x feature release. ⚠ A bare RichEditor now shows every document continuous: set ViewMode = Page to draw pages (RichEditorView does). Line spacing follows HWP (160% of the font size by default). Requires Avalonia 12.1 or later. Full notes and the other behaviour changes: https://github.com/centwon/AvaloniaRichEditor/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>⚠ A bare RichEditor now shows every document continuous: set ViewMode = Page to draw pages (RichEditorView does). Line spacing follows HWP (160% of the font size by default). Requires Avalonia 12.1 or later. Full notes and the other behaviour changes: https://github.com/centwon/AvaloniaRichEditor/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <Copyright>Copyright (c) 2026 centwon</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>

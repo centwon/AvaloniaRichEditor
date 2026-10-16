@@ -8,8 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.0] - 2026-10-17
 
-The last feature release of 1.x — from here on 1.x takes reports of security, data-loss and crash defects only.
-It carries what hosts asked for (page margins, row and column commands, the shortcut table, a default text colour
+This release carries what hosts asked for (page margins, row and column commands, the shortcut table, a default text colour
 for dark themes, a view mode, a way to tell the editor about edits made to the model directly) and three audits:
 round 34 (files no test reached), round 35 and a last pass over all of `src/` before this release. Those audits
 found inputs that ended the host process — 11 KB of nested HTML, deeply nested RTF tables, document sizes adding up
