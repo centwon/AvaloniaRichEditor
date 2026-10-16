@@ -184,6 +184,9 @@ FindBar·FindReplace·IncomingContent) 결함 **19건**, 2순위 5개(Rendering�
 - **2.0 후보: 모델이 자기 불변식을 지키기** — `Paragraph.Inlines`·`TableCell.Blocks`를 알림 컬렉션으로, 넣을 때 `Parent` 연결·뺄 때 해제,
   문서가 변경 이벤트 하나를 올림 → 편집기는 그것만 듣는다. 공개 타입 변경이라 1.x 불가(10-17 결정). 그때 `NotifyDocumentChanged`는 호환용으로 남는다.
 - 의도적 보류(측정상 저가치): 델타 Undo · `ComputePageBreaks` 캐시 · HTML `HasBlockOrMedia` O(n²) · `ReplaceAll` O(N²) · G1 P2(BlockBox 캐싱)
+  · **`GetStatus` 캐럿 이동마다 전체 순회**(10-17 실측, Release 헤드리스): 글자 100만 개당 약 3 ms 선형 — 8,000문단(68만 자) 2.4 ms,
+  32,000문단(274만 자) 8.8 ms(같은 문서 재측정 11.2 ms와 합쳐 프레임 초과 가능). `RichEditorView` 상태바만 부른다(`SelectionChanged`).
+  고친다면 상태바 갱신을 `Dispatcher` Background로 합치기(공개 API 변화 없음).
 
 ---
 
