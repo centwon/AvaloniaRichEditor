@@ -14,14 +14,14 @@
   <!-- NuGet package metadata (roadmap N1, target 0.1.0-alpha) -->
   <PropertyGroup>
     <PackageId>AvaloniaRichEditor</PackageId>
-    <Version>1.2.1</Version>
+    <Version>1.3.0</Version>
     <Authors>centwon</Authors>
     <Description>A from-scratch rich text editor control for Avalonia, built purely on the TextLayout engine. Supports inline formatting, paragraphs, lists, tables (cell merge, nested tables, and HWP-style inline "treat as character" tables), images, hyperlinks, HTML/JSON/RTF round-trip, find/replace, undo/redo, CJK IME, a Word-style page view (continuous or fixed paper), and print/PDF page rendering.</Description>
     <PackageTags>avalonia;richtextbox;editor;wysiwyg;rich-text;flowdocument;text</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <!-- Shown on the package page: the dependency floor moved, and a consumer pinned to Avalonia 12.0.x
          will see a restore error rather than a silent problem. Say why in the place they look first. -->
-    <PackageReleaseNotes>Requires Avalonia 12.1 or later: 12.0.x hangs (and exhausts memory) laying out a paragraph that contains a blank soft line, which two Shift+Enters or a pasted &lt;br&gt;&lt;br&gt; produce. Full notes: https://github.com/centwon/AvaloniaRichEditor/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>The last 1.x feature release. ⚠ A bare RichEditor now shows every document continuous: set ViewMode = Page to draw pages (RichEditorView does). Line spacing follows HWP (160% of the font size by default). Requires Avalonia 12.1 or later. Full notes and the other behaviour changes: https://github.com/centwon/AvaloniaRichEditor/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <Copyright>Copyright (c) 2026 centwon</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>

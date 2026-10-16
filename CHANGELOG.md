@@ -6,6 +6,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-17
+
+The last feature release of 1.x — from here on 1.x takes reports of security, data-loss and crash defects only.
+It carries what hosts asked for (page margins, row and column commands, the shortcut table, a default text colour
+for dark themes, a view mode, a way to tell the editor about edits made to the model directly) and three audits:
+round 34 (files no test reached), round 35 and a last pass over all of `src/` before this release. Those audits
+found inputs that ended the host process — 11 KB of nested HTML, deeply nested RTF tables, document sizes adding up
+to infinity — and inputs that cost gigabytes or minutes; every one has a test that failed before its fix.
+
+**API**: additions, plus one source-compatible change — `SetForeground` takes `IBrush?` (`null` = the default
+colour). Code written for 1.2 compiles unchanged.
+
+> ⚠️ **Behaviour changes — check these when you upgrade:**
+> - **A bare `RichEditor` shows every document continuous.** Pages are drawn only with `ViewMode = Page`
+>   (`RichEditorView` opens in it). A host that set `PageSize` on a bare editor to show pages adds that line.
+> - **Line spacing follows HWP**: a percentage of the font size, 160% by default. Files are unchanged, but
+>   existing documents render with the new spacing.
+> - **A table, picture or divider sits one line gap below the text above it**: their `MarginTop` defaults to
+>   `Block.AutoTopMargin` (NaN). Code that does arithmetic with `MarginTop` must expect NaN.
+> - **Headings carry their bold and size on their text**: applying a heading writes them onto the runs, and
+>   un-bolding heading text now stays un-bolded.
+> - **The JSON this writes is smaller and its bytes differ** (defaults left out, non-ASCII as is, no
+>   indentation). The schema is unchanged and every earlier reader reads it. A newer major format is refused on
+>   load, and so is input that is not a document of this library — no more silently empty documents.
+> - **A block goes where the caret is** (a paragraph is split around it), and **Tab in any table's last cell adds
+>   a row**.
+> - **Rich paste honours `AllowImages` / `AllowTables`**; pasted HTML never reads pictures from network shares,
+>   and script links are dropped on every input path.
+> - **Untrusted input is bounded**: pictures to 100 megapixels, tables to 1,000 columns / 250,000 cells, HTML to
+>   128 levels, RTF table nesting to 32, `.flow` entries to 256 MB.
+
+Verified: build with no warnings, 1,364 unit and 60 render tests, CI on Windows, Linux and macOS.
+
 ### Fixed — the last audit before 1.3.0: two crashes, a hang, data loss (2026-10-17)
 
 The whole of `src` read again after rounds 34 and 35; every defect below was measured red first, fixed, and the fix
