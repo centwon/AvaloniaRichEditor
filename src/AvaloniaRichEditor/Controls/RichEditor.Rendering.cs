@@ -339,29 +339,19 @@ public partial class RichEditor
         DrawingContext context, double maxWidth, double visTop, double visBottom, bool chrome = true)
     {
         TextPointer? selStart = null, selEnd = null;
-        HashSet<Paragraph>? selectedParagraphs = null;
+        Dictionary<Paragraph, (int From, int To)>? selectedParagraphs = null;
         int selCmp = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
             ? _selectionStart.CompareTo(_selectionEnd) : 0;
         if (chrome && _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && selCmp != 0)
         {
             if (selCmp < 0) { selStart = _selectionStart; selEnd = _selectionEnd; }
             else { selStart = _selectionEnd; selEnd = _selectionStart; }
-            var allParas = GetAllParagraphsInOrder();
-            // One scan for both endpoints instead of two IndexOf passes (this runs every render frame a
-            // selection exists — once per visible page in page view — so the linear walks add up on drag).
-            int si = -1, ei = -1;
-            for (int idx = 0; idx < allParas.Count; idx++)
-            {
-                var pp = allParas[idx];
-                if (si < 0 && ReferenceEquals(pp, selStart.Paragraph)) si = idx;
-                if (ReferenceEquals(pp, selEnd.Paragraph)) ei = idx;
-            }
-            if (si >= 0 && ei >= 0)
-            {
-                selectedParagraphs = new HashSet<Paragraph>();
-                for (int idx = si; idx <= ei; idx++)
-                    selectedParagraphs.Add(allParas[idx]);
-            }
+            // The part of each paragraph that Delete and Copy take (TextRange.Covered): a host whose inline table holds
+            // an endpoint is lit only on the selected side of the table. Lit from the start's paragraph to the end's in
+            // document order, the cells and host text a selection into an inline table did not cover were lit too.
+            selectedParagraphs = new Dictionary<Paragraph, (int From, int To)>();
+            foreach (var c in new TextRange(selStart, selEnd).Covered())
+                if (c.To > c.From) selectedParagraphs[c.Paragraph] = (c.From, c.To);
         }
 
         double yOffset = 0;
@@ -531,13 +521,8 @@ public partial class RichEditor
 
                 DrawParagraphDecor(context, paragraph, px, yOffset, pWidth, layout.Height, 0);
 
-                if (selectedParagraphs?.Contains(paragraph) == true)
-                {
-                    int hlStart = (paragraph == selStart!.Paragraph) ? selStart.Offset : 0;
-                    int hlEnd = (paragraph == selEnd!.Paragraph) ? selEnd.Offset : fullText.Length;
-                    if (hlEnd > hlStart)
-                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, px, yOffset);
-                }
+                if (selectedParagraphs != null && selectedParagraphs.TryGetValue(paragraph, out var hl))
+                    DrawSelectionHighlight(context, layout, hl.From, hl.To, px, yOffset);
 
                 if (chrome) DrawFindHighlights(context, paragraph, layout, px, yOffset);
 
@@ -682,7 +667,7 @@ public partial class RichEditor
         DrawingContext context, System.Collections.Generic.IList<Block> blocks,
         double ox, double oy, double innerW, bool chrome,
         bool cellSelected, bool cellRangeActive,
-        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        Dictionary<Paragraph, (int From, int To)>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
         ref Point? caretPoint, ref double caretHeight)
     {
         double by = 0;
@@ -721,14 +706,8 @@ public partial class RichEditor
                 // nothing on screen. The bar stays inside the cell's padding (`ox - 4`), clear of its border.
                 DrawParagraphDecor(context, para, px, blkY, pw, layout.Height, ox - 4);
 
-                if (!cellSelected && !cellRangeActive && selectedParagraphs?.Contains(para) == true)
-                {
-                    int cellLen = GetParagraphLength(para);
-                    int hlStart = (para == selStart!.Paragraph) ? selStart.Offset : 0;
-                    int hlEnd = (para == selEnd!.Paragraph) ? selEnd.Offset : cellLen;
-                    if (hlEnd > hlStart)
-                        DrawSelectionHighlight(context, layout, hlStart, hlEnd, px, blkY);
-                }
+                if (!cellSelected && !cellRangeActive && selectedParagraphs != null && selectedParagraphs.TryGetValue(para, out var hl))
+                    DrawSelectionHighlight(context, layout, hl.From, hl.To, px, blkY);
 
                 if (chrome) DrawFindHighlights(context, para, layout, px, blkY);
 
@@ -813,7 +792,7 @@ public partial class RichEditor
     // render, with the caret threaded back by ref. No-op (and allocation-free) when the list is empty.
     private void FlushInlineTableDraws(
         DrawingContext context, bool chrome,
-        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        Dictionary<Paragraph, (int From, int To)>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
         ref Point? caretPoint, ref double caretHeight)
     {
         if (_inlineTableDraws.Count == 0) return;
@@ -830,7 +809,7 @@ public partial class RichEditor
     // Draws a nested table's grid at (startX, top) and recurses into each anchor cell via DrawCellBlockList.
     private void DrawNestedTable(
         DrawingContext context, TableBlock tb, double startX, double top, bool chrome,
-        HashSet<Paragraph>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
+        Dictionary<Paragraph, (int From, int To)>? selectedParagraphs, TextPointer? selStart, TextPointer? selEnd,
         ref Point? caretPoint, ref double caretHeight)
     {
         var tl = LayoutTable(tb, startX, top);

@@ -112,9 +112,19 @@ public partial class RichEditor
     // nested inside it (a nested or inline table's own cells count as cell content).
     private static (Paragraph first, Paragraph last)? CellEnds(TableCell cell)
     {
+        // The last in POSITION order: not a paragraph of an inline table in the cell, whose cells the document order
+        // lists after their host but which sit inside the host's line — the host's text after it comes later. Taken as
+        // the end, a selection to it left that text out, and it still read as the whole table (2026-10-18).
         Paragraph? first = null, last = null;
-        foreach (var q in ParagraphsInBlocks(cell.Blocks)) { first ??= q; last = q; }
-        return first != null ? (first, last!) : null;
+        foreach (var q in ParagraphsInBlocks(cell.Blocks)) { first ??= q; if (!InInlineTableWithin(q, cell)) last = q; }
+        return first != null ? (first, last ?? first) : null;
+    }
+
+    private static bool InInlineTableWithin(Paragraph p, TableCell cell)
+    {
+        for (object? cur = p.Parent; cur is TextElement te && !ReferenceEquals(te, cell); cur = te.Parent)
+            if (te is InlineTable) return true;
+        return false;
     }
 
     private bool SelectionSpans(Paragraph first, Paragraph last)

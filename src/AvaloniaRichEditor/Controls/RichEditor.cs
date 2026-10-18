@@ -2464,22 +2464,92 @@ public partial class RichEditor : Control
 
         if (!spansMultiple && !hasNonParagraph) return null; // plain inline selection
 
-        // The end paragraphs are trimmed to the selection: cloned whole, a copy from the middle of one paragraph, across
-        // a table, into the middle of another brought back the unselected text of both on an in-app paste (2026-10-15).
-        // An endpoint inside a paragraph's inline table takes that paragraph from its start / to its end.
+        // The end blocks are trimmed to what the selection covers (TextRange.Covered) — what Delete removes. The end
+        // paragraphs were cloned whole once (2026-10-15); after that a table an endpoint lies in was still cloned whole
+        // while Delete cleared only its covered cells, and the paragraph holding an inline table an endpoint lies in
+        // was taken from its start or to its end (WinUI port's pre-publish audit, 2026-10-18: a cut pasted back more
+        // than it took). The blocks strictly between are whole, as Delete removes them whole.
+        var spans = new Dictionary<Paragraph, (int From, int To)>();
+        foreach (var c in range.Covered()) spans[c.Paragraph] = (c.From, c.To);
         var blocks = new List<Block>();
         for (int k = si; k <= ei; k++)
         {
             var b = Document.Blocks[k];
-            if (b is Paragraph para)
+            bool between = k > si && k < ei;
+            if (!between && b is Paragraph para)
             {
-                int from = k == si && ReferenceEquals(para, range.Start.Paragraph) ? range.Start.Offset : 0;
-                int to = k == ei && ReferenceEquals(para, range.End.Paragraph) ? range.End.Offset : GetParagraphLength(para);
-                blocks.Add(CloneParagraphRange(para, from, to));
+                var (from, to) = spans.TryGetValue(para, out var span) ? span : (0, 0);
+                blocks.Add(TrimParagraph(para, from, to, spans));
             }
+            else if (!between && b is TableBlock etb) blocks.Add(TrimTable(etb, spans));
             else if (b.Clone() is Block cl) blocks.Add(cl);
         }
         return blocks.Count > 0 ? blocks : null;
+    }
+
+    // A paragraph's covered part [from, to) with its format: an inline object inside the part whole, and an inline
+    // table holding an endpoint with only its own covered text (it stays in the document when the selection is
+    // deleted, so it is no part of the copy otherwise).
+    private static Paragraph TrimParagraph(Paragraph p, int from, int to, Dictionary<Paragraph, (int From, int To)> spans)
+    {
+        var np = new Paragraph();
+        np.CopyFormatFrom(p);
+        int idx = 0;
+        foreach (var inl in p.Inlines)
+        {
+            int len = InlineLen(inl);
+            int segStart = idx, segEnd = idx + len;
+            idx = segEnd;
+            if (len == 0) continue;
+            if (inl is Run r && r.Text != null)
+            {
+                int x = Math.Max(from, segStart) - segStart, y = Math.Min(to, segEnd) - segStart;
+                if (y > x) { var c = (Run)r.Clone(); c.Text = r.Text.Substring(x, y - x); c.Parent = np; np.Inlines.Add(c); }
+            }
+            else if (segStart >= from && segEnd <= to)
+            {
+                var c = (Inline)inl.Clone(); c.Parent = np; np.Inlines.Add(c);
+            }
+            else if (inl is InlineTable it && TouchesTable(it.Table, spans))
+                np.Inlines.Add(new InlineTable { Table = TrimTable(it.Table, spans), Parent = np });
+        }
+        if (np.Inlines.Count == 0) np.Inlines.Add(new Run { Text = "", Parent = np });
+        return np;
+    }
+
+    private static bool TouchesTable(TableBlock tb, Dictionary<Paragraph, (int From, int To)> spans)
+    {
+        var paras = new List<Paragraph>();
+        TextRange.CollectParagraphs(new Block[] { tb }, paras);
+        foreach (var p in paras)
+            if (spans.TryGetValue(p, out var s) && s.From < s.To) return true;
+        return false;
+    }
+
+    // A table with its structure (rows, columns, merges, widths, cell formats) and only the covered text in its cells —
+    // what deleting the selection empties. Blocks other than paragraphs and tables stay in the document, so not here.
+    private static TableBlock TrimTable(TableBlock tb, Dictionary<Paragraph, (int From, int To)> spans)
+    {
+        var copy = (TableBlock)tb.Clone();
+        for (int r = 0; r < tb.Cells.Count && r < copy.Cells.Count; r++)
+            for (int c = 0; c < tb.Cells[r].Count && c < copy.Cells[r].Count; c++)
+            {
+                var src = tb.Cells[r][c];
+                var dst = copy.Cells[r][c];
+                dst.Blocks.Clear();
+                foreach (var blk in src.Blocks)
+                {
+                    if (blk is Paragraph cp)
+                    {
+                        var (from, to) = spans.TryGetValue(cp, out var s) ? s : (0, 0);
+                        dst.Blocks.Add(TrimParagraph(cp, from, to, spans));
+                    }
+                    else if (blk is TableBlock nested) dst.Blocks.Add(TrimTable(nested, spans));
+                }
+                if (dst.Blocks.Count == 0) dst.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+                foreach (var blk in dst.Blocks) blk.Parent = dst;
+            }
+        return copy;
     }
 
     // Inserts cloned blocks (e.g. tables) at the caret, splitting the caret paragraph so the paste lands

@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — ⚠ a selection into an inline table deleted the table's other cells (data loss)
+
+Found by the WinUI port's audit before publishing its 1.3.0 (2026-10-18); the same model here, measured here too.
+
+- **One Shift+Left from just after an inline table, then Delete, emptied every other cell of the table.** In
+  `ab[table]cd` the caret right after the table steps into the end of its last cell — nothing is selected yet — and
+  Delete cleared all the cells before it. A selection that entered the table with Shift+Right from just before it
+  copied the line's text after the table, which it never covered.
+- **Cause: the order of positions.** The document order lists an inline table's cells right after the paragraph that
+  holds it, and positions were compared by that order — so every cell position sorted after the host's text after the
+  table, and a selection from there back into the table read as "everything from the host's text to that cell": every
+  other cell. Round 35, 2026-10-15 and the 1.3.0 audit each fixed a case of this in one path; the order stayed.
+- **Fix: one rule.** A position inside an inline table sits, for its host paragraph, between the table's offset and the
+  next (at any depth; new internal `PositionOrder`). `TextPointer.CompareTo` uses it, and each paragraph's covered part
+  follows from it mechanically (`TextRange.Covered`). Delete, formatting, the text, the highlight and the copy all use
+  those parts.
+- **Copy takes what Delete removes.** A table an endpoint lies in is copied with its structure and only the covered
+  text (it was cloned whole while Delete cleared only the covered cells — a cut pasted back more than it took). The
+  whole-table check (`SelectedWholeTable`) takes a cell's end in position order: a cell whose last paragraph holds an
+  inline table ends at that paragraph's end, not inside the inline table.
+- A selection covering an inline table whole now formats the table's text too, and its plain text includes it — as
+  selecting the table would.
+- Tests: `SelectionPositionOrderTests` — the reported cases, the order itself, and a random-selection fuzz (documents
+  with inline tables three deep, four ranges per seed: the letters the copy holds are the letters Delete removes).
+  Before: 8 of the first 9 ranges differed. After: 0 over 20,000 seeds. Each fix reverted turns a test red.
+
 ## [1.3.0] - 2026-10-17
 
 This release carries what hosts asked for (page margins, row and column commands, the shortcut table, a default text colour

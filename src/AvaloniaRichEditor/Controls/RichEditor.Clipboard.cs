@@ -332,18 +332,17 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         var s = cmp < 0 ? _selectionStart : _selectionEnd;
         var e = cmp < 0 ? _selectionEnd : _selectionStart;
 
-        var all = GetAllParagraphsInOrder();
-        int si = all.IndexOf(s.Paragraph!), ei = all.IndexOf(e.Paragraph!);
-        if (si < 0 || ei < 0 || si > ei) return null;
+        // The covered paragraphs (TextRange.Covered), in position order: a paragraph holding an inline table an endpoint
+        // lies in is taken only on the selected side of it, and an inline table the selection takes whole comes inside
+        // its paragraph, not cell by cell (WinUI port's pre-publish audit, 2026-10-18).
+        var parts = new TextRange(s, e).Covered();
+        parts.RemoveAll(c => c.InsideCoveredObject);
+        if (parts.Count == 0) return null;
+        parts.Sort((a, b) => ReferenceEquals(a.Paragraph, b.Paragraph) ? 0
+            : new TextPointer(a.Paragraph, a.From).CompareTo(new TextPointer(b.Paragraph, b.From)));
 
         var doc = new FlowDocument();
-        for (int i = si; i <= ei; i++)
-        {
-            var p = all[i];
-            int from = i == si ? s.Offset : 0;
-            int to = i == ei ? e.Offset : GetParagraphLength(p);
-            doc.Blocks.Add(CloneParagraphRange(p, from, to));
-        }
+        foreach (var c in parts) doc.Blocks.Add(CloneParagraphRange(c.Paragraph, c.From, c.To));
         return doc;
     }
 

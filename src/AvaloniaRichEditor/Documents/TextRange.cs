@@ -35,6 +35,84 @@ public class TextRange
     /// <summary><see langword="true"/> when Start and End are at the same position (nothing selected).</summary>
     public bool IsEmpty => _start.CompareTo(_end) == 0;
 
+    // ---- what the range covers ----------------------------------------------------------------------------------
+    // Every operation below goes by one rule (PositionOrder.Span): a paragraph's covered part is the offsets between
+    // the endpoints in POSITION order, where an inline table's cells sit inside their host at the table's place.
+    // Each operation used to walk the paragraph list from the start's to the end's with its own trimming at the two
+    // ends; three of those trimmings were fixed one path at a time (round 35, 2026-10-15, the 1.3.0 audit), and a
+    // selection from after an inline table back into it was still read inside out — one Shift+Left and Delete
+    // emptied every other cell of the table (WinUI port's pre-publish audit, 2026-10-18; measured here too).
+
+    internal readonly record struct CoveredPart(Paragraph Paragraph, int From, int To, bool InsideCoveredObject);
+
+    // The paragraphs the range touches, in document order, each with the part it covers (From < To), plus the start
+    // and end paragraphs even where they cover nothing (a copied paragraph break). InsideCoveredObject marks a
+    // paragraph in an inline table that a covered part of its host takes whole: that table is one object to delete
+    // or copy, not a range of cells.
+    internal List<CoveredPart> Covered()
+    {
+        var result = new List<CoveredPart>();
+        var sp = _start.Paragraph;
+        var ep = _end.Paragraph;
+        if (sp == null || ep == null) return result;
+        var doc = GetFlowDocument(sp);
+        if (doc == null)
+        {
+            if (ReferenceEquals(sp, ep)) result.Add(new CoveredPart(sp, _start.Offset, Math.Max(_start.Offset, _end.Offset), false));
+            return result;
+        }
+
+        var startTop = TopLevelBlockOf(doc, sp);
+        var endTop = TopLevelBlockOf(doc, ep);
+        int si = startTop != null ? doc.Blocks.IndexOf(startTop) : -1;
+        int ei = endTop != null ? doc.Blocks.IndexOf(endTop) : -1;
+        if (si < 0 || ei < si) return result;
+
+        // Only the top-level blocks from the start's to the end's can hold a covered paragraph.
+        var order = new Dictionary<Paragraph, int>();
+        var paras = new List<Paragraph>();
+        for (int b = si; b <= ei; b++)
+        {
+            var inBlock = new List<Paragraph>();
+            CollectParagraphs(new[] { doc.Blocks[b] }, inBlock);
+            foreach (var p in inBlock) { order[p] = order.Count; paras.Add(p); }
+        }
+        int Index(Paragraph p) => order.TryGetValue(p, out int i) ? i : -1;
+
+        var spans = new Dictionary<Paragraph, (int From, int To)>();
+        foreach (var p in paras)
+        {
+            var span = PositionOrder.Span(p, GetParagraphLength(p), _start, _end, Index);
+            if (span.From < span.To || ReferenceEquals(p, sp) || ReferenceEquals(p, ep))
+                spans[p] = (span.From, Math.Max(span.From, span.To));
+        }
+        (int, int) SpanOf(Paragraph h) => spans.TryGetValue(h, out var s) ? s : (0, 0);
+        foreach (var p in paras)
+            if (spans.TryGetValue(p, out var s))
+                result.Add(new CoveredPart(p, s.From, s.To, PositionOrder.InsideCoveredObject(p, SpanOf)));
+        return result;
+    }
+
+    // The covered parts in POSITION order (an inline table's cells where the table is), for what is read in
+    // sequence: the text and the copied runs.
+    private List<CoveredPart> CoveredInPositionOrder(bool skipCoveredObjects)
+    {
+        var parts = Covered();
+        if (skipCoveredObjects) parts.RemoveAll(c => c.InsideCoveredObject);
+        parts.Sort((a, b) => ReferenceEquals(a.Paragraph, b.Paragraph) ? 0
+            : new TextPointer(a.Paragraph, a.From).CompareTo(new TextPointer(b.Paragraph, b.From)));
+        return parts;
+    }
+
+    private static bool HasInlineTable(Paragraph p)
+    {
+        foreach (var i in p.Inlines) if (i is InlineTable) return true;
+        return false;
+    }
+
+    // One paragraph with no inline table in it: the range is that paragraph's [start, end) and nothing else.
+    private bool IsSimple => ReferenceEquals(_start.Paragraph, _end.Paragraph) && _start.Paragraph is { } p && !HasInlineTable(p);
+
     /// <summary>Deletes all content covered by this range (across paragraph boundaries).
     /// After deletion, <see cref="Start"/> and <see cref="End"/> both point to the same position.</summary>
     public void Delete()
@@ -44,58 +122,56 @@ public class TextRange
         var ep = _end.Paragraph;
         if (sp == null || ep == null) return;
 
-        if (ReferenceEquals(sp, ep))
+        if (IsSimple)
         {
             DeleteInParagraph(sp, _start.Offset, _end.Offset);
+            _end = new TextPointer(sp, _start.Offset);
+            return;
+        }
+
+        var parts = Covered(); // before anything moves
+        var doc = GetFlowDocument(sp);
+        if (doc == null)
+        {
+            // A paragraph in no document (a host's own, before it is added): only a range inside it has a part.
+            foreach (var c in parts) DeleteInParagraph(c.Paragraph, c.From, c.To);
+            _end = new TextPointer(sp, _start.Offset);
+            return;
+        }
+
+        var container = ContainerOf(sp);
+        bool siblings = !ReferenceEquals(sp, ep) && container != null && ReferenceEquals(container, ContainerOf(ep));
+        if (siblings)
+        {
+            // Both endpoints are siblings in ONE block list — the document's top level, or a single
+            // table cell (cells host sibling paragraphs since milestone A/P3). Remove the blocks
+            // strictly between them (a spanned image/table/divider goes too); the two halves join below.
+            // The old test was "is it a top-level block?", which classified two paragraphs of the SAME
+            // cell as "crosses the grid" and skipped the merge, leaving a stray paragraph break behind.
+            int si = container!.IndexOf(sp), ei = container.IndexOf(ep);
+            if (si >= 0 && ei > si)
+                for (int i = ei - 1; i > si; i--) container.RemoveAt(i);
+            else siblings = false;
         }
         else
         {
-            var doc = GetFlowDocument(sp);
-            if (doc == null) return;
-
-            int p1Len = StartParagraphEnd(sp);
-            DeleteInParagraph(sp, _start.Offset, p1Len);
-            DeleteInParagraph(ep, 0, _end.Offset);
-
-            var container = ContainerOf(sp);
-            if (container != null && ReferenceEquals(container, ContainerOf(ep)))
-            {
-                // Both endpoints are siblings in ONE block list — the document's top level, or a single
-                // table cell (cells host sibling paragraphs since milestone A/P3). Remove the blocks
-                // strictly between them (a spanned image/table/divider goes too) and join the two halves.
-                // The old test was "is it a top-level block?", which classified two paragraphs of the SAME
-                // cell as "crosses the grid" and skipped the merge, leaving a stray paragraph break behind.
-                int si = container.IndexOf(sp), ei = container.IndexOf(ep);
-                if (si >= 0 && ei > si)
-                {
-                    for (int i = ei - 1; i > si; i--) container.RemoveAt(i);
-                    MergeParagraphs(sp, ep, container);
-                }
-            }
-            else
-            {
-                // The selection really does cross a cell boundary. Merging would move text across the
-                // grid (the end cell's remainder landing in the start cell), so keep the structure:
-                // remove the whole top-level blocks between the two endpoints' top-level blocks, then
-                // clear the paragraphs that remain fully covered.
-                var startTop = TopLevelBlockOf(doc, sp);
-                var endTop = TopLevelBlockOf(doc, ep);
-                int si = startTop != null ? doc.Blocks.IndexOf(startTop) : -1;
-                int ei = endTop != null ? doc.Blocks.IndexOf(endTop) : -1;
-                if (si >= 0 && ei > si)
-                    for (int i = ei - 1; i > si; i--) doc.Blocks.RemoveAt(i);
-
-                var all = GetAllParagraphsInOrder(doc);
-                int sIdx = all.IndexOf(sp);
-                int eIdx = all.IndexOf(ep);
-                if (sIdx >= 0 && eIdx > sIdx)
-                    for (int i = sIdx + 1; i < eIdx; i++)
-                    {
-                        var (from, to) = CoveredSpan(all[i]);
-                        DeleteInParagraph(all[i], from, to);
-                    }
-            }
+            // The selection really does cross a cell boundary. Merging would move text across the
+            // grid (the end cell's remainder landing in the start cell), so keep the structure:
+            // remove the whole top-level blocks between the two endpoints' top-level blocks; the
+            // covered paragraphs that remain are cleared below.
+            var startTop = TopLevelBlockOf(doc, sp);
+            var endTop = TopLevelBlockOf(doc, ep);
+            int si = startTop != null ? doc.Blocks.IndexOf(startTop) : -1;
+            int ei = endTop != null ? doc.Blocks.IndexOf(endTop) : -1;
+            if (si >= 0 && ei > si)
+                for (int i = ei - 1; i > si; i--) doc.Blocks.RemoveAt(i);
         }
+
+        // Each paragraph's own part. The offsets are each paragraph's own, so the order does not matter, and a host
+        // whose part takes an inline table removes the table with its cells, whatever was deleted in them first.
+        foreach (var c in parts) DeleteInParagraph(c.Paragraph, c.From, c.To);
+
+        if (siblings) MergeParagraphs(sp, ep, container!);
 
         _end = new TextPointer(sp, _start.Offset);
     }
@@ -109,32 +185,18 @@ public class TextRange
         var ep = _end.Paragraph;
         if (sp == null || ep == null) return "";
 
-        if (ReferenceEquals(sp, ep))
+        if (IsSimple)
         {
             return GetParagraphText(sp, _start.Offset, _end.Offset);
         }
 
-        var doc = GetFlowDocument(sp);
-        if (doc == null) return "";
-
-        var allParagraphs = GetAllParagraphsInOrder(doc);
-        int startIdx = allParagraphs.IndexOf(sp);
-        int endIdx = allParagraphs.IndexOf(ep);
-
+        var parts = CoveredInPositionOrder(skipCoveredObjects: false);
         var sb = new StringBuilder();
-        int p1Len = StartParagraphEnd(sp);
-        sb.Append(GetParagraphText(sp, _start.Offset, p1Len));
-
-        for (int i = startIdx + 1; i < endIdx; i++)
+        for (int i = 0; i < parts.Count; i++)
         {
-            sb.Append('\n');
-            var (from, to) = CoveredSpan(allParagraphs[i]);
-            sb.Append(GetParagraphText(allParagraphs[i], from, to));
+            if (i > 0) sb.Append('\n');
+            sb.Append(GetParagraphText(parts[i].Paragraph, parts[i].From, parts[i].To));
         }
-
-        sb.Append('\n');
-        sb.Append(GetParagraphText(ep, 0, _end.Offset));
-
         return sb.ToString();
     }
 
@@ -148,29 +210,19 @@ public class TextRange
         var ep = _end.Paragraph;
         if (sp == null || ep == null) return result;
 
-        if (ReferenceEquals(sp, ep))
+        if (IsSimple)
         {
             result.AddRange(GetParagraphRuns(sp, _start.Offset, _end.Offset));
             return result;
         }
 
-        var doc = GetFlowDocument(sp);
-        if (doc == null) return result;
-
-        var allParagraphs = GetAllParagraphsInOrder(doc);
-        int startIdx = allParagraphs.IndexOf(sp);
-        int endIdx = allParagraphs.IndexOf(ep);
-
-        result.AddRange(GetParagraphRuns(sp, _start.Offset, StartParagraphEnd(sp)));
-        for (int i = startIdx + 1; i < endIdx; i++)
+        bool first = true;
+        foreach (var c in CoveredInPositionOrder(skipCoveredObjects: false))
         {
-            result.Add(new Run { Text = "\n" });
-            var (from, to) = CoveredSpan(allParagraphs[i]);
-            result.AddRange(GetParagraphRuns(allParagraphs[i], from, to));
+            if (!first) result.Add(new Run { Text = "\n" });
+            first = false;
+            result.AddRange(GetParagraphRuns(c.Paragraph, c.From, c.To));
         }
-        result.Add(new Run { Text = "\n" });
-        result.AddRange(GetParagraphRuns(ep, 0, _end.Offset));
-
         return result;
     }
 
@@ -208,26 +260,20 @@ public class TextRange
         var ep = _end.Paragraph;
         if (sp == null || ep == null) return result;
 
-        if (ReferenceEquals(sp, ep))
+        if (IsSimple)
         {
             result.AddRange(GetParagraphInlines(sp, _start.Offset, _end.Offset));
             return result;
         }
 
-        var doc = GetFlowDocument(sp);
-        if (doc == null) return result;
-        var all = GetAllParagraphsInOrder(doc);
-        int si = all.IndexOf(sp), ei = all.IndexOf(ep);
-
-        result.AddRange(GetParagraphInlines(sp, _start.Offset, StartParagraphEnd(sp)));
-        for (int i = si + 1; i < ei; i++)
+        // An inline table the range takes whole comes as one object (GetParagraphInlines clones it), not cell by cell.
+        bool first = true;
+        foreach (var c in CoveredInPositionOrder(skipCoveredObjects: true))
         {
-            result.Add(new Run { Text = "\n" });
-            var (from, to) = CoveredSpan(all[i]);
-            result.AddRange(GetParagraphInlines(all[i], from, to));
+            if (!first) result.Add(new Run { Text = "\n" });
+            first = false;
+            result.AddRange(GetParagraphInlines(c.Paragraph, c.From, c.To));
         }
-        result.Add(new Run { Text = "\n" });
-        result.AddRange(GetParagraphInlines(ep, 0, _end.Offset));
         return result;
     }
 
@@ -265,30 +311,13 @@ public class TextRange
         var ep = _end.Paragraph;
         if (sp == null || ep == null) return;
 
-        if (ReferenceEquals(sp, ep))
+        if (IsSimple)
         {
             ApplyStyleToParagraph(sp, _start.Offset, _end.Offset, styleAction);
+            return;
         }
-        else
-        {
-            var doc = GetFlowDocument(sp);
-            if (doc == null) return;
-
-            var allParagraphs = GetAllParagraphsInOrder(doc);
-            int startIdx = allParagraphs.IndexOf(sp);
-            int endIdx = allParagraphs.IndexOf(ep);
-
-            int p1Len = StartParagraphEnd(sp);
-            ApplyStyleToParagraph(sp, _start.Offset, p1Len, styleAction);
-
-            for (int i = startIdx + 1; i < endIdx; i++)
-            {
-                var (from, to) = CoveredSpan(allParagraphs[i]);
-                ApplyStyleToParagraph(allParagraphs[i], from, to, styleAction);
-            }
-
-            ApplyStyleToParagraph(ep, 0, _end.Offset, styleAction);
-        }
+        // Every covered paragraph, the cells of an inline table the range takes whole included: their text is selected.
+        foreach (var c in Covered()) ApplyStyleToParagraph(c.Paragraph, c.From, c.To, styleAction);
     }
 
     private string GetParagraphText(Paragraph p, int startOffset, int endOffset)
@@ -432,43 +461,6 @@ public class TextRange
             if (te is Block b && ReferenceEquals(te.Parent, doc)) return b;
             current = te.Parent;
         }
-        return null;
-    }
-
-    // The part of a paragraph lying strictly between the two endpoints that the range covers. Document order puts
-    // an inline table's cells right AFTER their host paragraph, so a range ending in such a cell has the whole host
-    // between its endpoints — and the host's text after the table, which the range never reached, was covered
-    // with it: deleting from a paragraph into a cell of the next line's inline table deleted that whole line,
-    // table included. The host of the END is covered only up to the table holding it, the host of the START only
-    // from the table holding it on (round 35).
-    private (int from, int to) CoveredSpan(Paragraph p)
-    {
-        int from = 0, to = GetParagraphLength(p);
-        if (HostedAt(p, _end.Paragraph) is int e) to = e;
-        if (HostedAt(p, _start.Paragraph) is int s) from = s + 1;
-        return (from, Math.Max(from, to));
-    }
-
-    // Where the range leaves its START paragraph: that paragraph's end — or, when the end lies inside one of the start
-    // paragraph's own inline tables, that table. A selection from "a|bc[table]def" into the table's cell covered the
-    // start to the line's end, so Delete took the table and "def" with "bc" (1.3.0 audit; CoveredSpan is the same
-    // rule for the paragraphs between the ends).
-    private int StartParagraphEnd(Paragraph sp) => HostedAt(sp, _end.Paragraph) ?? GetParagraphLength(sp);
-
-    // The offset in `host` of the inline table that `inner` lies inside, at any depth; null when it does not.
-    private static int? HostedAt(Paragraph host, Paragraph? inner)
-    {
-        for (object? cur = inner; cur is TextElement te; cur = te.Parent)
-            if (te is InlineTable it && ReferenceEquals(it.Parent, host))
-            {
-                int off = 0;
-                foreach (var inl in host.Inlines)
-                {
-                    if (ReferenceEquals(inl, it)) return off;
-                    off += InlineLen(inl);
-                }
-                return null;
-            }
         return null;
     }
 

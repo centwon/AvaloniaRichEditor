@@ -44,20 +44,17 @@ public class TextPointer : IComparable<TextPointer>
             return Offset.CompareTo(other.Offset);
         }
 
-        // Different paragraphs: order by position in the document. A single ordered walk records both
-        // paragraphs' global indices (it used to run two full traversals, one per pointer) and exits as
-        // soon as both are located — their relative order can't change after that. A paragraph not found
-        // keeps index -1, so it sorts before any present one (unchanged from the prior behaviour).
+        // Different paragraphs: PositionOrder decides — a position inside an inline table sits between the table's
+        // offset and the next in its host paragraph. Where that is not enough it asks for the paragraphs' place in the
+        // document order, and only about the few paragraphs that can matter, so one walk locating those ends it. A
+        // paragraph not found keeps index -1, so it sorts before any present one (unchanged from the prior behaviour).
         var doc = GetFlowDocument(this.Paragraph);
-        if (doc == null) return 0; // cannot compare without document
+        if (doc == null || this.Paragraph == null || other.Paragraph == null) return 0; // cannot compare without document
 
-        int index = 0, thisIdx = -1, otherIdx = -1;
-        void Locate(Paragraph cell)
-        {
-            if (thisIdx < 0 && ReferenceEquals(cell, this.Paragraph)) thisIdx = index;
-            if (otherIdx < 0 && ReferenceEquals(cell, other.Paragraph)) otherIdx = index;
-            index++;
-        }
+        var wanted = new HashSet<Paragraph>();
+        PositionOrder.IndexedParagraphs(this.Paragraph, other.Paragraph, wanted);
+        var found = new Dictionary<Paragraph, int>();
+        int index = 0;
 
         // The walk must reach EVERY paragraph the editor's own document order does — anchor cells of
         // block tables, recursively through nested tables, and through inline tables hanging off a
@@ -68,10 +65,11 @@ public class TextPointer : IComparable<TextPointer>
         {
             foreach (var block in blocks)
             {
-                if (thisIdx >= 0 && otherIdx >= 0) return; // both located: their order is now fixed
+                if (found.Count == wanted.Count) return; // all located: their order is now fixed
                 if (block is Paragraph p)
                 {
-                    Locate(p);
+                    if (wanted.Contains(p) && !found.ContainsKey(p)) found[p] = index;
+                    index++;
                     foreach (var inl in p.Inlines)
                         if (inl is InlineTable it)
                             foreach (var (_, _, cell) in it.Table.LogicalCells())
@@ -88,7 +86,8 @@ public class TextPointer : IComparable<TextPointer>
         }
         Walk(doc.Blocks);
 
-        return thisIdx.CompareTo(otherIdx);
+        return PositionOrder.Compare(this.Paragraph, Offset, other.Paragraph, other.Offset,
+            p => found.TryGetValue(p, out int i) ? i : -1);
     }
 
     private FlowDocument? GetFlowDocument(TextElement? element)
