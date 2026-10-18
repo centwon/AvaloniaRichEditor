@@ -68,12 +68,14 @@ internal static class PositionOrder
 
     /// <summary>The part [from, to) of paragraph <paramref name="p"/> (length <paramref name="len"/>) lying between
     /// <paramref name="start"/> and <paramref name="end"/> (start ≤ end): the offsets o with start ≤ (p, o) and
-    /// (p, o) ≤ end. Empty (from ≥ to) when it covers no character. Positions inside a paragraph are ordered, so
+    /// (p, o) ≤ end — empty (from = to) for a paragraph the range passes through without a character, an empty one; and
+    /// (-1, -1) when no position of the paragraph lies in the range at all (outside it, or around a range that lies
+    /// inside one of the paragraph's inline tables). Positions inside a paragraph are ordered, so
     /// both bounds are a binary search.</summary>
     internal static (int From, int To) Span(Paragraph p, int len, TextPointer start, TextPointer end, Func<Paragraph, int> index)
     {
         int Cmp(int o, TextPointer t) => Compare(p, o, t.Paragraph, t.Offset, index);
-        if (Cmp(len, start) < 0 || Cmp(0, end) > 0) return (0, 0);
+        if (Cmp(len, start) < 0 || Cmp(0, end) > 0) return (-1, -1);
         // Most paragraphs of a long selection lie wholly inside it; the highlight asks this for each one it draws.
         if (Cmp(0, start) >= 0 && Cmp(len, end) <= 0) return (0, len);
         int lo = 0, hi = len; // first o with (p, o) >= start
@@ -81,7 +83,9 @@ internal static class PositionOrder
         int from = lo;
         lo = 0; hi = len;     // last o with (p, o) <= end
         while (lo < hi) { int mid = (lo + hi + 1) / 2; if (Cmp(mid, end) <= 0) lo = mid; else hi = mid - 1; }
-        return (from, lo);
+        // No offset of p between the two: the range lies wholly inside one of p's inline tables (k < start, end < k + 1).
+        // p is then no line of the selection — counted as an empty one, a copy inside a cell gained the host's line.
+        return from <= lo ? (from, lo) : (-1, -1);
     }
 
     /// <summary>Whether <paramref name="p"/> lies in an inline table whose placeholder a covered span of its host takes

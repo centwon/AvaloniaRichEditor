@@ -80,6 +80,45 @@ public class SelectionPositionOrderTests(ITestOutputHelper output)
         Assert.True(new TextPointer(t.Cells[0][0].Para, 5).CompareTo(cell) < 0);
     }
 
+    // An empty paragraph inside the range covers no character but is a line of it: the first PositionOrder draft dropped
+    // it, and a blank line between two selected lines vanished from the copied text (the port's AOT sweep, 2026-10-18).
+    [AvaloniaFact]
+    public void ABlankLineInsideTheRange_StaysInTheTextAndTheCopy()
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "ab" } } });
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "" } } });
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "cd" } } });
+        var ed = new RichEditor { Document = doc };
+        var ps = ed.Document!.Blocks.OfType<Paragraph>().ToList();
+        var range = new TextRange(new TextPointer(ps[0], 1), new TextPointer(ps[2], 1));
+        Assert.Equal("b\n\nc", range.GetText());
+        Assert.Equal(2, range.GetRichInlines().Count(i => i is Run { Text: "\n" }));
+        SetSelection(ed, new TextPointer(ps[0], 1), new TextPointer(ps[2], 1));
+        var html = (FlowDocument)Ed.GetMethod("BuildSelectionDocument", NP)!.Invoke(ed, null)!;
+        Assert.Equal(3, html.Blocks.Count);
+    }
+
+    // A range wholly inside one cell of an inline table is no line of the paragraph holding the table: with the empty-line
+    // rule above, the first draft counted the host as an empty line of the selection too.
+    [AvaloniaFact]
+    public void ARangeInsideAnInlineTablesCell_IsNoLineOfItsHost()
+    {
+        var t = new TableBlock(1, 1);
+        var cell = t.Cells[0][0];
+        cell.Blocks.Clear();
+        cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "first" } } });
+        cell.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "second" } } });
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = "a" }, new InlineTable { Table = t }, new Run { Text = "b" } } });
+        var ed = new RichEditor { Document = doc };
+        var host = (Paragraph)ed.Document!.Blocks[0];
+        var paras = host.Inlines.OfType<InlineTable>().Single().Table.Cells[0][0].Blocks.OfType<Paragraph>().ToList();
+        var range = new TextRange(new TextPointer(paras[0], 2), new TextPointer(paras[1], 3));
+        Assert.Equal("rst\nsec", range.GetText());
+        Assert.DoesNotContain(range.Covered(), c => ReferenceEquals(c.Paragraph, host));
+    }
+
     // ---- what Copy takes is what Delete removes, for random selections -------------------------------------
 
     private static readonly int Seeds =

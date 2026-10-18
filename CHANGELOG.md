@@ -28,6 +28,9 @@ Found by the WinUI port's audit before publishing its 1.3.0 (2026-10-18); the sa
   inline table ends at that paragraph's end, not inside the inline table.
 - A selection covering an inline table whole now formats the table's text too, and its plain text includes it — as
   selecting the table would.
+- An empty paragraph inside the range stays a line of the selection (the first draft kept only paragraphs with a
+  covered character, and a blank line between two selected lines vanished from the copied text — the port's AOT
+  sweep caught it; the letter-comparing fuzz cannot).
 - Tests: `SelectionPositionOrderTests` — the reported cases, the order itself, and a random-selection fuzz (documents
   with inline tables three deep, four ranges per seed: the letters the copy holds are the letters Delete removes).
   Before: 8 of the first 9 ranges differed. After: 0 over 20,000 seeds. Each fix reverted turns a test red.

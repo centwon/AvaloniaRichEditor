@@ -83,7 +83,10 @@ public class TextRange
         foreach (var p in paras)
         {
             var span = PositionOrder.Span(p, GetParagraphLength(p), _start, _end, Index);
-            if (span.From < span.To || ReferenceEquals(p, sp) || ReferenceEquals(p, ep))
+            // Every paragraph with a position in the range, an EMPTY one included: it covers no character but is a line
+            // of the selection — dropped, a blank line between two selected paragraphs vanished from the copied text
+            // (the AOT sweep's read-back came back one line short, 2026-10-18).
+            if (span.From >= 0)
                 spans[p] = (span.From, Math.Max(span.From, span.To));
         }
         (int, int) SpanOf(Paragraph h) => spans.TryGetValue(h, out var s) ? s : (0, 0);
