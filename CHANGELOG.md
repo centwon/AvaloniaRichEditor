@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — ⚠ text that looked like markup was written to HTML as markup
+
+Found reviewing how a host application round-trips tables through `LoadHtml`/`ToHtml` (2026-10-31).
+
+- **`ToHtml()` and the clipboard HTML did not escape `&`, `<` or `>` in text.** The writer used HtmlAgilityPack's
+  one-argument `HtmlEntity.Entitize`, which entitizes non-ASCII characters but leaves those three alone. Typed text
+  such as `<img src=x onerror=alert(1)>` went out as a live tag — script in any host or paste target that renders the
+  HTML — and came back as nothing on import (data loss). A bare `&` also made the output unparsable to strict
+  (XML) readers. Text is now fully escaped; every run of every paragraph and cell goes through the one writer.
+- Test: `HtmlAuditTests.TextThatLooksLikeMarkup_IsWrittenAsText` (a paragraph and a cell, two round trips). The fix
+  reverted turns it red.
+
+### Fixed — a cell's lone formatted text lost its formatting through HTML
+
+- A cell holding one formatted run is written in the bare form (`<td><b>bold</b></td>`), and the reader handed the
+  `<b>` itself to the inline parser, which reads only an element's children — so the cell's own bold, italic,
+  underline, strike or styled colour was dropped on import, in our own round trip and in foreign HTML of that shape.
+  The reader now parses the element itself (`ParseInline`, the per-node half of `ParseInlines`).
+- Test: `HtmlAuditTests.AFormattedRunAloneInACell_KeepsItsFormatting`. The fix reverted turns it red.
+
 ### Fixed — ⚠ a selection into an inline table deleted the table's other cells (data loss)
 
 Found by the WinUI port's audit before publishing its 1.3.0 (2026-10-18); the same model here, measured here too.

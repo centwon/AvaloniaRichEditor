@@ -131,4 +131,60 @@ public class HtmlAuditTests
         var foreign = HtmlDocumentFormatter.ParseHtml("<ol><li>a</li><li></li><li>b</li></ol>");
         Assert.Equal(2, foreign.Blocks.OfType<Paragraph>().Count(p => p.ListType == ListKind.Ordered));
     }
+
+    // Text that LOOKS like markup went out as markup: the writer's entitizer left & < > alone, so typed
+    // "<img src=x onerror=…>" reached exported and clipboard HTML as a live tag, and came back as nothing
+    // (found reviewing a host's table payloads, 2026-10-31). In a paragraph and in a cell, twice round.
+    [AvaloniaFact]
+    public void TextThatLooksLikeMarkup_IsWrittenAsText()
+    {
+        const string text = "<img src=x onerror=alert(1)> & <b>co</b> &amp;";
+        var tb = new TableBlock(1, 1);
+        tb.Cells[0][0].Blocks.Clear();
+        tb.Cells[0][0].Blocks.Add(new Paragraph { Inlines = { new Run { Text = text } } });
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph { Inlines = { new Run { Text = text } } });
+        doc.Blocks.Add(tb);
+
+        string html = HtmlDocumentFormatter.ToHtml(doc);
+        Assert.DoesNotContain("<img", html);
+        Assert.DoesNotContain("<b>co", html);
+
+        var once = HtmlDocumentFormatter.ParseHtml(html);
+        var twice = HtmlDocumentFormatter.ParseHtml(HtmlDocumentFormatter.ToHtml(once));
+        foreach (var back in new[] { once, twice })
+        {
+            static string Text(Paragraph p) => string.Concat(p.Inlines.OfType<Run>().Select(r => r.Text)).Replace(' ', ' ');
+            Assert.Equal(text, Text((Paragraph)back.Blocks[0]));
+            var cell = (Paragraph)back.Blocks.OfType<TableBlock>().Single().Cells[0][0].Blocks[0];
+            Assert.Equal(text, Text(cell));
+        }
+    }
+
+    // A cell's lone formatted run went out bare (<td><b>x</b></td>), and the reader's block walk handed the
+    // <b> itself to the inline parser — which reads only an element's CHILDREN, so the <b>'s own bold was
+    // never applied. The same for i/u/s and a styled span. Our own round trip lost a bold cell.
+    [AvaloniaFact]
+    public void AFormattedRunAloneInACell_KeepsItsFormatting()
+    {
+        var tb = new TableBlock(1, 2);
+        tb.Cells[0][0].Blocks.Clear();
+        tb.Cells[0][0].Blocks.Add(new Paragraph { Inlines = { new Run { Text = "bold", FontWeight = Avalonia.Media.FontWeight.Bold } } });
+        tb.Cells[0][1].Blocks.Clear();
+        tb.Cells[0][1].Blocks.Add(new Paragraph { Inlines = { new Run { Text = "red", Foreground = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Avalonia.Media.Colors.Red) } } });
+        var doc = new FlowDocument();
+        doc.Blocks.Add(tb);
+
+        var back = HtmlDocumentFormatter.ParseHtml(HtmlDocumentFormatter.ToHtml(doc)).Blocks.OfType<TableBlock>().Single();
+        var bold = ((Paragraph)back.Cells[0][0].Blocks[0]).Inlines.OfType<Run>().Single();
+        Assert.Equal(Avalonia.Media.FontWeight.Bold, bold.FontWeight);
+        var red = ((Paragraph)back.Cells[0][1].Blocks[0]).Inlines.OfType<Run>().Single();
+        Assert.Equal(Avalonia.Media.Colors.Red, Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(red.Foreground).Color);
+
+        // Foreign HTML of the same shape: an <i> straight under <td>.
+        var foreign = HtmlDocumentFormatter.ParseHtml("<table><tr><td><i>it</i> plain</td></tr></table>").Blocks.OfType<TableBlock>().Single();
+        var runs = ((Paragraph)foreign.Cells[0][0].Blocks[0]).Inlines.OfType<Run>().ToList();
+        Assert.Equal(Avalonia.Media.FontStyle.Italic, runs.First(r => r.Text == "it").FontStyle);
+        Assert.Equal(Avalonia.Media.FontStyle.Normal, runs.Last().FontStyle);
+    }
 }

@@ -407,7 +407,9 @@ namespace AvaloniaRichEditor.Formatters
                     int before = current.Inlines.Count;
                     TakeSpace();
                     int afterSpace = current.Inlines.Count;
-                    ParseInlines(child, current, uri: childLink, inLink: hasLink);
+                    // The element itself, not just its children: its own b/i/u/s/style/href apply (ParseInline
+                    // reads an <a>'s href itself, so the context passed is the one around it).
+                    ParseInline(child, current, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
                     if (afterSpace > before && current.Inlines.Count == afterSpace)
                         current.Inlines.RemoveAt(afterSpace - 1);
                 }
@@ -812,79 +814,85 @@ namespace AvaloniaRichEditor.Formatters
         private static void ParseInlines(HtmlNode node, Paragraph p, FontWeight weight = FontWeight.Normal, FontStyle style = FontStyle.Normal, IBrush? color = null, string? uri = null, double baseSize = 10, bool inLink = false, IBrush? background = null, string? family = null, bool underline = false, bool strike = false, bool ownColor = false)
         {
             foreach (var child in node.ChildNodes)
+                ParseInline(child, p, weight, style, color, uri, baseSize, inLink, background, family, underline, strike, ownColor);
+        }
+
+        // One inline node: its own element (b/i/u/s, a, a styled span…) applies to what it holds. The block walk
+        // calls this for an inline element sitting straight in a block container (<td><b>x</b></td>); handing it
+        // to ParseInlines read only its children, and the element's own formatting was lost.
+        private static void ParseInline(HtmlNode child, Paragraph p, FontWeight weight = FontWeight.Normal, FontStyle style = FontStyle.Normal, IBrush? color = null, string? uri = null, double baseSize = 10, bool inLink = false, IBrush? background = null, string? family = null, bool underline = false, bool strike = false, bool ownColor = false)
+        {
+            var cw = weight;
+            var cs = style;
+            var cc = color;
+            var cu = uri;
+            double sz = baseSize;
+            var cbg = background;
+            var cfam = family;
+            bool cunder = underline;
+            bool cstrike = strike;
+
+            string name = child.Name.ToLowerInvariant();
+
+            if (name == "br") { p.Inlines.Add(new Run { Text = "\n" }); return; }
+            // Nested lists are block-level (handled by ParseList) — don't fold their text inline.
+            if (name == "ul" || name == "ol") return;
+            // The block walk skips these, but a paragraph's own content came through here, and a page's
+            // <script> or <style> inside it landed in the document as text (round 35).
+            if (IsIgnored(name)) return;
+
+            if (name == "b" || name == "strong") cw = FontWeight.Bold;
+            if (name == "i" || name == "em") cs = FontStyle.Italic;
+            if (name == "u") cunder = true;
+            if (name == "s" || name == "strike" || name == "del") cstrike = true;
+            if (name == "h1") { cw = FontWeight.Bold; sz = 20; } // pt, mirrors HeadingSize
+            if (name == "h2") { cw = FontWeight.Bold; sz = 16; }
+            if (name == "h3") { cw = FontWeight.Bold; sz = 14; }
+
+            bool childInLink = inLink || name == "a";
+            if (name == "a")
             {
-                var cw = weight;
-                var cs = style;
-                var cc = color;
-                var cu = uri;
-                double sz = baseSize;
-                var cbg = background;
-                var cfam = family;
-                bool cunder = underline;
-                bool cstrike = strike;
+                var href = child.GetAttributeValue("href", "");
+                if (!string.IsNullOrEmpty(href)) cu = SafeHref(href);
+            }
 
-                string name = child.Name.ToLowerInvariant();
+            bool childOwnColor = ownColor || child.GetAttributeValue("data-are-fg", "") == "1";
 
-                if (name == "br") { p.Inlines.Add(new Run { Text = "\n" }); continue; }
-                // Nested lists are block-level (handled by ParseList) — don't fold their text inline.
-                if (name == "ul" || name == "ol") continue;
-                // The block walk skips these, but a paragraph's own content came through here, and a page's
-                // <script> or <style> inside it landed in the document as text (round 35).
-                if (IsIgnored(name)) continue;
+            ApplyInlineStyle(child.GetAttributeValue("style", ""), ref cw, ref cs, ref cc, ref sz, ref cbg, ref cfam, ref cunder, ref cstrike);
 
-                if (name == "b" || name == "strong") cw = FontWeight.Bold;
-                if (name == "i" || name == "em") cs = FontStyle.Italic;
-                if (name == "u") cunder = true;
-                if (name == "s" || name == "strike" || name == "del") cstrike = true;
-                if (name == "h1") { cw = FontWeight.Bold; sz = 20; } // pt, mirrors HeadingSize
-                if (name == "h2") { cw = FontWeight.Bold; sz = 16; }
-                if (name == "h3") { cw = FontWeight.Bold; sz = 14; }
+            // Links stay visually distinct (blue) regardless of the SITE'S own inline color (e.g.
+            // dark anchors or white button text), and get underlined via NavigateUri. A colour this
+            // library wrote is not a site's styling, though, and overriding it lost the user's own
+            // choice of link colour on every HTML save/load; `data-are-fg` marks that case.
+            if (childInLink && !childOwnColor) cc = Brushes.Blue;
 
-                bool childInLink = inLink || name == "a";
-                if (name == "a")
+            if (name == "#text")
+            {
+                string text = HtmlEntity.DeEntitize(child.InnerText);
+                if (IsCollapsibleWhitespace(text))
                 {
-                    var href = child.GetAttributeValue("href", "");
-                    if (!string.IsNullOrEmpty(href)) cu = SafeHref(href);
+                    // Keep a single separating space between inline runs, but skip pure indentation.
+                    // A node of nothing but &nbsp; is content, not indentation, and falls through.
+                    if (p.Inlines.Count > 0 && p.Inlines[^1] is Run last && last.Text != null &&
+                        !last.Text.EndsWith(" ") && !last.Text.EndsWith("\n"))
+                        p.Inlines.Add(new Run { Text = " " });
+                    return;
                 }
-
-                bool childOwnColor = ownColor || child.GetAttributeValue("data-are-fg", "") == "1";
-
-                ApplyInlineStyle(child.GetAttributeValue("style", ""), ref cw, ref cs, ref cc, ref sz, ref cbg, ref cfam, ref cunder, ref cstrike);
-
-                // Links stay visually distinct (blue) regardless of the SITE'S own inline color (e.g.
-                // dark anchors or white button text), and get underlined via NavigateUri. A colour this
-                // library wrote is not a site's styling, though, and overriding it lost the user's own
-                // choice of link colour on every HTML save/load; `data-are-fg` marks that case.
-                if (childInLink && !childOwnColor) cc = Brushes.Blue;
-
-                if (name == "#text")
+                p.Inlines.Add(new Run { Text = CollapseWhitespace(text), FontWeight = cw, FontStyle = cs, Foreground = cc, FontSize = sz, NavigateUri = cu, Background = cbg, FontFamily = cfam, TextDecorations = MakeDecorations(cunder, cstrike) });
+            }
+            else if (name == "img")
+            {
+                var (bytes, bmp, w, h, alt) = LoadImage(child);
+                if (bmp != null && bytes != null)
                 {
-                    string text = HtmlEntity.DeEntitize(child.InnerText);
-                    if (IsCollapsibleWhitespace(text))
-                    {
-                        // Keep a single separating space between inline runs, but skip pure indentation.
-                        // A node of nothing but &nbsp; is content, not indentation, and falls through.
-                        if (p.Inlines.Count > 0 && p.Inlines[^1] is Run last && last.Text != null &&
-                            !last.Text.EndsWith(" ") && !last.Text.EndsWith("\n"))
-                            p.Inlines.Add(new Run { Text = " " });
-                        continue;
-                    }
-                    p.Inlines.Add(new Run { Text = CollapseWhitespace(text), FontWeight = cw, FontStyle = cs, Foreground = cc, FontSize = sz, NavigateUri = cu, Background = cbg, FontFamily = cfam, TextDecorations = MakeDecorations(cunder, cstrike) });
+                    var im = new InlineImage { Width = w, Height = h, AltText = alt };
+                    im.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
+                    p.Inlines.Add(im);
                 }
-                else if (name == "img")
-                {
-                    var (bytes, bmp, w, h, alt) = LoadImage(child);
-                    if (bmp != null && bytes != null)
-                    {
-                        var im = new InlineImage { Width = w, Height = h, AltText = alt };
-                        im.SetImageData(bytes, ImageMime.Detect(bytes), bmp);
-                        p.Inlines.Add(im);
-                    }
-                }
-                else
-                {
-                    ParseInlines(child, p, cw, cs, cc, cu, sz, childInLink, cbg, cfam, cunder, cstrike, childOwnColor);
-                }
+            }
+            else
+            {
+                ParseInlines(child, p, cw, cs, cc, cu, sz, childInLink, cbg, cfam, cunder, cstrike, childOwnColor);
             }
         }
 
@@ -1399,7 +1407,9 @@ namespace AvaloniaRichEditor.Formatters
             }
             if (inline is not Run r || r.Text == null) return;
 
-            string t = HtmlEntity.Entitize(r.Text);
+            // The two-argument overload: the one-argument Entitize leaves & < > as they are, so text that looked
+            // like markup ("<img onerror=…>") went out as a live tag and came back as nothing.
+            string t = HtmlEntity.Entitize(r.Text, true, true);
             t = PreserveRunsOfSpaces(t);
             t = PreserveDroppableSpaces(t, closesParagraph);
             // A soft break (Shift+Enter) lives INSIDE a run as `\n`. HTML collapses that to a single
