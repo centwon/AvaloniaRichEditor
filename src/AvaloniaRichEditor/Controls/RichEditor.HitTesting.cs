@@ -31,7 +31,7 @@ public partial class RichEditor
                     var bl = BuildTextLayout(bp, bw);
                     if (InlineTableLinkDescent(bp, bl, ox + pl, blkTop, p) is { } inlineLink) return inlineLink;
                     var hit = bl.HitTestPoint(new Point(p.X - ox - pl, p.Y - blkTop));
-                    return hit.IsInside ? RunAtOffset(bp, hit.TextPosition) : null;
+                    return IsOnText(bl, new Point(p.X - ox - pl, p.Y - blkTop)) ? RunAtOffset(bp, hit.TextPosition) : null;
                 }
                 by += bh;
             }
@@ -76,11 +76,28 @@ public partial class RichEditor
                 // Mirrors the caret walk's inline-table descent, so a link inside an inline table is
                 // hoverable and clickable rather than reading as plain text.
                 if (InlineTableLinkDescent(paragraph, ft, plink, top, p) is { } inlineLink) return inlineLink;
-                var hit = ft.HitTestPoint(new Point(p.X - plink, p.Y - top));
-                return hit.IsInside ? RunAtOffset(paragraph, hit.TextPosition) : null;
+                var local = new Point(p.X - plink, p.Y - top);
+                var hit = ft.HitTestPoint(local);
+                return IsOnText(ft, local) ? RunAtOffset(paragraph, hit.TextPosition) : null;
             }
         }
         return null;
+    }
+
+    // True when the layout-local point lands on a line's text. TextLayout.HitTestPoint's IsInside is true only
+    // on the FIRST line — a link that wrapped was a link on that line alone (issue #75) — so the line under the
+    // point is found and its own text span checked.
+    private static bool IsOnText(Avalonia.Media.TextFormatting.TextLayout layout, Point local)
+    {
+        if (local.Y < 0) return false;
+        double y = 0;
+        foreach (var line in layout.TextLines)
+        {
+            if (local.Y < y + line.Height)
+                return local.X >= line.Start && local.X <= line.Start + line.WidthIncludingTrailingWhitespace;
+            y += line.Height;
+        }
+        return false;
     }
 
     // True when paragraph p lives anywhere inside table tb, at any depth — nested tables and inline tables in a

@@ -19,6 +19,8 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   `PositionOrder`(인라인 표 안 = 호스트의 표 오프셋 k와 k+1 사이) 하나로 바꾸고 삭제·서식·텍스트·하이라이트·복사가 같은 구간
   (`TextRange.Covered`)을 쓴다. `SelectionPositionOrderTests`(무작위 선택 퍼즈: 복사 글자 = 삭제 글자) 20,000시드 불일치 0, 반증 6/6.
   화면 하이라이트는 자동 검증이 없다 — 포트 데모에서 같은 규칙을 사용자가 실기 확인(2026-10-18). 이 레포의 실기는 미확인.
+  + 이슈 #75(2026-10-30): 줄바꿈된 하이퍼링크가 첫 줄에서만 링크로 동작 — `HitTestPoint`의 `IsInside`가 둘째 줄부터 false.
+  링크 히트테스트를 줄별 텍스트 범위 검사(`IsOnText`)로 교체. 반증 테스트 있음, 데모 실기 확인(2026-10-30).
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).

@@ -35,6 +35,15 @@ Found by the WinUI port's audit before publishing its 1.3.0 (2026-10-18); the sa
   with inline tables three deep, four ranges per seed: the letters the copy holds are the letters Delete removes).
   Before: 8 of the first 9 ranges differed. After: 0 over 20,000 seeds. Each fix reverted turns a test red.
 
+### Fixed — a hyperlink that wraps was a link on its first line only ([#75](https://github.com/centwon/AvaloniaRichEditor/issues/75))
+
+- Clicking the second or a later line of a wrapped link placed the caret instead of opening it; right-click showed the
+  text menu (no Edit/Remove/Open link) and hovering showed no hand cursor. The link hit-test trusted
+  `TextLayout.HitTestPoint`'s `IsInside`, which is false on every line after the first. It now checks the point
+  against the text span of the line under it (top-level paragraphs and cell paragraphs alike).
+- Test: `LayoutCacheBoundTests.AWrappedLink_IsFoundOnItsLastLine` (and a point past the line's end is still not a
+  link). The fix reverted turns it red.
+
 ## [1.3.0] - 2026-10-17
 
 This release carries what hosts asked for (page margins, row and column commands, the shortcut table, a default text colour
