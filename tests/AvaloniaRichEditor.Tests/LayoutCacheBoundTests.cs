@@ -267,6 +267,29 @@ public class LayoutCacheBoundTests
         finally { host.Close(); }
     }
 
+    // Issue #75: a link that wraps onto more lines is a link on every line, not only the first.
+    [AvaloniaFact]
+    public void AWrappedLink_IsFoundOnItsLastLine()
+    {
+        var link = new Run { Text = string.Concat(Enumerable.Repeat("a long linked text that wraps ", 12)), NavigateUri = "https://example.com" };
+        var para = new Paragraph { Inlines = { link } };
+        var doc = new FlowDocument();
+        doc.Blocks.Add(para);
+        var host = new Host(doc);
+        try
+        {
+            T.GetField("_caretPosition", NP)!.SetValue(host.Editor, new TextPointer(para, link.Text!.Length - 3));
+            host.Editor.InvalidateVisual();
+            host.Frame();
+            var caret = (Point)T.GetField("_lastCaretPoint", NP)!.GetValue(host.Editor)!;
+            Assert.True(caret.Y > 30, "the link must wrap onto a later line");
+            var linkAt = T.GetMethod("GetLinkRunAtPoint", NP)!;
+            Assert.Same(link, linkAt.Invoke(host.Editor, [new Point(caret.X - 1, caret.Y + 4)]));
+            Assert.Null(linkAt.Invoke(host.Editor, [new Point(caret.X + 100, caret.Y + 4)])); // past the text's end
+        }
+        finally { host.Close(); }
+    }
+
     // ---- the bound -------------------------------------------------------------------------------------------
 
     [AvaloniaFact]
