@@ -471,7 +471,24 @@ namespace AvaloniaRichEditor.Formatters
                 // An <li> that was also a heading (see the export's data-are-h): HTML has no tag for both.
                 int liHeading = child.GetAttributeValue("data-are-h", 0);
                 if (liHeading >= 1 && liHeading <= 6) p.HeadingLevel = liHeading;
-                ParseInlines(child, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
+                // A list item is a paragraph and carries paragraph formatting like any other: its fill, indent, alignment and
+                // spacing went out and came back plain. The WinUI port fixed this in 1.1 (its consumer smoke test); `name` is "li"
+                // so the heading-from-tag rule leaves data-are-h above alone. (Code review 2026-11-01.)
+                ApplyBlockLeafFormat(child, "li", p);
+                // Our own inline table on the item's line: the inline reader knows no tables and flattened it to its cells' text —
+                // structure, other cells and their links gone (the port's fuzz, seed 1488, 2026-11-01). The item is read the way
+                // a <p> holding one is (WalkBlocks), its sublists left to the loop below, and what that made lands in this item.
+                if (child.ChildNodes.Any(n => n.Name.Equals("table", StringComparison.OrdinalIgnoreCase) && Attr(n, "data-are-inline") == "1"))
+                {
+                    var item = child.CloneNode(true);
+                    foreach (var sub in item.ChildNodes.Where(n => n.Name.Equals("ul", StringComparison.OrdinalIgnoreCase) || n.Name.Equals("ol", StringComparison.OrdinalIgnoreCase)).ToList())
+                        sub.Remove();
+                    var walked = new FlowDocument();
+                    WalkBlocks(item, walked, linkUri);
+                    foreach (var made in walked.Blocks.OfType<Paragraph>())
+                        foreach (var inl in made.Inlines) { inl.Parent = p; p.Inlines.Add(inl); }
+                }
+                else ParseInlines(child, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
                 // An empty item is dropped like any empty element — unless our export marked it as a blank item
                 // the author made (data-are-empty, as for paragraphs), and then the <br> it carries for outside
                 // renderers is rendering, not content. Neither was read here: a blank numbered item came back
@@ -565,6 +582,9 @@ namespace AvaloniaRichEditor.Formatters
         private static void ApplyBlockLeafFormat(HtmlNode node, string name, Paragraph p)
         {
             if (name.Length == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') p.HeadingLevel = name[1] - '0';
+            // The markers the writer adds where the tag could not say it (see data-are-h / data-are-q there).
+            if (node.GetAttributeValue("data-are-h", 0) is >= 1 and <= 6 and var mh) p.HeadingLevel = mh;
+            if (Attr(node, "data-are-q") == "1") p.IsQuote = true;
             if (ReadBackground(node) is { } bg) p.Background = bg;
             if (ReadIndentPx(node) is > 0 and var ind) p.Indent = ind;
             if (name == "blockquote") p.IsQuote = true;
@@ -847,7 +867,9 @@ namespace AvaloniaRichEditor.Formatters
             var style = Attr(node, "style");
             if (!string.IsNullOrEmpty(style))
             {
-                var m = System.Text.RegularExpressions.Regex.Match(style, cssProp + "\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px",
+                // The property itself, not one ending in its name: border-width:1px read as the picture's width, line-height as its
+                // height, max-width as a size to force. (Code review 2026-11-01.)
+                var m = System.Text.RegularExpressions.Regex.Match(style, "(?<![\\w-])" + cssProp + "\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var px)) return px;
             }
@@ -977,7 +999,7 @@ namespace AvaloniaRichEditor.Formatters
             if (System.Text.RegularExpressions.Regex.IsMatch(s, "text-decoration[^;]*line-through")) strike = true;
 
             // color: (but not background-color)
-            var m = System.Text.RegularExpressions.Regex.Match(s, "(?<!background-)color\\s*:\\s*([^;]+)");
+            var m = System.Text.RegularExpressions.Regex.Match(s, "(?<![\\w-])color\\s*:\\s*([^;]+)");
             if (m.Success)
             {
                 var brush = ParseCssColor(m.Groups[1].Value.Trim());
@@ -1003,9 +1025,17 @@ namespace AvaloniaRichEditor.Formatters
 
             // Accept px and pt (external editors/HWP paste often uses pt). The model stores pt, so pt
             // passes through and px (or a bare number) converts px -> pt (×72/96 = ×0.75).
-            var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+            // em/rem/% are relative (to the inherited size, the 10pt body for rem): read as px, 1.2em came out at 0.9pt.
+            var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt|rem|em|%)?");
             if (fm.Success && double.TryParse(fm.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out double val) && val > 0)
-                size = fm.Groups[2].Value == "pt" ? val : val * 72.0 / 96.0;
+                size = fm.Groups[2].Value switch
+                {
+                    "pt" => val,
+                    "em" => val * (size > 0 ? size : 10),
+                    "rem" => val * 10,
+                    "%" => val / 100 * (size > 0 ? size : 10),
+                    _ => val * 72.0 / 96.0,
+                };
         }
 
         // Left indent (px) from style margin-left / padding-left (px or pt).
@@ -1263,8 +1293,12 @@ namespace AvaloniaRichEditor.Formatters
             // along as a marker. An empty paragraph is likewise a blank LINE the author typed,
             // and the importer drops elements with no inline content (foreign HTML is full of
             // empty <p>/<div> used for spacing) — so it is marked too.
-            string extraAttr = p.IsListItem && p.HeadingLevel >= 1 && p.HeadingLevel <= 6
+            // The tag is ONE of <li>/<blockquote>/<h1..6>, in that order, so whatever loses rides along as a marker: the
+            // heading level under <li> or <blockquote>, the quote under <li>. A quote that was a heading lost its level, and a
+            // quoted list item its quote (the port's fuzz dump, seed 1488; code review 2026-11-01).
+            string extraAttr = (p.IsListItem || p.IsQuote) && p.HeadingLevel >= 1 && p.HeadingLevel <= 6
                 ? $" data-are-h=\"{p.HeadingLevel}\"" : "";
+            if (p.IsListItem && p.IsQuote) extraAttr += " data-are-q=\"1\"";
             // Paragraph spacing went out as nothing at all and came back as the defaults. It goes out
             // TWICE on purpose: as real CSS so a browser or Word shows the spacing, and as a marker
             // because only the marker is read back. Reading foreign margin-top/bottom would give every

@@ -70,6 +70,25 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                     || (parsedRtf.Blocks.Count == 1 && parsedRtf.Blocks[0] is Paragraph ep && ep.Inlines.Count == 0);
                 if (!empty)
                 {
+                    // HWP and Word often embed pictures as WMF/EMF, which this reader cannot decode, so the pictures
+                    // were lost although the HTML flavour beside it carried them. When the RTF clearly had pictures
+                    // and none came through, the HTML is taken if IT yields one; otherwise the RTF stays (its tables
+                    // are better). From the WinUI port. (Code review 2026-11-01.)
+                    if (AllowImages && !HasAnyImage(parsedRtf) && rtf!.Contains(@"\pict", StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            string? html0 = await TryGetHtmlAsync(clipboard);
+                            if (Stale()) return;
+                            if (!string.IsNullOrWhiteSpace(html0))
+                            {
+                                var hd = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(ExtractHtmlFragment(html0!), AllowLocalFileImages, AllowRemoteImagesOnPaste);
+                                if (Stale()) return;
+                                if (HasAnyImage(hd)) parsedRtf = hd;
+                            }
+                        }
+                        catch (Exception ex) { RichEditorDiagnostics.Report(ex); } // keep the RTF result
+                    }
                     parsedRtf = AdaptToCapabilities(parsedRtf, out bool emptiedRtf);
                     if (emptiedRtf) return;
                     PushUndo();
@@ -593,6 +612,38 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             (dt as IDisposable)?.Dispose();
         }
         return null;
+    }
+
+    // Whether the document holds a picture anywhere — cells and inline tables included. From the WinUI port.
+    private static bool HasAnyImage(FlowDocument d)
+    {
+        static bool InBlocks(System.Collections.Generic.IEnumerable<Block> blocks)
+        {
+            foreach (var b in blocks)
+            {
+                switch (b)
+                {
+                    case ImageBlock: return true;
+                    case Paragraph p:
+                        foreach (var inl in p.Inlines)
+                        {
+                            if (inl is InlineImage) return true;
+                            if (inl is InlineTable it)
+                                foreach (var row in it.Table.Cells)
+                                    foreach (var cell in row)
+                                        if (InBlocks(cell.Blocks)) return true;
+                        }
+                        break;
+                    case TableBlock tb:
+                        foreach (var row in tb.Cells)
+                            foreach (var cell in row)
+                                if (InBlocks(cell.Blocks)) return true;
+                        break;
+                }
+            }
+            return false;
+        }
+        return InBlocks(d.Blocks);
     }
 
     // Strips the Windows CF_HTML ("HTML Format") header/fragment markers down to the markup.

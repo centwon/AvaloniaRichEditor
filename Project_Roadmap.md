@@ -35,6 +35,10 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   + 2차 리뷰 수정(2026-11-01, 다른 도구의 전수조사를 대조): 무변경 편집의 undo(Ctrl+X 빈 선택·대체 텍스트·링크 OK),
   재측정 누락(Ctrl+X·메뉴 잘라내기/삭제·`InsertHtml`·바꾸기·그림 교체), await 뒤 재확인(Ctrl+Shift+V·대화상자·그림 교체),
   바꾸기의 `\r\n`, HTML 색 브러시 Immutable, RTF `\uc` 건너뛰기의 줄바꿈. `ReviewFixes20261101bTests`. ⚠ SDK 없이 수정 — 미실행.
+  + 3차 리뷰(2026-11-01, 두 레포 대조): HTML 그림 크기를 `border-width`·`line-height`·`max-width`에서 읽음, `font-size`의
+  `em`/`rem`/`%`를 px로, 다른 `-color` 속성을 글자색으로(셋 다 포트도 같음 → 같은 수정). RTF 붙여넣기의 WMF/EMF 그림 → HTML 대체
+  (포트에서 백포트). `RichEditorView`: 연속 보기에서 키마다 용지 폭 쪽 나눔(높이 캐시 thrash), 용지 변경·언어 변경에 상태 표시줄
+  갱신. `ReviewFixes20261101cTests`. 오늘 바꾼 코드 재감사: 결함 없음. ⚠ SDK 없이 수정 — 미실행.
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).

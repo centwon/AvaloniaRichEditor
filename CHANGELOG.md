@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — HTML picture sizes, relative font sizes and colours; RTF paste pictures; status bar (review 2026-11-01, third pass)
+
+- HTML: a picture's size came from any property ending in `width`/`height` (`border-width:1px`, `line-height`,
+  `max-width`); `font-size` in `em`/`rem`/`%` was read as px (1.2em → 0.9pt); `text-decoration-color`/`border-color`
+  were taken as the text colour.
+- Paste: when the RTF had pictures this reader cannot decode (WMF/EMF from HWP/Word) and none came through, the HTML
+  flavour is used if it has them (from the WinUI port).
+- `RichEditorView`: the page count is computed only in page view (in continuous view every keystroke paginated at the
+  paper's width and thrashed the height cache), follows paper/orientation/margin changes, and the status bar
+  follows a language change.
+- HTML: an inline table on a list item's line came back flattened to its cells' text (the WinUI port's widened
+  fuzz, seed 1488); a list item's fill, indent, alignment and spacing were not read back (the port fixed this in 1.1); a quoted list
+  item lost its quote and a quote that was a heading its level (`data-are-q`, `data-are-h` now on `<blockquote>` too).
+- Tests: `ReviewFixes20261101cTests` (the paste fallback and the status bar have no automated test).
+
 ### Fixed — no-op edits that checkpointed, missing remeasure after some edits, waits not re-checked (review 2026-11-01, second pass)
 
 - **No undo step for an edit that changes nothing**: Ctrl+X with nothing selected, OK on an unchanged alt text, OK on
