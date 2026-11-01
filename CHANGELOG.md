@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RichEditorView`: the page count is computed only in page view (in continuous view every keystroke paginated at the
   paper's width and thrashed the height cache), follows paper/orientation/margin changes, and the status bar
   follows a language change.
+- HTML: an inline table on a list item's line came back flattened to its cells' text (the WinUI port's widened
+  fuzz, seed 1488); a list item's fill, indent, alignment and spacing were not read back (the port fixed this in 1.1).
 - Tests: `ReviewFixes20261101cTests` (the paste fallback and the status bar have no automated test).
 
 ### Fixed — no-op edits that checkpointed, missing remeasure after some edits, waits not re-checked (review 2026-11-01, second pass)

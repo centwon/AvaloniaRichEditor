@@ -471,7 +471,24 @@ namespace AvaloniaRichEditor.Formatters
                 // An <li> that was also a heading (see the export's data-are-h): HTML has no tag for both.
                 int liHeading = child.GetAttributeValue("data-are-h", 0);
                 if (liHeading >= 1 && liHeading <= 6) p.HeadingLevel = liHeading;
-                ParseInlines(child, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
+                // A list item is a paragraph and carries paragraph formatting like any other: its fill, indent, alignment and
+                // spacing went out and came back plain. The WinUI port fixed this in 1.1 (its consumer smoke test); `name` is "li"
+                // so the heading-from-tag rule leaves data-are-h above alone. (Code review 2026-11-01.)
+                ApplyBlockLeafFormat(child, "li", p);
+                // Our own inline table on the item's line: the inline reader knows no tables and flattened it to its cells' text —
+                // structure, other cells and their links gone (the port's fuzz, seed 1488, 2026-11-01). The item is read the way
+                // a <p> holding one is (WalkBlocks), its sublists left to the loop below, and what that made lands in this item.
+                if (child.ChildNodes.Any(n => n.Name.Equals("table", StringComparison.OrdinalIgnoreCase) && Attr(n, "data-are-inline") == "1"))
+                {
+                    var item = child.CloneNode(true);
+                    foreach (var sub in item.ChildNodes.Where(n => n.Name.Equals("ul", StringComparison.OrdinalIgnoreCase) || n.Name.Equals("ol", StringComparison.OrdinalIgnoreCase)).ToList())
+                        sub.Remove();
+                    var walked = new FlowDocument();
+                    WalkBlocks(item, walked, linkUri);
+                    foreach (var made in walked.Blocks.OfType<Paragraph>())
+                        foreach (var inl in made.Inlines) { inl.Parent = p; p.Inlines.Add(inl); }
+                }
+                else ParseInlines(child, p, uri: linkUri, inLink: !string.IsNullOrEmpty(linkUri));
                 // An empty item is dropped like any empty element — unless our export marked it as a blank item
                 // the author made (data-are-empty, as for paragraphs), and then the <br> it carries for outside
                 // renderers is rendering, not content. Neither was read here: a blank numbered item came back
