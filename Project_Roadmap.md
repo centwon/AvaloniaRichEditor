@@ -24,6 +24,11 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   + HTML 내보내기 보안 수정(2026-10-31): 글자의 `& < >`가 이스케이프 안 됨(`Entitize` 1인자 오버로드) → 글자 `<img onerror>`가
   살아있는 태그로 나감. 함께 셀 하나짜리 서식 런(`<td><b>x</b></td>`)이 HTML 읽기에서 서식을 잃던 것도 수정(`ParseInline`).
   호스트 앱의 표 HTML 왕복을 검토하다 발견. 반증 2/2. 포트·모노레포 대조(2026-10-31): 이스케이프는 둘 다 같은 결함 → 같은 수정(WinUIRichEditor PR #75, KanuDoc `32b553f`), 셀 서식 런은 둘 다 이미 맞음(`ParseInlineNode`).
+  + 코드 리뷰 수정(2026-11-01, `src` 전체 리뷰): HTML 속성 엔티티 미해독(`href`의 `&amp;`가 왕복마다 불어남·Chrome
+  `font-family: &quot;…&quot;`), HTML 이모지가 서로게이트 두 개로 나감·`&#128512;` 읽기 실패, RTF 머리글/바닥글의
+  `\{ \} \\ \~ \'hh` 버림·`\_` 버림, 붙여넣기 await 뒤 문서 교체/읽기 전용 재확인 없음, 원격 그림 다운로드 상한 없음.
+  ⚠ **.NET SDK 없는 환경에서 수정 — 빌드·`ReviewFixes20261101Tests`·반증 미실행, 로컬 확인 필요.**
+  보류(사용자 결정 대기): RTF 내보내기의 형광펜·링크 URL 누락, `ReplaceAll` O(일치×문단). 포트 대조 안 함.
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).

@@ -21,7 +21,12 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         if (Document == null || IsReadOnly) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) return;
+        // Every await below can outlast a change of document or of read-only (a pasted page's pictures download
+        // for up to 5 s); the paste then landed in the newly loaded document, or in one that had gone read-only.
+        var pasteInto = Document;
+        bool Stale() => !ReferenceEquals(Document, pasteInto) || IsReadOnly;
         string? text = await clipboard.TryGetTextAsync();
+        if (Stale()) return;
 
         // 1. Internal rich clipboard: if the system text still matches what we last copied
         //    in-app, paste the formatted version (blocks/tables when available, else runs).
@@ -55,6 +60,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         //    Word's CF_HTML only references temp files that may already be gone. Browsers don't put
         //    RTF on the clipboard, so their HTML path (below) is unaffected.
         string? rtf = AllowRichPaste ? await TryGetRtfAsync(clipboard) : null;
+        if (Stale()) return;
         if (!string.IsNullOrEmpty(rtf) && Formatters.RtfDocumentFormatter.LooksLikeRtf(rtf))
         {
             try
@@ -77,6 +83,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
 
         // 3. External HTML (from browsers, Word, etc.): parse and insert with formatting.
         string? html = AllowRichPaste ? await TryGetHtmlAsync(clipboard) : null;
+        if (Stale()) return;
         if (!string.IsNullOrEmpty(html))
         {
             // Malformed/exotic HTML can make the parser throw; fall through to the plain-text
@@ -87,6 +94,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 // Async: remote images download off the UI thread so a slow network can't freeze
                 // the paste (model build stays on the UI thread inside ParseHtmlAsync).
                 var parsed = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(fragment, AllowLocalFileImages, AllowRemoteImagesOnPaste);
+                if (Stale()) return;
                 if (parsed.Blocks.Count > 0)
                 {
                     parsed = AdaptToCapabilities(parsed, out bool emptiedHtml);
@@ -105,6 +113,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         var (clipImage, clipBytes, clipMeta) = AllowImages
             ? await TryGetImageAsync(clipboard)
             : ((Avalonia.Media.Imaging.Bitmap?)null, (byte[]?)null, (string?)null);
+        if (Stale()) return;
         // Like every other paste, 4 and 5 REPLACE a selection — in the same undo step as the insert. They went in
         // beside it and the selected text stayed (round 34).
         if (clipImage != null)

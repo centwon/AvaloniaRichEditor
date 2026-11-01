@@ -292,13 +292,13 @@ internal sealed class RtfParser
         if (c == '\'') { ReadHexChar(); return; }
         if (!char.IsLetter(c))
         {
-            // Control symbol: \\ \{ \} are literals; \~ nbsp, \_ hyphen, \* marks an optional dest.
+            // Control symbol: \\ \{ \} are literals; \~ nbsp, \_ non-breaking hyphen, \* marks an optional dest.
+            // AppendByte keeps them to body and header/footer text: gated on the body alone, a header written as
+            // "Report \{draft\}" read back as "Report draft", and Word's "e\_mail" came in as "email".
             _i++;
-            if (_st.Dest == Dest.Normal)
-            {
-                if (c == '\\' || c == '{' || c == '}') AppendByte(c);
-                else if (c == '~') AppendByte(' ');
-            }
+            if (c == '\\' || c == '{' || c == '}') AppendByte(c);
+            else if (c == '~') AppendByte(' ');
+            else if (c == '_') AppendByte('\u2011');
             if (c == '*') _st.Dest = Dest.Skip; // unknown optional destination -> ignore its body
             return;
         }
@@ -337,7 +337,8 @@ internal sealed class RtfParser
         if (_i + 1 >= _s.Length) return;
         string hex = _s.Substring(_i, 2);
         _i += 2;
-        if (_st.Dest != Dest.Normal) return;
+        // Header/footer text too: a Word/HWP header in code-page bytes (\'b0\'a1…) came in empty.
+        if (_st.Dest is not (Dest.Normal or Dest.PageChrome)) return;
         if (byte.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
             _bytes.Add(b); // decoded with the code page when the byte run is flushed
     }
