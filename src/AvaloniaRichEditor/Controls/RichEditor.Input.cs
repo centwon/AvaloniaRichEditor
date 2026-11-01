@@ -1137,6 +1137,17 @@ public partial class RichEditor
         // Push state before destructive keys. A plain single-character Backspace/Delete coalesces
         // into one checkpoint per run of the same key (like typing); structural cases — selection
         // delete, paragraph merge, selected block/inline image, Enter — stay one checkpoint each.
+        // Backspace at a paragraph's start / Delete at its end, next to a picture or a table: the first press SELECTS it
+        // (the blue border), the next one deletes it, as Word and HWP do — one key used to delete a whole table at once
+        // (user decision, 2026-11-01). Before the checkpoint below: selecting is not an edit.
+        if ((e.Key == Key.Back || e.Key == Key.Delete) && !IsReadOnly && Document != null
+            && _selectedBlock == null && _selectedInline == null && _selectionStart == _selectionEnd
+            && AdjacentPictureOrTable(e.Key == Key.Back) is { } toSelect)
+        {
+            _selectedBlock = toSelect;
+            _caretBlock = null;
+            ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
+        }
         if (e.Key == Key.Back || e.Key == Key.Delete || e.Key == Key.Enter)
         {
             if (Document != null)
@@ -1329,7 +1340,7 @@ public partial class RichEditor
             {
                 int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
                 var prevBlock = idx > 0 ? Document.Blocks[idx - 1] : null;
-                if (prevBlock is ImageBlock || prevBlock is TableBlock || prevBlock is DividerBlock)
+                if (prevBlock is DividerBlock) // a picture or table is selected first (AdjacentPictureOrTable)
                 {
                     // Caret at start of paragraph, previous block is an image/table/divider -> delete it.
                     Document.Blocks.RemoveAt(idx - 1);
@@ -1365,7 +1376,7 @@ public partial class RichEditor
                     TextRange.CoalesceRuns(cprev);
                     InvalidateMeasure(); // the cell shrank a paragraph -> row height reflows
                 }
-                else if (bi > 0 && btc.Blocks[bi - 1] is ImageBlock or TableBlock or DividerBlock)
+                else if (bi > 0 && btc.Blocks[bi - 1] is DividerBlock)
                 {
                     btc.Blocks.RemoveAt(bi - 1);
                     UpdateParents(Document);
@@ -1386,7 +1397,7 @@ public partial class RichEditor
             {
                 int idx = Document.Blocks.IndexOf(_caretPosition.Paragraph);
                 var nextBlock = (idx >= 0 && idx + 1 < Document.Blocks.Count) ? Document.Blocks[idx + 1] : null;
-                if (nextBlock is ImageBlock || nextBlock is TableBlock || nextBlock is DividerBlock)
+                if (nextBlock is DividerBlock)
                 {
                     // Caret at end of paragraph, next block is an image/table/divider -> delete it.
                     Document.Blocks.RemoveAt(idx + 1);
@@ -1415,7 +1426,7 @@ public partial class RichEditor
                     TextRange.CoalesceRuns(_caretPosition.Paragraph);
                     InvalidateMeasure();
                 }
-                else if (di >= 0 && di + 1 < dtc.Blocks.Count && dtc.Blocks[di + 1] is ImageBlock or TableBlock or DividerBlock)
+                else if (di >= 0 && di + 1 < dtc.Blocks.Count && dtc.Blocks[di + 1] is DividerBlock)
                 {
                     dtc.Blocks.RemoveAt(di + 1);
                     UpdateParents(Document);
@@ -1630,6 +1641,24 @@ public partial class RichEditor
     // of its own container, so there is no neighbour to merge with or remove. Both edit branches work
     // within the paragraph's container (the document's blocks, or the enclosing cell's), so the same
     // test covers a caret in a cell.
+    // The picture or table right before the caret (Backspace at a paragraph's start) or after it (Delete at its end), in
+    // the caret paragraph's own block list — the document or a cell. Null anywhere else.
+    private Block? AdjacentPictureOrTable(bool backspace)
+    {
+        var p = _caretPosition.Paragraph;
+        if (p == null) return null;
+        if (backspace ? _caretPosition.Offset != 0 : _caretPosition.Offset < GetParagraphLength(p)) return null;
+        System.Collections.Generic.IList<Block>? container = p.Parent switch
+        {
+            FlowDocument d => d.Blocks,
+            TableCell tc => tc.Blocks,
+            _ => null
+        };
+        if (container == null) return null;
+        int i = container.IndexOf(p) + (backspace ? -1 : 1);
+        return i >= 0 && i < container.Count && container[i] is ImageBlock or TableBlock ? container[i] : null;
+    }
+
     private bool DeleteAtEdgeIsNoOp(bool backspace)
     {
         var p = _caretPosition.Paragraph;

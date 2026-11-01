@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Backspace / Delete next to a picture or a table selects it first (user decision, 2026-11-01)
+
+- At a paragraph's start (Backspace) or end (Delete), a picture or table beside it is now **selected** by the first
+  press (the blue border) and deleted by the second, as in Word and HWP. One press used to delete a whole table at
+  once. The select step is not an edit (no undo step, not modified). A divider is still deleted at once (it has no
+  selection chrome); inline pictures and inline tables still behave as characters.
+- Links keep opening on a plain click (the WinUI port now does the same).
+- Tests: `BlockSelectBeforeDeleteTests`; `TableCellBehaviorTests` updated to the two-press behaviour.
+
 ### Fixed — HTML picture sizes, relative font sizes and colours; RTF paste pictures; status bar (review 2026-11-01, third pass)
 
 - HTML: a picture's size came from any property ending in `width`/`height` (`border-width:1px`, `line-height`,
