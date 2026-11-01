@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Links keep opening on a plain click (the WinUI port now does the same).
 - Tests: `BlockSelectBeforeDeleteTests`; `TableCellBehaviorTests` updated to the two-press behaviour.
 
+### Fixed — RTF paragraph format and fonts, picture kind through HTML/RTF, CSS alpha, readers, undo, performance (file-by-file audit 2026-11-01)
+
+- **RTF reader**: alignment (`\ql`/`\qc`/`\qr`/`\qj`), left indent (`\li`), cell shading (`\cbpat`) and fonts
+  (`\fonttbl`, `\f`, with each font's `\fcharset` code page for its bytes) were not read; `\pard` now resets them.
+  The symbol words (`\rquote`, `\lquote`, `\ldblquote`, `\rdblquote`, `\emdash`, `\endash`, `\bullet`, the
+  spaces) were dropped, as were Word's old `\pn` bullets and numbers. A `\dibitmap` picture and one with no blip
+  type are read by their bytes.
+- **Picture kind**: a large inline picture came back a block and a small block picture came back inline from HTML and
+  RTF (the size rule decided). Each writer now marks the kind (`data-are-inline`/`data-are-block`,
+  `{\*\arpicinl}`/`{\*\arpicblk}`); unmarked input keeps the size rule. RTF writes non-PNG/JPEG pictures as PNG.
+- **CSS colours** go through one parser (`ColorUtil`, from the WinUI port): `#RGBA`/`#RRGGBBAA` and `rgba()` alpha are
+  read; a fully transparent colour is no colour.
+- **HTML**: `<h4>`–`<h6>` inside a paragraph were not bold or sized (only h1–h3 were).
+- **JSON reader**: an enum written as a number (`"ListType":"7"`) or a comma list was taken as a value no code
+  handles; it now falls back like an unknown name. A dotless version past the legacy `1`/`2` (`"3"`) is refused like
+  any newer major.
+- **No undo step for**: `SetHeading(0)` on body text, `SetListStyle` with the style the paragraphs already have, a cell
+  background that is already that colour.
+- **Images off**: HTML paste and `InsertHtml` no longer fetch pictures when `AllowImages` is false. A dropped file
+  larger than a package picture may be (256 MB) is skipped instead of read whole.
+- Undo/redo scroll the caret into view; the caret blink timer runs only while focused and editable; both timers stop
+  when the control leaves the tree; copy failures are reported instead of escaping an `async void`; a character format
+  on a cell block redraws and updates the toolbar at once.
+- Performance: the selection's position sort uses the order it already built (each comparison walked the document);
+  a table moved sideways reuses its measured rows (an inline table was re-measured between measure and hit-test);
+  the HTML reader's style patterns are compiled once; a layout's text run is a slice, not a copy;
+  `TableBlock.Clone` no longer builds and throws away a default grid.
+- Tests: `Audit4Tests` (the paste/drop limits and the timers have no automated test).
+
 ### Fixed — HTML picture sizes, relative font sizes and colours; RTF paste pictures; status bar (review 2026-11-01, third pass)
 
 - HTML: a picture's size came from any property ending in `width`/`height` (`border-width:1px`, `line-height`,

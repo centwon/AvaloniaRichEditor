@@ -491,26 +491,15 @@ public partial class RichEditor : Control
         finally { _swappingHistoryState = false; }
     }
 
-    private void DoUndo()
-    {
-        if (Document == null) return;
-        var state = _undoManager.Undo(Document, _caretPosition);
-        if (state == null) return;
-        SwapInHistoryState(state.Value.Document);
-        UpdateParents(Document);
-        _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
-        _caretPosition.Offset = state.Value.CaretOffset;
-        _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-        _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
-        MarkTextChanged();
-        InvalidateVisual();
-        NotifyStatus();
-    }
+    private void DoUndo() => ApplyHistory(redo: false);
 
-    private void DoRedo()
+    private void DoRedo() => ApplyHistory(redo: true);
+
+    // Undo and redo differ only in which stack they take from (they were two copies of this).
+    private void ApplyHistory(bool redo)
     {
         if (Document == null) return;
-        var state = _undoManager.Redo(Document, _caretPosition);
+        var state = redo ? _undoManager.Redo(Document, _caretPosition) : _undoManager.Undo(Document, _caretPosition);
         if (state == null) return;
         SwapInHistoryState(state.Value.Document);
         UpdateParents(Document);
@@ -519,6 +508,7 @@ public partial class RichEditor : Control
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         _selectionEnd = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
         MarkTextChanged();
+        _bringCaretIntoView = true; // the undone edit may be off screen: follow it there, as typing does
         InvalidateVisual();
         NotifyStatus();
     }
@@ -527,7 +517,9 @@ public partial class RichEditor : Control
     {
         _isCaretVisible = true;
         _caretTimer.Stop();
-        _caretTimer.Start();
+        // Only while focused and editable: started unconditionally, a host's InsertHtml/ReplaceAll on an unfocused editor
+        // (or a caret move in a viewer) left a 2 Hz repaint running for good. As the WinUI port's RestartBlink.
+        if (IsFocused && !IsReadOnly) _caretTimer.Start();
         _imClient.NotifyCaretChanged();
         _bringCaretIntoView = true;
         // Any caret move / selection change breaks the undo-coalescing run — except when the
@@ -1332,7 +1324,7 @@ public partial class RichEditor : Control
                     if (seg.Text != null)
                     {
                         int start = textSourceIndex - pos;
-                        return new Avalonia.Media.TextFormatting.TextCharacters(seg.Text.Substring(start).AsMemory(), seg.Props);
+                        return new Avalonia.Media.TextFormatting.TextCharacters(seg.Text.AsMemory(start), seg.Props);
                     }
                     if (seg.DrawTable != null)
                         return new TableTextRun(seg.TableSize, seg.Props, seg.DrawTable);
@@ -2352,7 +2344,15 @@ public partial class RichEditor : Control
         NotifyStatus();
     }
 
+    // async void (the key and menu handlers fire and forget it): an exception anywhere in it — building the selection, the
+    // HTML — would end the process, so all of it is guarded, not only the clipboard write. (Code review 2026-11-01.)
     private async void CopySelectionToClipboard()
+    {
+        try { await CopySelectionToClipboardCore(); }
+        catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
+    }
+
+    private async Task CopySelectionToClipboardCore()
     {
         bool textSelected = HasTextOrCellSelection;
         // The block caret on a table — its border clicked or right-clicked — holds the table as a unit: Del

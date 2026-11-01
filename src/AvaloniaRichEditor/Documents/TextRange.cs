@@ -49,8 +49,13 @@ public class TextRange
     // and end paragraphs even where they cover nothing (a copied paragraph break). InsideCoveredObject marks a
     // paragraph in an inline table that a covered part of its host takes whole: that table is one object to delete
     // or copy, not a range of cells.
-    internal List<CoveredPart> Covered()
+    internal List<CoveredPart> Covered() => Covered(out _);
+
+    // `index`: the covered paragraphs' place in the document order, for PositionOrder.Compare (null where the range
+    // has no document to order in) — so the position sort below need not walk the document per comparison.
+    private List<CoveredPart> Covered(out Func<Paragraph, int>? index)
     {
+        index = null;
         var result = new List<CoveredPart>();
         var sp = _start.Paragraph;
         var ep = _end.Paragraph;
@@ -78,6 +83,7 @@ public class TextRange
             foreach (var p in inBlock) { order[p] = order.Count; paras.Add(p); }
         }
         int Index(Paragraph p) => order.TryGetValue(p, out int i) ? i : -1;
+        index = Index;
 
         var spans = new Dictionary<Paragraph, (int From, int To)>();
         foreach (var p in paras)
@@ -98,11 +104,14 @@ public class TextRange
 
     // The covered parts in POSITION order (an inline table's cells where the table is), for what is read in
     // sequence: the text and the copied runs.
-    private List<CoveredPart> CoveredInPositionOrder(bool skipCoveredObjects)
+    internal List<CoveredPart> CoveredInPositionOrder(bool skipCoveredObjects)
     {
-        var parts = Covered();
+        var parts = Covered(out var index);
         if (skipCoveredObjects) parts.RemoveAll(c => c.InsideCoveredObject);
+        // By the order Covered already built: TextPointer.CompareTo walks the document on every call, and the sort
+        // makes n·log n of them — a long selection's copy went quadratic in the document.
         parts.Sort((a, b) => ReferenceEquals(a.Paragraph, b.Paragraph) ? 0
+            : index != null ? PositionOrder.Compare(a.Paragraph, a.From, b.Paragraph, b.From, index)
             : new TextPointer(a.Paragraph, a.From).CompareTo(new TextPointer(b.Paragraph, b.From)));
         return parts;
     }
@@ -543,13 +552,6 @@ public class TextRange
         int len = 0;
         foreach (var inline in p.Inlines) len += InlineLen(inline);
         return len;
-    }
-
-    private List<Paragraph> GetAllParagraphsInOrder(FlowDocument doc)
-    {
-        var result = new List<Paragraph>();
-        CollectParagraphs(doc.Blocks, result);
-        return result;
     }
 
     // Mirror of the control's ParagraphsInBlocks: fully recursive through table cells (nested tables) and

@@ -39,6 +39,11 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   `em`/`rem`/`%`를 px로, 다른 `-color` 속성을 글자색으로(셋 다 포트도 같음 → 같은 수정). RTF 붙여넣기의 WMF/EMF 그림 → HTML 대체
   (포트에서 백포트). `RichEditorView`: 연속 보기에서 키마다 용지 폭 쪽 나눔(높이 캐시 thrash), 용지 변경·언어 변경에 상태 표시줄
   갱신. `ReviewFixes20261101cTests`. 오늘 바꾼 코드 재감사: 결함 없음. ⚠ SDK 없이 수정 — 미실행.
+  + 정책(2026-11-01, 사용자 결정, `fix/policy-2026-11-01`): 그림·표 옆 Backspace/Delete = 선택 먼저, 링크 = 그냥 클릭(포트도 맞춤).
+  + 파일별 전수조사 수정(2026-11-01, `fix/audit4-2026-11-01`, 정책 브랜치 위): RTF 리더 정렬·들여쓰기·글꼴표·기호·`\pn`·`\dibitmap`,
+  그림 인라인/블록 표지(HTML·RTF), CSS 알파(`ColorUtil` 포트에서), h4–h6, JSON 열거값/점 없는 버전, 빈 undo 3종, 그림 끔이면
+  붙여넣기 fetch 안 함, 드롭 파일 한도, 성능(위치 정렬·표 가로 이동 캐시·정규식·런 slice). `Audit4Tests`. ⚠ SDK 없이 수정 — 미실행.
+  남김(보고만): 장식 헬퍼·`AppendHtml` 목록 중첩 중복, 선형 워크(P3), `TextLayout` dispose 미확인(P7).
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).
