@@ -549,9 +549,11 @@ public partial class RichEditor
     private async Task EditHyperlinkAsync(string? current, Run? targetRun)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        var doc = Document;
         string? url = await InputDialog.ShowAsync(owner, Loc("Hyperlink"), current ?? "https://");
         Focus(); // back to the caret the dialog was opened from
         if (string.IsNullOrWhiteSpace(url)) return;
+        if (!ReferenceEquals(Document, doc) || IsReadOnly) return; // changed while the dialog was open
         ApplyHyperlinkFromDialog(url, targetRun);
     }
 
@@ -562,6 +564,9 @@ public partial class RichEditor
     {
         url = url.Trim();
         if (url.Length == 0) return;
+        // OK on the unchanged address with nothing selected is not an edit: it re-applied the same link to the caret's
+        // word — an undo step that undid nothing, and a modified document.
+        if (_selectionStart.CompareTo(_selectionEnd) == 0 && url == (targetRun?.NavigateUri ?? CaretLinkUri())) return;
         bool blank = targetRun == null && _selectionStart.CompareTo(_selectionEnd) == 0
             && _caretPosition.Paragraph is { } p && CaretWord(p) == null;
         // TypeText is the typing primitive and pushes no checkpoint of its own (the key path coalesces them), so

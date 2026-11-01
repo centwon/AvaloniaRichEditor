@@ -155,10 +155,13 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         if (Document == null || IsReadOnly) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard == null) return;
+        var pasteInto = Document;
         string? text = null;
         try { text = await clipboard.TryGetTextAsync(); }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
         if (string.IsNullOrEmpty(text)) return;
+        // As PasteFromClipboardAsync: the await can outlast a document swap or a switch to read-only.
+        if (!ReferenceEquals(Document, pasteInto) || IsReadOnly) return;
         PushUndo();
         TypeText(text);
         ResetCaretBlink();

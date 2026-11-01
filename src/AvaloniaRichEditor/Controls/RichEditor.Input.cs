@@ -1076,10 +1076,13 @@ public partial class RichEditor
                     ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
                 }
             }
+            // Nothing to cut: no checkpoint. It used to push one anyway — an undo step that undid nothing, and a
+            // freshly loaded document marked modified by a bare Ctrl+X.
+            if (!hasTextSel && _caretBlock is not TableBlock && _selectedBlock == null) { e.Handled = true; return; }
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
             if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole goes whole
-            InvalidateVisual();
+            ResetCaretBlink(); // remeasure (page breaks, scroll extent) and report the caret, as Backspace does
             e.Handled = true;
             return;
         }

@@ -215,6 +215,6 @@ public partial class RichEditor
         if (parsed.Blocks.Count == 0 || emptied) return;
         PushUndo();
         InsertParsedDocument(parsed);
-        InvalidateVisual();
+        ResetCaretBlink(); // remeasure and report the caret, as a paste does
     }
 }
