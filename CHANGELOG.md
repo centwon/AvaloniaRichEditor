@@ -25,8 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through RTF now arrives as a link. Before, highlights were dropped and a link left as plain underlined text.
 - **Remote pictures on paste are read up to 256 MB** (`DocumentPackage.MaxPictureBytes`, the bound every other picture
   source has); `GetByteArrayAsync` buffered up to 2 GB.
-- Tests: `ReviewFixes20261101Tests` (not yet run — the fixes were made without a .NET SDK; the paste and download
-  bounds have no automated test).
+- Tests: `ReviewFixes20261101Tests` (the paste and download bounds have no automated test).
 
 ### Security — ⚠ text that looked like markup was written to HTML as markup
 

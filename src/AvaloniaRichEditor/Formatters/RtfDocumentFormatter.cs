@@ -305,7 +305,9 @@ internal sealed class RtfParser
             // AppendByte keeps them to body and header/footer text: gated on the body alone, a header written as
             // "Report \{draft\}" read back as "Report draft", and Word's "e\_mail" came in as "email".
             _i++;
-            if (c == '\\' || c == '{' || c == '}') AppendByte(c);
+            // A link address is written through the same escaping, so its `\` and braces belong to the instruction.
+            if ((c == '\\' || c == '{' || c == '}') && _st.Dest == Dest.FieldInst) _fldInst.Append(c);
+            else if (c == '\\' || c == '{' || c == '}') AppendByte(c);
             else if (c == '~') AppendByte(' ');
             else if (c == '_') AppendByte('\u2011');
             if (c == '*') _st.Dest = Dest.Skip; // unknown optional destination -> ignore its body
@@ -375,9 +377,9 @@ internal sealed class RtfParser
             case "field": _pendingFieldUrl = null; break;
             case "fldinst": _st.Dest = Dest.FieldInst; _fldInst.Clear(); break;
             case "fldrslt":
-                // Not from inside the page chrome: a footer's NUMPAGES field has a \fldrslt group, and switching to
-                // Normal there would drop its text into the document body.
-                if (_st.Dest != Dest.PageChrome) { _st.Dest = Dest.Normal; _st.LinkUrl = _pendingFieldUrl; }
+                // The result group already reads as its field does — only the link is added. Switching to Normal put
+                // the text of a field in a skipped destination (or a footer's NUMPAGES) into the document body.
+                if (_st.Dest == Dest.Normal) _st.LinkUrl = _pendingFieldUrl;
                 break;
 
             // text/paragraph structure
@@ -569,6 +571,12 @@ internal sealed class RtfParser
             // pair), so append the raw unit — consecutive halves recombine in the buffer. ConvertFromUtf32
             // would throw on a lone surrogate and drop emoji etc.
             if (code >= 0 && code <= 0xFFFF) _run.Append((char)code);
+        }
+        // A link address with non-ASCII (…/wiki/한글) is written as \uN too.
+        else if (_st.Dest == Dest.FieldInst)
+        {
+            if (code < 0) code += 65536;
+            if (code >= 0 && code <= 0xFFFF) _fldInst.Append((char)code);
         }
         // Skip the spell-out fallback that follows a \uN (a plain char or a \'hh each count as one).
         for (int k = 0; k < _st.UnicodeSkip && _i < _s.Length; k++)
