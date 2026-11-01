@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — HTML entities in attributes, emoji in HTML, RTF header/footer text, stale paste (code review 2026-11-01)
+
+- **HTML attributes are read with their entities decoded.** HtmlAgilityPack returns attribute text raw, so a pasted
+  link `href="…?a=1&amp;b=2"` kept the `&amp;` (wrong address when clicked) and the writer escaped it again — one more
+  `amp;` per HTML round trip. A remote `<img src>` with `&amp;` was fetched at the wrong address. Chrome's
+  `style="font-family: &quot;Malgun Gothic&quot;"` read as the family `&quot` (the style regex stopped at the `;`).
+- **Emoji in `ToHtml()`/clipboard HTML.** `HtmlEntity.Entitize` numbered UTF-16 units, so 😀 went out as
+  `&#55357;&#56832;` — two U+FFFD in browsers, Word and HWP. Text is now escaped by code point (`&#128512;`), and the
+  reader decodes numeric references past U+FFFF (HtmlAgilityPack left `&#128512;`/`&#x1F600;` as literal text).
+- **RTF header/footer text**: `\{ \} \\ \~` and code-page `\'hh` were taken only in body text — a header
+  `Report {draft}` came back as `Report draft` from our own RTF, and a Word/HWP header in code-page bytes came in empty.
+  `\_` (Word's non-breaking hyphen) is now read as U+2011 instead of being dropped.
+- **Paste re-checks the editor after each await**: a document swap or a switch to read-only while the clipboard was
+  read or a pasted page's pictures downloaded (up to 5 s) no longer lets the paste land in the new or read-only document.
+- **RTF keeps a run's highlight and a link's address** (backported from the WinUI port): the writer emits `\highlightN`
+  and a real `{\field{\*\fldinst{HYPERLINK "url"}}{\fldrslt …}}`, and the reader takes both — so a Word/HWP link pasted
+  through RTF now arrives as a link. Before, highlights were dropped and a link left as plain underlined text.
+- **Remote pictures on paste are read up to 256 MB** (`DocumentPackage.MaxPictureBytes`, the bound every other picture
+  source has); `GetByteArrayAsync` buffered up to 2 GB.
+- Tests: `ReviewFixes20261101Tests` (the paste and download bounds have no automated test).
+
 ### Security — ⚠ text that looked like markup was written to HTML as markup
 
 Found reviewing how a host application round-trips tables through `LoadHtml`/`ToHtml` (2026-10-31).

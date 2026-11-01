@@ -156,7 +156,7 @@ namespace AvaloniaRichEditor.Formatters
                 // An element node anywhere is the discriminator: markup in, empty paragraph out.
                 bool wasMarkup = root.Descendants().Any(n => n.NodeType == HtmlNodeType.Element);
                 var p = new Paragraph();
-                if (!wasMarkup) p.Inlines.Add(new Run { Text = HtmlEntity.DeEntitize(html) });
+                if (!wasMarkup) p.Inlines.Add(new Run { Text = Decode(html) });
                 flowDoc.Blocks.Add(p);
             }
             // One run per source node fragments a line that the model would otherwise hold as one run —
@@ -177,7 +177,7 @@ namespace AvaloniaRichEditor.Formatters
         {
             var result = new System.Collections.Generic.Dictionary<string, byte[]?>();
             var urls = doc.DocumentNode.Descendants("img")
-                .Select(n => n.GetAttributeValue("src", ""))
+                .Select(n => Attr(n, "src"))
                 .Where(s => s.StartsWith("http"))
                 .Distinct()
                 .ToList();
@@ -186,7 +186,24 @@ namespace AvaloniaRichEditor.Formatters
             using var cts = new System.Threading.CancellationTokenSource(RemoteImageBudget);
             async System.Threading.Tasks.Task<(string, byte[]?)> Fetch(string url)
             {
-                try { return (url, await Http.GetByteArrayAsync(url, cts.Token).ConfigureAwait(false)); }
+                // Read up to the picture bound every other source has (DocumentPackage.MaxPictureBytes): GetByteArrayAsync
+                // buffers up to 2 GB, and the page being pasted chooses the URL.
+                try
+                {
+                    using var resp = await Http.GetAsync(url, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+                    resp.EnsureSuccessStatusCode();
+                    if (resp.Content.Headers.ContentLength > DocumentPackage.MaxPictureBytes) return (url, null);
+                    using var body = await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
+                    using var ms = new System.IO.MemoryStream();
+                    var chunk = new byte[81920];
+                    int n;
+                    while ((n = await body.ReadAsync(chunk, cts.Token).ConfigureAwait(false)) > 0)
+                    {
+                        ms.Write(chunk, 0, n);
+                        if (ms.Length > DocumentPackage.MaxPictureBytes) return (url, null);
+                    }
+                    return (url, ms.ToArray());
+                }
                 catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (url, null); }
             }
             foreach (var (url, bytes) in await System.Threading.Tasks.Task.WhenAll(urls.Select(Fetch)).ConfigureAwait(false))
@@ -240,7 +257,7 @@ namespace AvaloniaRichEditor.Formatters
                 string? childLink = linkUri;
                 if (name == "a")
                 {
-                    var href = child.GetAttributeValue("href", "");
+                    var href = Attr(child, "href");
                     if (!string.IsNullOrEmpty(href)) childLink = SafeHref(href);
                 }
                 bool hasLink = !string.IsNullOrEmpty(childLink);
@@ -251,14 +268,14 @@ namespace AvaloniaRichEditor.Formatters
                     // Our own export marks a table that was inline (see EmitTable): put it back on the text
                     // line instead of flushing the paragraph, following the same ladder as the small-icon
                     // <img> case — the pending paragraph, else the preceding one, else a new one.
-                    if (tbl != null && child.GetAttributeValue("data-are-inline", "") == "1")
+                    if (tbl != null && Attr(child, "data-are-inline") == "1")
                     {
                         var it = new InlineTable { Table = tbl };
                         // `data-are-opens` says the table was the FIRST thing in its paragraph. There is
                         // then no earlier paragraph of its own to rejoin, and taking the preceding one
                         // merges two paragraphs and swallows it — and "a paragraph holding nothing but
                         // the table" is the ordinary shape of an inline table, so this is the common case.
-                        bool opensParagraph = child.GetAttributeValue("data-are-opens", "") == "1";
+                        bool opensParagraph = Attr(child, "data-are-opens") == "1";
                         if (current == null && !opensParagraph
                             && flow.Blocks.Count > 0 && flow.Blocks[flow.Blocks.Count - 1] is Paragraph lastPara)
                         {
@@ -293,7 +310,7 @@ namespace AvaloniaRichEditor.Formatters
                             // rejoining the PRECEDING paragraph swallowed the image's line — on every
                             // second round trip a picture on its own line jumped up into the paragraph
                             // above it.
-                            bool imgOpens = child.GetAttributeValue("data-are-opens", "") == "1";
+                            bool imgOpens = Attr(child, "data-are-opens") == "1";
                             if (current != null)
                                 current.Inlines.Add(icon);                       // inline with pending text
                             else if (!imgOpens && flow.Blocks.Count > 0 && flow.Blocks[flow.Blocks.Count - 1] is Paragraph lastP)
@@ -334,7 +351,7 @@ namespace AvaloniaRichEditor.Formatters
                 }
                 else if (name == "#text")
                 {
-                    string t = HtmlEntity.DeEntitize(child.InnerText);
+                    string t = Decode(child.InnerText);
                     if (!IsCollapsibleWhitespace(t))
                     {
                         TakeSpace();
@@ -389,7 +406,7 @@ namespace AvaloniaRichEditor.Formatters
                     ParseInlines(child, p, headingWeight, FontStyle.Normal, null, childLink, size, hasLink);
                     // Empty elements are dropped — foreign HTML uses them for spacing — unless this export
                     // marked one as a blank line the author actually typed (see data-are-empty).
-                    bool markedEmpty = child.GetAttributeValue("data-are-empty", "") == "1";
+                    bool markedEmpty = Attr(child, "data-are-empty") == "1";
                     // A marked paragraph carries a <br> so a browser gives it a line; that <br> is the
                     // blank line's rendering, not its content, and reading it back would make every
                     // save/load turn one blank line into two.
@@ -460,7 +477,7 @@ namespace AvaloniaRichEditor.Formatters
                 // renderers is rendering, not content. Neither was read here: a blank numbered item came back
                 // holding a line break, and in the port (which writes no <br>) it vanished, letting the items
                 // either side merge into one list and lose a marker (the port's fuzz, seed 8178, 2026-09-24).
-                bool markedEmpty = child.GetAttributeValue("data-are-empty", "") == "1";
+                bool markedEmpty = Attr(child, "data-are-empty") == "1";
                 if (markedEmpty) p.Inlines.Clear();
                 if (p.Inlines.Count > 0 || markedEmpty) flow.Blocks.Add(p);
 
@@ -476,7 +493,7 @@ namespace AvaloniaRichEditor.Formatters
         // uses both, and anything unrecognised (including "baseline") means the default.
         private static CellVerticalAlignment ReadCellVAlign(HtmlNode td)
         {
-            string v = td.GetAttributeValue("valign", "").ToLowerInvariant();
+            string v = Attr(td, "valign").ToLowerInvariant();
             if (v.Length == 0) v = ReadStyleValue(td, "vertical-align")?.ToLowerInvariant() ?? "";
             return v switch
             {
@@ -488,7 +505,7 @@ namespace AvaloniaRichEditor.Formatters
 
         private static string? ReadStyleValue(HtmlNode node, string prop)
         {
-            var style = node.GetAttributeValue("style", "");
+            var style = Attr(node, "style");
             if (string.IsNullOrEmpty(style)) return null;
             var m = System.Text.RegularExpressions.Regex.Match(style, prop + @"\s*:\s*([^;]+)",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
@@ -498,8 +515,8 @@ namespace AvaloniaRichEditor.Formatters
         // Paragraph text alignment from a node's align attr or style text-align.
         private static TextAlignment ReadAlign(HtmlNode node)
         {
-            string a = node.GetAttributeValue("align", "").ToLowerInvariant();
-            var style = node.GetAttributeValue("style", "").ToLowerInvariant();
+            string a = Attr(node, "align").ToLowerInvariant();
+            var style = Attr(node, "style").ToLowerInvariant();
             var m = System.Text.RegularExpressions.Regex.Match(style, "text-align\\s*:\\s*(left|center|right|justify)");
             if (m.Success) a = m.Groups[1].Value;
             return a switch { "center" => TextAlignment.Center, "right" => TextAlignment.Right, "justify" => TextAlignment.Justify, _ => TextAlignment.Left };
@@ -534,7 +551,7 @@ namespace AvaloniaRichEditor.Formatters
         {
             foreach (var c in n.ChildNodes)
             {
-                if (c.Name.Equals("table", StringComparison.OrdinalIgnoreCase) && c.GetAttributeValue("data-are-inline", "") == "1")
+                if (c.Name.Equals("table", StringComparison.OrdinalIgnoreCase) && Attr(c, "data-are-inline") == "1")
                     continue;
                 if ((BlockOrMedia.Contains(c.Name) && !c.Name.Equals("img", StringComparison.OrdinalIgnoreCase))
                     || HasBlockChild(c)) return true;
@@ -561,7 +578,7 @@ namespace AvaloniaRichEditor.Formatters
         // vertical rhythm.
         private static void ApplyMarginMarker(HtmlNode node, Paragraph p)
         {
-            var v = node.GetAttributeValue("data-are-m", "");
+            var v = Attr(node, "data-are-m");
             if (string.IsNullOrEmpty(v)) return;
             var parts = v.Split(',');
             if (parts.Length != 3) return;
@@ -718,10 +735,10 @@ namespace AvaloniaRichEditor.Formatters
         // Returns (null,null,0,0) on failure/unsupported source.
         private static (byte[]?, Avalonia.Media.Imaging.Bitmap?, double, double, string?) LoadImage(HtmlNode node)
         {
-            var src = node.GetAttributeValue("src", "");
+            var src = Attr(node, "src");
             // Blank alt is "decorative" in HTML, and the model spells that as null.
-            var altAttr = node.GetAttributeValue("alt", "");
-            string? alt = string.IsNullOrWhiteSpace(altAttr) ? null : HtmlEntity.DeEntitize(altAttr);
+            var altAttr = Attr(node, "alt");
+            string? alt = string.IsNullOrWhiteSpace(altAttr) ? null : altAttr;
             if (string.IsNullOrEmpty(src)) return (null, null, 0, 0, null);
 
             double declW = ReadPx(node, "width", "width");
@@ -775,6 +792,35 @@ namespace AvaloniaRichEditor.Formatters
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return (null, null, 0, 0, null); }
         }
 
+        // An attribute's value with its entities decoded. HtmlAgilityPack hands attribute text back raw (its
+        // BackwardCompatibility default), so a link's `&amp;` stayed in the URL — and the writer escaped it again,
+        // growing by one `amp;` per HTML round trip — and Chrome's `font-family: &quot;Malgun Gothic&quot;` read as
+        // the family "&quot" (the style regexes stop at the `;` inside `&quot;`). Skips the copy when there is no
+        // `&`, which a data: URI picture never has.
+        private static string Attr(HtmlNode node, string name)
+        {
+            string v = node.GetAttributeValue(name, "");
+            return v.Contains('&') ? Decode(v) : v;
+        }
+
+        // HtmlEntity.DeEntitize, plus numeric references past U+FFFF: it makes a char of the number, which fails
+        // for an emoji's &#128512; / &#x1F600; and leaves the reference in the text as it was.
+        private static readonly System.Text.RegularExpressions.Regex AstralRef =
+            new(@"&#(?:[xX]([0-9a-fA-F]{5,6})|([0-9]{5,7}));", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        private static string Decode(string text)
+        {
+            if (text.Contains("&#", StringComparison.Ordinal))
+                text = AstralRef.Replace(text, m =>
+                {
+                    int cp = m.Groups[1].Success
+                        ? int.Parse(m.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture)
+                        : int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    return cp is > 0xFFFF and <= 0x10FFFF ? char.ConvertFromUtf32(cp) : m.Value;
+                });
+            return HtmlEntity.DeEntitize(text);
+        }
+
         // A link's address, or null for a script link (javascript:, vbscript:, data:). The text stays; only the
         // link goes. Kept, a pasted page's script link was written back out as an <a href> — into exported HTML
         // and the clipboard HTML other applications receive — although the editor itself never launches it
@@ -783,7 +829,7 @@ namespace AvaloniaRichEditor.Formatters
         internal static string? SafeHref(string href)
         {
             var sb = new StringBuilder();
-            foreach (char ch in HtmlEntity.DeEntitize(href))
+            foreach (char ch in Decode(href))
             {
                 if (ch <= ' ') continue;
                 if (ch == ':') break;
@@ -796,9 +842,9 @@ namespace AvaloniaRichEditor.Formatters
 
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
         {
-            var a = node.GetAttributeValue(attr, "");
+            var a = Attr(node, attr);
             if (double.TryParse(a, System.Globalization.CultureInfo.InvariantCulture, out var v)) return v;
-            var style = node.GetAttributeValue("style", "");
+            var style = Attr(node, "style");
             if (!string.IsNullOrEmpty(style))
             {
                 var m = System.Text.RegularExpressions.Regex.Match(style, cssProp + "\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px",
@@ -852,13 +898,13 @@ namespace AvaloniaRichEditor.Formatters
             bool childInLink = inLink || name == "a";
             if (name == "a")
             {
-                var href = child.GetAttributeValue("href", "");
+                var href = Attr(child, "href");
                 if (!string.IsNullOrEmpty(href)) cu = SafeHref(href);
             }
 
-            bool childOwnColor = ownColor || child.GetAttributeValue("data-are-fg", "") == "1";
+            bool childOwnColor = ownColor || Attr(child, "data-are-fg") == "1";
 
-            ApplyInlineStyle(child.GetAttributeValue("style", ""), ref cw, ref cs, ref cc, ref sz, ref cbg, ref cfam, ref cunder, ref cstrike);
+            ApplyInlineStyle(Attr(child, "style"), ref cw, ref cs, ref cc, ref sz, ref cbg, ref cfam, ref cunder, ref cstrike);
 
             // Links stay visually distinct (blue) regardless of the SITE'S own inline color (e.g.
             // dark anchors or white button text), and get underlined via NavigateUri. A colour this
@@ -868,7 +914,7 @@ namespace AvaloniaRichEditor.Formatters
 
             if (name == "#text")
             {
-                string text = HtmlEntity.DeEntitize(child.InnerText);
+                string text = Decode(child.InnerText);
                 if (IsCollapsibleWhitespace(text))
                 {
                     // Keep a single separating space between inline runs, but skip pure indentation.
@@ -965,7 +1011,7 @@ namespace AvaloniaRichEditor.Formatters
         // Left indent (px) from style margin-left / padding-left (px or pt).
         private static double ReadIndentPx(HtmlNode node)
         {
-            var style = node.GetAttributeValue("style", "").ToLowerInvariant();
+            var style = Attr(node, "style").ToLowerInvariant();
             var m = System.Text.RegularExpressions.Regex.Match(style, "margin-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
             if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(style, "padding-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
             if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0)
@@ -976,7 +1022,7 @@ namespace AvaloniaRichEditor.Formatters
         // Background color from a node's style="background[-color]:..." or legacy bgcolor="..." attr.
         private static IBrush? ReadBackground(HtmlNode node)
         {
-            var style = node.GetAttributeValue("style", "");
+            var style = Attr(node, "style");
             if (!string.IsNullOrEmpty(style))
             {
                 var m = System.Text.RegularExpressions.Regex.Match(style.ToLowerInvariant(), "background(?:-color)?\\s*:\\s*([^;]+)");
@@ -986,7 +1032,7 @@ namespace AvaloniaRichEditor.Formatters
                     if (b != null) return b;
                 }
             }
-            var bg = node.GetAttributeValue("bgcolor", "");
+            var bg = Attr(node, "bgcolor");
             return string.IsNullOrEmpty(bg) ? null : ParseCssColor(bg.Trim());
         }
 
@@ -1407,9 +1453,8 @@ namespace AvaloniaRichEditor.Formatters
             }
             if (inline is not Run r || r.Text == null) return;
 
-            // The two-argument overload: the one-argument Entitize leaves & < > as they are, so text that looked
-            // like markup ("<img onerror=…>") went out as a live tag and came back as nothing.
-            string t = HtmlEntity.Entitize(r.Text, true, true);
+            // Escaped, so text that looked like markup ("<img onerror=…>") goes out as text, not a live tag.
+            string t = TextEscape(r.Text);
             t = PreserveRunsOfSpaces(t);
             t = PreserveDroppableSpaces(t, closesParagraph);
             // A soft break (Shift+Enter) lives INSIDE a run as `\n`. HTML collapses that to a single
@@ -1457,6 +1502,29 @@ namespace AvaloniaRichEditor.Formatters
             if (!string.IsNullOrEmpty(r.NavigateUri) && SafeHref(r.NavigateUri) is { } href)
                 t = $"<a href=\"{AttrEscape(href)}\">{t}</a>";
             sb.Append(t);
+        }
+
+        // Text content: & < > " as entities, everything past ASCII as a numeric reference by CODE POINT. HtmlEntity.Entitize
+        // numbers UTF-16 units, so an emoji went out as two surrogate references (&#55357;&#56832;), which every HTML
+        // reader but ours turns into two U+FFFD.
+        private static string TextEscape(string s)
+        {
+            var sb = new StringBuilder(s.Length);
+            for (int i = 0; i < s.Length; i++)
+            {
+                char ch = s[i];
+                if (ch == '&') sb.Append("&amp;");
+                else if (ch == '<') sb.Append("&lt;");
+                else if (ch == '>') sb.Append("&gt;");
+                else if (ch == '"') sb.Append("&quot;");
+                else if (ch > 127)
+                {
+                    int cp = char.IsSurrogatePair(s, i) ? char.ConvertToUtf32(ch, s[++i]) : ch;
+                    sb.Append("&#").Append(cp).Append(';');
+                }
+                else sb.Append(ch);
+            }
+            return sb.ToString();
         }
 
         // Escapes a value placed inside a DOUBLE-quoted HTML attribute (style/href/src). Double quotes
