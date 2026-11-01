@@ -582,6 +582,9 @@ namespace AvaloniaRichEditor.Formatters
         private static void ApplyBlockLeafFormat(HtmlNode node, string name, Paragraph p)
         {
             if (name.Length == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6') p.HeadingLevel = name[1] - '0';
+            // The markers the writer adds where the tag could not say it (see data-are-h / data-are-q there).
+            if (node.GetAttributeValue("data-are-h", 0) is >= 1 and <= 6 and var mh) p.HeadingLevel = mh;
+            if (Attr(node, "data-are-q") == "1") p.IsQuote = true;
             if (ReadBackground(node) is { } bg) p.Background = bg;
             if (ReadIndentPx(node) is > 0 and var ind) p.Indent = ind;
             if (name == "blockquote") p.IsQuote = true;
@@ -1290,8 +1293,12 @@ namespace AvaloniaRichEditor.Formatters
             // along as a marker. An empty paragraph is likewise a blank LINE the author typed,
             // and the importer drops elements with no inline content (foreign HTML is full of
             // empty <p>/<div> used for spacing) — so it is marked too.
-            string extraAttr = p.IsListItem && p.HeadingLevel >= 1 && p.HeadingLevel <= 6
+            // The tag is ONE of <li>/<blockquote>/<h1..6>, in that order, so whatever loses rides along as a marker: the
+            // heading level under <li> or <blockquote>, the quote under <li>. A quote that was a heading lost its level, and a
+            // quoted list item its quote (the port's fuzz dump, seed 1488; code review 2026-11-01).
+            string extraAttr = (p.IsListItem || p.IsQuote) && p.HeadingLevel >= 1 && p.HeadingLevel <= 6
                 ? $" data-are-h=\"{p.HeadingLevel}\"" : "";
+            if (p.IsListItem && p.IsQuote) extraAttr += " data-are-q=\"1\"";
             // Paragraph spacing went out as nothing at all and came back as the defaults. It goes out
             // TWICE on purpose: as real CSS so a browser or Word shows the spacing, and as a marker
             // because only the marker is read back. Reading foreign margin-top/bottom would give every

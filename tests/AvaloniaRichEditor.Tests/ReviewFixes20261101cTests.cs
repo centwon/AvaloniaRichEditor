@@ -90,4 +90,22 @@ public class ReviewFixes20261101cTests
         Assert.Equal(40, p.Indent, 3);
         Assert.Equal(Color.FromRgb(0xDD, 0xD2, 0x20), Assert.IsAssignableFrom<ISolidColorBrush>(p.Background).Color);
     }
+
+    // The tag is one of <li>/<blockquote>/<h1..6>; what lost was dropped: a quoted list item's quote, a quote's heading level.
+    [AvaloniaTheory]
+    [InlineData(true, 0)]
+    [InlineData(false, 3)]
+    [InlineData(true, 2)]
+    public void QuoteAndHeading_SurviveHtml_UnderAListItemOrAQuote(bool listItem, int heading)
+    {
+        var para = new Paragraph { IsQuote = true, HeadingLevel = heading, Inlines = { new Run { Text = "q" } } };
+        if (listItem) para.ListType = ListKind.Bullet;
+        var doc = new FlowDocument();
+        doc.Blocks.Add(para);
+
+        var p = Assert.Single(HtmlDocumentFormatter.ParseHtml(HtmlDocumentFormatter.ToHtml(doc)).Blocks.OfType<Paragraph>());
+        Assert.True(p.IsQuote);
+        Assert.Equal(heading, p.HeadingLevel);
+        Assert.Equal(listItem ? ListKind.Bullet : ListKind.None, p.ListType);
+    }
 }
