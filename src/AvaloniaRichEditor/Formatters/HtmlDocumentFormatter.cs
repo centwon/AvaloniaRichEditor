@@ -847,7 +847,9 @@ namespace AvaloniaRichEditor.Formatters
             var style = Attr(node, "style");
             if (!string.IsNullOrEmpty(style))
             {
-                var m = System.Text.RegularExpressions.Regex.Match(style, cssProp + "\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px",
+                // The property itself, not one ending in its name: border-width:1px read as the picture's width, line-height as its
+                // height, max-width as a size to force. (Code review 2026-11-01.)
+                var m = System.Text.RegularExpressions.Regex.Match(style, "(?<![\\w-])" + cssProp + "\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var px)) return px;
             }
@@ -977,7 +979,7 @@ namespace AvaloniaRichEditor.Formatters
             if (System.Text.RegularExpressions.Regex.IsMatch(s, "text-decoration[^;]*line-through")) strike = true;
 
             // color: (but not background-color)
-            var m = System.Text.RegularExpressions.Regex.Match(s, "(?<!background-)color\\s*:\\s*([^;]+)");
+            var m = System.Text.RegularExpressions.Regex.Match(s, "(?<![\\w-])color\\s*:\\s*([^;]+)");
             if (m.Success)
             {
                 var brush = ParseCssColor(m.Groups[1].Value.Trim());
@@ -1003,9 +1005,17 @@ namespace AvaloniaRichEditor.Formatters
 
             // Accept px and pt (external editors/HWP paste often uses pt). The model stores pt, so pt
             // passes through and px (or a bare number) converts px -> pt (×72/96 = ×0.75).
-            var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+            // em/rem/% are relative (to the inherited size, the 10pt body for rem): read as px, 1.2em came out at 0.9pt.
+            var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt|rem|em|%)?");
             if (fm.Success && double.TryParse(fm.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out double val) && val > 0)
-                size = fm.Groups[2].Value == "pt" ? val : val * 72.0 / 96.0;
+                size = fm.Groups[2].Value switch
+                {
+                    "pt" => val,
+                    "em" => val * (size > 0 ? size : 10),
+                    "rem" => val * 10,
+                    "%" => val / 100 * (size > 0 ? size : 10),
+                    _ => val * 72.0 / 96.0,
+                };
         }
 
         // Left indent (px) from style margin-left / padding-left (px or pt).

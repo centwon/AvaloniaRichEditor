@@ -180,6 +180,10 @@ public partial class RichEditorView : UserControl
                 ApplyFitWidth(); // paper/orientation/outline change the fit target
                 // The toolbar syncs its own paper/orientation combos off the editor's property change.
             }
+            // The page count follows the paper: it stayed at the old paper's count until the next edit.
+            if (e.Property == RichEditor.PageSizeProperty || e.Property == RichEditor.ViewModeProperty
+                || e.Property == RichEditor.PageOrientationProperty || e.Property == RichEditor.PageMarginProperty)
+                UpdateStatus();
         };
         // Re-fit whenever the viewport width changes.
         SizeChanged += (_, _) => ApplyFitWidth();
@@ -342,10 +346,31 @@ public partial class RichEditorView : UserControl
         };
     }
 
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // The status bar is text in the UI language: re-drawn when it changes, as the toolbar is (and the WinUI port's view).
+        RichEditorLocalization.LanguageChanged += OnLanguageChanged;
+        UpdateStatus();
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        RichEditorLocalization.LanguageChanged -= OnLanguageChanged;
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e) => UpdateStatus();
+
     private void UpdateStatus()
     {
         UpdateCounts();
-        _pageInfo.Text = string.Format(Loc("PageCountFormat"), Editor.GetPrintPageCount());
+        // Only when the editor shows pages, as the WinUI port does. In continuous view this paginated at the PAPER's
+        // width on every TextChanged, and the paragraph height cache (one width per paragraph) then swapped between
+        // the paper's and the screen's: each keystroke reshaped the whole document twice.
+        _pageInfo.Text = Editor.IsPaged ? string.Format(Loc("PageCountFormat"), Editor.GetPrintPageCount()) : "";
         if (!string.IsNullOrEmpty(_limitInfo.Text) && Editor.GetImageCount() <= Editor.MaxRecommendedImages)
             _limitInfo.Text = ""; // cleared once back within bounds
     }
