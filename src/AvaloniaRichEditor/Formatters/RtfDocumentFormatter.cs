@@ -581,6 +581,10 @@ internal sealed class RtfParser
         // Skip the spell-out fallback that follows a \uN (a plain char or a \'hh each count as one).
         for (int k = 0; k < _st.UnicodeSkip && _i < _s.Length; k++)
         {
+            // A line break is not content (the main loop ignores it), so it is not the fallback character either:
+            // counted, it was skipped in place of the "?" that then went into the text.
+            while (_i < _s.Length && (_s[_i] == '\r' || _s[_i] == '\n')) _i++;
+            if (_i >= _s.Length) break;
             if (_s[_i] == '\\')
                 _i += (_i + 1 < _s.Length && _s[_i + 1] == '\'') ? 4 : 2; // skip \'hh or \symbol
             else if (_s[_i] == '{' || _s[_i] == '}') break;

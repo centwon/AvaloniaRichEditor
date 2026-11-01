@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — no-op edits that checkpointed, missing remeasure after some edits, waits not re-checked (review 2026-11-01, second pass)
+
+- **No undo step for an edit that changes nothing**: Ctrl+X with nothing selected, OK on an unchanged alt text, OK on
+  an unchanged link address. Each pushed an undo step and marked the document modified.
+- **Remeasure after**: Ctrl+X, the context menu's Cut/Delete, `InsertHtml`, `ReplaceNext` on the last match,
+  `ReplaceAll`, and replacing a picture. Before, page breaks and the scroll extent stayed stale (and `StatusChanged`
+  was missed) until the caret next moved.
+- **Re-checked after an await**: Ctrl+Shift+V, the alt-text and link dialogs, and replacing a picture no longer edit a
+  document that was swapped, or went read-only, meanwhile. Replacing a picture is now refused on a read-only editor.
+- `ReplaceNext`/`ReplaceAll` normalize the replacement's line endings like typing does (a raw `\r` reached the run).
+- The HTML reader's colours are `ImmutableSolidColorBrush`, like the other readers' (CLAUDE.md rule 8).
+- RTF: a line break between `\uN` and its fallback character no longer counts as the fallback.
+- Tests: `ReviewFixes20261101bTests` (the remeasure and await re-checks have no automated test).
+
 ### Fixed — HTML entities in attributes, emoji in HTML, RTF header/footer text, stale paste (code review 2026-11-01)
 
 - **HTML attributes are read with their entities decoded.** HtmlAgilityPack returns attribute text raw, so a pasted

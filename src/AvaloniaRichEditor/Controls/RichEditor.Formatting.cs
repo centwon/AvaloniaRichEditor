@@ -530,6 +530,7 @@ public partial class RichEditor
         if (Document == null || IsReadOnly) return;
         if (targetRun != null && _selectionStart.CompareTo(_selectionEnd) == 0)
         {
+            if (targetRun.NavigateUri == url) return; // OK on the unchanged address: no undo step, not modified
             PushUndo();
             targetRun.NavigateUri = url;
             InvalidateVisual();
@@ -549,9 +550,11 @@ public partial class RichEditor
     private async Task EditHyperlinkAsync(string? current, Run? targetRun)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        var doc = Document;
         string? url = await InputDialog.ShowAsync(owner, Loc("Hyperlink"), current ?? "https://");
         Focus(); // back to the caret the dialog was opened from
         if (string.IsNullOrWhiteSpace(url)) return;
+        if (!ReferenceEquals(Document, doc) || IsReadOnly) return; // changed while the dialog was open
         ApplyHyperlinkFromDialog(url, targetRun);
     }
 

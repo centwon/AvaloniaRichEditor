@@ -1069,11 +1069,12 @@ namespace AvaloniaRichEditor.Formatters
                 && TryChannel(rgb.Groups[2].Value, out byte g)
                 && TryChannel(rgb.Groups[3].Value, out byte b))
             {
-                return new SolidColorBrush(Color.FromRgb(r, g, b));
+                // Immutable, like the other readers' brushes (CLAUDE.md rule 8): no thread affinity.
+                return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(r, g, b));
             }
             if (value.StartsWith("#"))
             {
-                try { return new SolidColorBrush(Color.Parse(value)); }
+                try { return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(value)); }
                 catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
             }
             return value switch

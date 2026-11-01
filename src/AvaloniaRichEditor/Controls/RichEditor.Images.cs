@@ -144,12 +144,16 @@ public partial class RichEditor
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
 
         string current = block?.AltText ?? inline?.AltText ?? "";
+        var doc = Document;
         // Null means "cancelled", and an empty string means "decorative" — the model spells that null
         // too, which is why the two are distinguished here rather than in the dialog.
         string? entered = await InputDialog.ShowAsync(owner, Loc("AltText").TrimEnd('…', '.'), current);
         if (entered == null) return;
+        if (!ReferenceEquals(Document, doc) || IsReadOnly) return; // changed while the dialog was open
 
         string? alt = string.IsNullOrWhiteSpace(entered) ? null : entered.Trim();
+        // OK on the unchanged text is not an edit: no undo step, and the document stays unmodified.
+        if (alt == (block?.AltText ?? inline?.AltText)) return;
         PushUndo();
         if (block != null) block.AltText = alt;
         else inline!.AltText = alt;
@@ -158,7 +162,8 @@ public partial class RichEditor
     private async Task ReplaceImageAsync(ImageBlock img)
     {
         var top = TopLevel.GetTopLevel(this);
-        if (top == null) return;
+        if (top == null || IsReadOnly) return;
+        var doc = Document;
         var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
         {
             Title = Loc("SelectImage"),
@@ -173,8 +178,12 @@ public partial class RichEditor
             await s.CopyToAsync(ms);
             var bytes = ms.ToArray();
             using (ImageInfo.Decode(bytes)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
-            if (Document != null) PushUndo();
+            // The picker and the read can outlast a document swap or a switch to read-only.
+            if (Document == null || !ReferenceEquals(Document, doc) || IsReadOnly) return;
+            PushUndo();
             img.SetImageData(bytes, ImageMime.Detect(bytes));
+            // A picture shown at its natural size (no Width/Height) takes the new one's: the layout height changes.
+            InvalidateMeasure();
             InvalidateVisual();
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
@@ -321,7 +330,8 @@ public partial class RichEditor
     private async Task ReplaceInlineImageAsync(InlineImage img)
     {
         var top = TopLevel.GetTopLevel(this);
-        if (top == null) return;
+        if (top == null || IsReadOnly) return;
+        var doc = Document;
         var files = await top.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
         {
             Title = Loc("SelectImage"),
@@ -336,8 +346,12 @@ public partial class RichEditor
             await s.CopyToAsync(ms);
             var bytes = ms.ToArray();
             using (ImageInfo.Decode(bytes)) { } // validate before committing — not kept (drawn from ImageDisplayCache)
-            if (Document != null) PushUndo();
+            // The picker and the read can outlast a document swap or a switch to read-only.
+            if (Document == null || !ReferenceEquals(Document, doc) || IsReadOnly) return;
+            PushUndo();
             img.SetImageData(bytes, ImageMime.Detect(bytes));
+            // A picture shown at its natural size (no Width/Height) takes the new one's: the layout height changes.
+            InvalidateMeasure();
             InvalidateVisual();
         }
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }

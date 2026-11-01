@@ -32,6 +32,9 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   로컬 확인에서 백포트 결함 2건 수정: 건너뛰는 목적지 안 필드의 `\fldrslt`가 본문으로 샘, 링크 주소의 `\uN`·`\\`를
   지시문 읽기가 버림(한글·역슬래시 주소 손실). 반증 3/3. 포트 대조(같은 날): 포트 main부터 같은 결함 2건 → 같은 수정을 포트 `fix/review-2026-11-01`에(포트 테스트 1071 그린, 반증 3/3).
   포트 대조(같은 날): 6번(RTF 형광펜·링크)을 뺀 전부가 포트에도 있어 같은 수정을 포트 `fix/review-2026-11-01`에 넣음.
+  + 2차 리뷰 수정(2026-11-01, 다른 도구의 전수조사를 대조): 무변경 편집의 undo(Ctrl+X 빈 선택·대체 텍스트·링크 OK),
+  재측정 누락(Ctrl+X·메뉴 잘라내기/삭제·`InsertHtml`·바꾸기·그림 교체), await 뒤 재확인(Ctrl+Shift+V·대화상자·그림 교체),
+  바꾸기의 `\r\n`, HTML 색 브러시 Immutable, RTF `\uc` 건너뛰기의 줄바꿈. `ReviewFixes20261101bTests`. ⚠ SDK 없이 수정 — 미실행.
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).

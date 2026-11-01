@@ -382,7 +382,7 @@ public partial class RichEditor
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
             if (!RemoveTableHeldWhole()) DeleteSelection(); // the menu's cut: a table held whole goes whole
-            InvalidateVisual();
+            ResetCaretBlink(); // remeasure and report the caret, as the keyboard's delete does
         }, hasSelection || canCopy, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(RichEditorShortcutId.Cut)));
         items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection || canCopy, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(RichEditorShortcutId.Copy)));
         items.Add(Mi(Loc("Paste"), () => { _ = PasteFromClipboardAsync(); }, icon: RichEditorIcon.Paste, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.Paste)));
@@ -390,7 +390,7 @@ public partial class RichEditor
         {
             if (Document != null) PushUndo();
             if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole is deleted, not emptied
-            InvalidateVisual();
+            ResetCaretBlink();
         }, hasSelection || canCopy, RichEditorIcon.Delete));
     }
 

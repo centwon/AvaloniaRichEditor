@@ -131,7 +131,8 @@ public partial class RichEditor
         {
             PushUndo();
             ReplaceSelectionText(replacement);
-            InvalidateVisual();
+            // The next match's SelectMatch remeasures; with none left (the only match was just replaced) nothing did.
+            ResetCaretBlink();
         }
         return FindNext(query, matchCase);
     }
@@ -157,7 +158,7 @@ public partial class RichEditor
             ReplaceSelectionText(replacement);
             count++;
         }
-        InvalidateVisual();
+        ResetCaretBlink(); // report where the caret ended up — each SelectMatch reported the match before its replacement
         return count;
     }
 
@@ -232,6 +233,8 @@ public partial class RichEditor
     private void ReplaceSelectionText(string replacement)
     {
         DeleteSelection();
+        // The model's line break is '\n', as TypeText normalizes: a host's "\r\n" left a raw '\r' in the run.
+        if (replacement != null && replacement.Contains('\r')) replacement = replacement.Replace("\r\n", "\n").Replace('\r', '\n');
         if (!string.IsNullOrEmpty(replacement) && _caretPosition.Paragraph != null)
         {
             TryInsertTextCore(_caretPosition.Paragraph, replacement, _caretPosition.Offset);
