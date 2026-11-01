@@ -82,4 +82,41 @@ public class ReviewFixes20261101Tests
     {
         Assert.Equal("e\u2011mail", Text(RtfDocumentFormatter.Parse(@"{\rtf1\ansi e\_mail\par}")));
     }
+
+    // The RTF writer dropped a run's highlight and a link's address (a link was only \ul); backported from the WinUI port.
+    [AvaloniaFact]
+    public void AHighlightAndALink_SurviveAnRtfRoundTrip()
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph
+        {
+            Inlines =
+            {
+                new Run { Text = "marked ", Background = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Avalonia.Media.Colors.Yellow) },
+                new Run { Text = "link", NavigateUri = "https://example.com/a?b=1" },
+            }
+        });
+
+        string rtf = RtfDocumentFormatter.Write(doc);
+        Assert.Contains("HYPERLINK", rtf);
+        var runs = RtfDocumentFormatter.Parse(rtf).Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Run>()).ToList();
+
+        var marked = runs.Single(r => r.Text == "marked ");
+        Assert.Equal(Avalonia.Media.Colors.Yellow, Assert.IsAssignableFrom<Avalonia.Media.ISolidColorBrush>(marked.Background).Color);
+        Assert.Equal("https://example.com/a?b=1", runs.Single(r => r.Text == "link").NavigateUri);
+    }
+
+    // Word's spelling of a link. A script link is dropped as the HTML reader drops it.
+    [AvaloniaTheory]
+    [InlineData("https://example.com/", "https://example.com/")]
+    [InlineData("javascript:alert(1)", null)]
+    public void AWordHyperlinkField_IsRead(string url, string? expected)
+    {
+        var doc = RtfDocumentFormatter.Parse(
+            @"{\rtf1\ansi before {\field{\*\fldinst{HYPERLINK """ + url + @"""}}{\fldrslt{\ul click}}} after\par}");
+        var runs = doc.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Run>()).ToList();
+        Assert.Equal("before click after", string.Concat(runs.Select(r => r.Text)));
+        Assert.Equal(expected, runs.Single(r => r.Text == "click").NavigateUri);
+        Assert.Null(runs.First().NavigateUri);
+    }
 }

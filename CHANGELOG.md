@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `\_` (Word's non-breaking hyphen) is now read as U+2011 instead of being dropped.
 - **Paste re-checks the editor after each await**: a document swap or a switch to read-only while the clipboard was
   read or a pasted page's pictures downloaded (up to 5 s) no longer lets the paste land in the new or read-only document.
+- **RTF keeps a run's highlight and a link's address** (backported from the WinUI port): the writer emits `\highlightN`
+  and a real `{\field{\*\fldinst{HYPERLINK "url"}}{\fldrslt …}}`, and the reader takes both — so a Word/HWP link pasted
+  through RTF now arrives as a link. Before, highlights were dropped and a link left as plain underlined text.
 - **Remote pictures on paste are read up to 256 MB** (`DocumentPackage.MaxPictureBytes`, the bound every other picture
   source has); `GetByteArrayAsync` buffered up to 2 GB.
 - Tests: `ReviewFixes20261101Tests` (not yet run — the fixes were made without a .NET SDK; the paste and download

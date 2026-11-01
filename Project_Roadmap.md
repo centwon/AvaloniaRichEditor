@@ -28,7 +28,8 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   `font-family: &quot;…&quot;`), HTML 이모지가 서로게이트 두 개로 나감·`&#128512;` 읽기 실패, RTF 머리글/바닥글의
   `\{ \} \\ \~ \'hh` 버림·`\_` 버림, 붙여넣기 await 뒤 문서 교체/읽기 전용 재확인 없음, 원격 그림 다운로드 상한 없음.
   ⚠ **.NET SDK 없는 환경에서 수정 — 빌드·`ReviewFixes20261101Tests`·반증 미실행, 로컬 확인 필요.**
-  보류(사용자 결정 대기): RTF 내보내기의 형광펜·링크 URL 누락, `ReplaceAll` O(일치×문단). 포트 대조 안 함.
+  + RTF 형광펜(`\highlight`)·링크(`HYPERLINK` 필드) 읽기/쓰기를 WinUI 포트에서 백포트. 보류: `ReplaceAll` O(일치×문단).
+  포트 대조(같은 날): 6번(RTF 형광펜·링크)을 뺀 전부가 포트에도 있어 같은 수정을 포트 `fix/review-2026-11-01`에 넣음.
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).

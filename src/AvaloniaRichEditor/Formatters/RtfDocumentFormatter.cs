@@ -147,18 +147,25 @@ internal sealed class RtfParser
     private readonly string _s;
     private int _i;
 
-    private enum Dest { Normal, Skip, ColorTable, Pict, PageChrome }
+    private enum Dest { Normal, Skip, ColorTable, Pict, PageChrome, FieldInst }
 
     private struct State
     {
         public bool Bold, Italic, Underline, Strike;
         public double FontSize;   // points; 0 = use the run default
         public int Color;         // index into _colors; -1 = default (black)
+        public int Highlight;     // index into _colors (\highlightN); -1 = none
+        public string? LinkUrl;   // hyperlink applied to runs inside a \fldrslt group; null = none
         public Dest Dest;
         public int UnicodeSkip;   // chars to swallow after a \uN (set by \ucN)
     }
 
-    private State _st = new() { Color = -1, UnicodeSkip = 1 };
+    private State _st = new() { Color = -1, Highlight = -1, UnicodeSkip = 1 };
+
+    // \field: the \fldinst instruction is collected here; a HYPERLINK target parsed from it becomes the
+    // LinkUrl of the following \fldrslt group's runs (so Word/HWP/own-writer links round-trip). From the WinUI port.
+    private readonly StringBuilder _fldInst = new();
+    private string? _pendingFieldUrl;
     private readonly Stack<State> _stack = new();
 
     private readonly FlowDocument _doc = new();
@@ -246,6 +253,7 @@ internal sealed class RtfParser
             else if (c == '}')
             {
                 if (_st.Dest == Dest.Pict) FinalizePict();
+                else if (_st.Dest == Dest.FieldInst) FinalizeFieldInst();
                 else if (_st.Dest == Dest.PageChrome && _stack.Count == _chromeDepth) FinalizePageChrome();
                 else FlushRun();
                 _st = _stack.Count > 0 ? _stack.Pop() : _st; _i++;
@@ -254,6 +262,7 @@ internal sealed class RtfParser
             else if (c == '\r' || c == '\n') _i++;            // RTF line breaks are not content
             else if (_st.Dest == Dest.ColorTable && c == ';') { CloseColorEntry(); _i++; }
             else if (_st.Dest == Dest.Pict) { if (Uri.IsHexDigit(c)) _pictHex.Append(c); _i++; }
+            else if (_st.Dest == Dest.FieldInst) { _fldInst.Append(c); _i++; }
             // Page chrome collects plain characters too — its text is ordinary text, just bound for the
             // header/footer band instead of the body.
             else { if (_st.Dest is Dest.Normal or Dest.PageChrome) AppendByte(c); _i++; }
@@ -358,7 +367,18 @@ internal sealed class RtfParser
             case "strike": SetStrike(p != 0); break;
             case "fs": FlushRun(); _st.FontSize = (p ?? 24) / 2.0; break;
             case "cf": FlushRun(); _st.Color = p ?? -1; break;
-            case "plain": FlushRun(); _st.Bold = _st.Italic = _st.Underline = _st.Strike = false; _st.FontSize = 0; _st.Color = -1; break;
+            case "highlight": FlushRun(); _st.Highlight = p ?? -1; break;
+            case "plain": FlushRun(); _st.Bold = _st.Italic = _st.Underline = _st.Strike = false; _st.FontSize = 0; _st.Color = -1; _st.Highlight = -1; break;
+
+            // \field {\*\fldinst HYPERLINK "url"}{\fldrslt text}: read the instruction (overriding the \* skip, like
+            // \shppict) and hand the parsed URL to the result group's runs.
+            case "field": _pendingFieldUrl = null; break;
+            case "fldinst": _st.Dest = Dest.FieldInst; _fldInst.Clear(); break;
+            case "fldrslt":
+                // Not from inside the page chrome: a footer's NUMPAGES field has a \fldrslt group, and switching to
+                // Normal there would drop its text into the document body.
+                if (_st.Dest != Dest.PageChrome) { _st.Dest = Dest.Normal; _st.LinkUrl = _pendingFieldUrl; }
+                break;
 
             // text/paragraph structure
             case "par": case "sect":
@@ -717,6 +737,19 @@ internal sealed class RtfParser
         _run.Clear();
     }
 
+    // Called when a group holding \fldinst text closes. An empty buffer means a NESTED group inside the instruction
+    // closed first — keep the already-captured URL instead of clobbering it.
+    private void FinalizeFieldInst()
+    {
+        string inst = _fldInst.ToString().Trim();
+        _fldInst.Clear();
+        if (inst.Length == 0) return;
+        var m = System.Text.RegularExpressions.Regex.Match(inst, "HYPERLINK\\s+(?:\"([^\"]+)\"|(\\S+))",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        // A script link (javascript:, vbscript:, data:) is dropped as the HTML reader drops it.
+        if (m.Success) _pendingFieldUrl = HtmlDocumentFormatter.SafeHref(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value);
+    }
+
     private Run MakeRun(string text)
     {
         var r = new Run
@@ -738,6 +771,12 @@ internal sealed class RtfParser
             var col = _colors[_st.Color];
             if (col.A != 0) r.Foreground = new ImmutableSolidColorBrush(col);
         }
+        if (_st.Highlight >= 0 && _st.Highlight < _colors.Count)
+        {
+            var bg = _colors[_st.Highlight];
+            if (bg.A != 0) r.Background = new ImmutableSolidColorBrush(bg);
+        }
+        r.NavigateUri = _st.LinkUrl; // non-null only inside a \fldrslt with a parsed HYPERLINK
         return r;
     }
 
@@ -1422,6 +1461,11 @@ internal sealed class RtfWriter
     // which would now re-bold heading text the user un-bolded.
     private void WriteRun(Run r)
     {
+        // Hyperlink as a real field: {\field{\*\fldinst{HYPERLINK "url"}}{\fldrslt {...}}} — Word/HWP then keep the
+        // target address (the bare \ul form only looked like a link). From the WinUI port.
+        bool link = !string.IsNullOrEmpty(r.NavigateUri);
+        if (link)
+            _body.Append(@"{\field{\*\fldinst{HYPERLINK """).Append(EscapeText(r.NavigateUri!)).Append("\"}}{\\fldrslt ");
         _body.Append('{');
         if (r.FontWeight == FontWeight.Bold) _body.Append(@"\b");
         if (r.FontStyle == FontStyle.Italic) _body.Append(@"\i");
@@ -1433,9 +1477,12 @@ internal sealed class RtfWriter
         _body.Append($@"\fs{(int)Math.Round(size * 2)}"); // \fs is half-points; model size is already pt
         int c = ColorIndex(r.Foreground);
         if (c > 0) _body.Append($@"\cf{c}");
+        int hb = ColorIndex(r.Background, blackIsDefault: false);
+        if (hb > 0) _body.Append($@"\highlight{hb}"); // run highlight, round-trips with the parser
         _body.Append(' ');
         WriteEscaped(r.Text!);
         _body.Append('}');
+        if (link) _body.Append("}}");
     }
 
     // `depth` is the RTF table nesting level (\itap): 1 for a top-level table, 2+ for a table inside a
@@ -1646,13 +1693,14 @@ internal sealed class RtfWriter
         return i;
     }
 
-    private int ColorIndex(IBrush? brush)
+    private int ColorIndex(IBrush? brush, bool blackIsDefault = true)
     {
         if (brush is not ISolidColorBrush s) return 0;
         var col = s.Color;
         // Black is the default text colour — no \cf needed (keeps the output clean and matches the model
-        // default where a null foreground also renders black).
-        if (col.R == 0 && col.G == 0 && col.B == 0) return 0;
+        // default where a null foreground also renders black). Highlights pass blackIsDefault: false — index 0
+        // means "no highlight" there, so a black highlight must get a real colour-table entry.
+        if (blackIsDefault && col.R == 0 && col.G == 0 && col.B == 0) return 0;
         uint key = ((uint)col.R << 16) | ((uint)col.G << 8) | col.B;
         if (_colorIndex.TryGetValue(key, out var i)) return i;
         _colors.Add(col);
