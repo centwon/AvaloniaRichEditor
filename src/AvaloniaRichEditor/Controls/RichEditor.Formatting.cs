@@ -530,7 +530,6 @@ public partial class RichEditor
         if (Document == null || IsReadOnly) return;
         if (targetRun != null && _selectionStart.CompareTo(_selectionEnd) == 0)
         {
-            if (targetRun.NavigateUri == url) return; // OK on the unchanged address: no undo step, not modified
             PushUndo();
             targetRun.NavigateUri = url;
             InvalidateVisual();
@@ -565,6 +564,9 @@ public partial class RichEditor
     {
         url = url.Trim();
         if (url.Length == 0) return;
+        // OK on the unchanged address with nothing selected is not an edit: it re-applied the same link to the caret's
+        // word — an undo step that undid nothing, and a modified document.
+        if (_selectionStart.CompareTo(_selectionEnd) == 0 && url == (targetRun?.NavigateUri ?? CaretLinkUri())) return;
         bool blank = targetRun == null && _selectionStart.CompareTo(_selectionEnd) == 0
             && _caretPosition.Paragraph is { } p && CaretWord(p) == null;
         // TypeText is the typing primitive and pushes no checkpoint of its own (the key path coalesces them), so
