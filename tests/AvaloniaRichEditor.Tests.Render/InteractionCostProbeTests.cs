@@ -97,11 +97,13 @@ public class InteractionCostProbeTests(ITestOutputHelper output)
             foreach (var f in new[] { "_caretPosition", "_selectionStart", "_selectionEnd" })
                 T.GetField(f, NP)!.SetValue(ed, new TextPointer(last, 3));
             bool down = true;
-            double key = Micros(() => { Press(ed, down ? Key.Down : Key.Up); down = !down; }, 100);
+            // As an app runs them: a layout pass between two key presses (the caret move invalidated the measure), so
+            // each press finds the measure — and the block map it builds — standing.
+            double key = Micros(() => { Press(ed, down ? Key.Down : Key.Up); down = !down; ed.Measure(size); }, 100);
             double remeasure = Micros(() => { ed.InvalidateMeasure(); ed.Measure(size); }, 50);
 
             Log($"  {n,6} paras: hover (3 walks) {hover,8:F0} | drag hit-test {dragHit,8:F0} | click hit-test {clickHit,8:F0} " +
-                $"| arrow key {key,8:F0} + re-measure {remeasure,8:F0}");
+                $"| arrow key incl. re-measure {key,8:F0} (re-measure alone {remeasure,8:F0})");
         }
     }
 }

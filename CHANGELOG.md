@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
+
+- The hit-tests walked the document from its first block on every call: a hover twice per mouse move, a click or
+  drag once, an arrow key several times. Measured at 16,000 paragraphs (`InteractionCostProbeTests`): a mouse move
+  10.8 ms, a click 12.2 ms, an arrow key 23.6 ms plus its re-measure. They now find the point's block in a map of
+  block starts the measure walk records anyway, and visit it and its neighbours (the WinUI port keeps the same map).
+  The map is used only while that measure stands — any edit or invalidated measure falls back to the walk from the top.
+- Test: `BlockMapTests` asks every hit-test the same questions with the map and without it, over a document of every
+  block kind.
+
 ### Internal — duplicated helpers shared (2026-11-02)
 
 - A run's underline/strikethrough is read and built in one place (`RunDecorations`): the JSON, HTML and RTF formatters

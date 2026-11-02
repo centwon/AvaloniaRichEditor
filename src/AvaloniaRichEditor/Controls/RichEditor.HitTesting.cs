@@ -53,12 +53,61 @@ public partial class RichEditor
         return null;
     }
 
+    // ---- block map (P3, 2026-11-02) ---------------------------------------------------------------------
+    // Where each top-level block starts: _blockStarts[i] is the walk's y BEFORE block i's top gap (the end of the
+    // block above, its bottom margin included), and _blockStarts[Count] the end. The hit-tests below used to walk
+    // the document from its first block on every call — a hover twice per mouse move, an arrow key several times —
+    // and at 16,000 paragraphs a mouse move cost 10.8 ms and an arrow key 23.6 ms (InteractionCostProbeTests).
+    // With the map a point-based walk visits the block whose band holds the point and its two neighbours.
+    //
+    // Built by the measure walk, which visits every block anyway, and used only while that measure still stands:
+    // every measure starts by dropping it (one that does not walk — page view — leaves none), measure still valid
+    // (anything that moves a block invalidates it — every edit, a host's NotifyDocumentChanged, a resize drag), no
+    // edit pending (the flag every edit raises at its start, before it reaches InvalidateMeasure), the same width
+    // and the same blocks. Otherwise the walks go from the top as before. The WinUI port keeps the same map
+    // (EnsureBlockLayout), built lazily there.
+    private double[]? _blockStarts;
+    private Block[]? _blockMapBlocks;
+    private double _blockMapWidth = double.NaN;
+    private bool _blockMapValid;
+
+    private bool BlockMapUsable(double width)
+        => _blockMapValid && IsMeasureValid && !_textChangedPending && _blockMapWidth == width
+           && Document != null && _blockStarts != null && _blockStarts.Length == Document.Blocks.Count + 1;
+
+    // The top-level blocks a point at `y` can touch, and the walk's y at the first of them: the block whose band
+    // holds y and its neighbours (a band starts at the end of the block above, so a point in a gap or a margin is
+    // next to the two blocks around it). The whole document, from 0, when the map cannot be used.
+    private (int from, int to, double yStart, bool narrowed) BlocksNear(double y, double width)
+    {
+        int n = Document?.Blocks.Count ?? 0;
+        if (n == 0 || double.IsNaN(y) || !BlockMapUsable(width)) return (0, n - 1, 0, false);
+        var starts = _blockStarts!;
+        int lo = 0, hi = n - 1; // the last block starting at or above y
+        while (lo < hi) { int mid = (lo + hi + 1) >> 1; if (starts[mid] <= y) lo = mid; else hi = mid - 1; }
+        int from = Math.Max(0, lo - 1), to = Math.Min(n - 1, lo + 1);
+        for (int k = from; k <= to; k++)
+            if (!ReferenceEquals(_blockMapBlocks![k], Document!.Blocks[k])) return (0, n - 1, 0, false);
+        return (from, to, starts[from], true);
+    }
+
+    // The walk's y before `block`'s top gap, from the map; null when the map cannot be used or the block is not there.
+    private double? BlockStartFromMap(Block block, double width, out int index)
+    {
+        index = -1;
+        if (!BlockMapUsable(width)) return null;
+        index = Document!.Blocks.IndexOf(block);
+        return index >= 0 && ReferenceEquals(_blockMapBlocks![index], block) ? _blockStarts![index] : null;
+    }
+
     private Run? GetLinkRunAtPoint(Point p)
     {
         if (Document == null) return null;
-        double yOffset = 0, maxWidth = ContentLayoutWidth;
-        foreach (var block in Document.Blocks)
+        double maxWidth = ContentLayoutWidth;
+        var (from, to, yOffset, _) = BlocksNear(p.Y, maxWidth);
+        for (int bi = from; bi <= to; bi++)
         {
+            var block = Document.Blocks[bi];
             yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out var tl);
@@ -350,9 +399,11 @@ public partial class RichEditor
     private Block? GetBlockAtPoint(Point p)
     {
         if (Document == null) return null;
-        double yOffset = 0, listIndent = 10, maxWidth = ContentLayoutWidth;
-        foreach (var block in Document.Blocks)
+        double listIndent = 10, maxWidth = ContentLayoutWidth;
+        var (from, to, yOffset, _) = BlocksNear(p.Y, maxWidth);
+        for (int bi = from; bi <= to; bi++)
         {
+            var block = Document.Blocks[bi];
             yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out var tl);
@@ -375,6 +426,12 @@ public partial class RichEditor
     {
         if (Document == null) return null;
         double yOffset = 0, maxWidth = ContentLayoutWidth;
+        if (BlockStartFromMap(target, maxWidth, out _) is { } start)
+        {
+            double mtop = start + TopGapOf(target);
+            BlockExtent(target, maxWidth, mtop, out var mtl);
+            return mtl is { } mt ? (mtop, mt) : null;
+        }
         foreach (var block in Document.Blocks)
         {
             yOffset += TopGapOf(block);
@@ -422,10 +479,12 @@ public partial class RichEditor
     private TableBlock? TableLeftOrTopBorderAtPoint(Point p)
     {
         if (Document == null) return null;
-        double yOffset = 0, maxWidth = ContentLayoutWidth;
+        double maxWidth = ContentLayoutWidth;
         const double m = 4;
-        foreach (var block in Document.Blocks)
+        var (from, to, yOffset, _) = BlocksNear(p.Y, maxWidth);
+        for (int bi = from; bi <= to; bi++)
         {
+            var block = Document.Blocks[bi];
             yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out var tl);
@@ -702,8 +761,19 @@ public partial class RichEditor
     {
         if (Document == null || Document.Blocks.Count == 0)
             return new TextPointer(null, 0);
+        // Near the point first (the block map); the whole document when the map is out of date or — which the
+        // block layout rules out, but a wrong answer here is a caret in the wrong place — no candidate was near.
+        var (from, to, y0, narrowed) = BlocksNear(p.Y, ContentLayoutWidth);
+        return (narrowed ? PositionFromPointIn(p, from, to, y0) : null)
+            ?? PositionFromPointIn(p, 0, Document.Blocks.Count - 1, 0)
+            ?? new TextPointer(Document.Blocks[0] as Paragraph, 0);
+    }
 
-        double yOffset = 0;
+    // The walk of GetPositionFromPoint over blocks from..to, the first starting at y0; null when none of them holds a
+    // candidate.
+    private TextPointer? PositionFromPointIn(Point p, int from, int to, double y0)
+    {
+        double yOffset = y0;
         double maxWidth = ContentLayoutWidth;
         double bestDistY = double.MaxValue;
         Paragraph? bestPara = null;
@@ -715,8 +785,9 @@ public partial class RichEditor
         double bestTop = 0;
         bool bestNeedsHit = false;
 
-        foreach (var block in Document.Blocks)
+        for (int bi = from; bi <= to; bi++)
         {
+            var block = Document!.Blocks[bi];
             yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out var tl);
@@ -781,6 +852,6 @@ public partial class RichEditor
             (bestLocalIndex, bestAtLineEnd) = HitTestLogicalIndex(bestPara, ParagraphWrapWidth(bestPara, maxWidth),
                 ParaLayout(bestPara, maxWidth), new Point(p.X - ppos, p.Y - bestTop));
         }
-        return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) { AtLineEnd = bestAtLineEnd } : new TextPointer(Document.Blocks[0] as Paragraph, 0);
+        return bestPara != null ? new TextPointer(bestPara, bestLocalIndex) { AtLineEnd = bestAtLineEnd } : null;
     }
 }
