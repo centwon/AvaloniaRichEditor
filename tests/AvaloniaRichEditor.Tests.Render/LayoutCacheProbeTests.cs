@@ -160,62 +160,6 @@ public class LayoutCacheProbeTests(ITestOutputHelper output)
         }
     }
 
-    // P7 (audit 2026-11-01): what disposing the layouts the cache drops buys — the same window scroll as D, once with
-    // the evicted layouts left to the GC (as before) and once disposed after each render. Allocation is what the pool
-    // returns save; private bytes include the Skia text blobs a finalizer would otherwise free.
-    [AvaloniaFact]
-    public void E_DisposingEvictedLayouts_WhatItSaves()
-    {
-        if (!Enabled) return;
-        var theme = new Avalonia.Themes.Fluent.FluentTheme();
-        Application.Current!.Styles.Add(theme);
-        bool was = RichEditor.DisposeEvictedLayouts;
-        try
-        {
-            Log($"=== [upstream] evicted-layout disposal, {DateTime.Now:yyyy-MM-dd HH:mm}");
-            foreach (bool dispose in new[] { false, true, false, true }) // twice each: the first pass warms the JIT and the pool
-            {
-                RichEditor.DisposeEvictedLayouts = dispose;
-                Managed();
-                var ed = new RichEditor { Document = HtmlDocumentFormatter.ParseHtml(BigHtml(4000)) };
-                var scroller = new Avalonia.Controls.ScrollViewer { Content = ed };
-                var window = new Avalonia.Controls.Window { Width = 800, Height = 600, Content = scroller };
-                window.Show();
-                void Frame()
-                {
-                    window.UpdateLayout();
-                    Dispatcher.UIThread.RunJobs();
-                    using var rtb = new RenderTargetBitmap(new PixelSize(800, 600));
-                    rtb.Render(window);
-                }
-                Frame();
-                long alloc0 = GC.GetTotalAllocatedBytes(true);
-                int g0 = GC.CollectionCount(0), g2 = GC.CollectionCount(2);
-                long priv0 = Priv();
-                var sw = Stopwatch.StartNew();
-                int pages = 0;
-                while (scroller.Offset.Y + scroller.Viewport.Height < scroller.Extent.Height - 1 && pages < 100_000)
-                {
-                    scroller.Offset = new Vector(0, scroller.Offset.Y + scroller.Viewport.Height * 0.9);
-                    Frame();
-                    pages++;
-                }
-                double ms = sw.Elapsed.TotalMilliseconds;
-                long alloc = GC.GetTotalAllocatedBytes(true) - alloc0;
-                long privPeak = Priv() - priv0;
-                Log($"  dispose={dispose,-5}: {pages} pages, {ms / Math.Max(1, pages):F1} ms/page | allocated {alloc / Mb,7:F1} MB " +
-                    $"| GC gen0 {GC.CollectionCount(0) - g0,4}, gen2 {GC.CollectionCount(2) - g2,3} | private +{privPeak / Mb,6:F1} MB (no forced GC) " +
-                    $"| retired pending {ed.RetiredLayoutCount}");
-                window.Content = null; // never Close(): the last headless top-level takes the dispatcher with it
-            }
-        }
-        finally
-        {
-            RichEditor.DisposeEvictedLayouts = was;
-            Application.Current!.Styles.Remove(theme);
-        }
-    }
-
     [AvaloniaFact]
     public void B_ParagraphsAnEditRemoved_StayInTheCache()
     {

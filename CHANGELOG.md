@@ -43,11 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the HTML reader's style patterns are compiled once; a layout's text run is a slice, not a copy;
   `TableBlock.Clone` no longer builds and throws away a default grid.
 - Tests: `Audit4Tests` (the paste/drop limits and the timers have no automated test).
-- **Layouts the cache drops are disposed** (P7): a `TextLayout` holds pooled shaped buffers and Skia text blobs (native
-  memory only a finalizer freed). They are disposed after the next render, not where they leave the cache — the same
-  instance may still be in use up the stack (rule 1), and a disposed layout reads buffers another layout reuses. What
-  a frame drew stays safe: the recorded scene holds its own glyph-run references. Measured by
-  `LayoutCacheProbeTests.E_DisposingEvictedLayouts_WhatItSaves` (`RICHEDITOR_PERF=1`).
 
 ### Fixed — HTML picture sizes, relative font sizes and colours; RTF paste pictures; status bar (review 2026-11-01, third pass)
 

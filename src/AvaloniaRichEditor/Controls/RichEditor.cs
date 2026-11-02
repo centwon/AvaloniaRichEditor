@@ -289,38 +289,6 @@ public partial class RichEditor : Control
     private readonly Dictionary<Paragraph, LayoutEntry> _layoutCache = new();
     private long _layoutStamp;
 
-    // Layouts the cache let go of, disposed only after a render (DisposeRetiredLayouts). A TextLayout is IDisposable:
-    // it returns its shaped buffers to the pool and releases its glyph runs (Skia text blobs, native memory the GC does
-    // not see, freed only by a finalizer). It is NOT disposed where it leaves the cache, because the same instance is
-    // handed to every caller (rule 1): a render, a cell measure recursing into a table, or a hit-test up the stack may
-    // still be reading it, and a disposed layout reads pooled buffers another layout now owns — wrong geometry, no
-    // exception. A render is the safe point: nothing holds a layout across one, and what a frame drew is safe too —
-    // the recorded scene holds its own reference to each glyph run (RenderDataDrawingContext clones the IRef).
-    // Without a render (a measure-only host) the set is let go at RetiredLayoutCap, to the GC, as before.
-    private readonly HashSet<Avalonia.Media.TextFormatting.TextLayout> _retiredLayouts = new(ReferenceEqualityComparer.Instance);
-    private const int RetiredLayoutCap = 4096;
-    internal static bool DisposeEvictedLayouts = true; // test hook: LayoutCacheProbeTests measures both ways
-
-    private void Retire(LayoutEntry entry)
-    {
-        if (_retiredLayouts.Count >= RetiredLayoutCap) _retiredLayouts.Clear();
-        _retiredLayouts.Add(entry.Layout);
-    }
-
-    private void RemoveCachedLayout(Paragraph p)
-    {
-        if (_layoutCache.Remove(p, out var entry)) Retire(entry);
-    }
-
-    private void DisposeRetiredLayouts()
-    {
-        if (DisposeEvictedLayouts)
-            foreach (var layout in _retiredLayouts) layout.Dispose();
-        _retiredLayouts.Clear();
-    }
-
-    internal int RetiredLayoutCount => _retiredLayouts.Count; // test hook
-
     // A paragraph's height at a wrap width — exactly BuildTextLayout(p, width).Height, under the same
     // signature and trusted-pass rules — and, once pagination asks, where its lines end. Weak-keyed: a
     // paragraph an edit removes takes its entry with it (the layout cache needed a prune for that).
@@ -1645,7 +1613,6 @@ public partial class RichEditor : Control
             // whole document for nothing, and 20,000 cells took 77 s to draw (1.3.0 audit). Doubling keeps it amortized.
             _layoutPruneAt = Math.Max(LayoutPruneCap, 2 * _layoutCache.Count);
         }
-        if (_layoutCache.TryGetValue(p, out var replaced)) Retire(replaced); // a width or content change: the old one goes
         _layoutCache[p] = new LayoutEntry(sig, maxWidth, layout) { Stamp = ++_layoutStamp };
         return layout;
     }
@@ -1820,7 +1787,6 @@ public partial class RichEditor : Control
     // can't see (the default font, the page width mode) and for a new document.
     private void ClearLayoutCaches()
     {
-        foreach (var entry in _layoutCache.Values) Retire(entry);
         _layoutCache.Clear();
         _heightCache.Clear();
         _tableLayoutCache.Clear();
@@ -1837,7 +1803,7 @@ public partial class RichEditor : Control
         var old = new List<KeyValuePair<Paragraph, LayoutEntry>>();
         foreach (var kv in _layoutCache) if (kv.Value.Stamp <= renderStart) old.Add(kv);
         old.Sort((a, b) => a.Value.Stamp.CompareTo(b.Value.Stamp));
-        for (int i = 0; i < old.Count && _layoutCache.Count > LayoutKeep; i++) RemoveCachedLayout(old[i].Key);
+        for (int i = 0; i < old.Count && _layoutCache.Count > LayoutKeep; i++) _layoutCache.Remove(old[i].Key);
     }
 
     internal int LayoutCacheCount => _layoutCache.Count; // test hook
@@ -1879,7 +1845,7 @@ public partial class RichEditor : Control
         if (Document == null) { ClearLayoutCaches(); return; }
         var liveParas = new HashSet<Paragraph>(GetAllParagraphsInOrder());
         foreach (var key in _layoutCache.Keys.ToList())
-            if (!liveParas.Contains(key)) RemoveCachedLayout(key);
+            if (!liveParas.Contains(key)) _layoutCache.Remove(key);
         // Nested and inline tables are live too; collecting only the top-level ones evicted their
         // (still-used) geometry every prune, forcing a full re-measure on the next frame.
         var liveTables = new HashSet<TableBlock>();
