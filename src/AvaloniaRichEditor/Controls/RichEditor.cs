@@ -1228,6 +1228,16 @@ public partial class RichEditor : Control
     private static int InlineLen(Inline inline) =>
         inline is Run r ? (r.Text?.Length ?? 0) : 1;
 
+    // The '\n' count of a paragraph's text, without building it (an object is ObjChar, never a break).
+    private static int HardLineBreaks(Paragraph p)
+    {
+        int n = 0;
+        foreach (var inline in p.Inlines)
+            if (inline is Run { Text: { } t })
+                foreach (char ch in t) if (ch == '\n') n++;
+        return n;
+    }
+
     // The paragraph's logical text, with each atomic object inline (image, table) collapsed to one
     // ObjChar so that character offsets line up with the TextLayout produced by BuildTextLayout.
     private static string BuildPlain(Paragraph p)

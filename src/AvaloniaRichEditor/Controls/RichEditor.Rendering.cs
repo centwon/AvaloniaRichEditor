@@ -456,7 +456,10 @@ public partial class RichEditor
             }
             else if (block is Paragraph paragraph)
             {
-                string fullText = BuildPlain(paragraph);
+                // Not the paragraph's text yet: that is a string per paragraph of the WHOLE document on every frame,
+                // culled ones included — about 6 MB a frame for 4,000 paragraphs (measured 2026-11-02, the probe
+                // for P7). The emptiness test and the culled numbering below read the runs instead.
+                bool isEmpty = GetParagraphLength(paragraph) == 0;
 
                 bool hasPreedit = chrome && _caretPosition != null && _caretPosition.Paragraph == paragraph && !string.IsNullOrEmpty(_preeditText);
 
@@ -465,7 +468,7 @@ public partial class RichEditor
                 // Ordered numbering runs continuously across consecutive ordered paragraphs; reset otherwise.
                 if (paragraph.ListType != ListKind.Ordered) orderedIndex = 0;
 
-                if (fullText == "" && !hasPreedit)
+                if (isEmpty && !hasPreedit)
                 {
                     // An empty line inside a quote (or a shaded run of paragraphs) keeps the bar and the fill —
                     // returning before them broke the quote bar at every blank line.
@@ -492,9 +495,7 @@ public partial class RichEditor
                 if (!pVisible)
                 {
                     // The ordered counter still advances, one number per hard line, so visible numbering holds.
-                    if (paragraph.ListType == ListKind.Ordered)
-                        foreach (char ch in fullText) if (ch == '\n') orderedIndex++;
-                    if (paragraph.ListType == ListKind.Ordered) orderedIndex++;
+                    if (paragraph.ListType == ListKind.Ordered) orderedIndex += HardLineBreaks(paragraph) + 1;
                     yOffset += beHeight + paragraph.MarginBottom;
                     continue;
                 }
@@ -510,6 +511,8 @@ public partial class RichEditor
                 // (Culled paragraphs advanced the counter above.)
                 if (paragraph.ListType != ListKind.None)
                 {
+                    // Only here, as the WinUI port has it: the marker walk is the text's only reader.
+                    string fullText = BuildPlain(paragraph);
                     int segStart = 0;
                     for (int i = 0; i <= fullText.Length; i++)
                     {

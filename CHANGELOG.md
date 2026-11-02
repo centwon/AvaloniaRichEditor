@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — an unchanged frame no longer allocates with the document (2026-11-02)
+
+- The render walk built every paragraph's text before its cull check: a string per paragraph of the whole document on
+  every frame — caret blink, scroll, hover — about 6 MB a frame at 4,000 paragraphs, 2 GB over one scroll to the end
+  (found by the scroll probe while measuring P7). It is now built only for a drawn list paragraph, as the WinUI port
+  already does; emptiness and the culled numbering read the runs.
+- Test: `PerFrameAllocationTests` (render project) — four times the document, about the same allocation per frame.
+
 ### Changed — Backspace / Delete next to a picture or a table selects it first (user decision, 2026-11-01)
 
 - At a paragraph's start (Backspace) or end (Delete), a picture or table beside it is now **selected** by the first
