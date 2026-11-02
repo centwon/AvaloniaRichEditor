@@ -199,4 +199,28 @@ public class HtmlFormatterTests
         Assert.Contains(doc.Blocks.OfType<Paragraph>(), p => p.ListType == ListKind.Bullet);
         Assert.Contains("<ul", HtmlDocumentFormatter.ToHtml(doc)); // may carry a list-style-type attribute
     }
+
+    // The top-level list nesting, opened and closed in order, each tag on its own line — pinned when AppendHtml's own
+    // copy of the nesting was replaced by ListNesting (dedup, 2026-11-02), which the table cells already used.
+    // Bullet level 0, bullet level 1, numbered level 0, a body paragraph: the numbered item closes both bullet lists.
+    [AvaloniaFact]
+    public void TopLevelLists_OpenAndCloseInOrder_OnePerLine()
+    {
+        Paragraph Item(string text, ListKind kind, int level)
+        {
+            var p = new Paragraph { ListType = kind, ListLevel = level };
+            p.Inlines.Add(new Run { Text = text });
+            return p;
+        }
+        var body = new Paragraph();
+        body.Inlines.Add(new Run { Text = "body" });
+        var doc = new FlowDocument();
+        foreach (var b in new Block[] { Item("a", ListKind.Bullet, 0), Item("b", ListKind.Bullet, 1), Item("c", ListKind.Ordered, 0), body })
+            doc.Blocks.Add(b);
+
+        string html = HtmlDocumentFormatter.ToHtml(doc);
+        var tags = System.Text.RegularExpressions.Regex.Matches(html, "<(/?)(ul|ol)\\b[^>]*>(\n?)")
+            .Select(m => m.Groups[1].Value + m.Groups[2].Value + (m.Groups[3].Value == "\n" ? "|" : "?"));
+        Assert.Equal("ul| ul| /ul| /ul| ol| /ol|", string.Join(" ", tags));
+    }
 }

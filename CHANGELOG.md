@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal — duplicated helpers shared (2026-11-02)
+
+- A run's underline/strikethrough is read and built in one place (`RunDecorations`): the JSON, HTML and RTF formatters
+  and `TextRange` each had their own copy. The HTML writer's top-level list nesting is the `ListNesting` its table
+  cells already used, instead of a hand-kept copy (the WinUI port already shared it). No output changes.
+- Test: `HtmlFormatterTests.TopLevelLists_OpenAndCloseInOrder_OnePerLine` pins the nesting the copy produced.
+
 ### Performance — an unchanged frame no longer allocates with the document (2026-11-02)
 
 - The render walk built every paragraph's text before its cull check: a string per paragraph of the whole document on

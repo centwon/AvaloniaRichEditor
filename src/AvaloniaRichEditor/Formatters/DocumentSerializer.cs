@@ -354,8 +354,8 @@ public static class DocumentSerializer
                     Background = BrushToString(r.Background),
                     FontFamily = r.FontFamily,
                     NavigateUri = r.NavigateUri,
-                    Underline = Unless(HasDecoration(r.TextDecorations, TextDecorationLocation.Underline), false),
-                    Strikethrough = Unless(HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough), false)
+                    Underline = Unless(RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline), false),
+                    Strikethrough = Unless(RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough), false)
                 });
             else if (inline is InlineImage im)
                 d.Inlines.Add(new InlineDto
@@ -552,7 +552,7 @@ public static class DocumentSerializer
                         // A file is untrusted input: a script link is dropped as the HTML reader drops it
                         // (port audit, 2026-09-24).
                         NavigateUri = id.NavigateUri is { } uri ? HtmlDocumentFormatter.SafeHref(uri) : null,
-                        TextDecorations = BuildDecorations(id.Underline == true, id.Strikethrough == true)
+                        TextDecorations = RunDecorations.Make(id.Underline == true, id.Strikethrough == true)
                     });
                 }
             }
@@ -598,22 +598,6 @@ public static class DocumentSerializer
         foreach (var row in tb.ColSpans) foreach (int v in row) if (v != 1) return true;
         foreach (var row in tb.RowSpans) foreach (int v in row) if (v != 1) return true;
         return false;
-    }
-
-    private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
-    {
-        if (decos == null) return false;
-        foreach (var d in decos) if (d.Location == loc) return true;
-        return false;
-    }
-
-    private static TextDecorationCollection? BuildDecorations(bool underline, bool strikethrough)
-    {
-        if (!underline && !strikethrough) return null;
-        var c = new TextDecorationCollection();
-        if (underline) c.Add(new TextDecoration { Location = TextDecorationLocation.Underline });
-        if (strikethrough) c.Add(new TextDecoration { Location = TextDecorationLocation.Strikethrough });
-        return c;
     }
 
     // "#AARRGGBB", as the format states and the port writes. Color.ToString() gives a known colour's NAME

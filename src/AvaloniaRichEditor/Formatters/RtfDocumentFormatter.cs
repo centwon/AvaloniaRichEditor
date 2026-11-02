@@ -898,13 +898,7 @@ internal sealed class RtfParser
             FontStyle = _st.Italic ? FontStyle.Italic : FontStyle.Normal,
             FontSize = _st.FontSize > 0 ? _st.FontSize : 10, // pt; body default
         };
-        if (_st.Underline || _st.Strike)
-        {
-            var decos = new TextDecorationCollection();
-            if (_st.Underline) decos.Add(new TextDecoration { Location = TextDecorationLocation.Underline });
-            if (_st.Strike) decos.Add(new TextDecoration { Location = TextDecorationLocation.Strikethrough });
-            r.TextDecorations = decos;
-        }
+        r.TextDecorations = RunDecorations.Make(_st.Underline, _st.Strike);
         if (_st.Color >= 0 && _st.Color < _colors.Count)
         {
             var col = _colors[_st.Color];
@@ -1640,8 +1634,8 @@ internal sealed class RtfWriter
         _body.Append('{');
         if (r.FontWeight == FontWeight.Bold) _body.Append(@"\b");
         if (r.FontStyle == FontStyle.Italic) _body.Append(@"\i");
-        if (HasDecoration(r.TextDecorations, TextDecorationLocation.Underline) || !string.IsNullOrEmpty(r.NavigateUri)) _body.Append(@"\ul");
-        if (HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)) _body.Append(@"\strike");
+        if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline) || !string.IsNullOrEmpty(r.NavigateUri)) _body.Append(@"\ul");
+        if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough)) _body.Append(@"\strike");
         int f = FontIndex(r.FontFamily);
         if (f > 0) _body.Append($@"\f{f}");
         double size = r.FontSize <= 0 ? 10 : r.FontSize; // pt; body default
@@ -1881,13 +1875,6 @@ internal sealed class RtfWriter
         i = _colors.Count; // 1-based: \colortbl entry 0 is the auto colour
         _colorIndex[key] = i;
         return i;
-    }
-
-    private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
-    {
-        if (decos == null) return false;
-        foreach (var d in decos) if (d.Location == loc) return true;
-        return false;
     }
 
     private void WriteEscaped(string text) => _body.Append(EscapeText(text));

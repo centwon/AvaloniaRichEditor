@@ -447,15 +447,8 @@ public class TextRange
     }
 
     private static bool DecorationEquals(TextDecorationCollection? a, TextDecorationCollection? b)
-        => HasLocation(a, TextDecorationLocation.Underline) == HasLocation(b, TextDecorationLocation.Underline)
-        && HasLocation(a, TextDecorationLocation.Strikethrough) == HasLocation(b, TextDecorationLocation.Strikethrough);
-
-    private static bool HasLocation(TextDecorationCollection? decos, TextDecorationLocation loc)
-    {
-        if (decos == null) return false;
-        foreach (var d in decos) if (d.Location == loc) return true;
-        return false;
-    }
+        => RunDecorations.Has(a, TextDecorationLocation.Underline) == RunDecorations.Has(b, TextDecorationLocation.Underline)
+        && RunDecorations.Has(a, TextDecorationLocation.Strikethrough) == RunDecorations.Has(b, TextDecorationLocation.Strikethrough);
 
     /// <summary>The top-level <see cref="Block"/> of <paramref name="doc"/> that contains
     /// <paramref name="p"/>: the paragraph itself when it is a document block, otherwise the outermost

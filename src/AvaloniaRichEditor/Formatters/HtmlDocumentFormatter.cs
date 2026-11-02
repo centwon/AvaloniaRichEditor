@@ -961,7 +961,7 @@ namespace AvaloniaRichEditor.Formatters
                         p.Inlines.Add(new Run { Text = " " });
                     return;
                 }
-                p.Inlines.Add(new Run { Text = CollapseWhitespace(text), FontWeight = cw, FontStyle = cs, Foreground = cc, FontSize = sz, NavigateUri = cu, Background = cbg, FontFamily = cfam, TextDecorations = MakeDecorations(cunder, cstrike) });
+                p.Inlines.Add(new Run { Text = CollapseWhitespace(text), FontWeight = cw, FontStyle = cs, Foreground = cc, FontSize = sz, NavigateUri = cu, Background = cbg, FontFamily = cfam, TextDecorations = RunDecorations.Make(cunder, cstrike) });
             }
             else if (name == "img")
             {
@@ -977,15 +977,6 @@ namespace AvaloniaRichEditor.Formatters
             {
                 ParseInlines(child, p, cw, cs, cc, cu, sz, childInLink, cbg, cfam, cunder, cstrike, childOwnColor);
             }
-        }
-
-        private static TextDecorationCollection? MakeDecorations(bool underline, bool strike)
-        {
-            if (!underline && !strike) return null;
-            var c = new TextDecorationCollection();
-            if (underline) c.Add(new TextDecoration { Location = TextDecorationLocation.Underline });
-            if (strike) c.Add(new TextDecoration { Location = TextDecorationLocation.Strikethrough });
-            return c;
         }
 
         private static void ApplyInlineStyle(string styleAttr, ref FontWeight weight, ref FontStyle style, ref IBrush? color, ref double size, ref IBrush? background, ref string? family, ref bool underline, ref bool strike)
@@ -1129,58 +1120,38 @@ namespace AvaloniaRichEditor.Formatters
         /// (the clipboard's selection &lt;div&gt;), which would otherwise copy the whole payload once more.</summary>
         internal static void AppendHtml(StringBuilder sb, FlowDocument doc)
         {
-            var listStack = new System.Collections.Generic.List<ListKind>(); // open <ul>/<ol> per nesting level
-
-            void CloseOne()
-            {
-                sb.Append(listStack[^1] == ListKind.Ordered ? "</ol>\n" : "</ul>\n");
-                listStack.RemoveAt(listStack.Count - 1);
-            }
-            void CloseAll() { while (listStack.Count > 0) CloseOne(); }
-            void SyncList(ListKind kind, ListMarkerStyle marker, int level)
-            {
-                level = Math.Clamp(level, 0, 8); // a host's model is not clamped by any reader (see ListNesting.Sync)
-                while (listStack.Count > level + 1) CloseOne();
-                if (listStack.Count == level + 1 && listStack[^1] != kind) CloseOne();
-                // Explicit list-style-type: Word's clipboard import otherwise renders <ol> as bullets
-                // instead of numbers. The bullet glyph / number format maps to the closest CSS value
-                // (the ")" suffix and the dash bullet have no CSS equivalent — lossy, by design for HTML).
-                while (listStack.Count < level + 1)
-                {
-                    string lst = CssListStyle(kind, marker);
-                    sb.Append(kind == ListKind.Ordered ? $"<ol style=\"list-style-type:{lst}\">\n" : $"<ul style=\"list-style-type:{lst}\">\n");
-                    listStack.Add(kind);
-                }
-            }
+            // The same nesting as a table cell's (ListNesting), with the pretty-printing newlines. This was a copy
+            // of it, kept in step by hand (dedup, 2026-11-02; the WinUI port already shared it).
+            var lists = new ListNesting(sb);
 
             foreach (var block in doc.Blocks)
             {
                 if (block is Paragraph p)
                 {
-                    if (p.IsListItem) SyncList(p.ListType, p.ListMarker, p.ListLevel);
-                    else CloseAll();
+                    if (p.IsListItem) lists.Sync(p.ListType, p.ListMarker, p.ListLevel);
+                    else lists.CloseAll();
                     EmitParagraphElement(sb, p, newlineAfter: true);
                 }
                 else if (block is DividerBlock)
                 {
-                    CloseAll();
+                    lists.CloseAll();
                     sb.Append("<hr/>\n");
                 }
                 else if (block is TableBlock tb)
                 {
-                    CloseAll();
+                    lists.CloseAll();
                     EmitTable(sb, tb);
                 }
                 else if (block is ImageBlock ib && (ib.RawBytes != null || ib.Image != null))
                 {
                     // RawBytes checked first so export doesn't force a lazy bitmap decode.
-                    CloseAll();
+                    lists.CloseAll();
                     sb.Append("<p>");
                     AppendImgTag(sb, ib.RawBytes, ib.MimeType, ib.RawBytes == null ? ib.Image : null, ib.Width, ib.Height, ib.AltText);
                     sb.Append("</p>\n");
                 }
             }
-            CloseAll();
+            lists.CloseAll();
         }
 
         // A Paragraph's MarginBottom default (0, as in HWP). Only a paragraph that DIFFERS from it carries
@@ -1216,6 +1187,9 @@ namespace AvaloniaRichEditor.Formatters
                 level = Math.Clamp(level, 0, 8);
                 while (_open.Count > level + 1) CloseOne();
                 if (_open.Count == level + 1 && _open[^1] != kind) CloseOne();
+                // Explicit list-style-type: Word's clipboard import otherwise renders <ol> as bullets
+                // instead of numbers. The bullet glyph / number format maps to the closest CSS value
+                // (the ")" suffix and the dash bullet have no CSS equivalent — lossy, by design for HTML).
                 while (_open.Count < level + 1)
                 {
                     string lst = CssListStyle(kind, marker);
@@ -1491,8 +1465,8 @@ namespace AvaloniaRichEditor.Formatters
             // Underline/strikethrough as <u>/<s> TAGS, not CSS text-decoration: clipboard importers
             // (Word/HWP) reliably honour the tags but routinely drop CSS text-decoration — and an
             // unrecognized decoration declaration can make Word discard the whole style (losing colour).
-            if (HasDecoration(r.TextDecorations, TextDecorationLocation.Underline)) t = $"<u>{t}</u>";
-            if (HasDecoration(r.TextDecorations, TextDecorationLocation.Strikethrough)) t = $"<s>{t}</s>";
+            if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline)) t = $"<u>{t}</u>";
+            if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough)) t = $"<s>{t}</s>";
             if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
             if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
             // The readers drop script links, but a host's SetHyperlink reaches here without passing one — the
@@ -1530,13 +1504,6 @@ namespace AvaloniaRichEditor.Formatters
         // attributes unreliably — single-quoted style attributes were silently dropped on paste.
         private static string AttrEscape(string s) =>
             s.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;");
-
-        private static bool HasDecoration(TextDecorationCollection? decos, TextDecorationLocation loc)
-        {
-            if (decos == null) return false;
-            foreach (var d in decos) if (d.Location == loc) return true;
-            return false;
-        }
 
         // CSS-safe color: #RRGGBB when opaque, else rgba(). (Avalonia's Color.ToString() is #AARRGGBB, invalid in CSS.)
         private static string CssColor(Color c) =>
