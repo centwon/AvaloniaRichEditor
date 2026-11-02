@@ -135,6 +135,7 @@ public partial class RichEditor
         // screen (a closed tab) stayed alive, repainting. Focus restarts the blink when it comes back.
         _caretTimer.Stop();
         _layoutPruneTimer?.Stop();
+        DisposeRetiredLayouts(); // no render will come to do it
         if (_cullScroller != null)
         {
             _cullScroller.ScrollChanged -= OnHostScrollChanged;
@@ -287,10 +288,10 @@ public partial class RichEditor
         finally
         {
             _trustLayoutCache = false; // never leak the trusted state past this render pass
-            // Bound what this frame and the ones before it left behind (see TrimLayoutCache). Nothing holds a
-            // layout across a render, and an evicted layout is never disposed, so a reference kept elsewhere
-            // stays valid — it is only no longer shared.
+            // Bound what this frame and the ones before it left behind (see TrimLayoutCache), then dispose what
+            // the cache let go of — here, where nothing holds a layout any more (see _retiredLayouts).
             TrimLayoutCache(renderStart);
+            DisposeRetiredLayouts();
         }
     }
 

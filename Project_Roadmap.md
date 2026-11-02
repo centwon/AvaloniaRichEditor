@@ -43,7 +43,11 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   + 파일별 전수조사 수정(2026-11-01, `fix/audit4-2026-11-01`, 정책 브랜치 위): RTF 리더 정렬·들여쓰기·글꼴표·기호·`\pn`·`\dibitmap`,
   그림 인라인/블록 표지(HTML·RTF), CSS 알파(`ColorUtil` 포트에서), h4–h6, JSON 열거값/점 없는 버전, 빈 undo 3종, 그림 끔이면
   붙여넣기 fetch 안 함, 드롭 파일 한도, 성능(위치 정렬·표 가로 이동 캐시·정규식·런 slice). `Audit4Tests`. ⚠ SDK 없이 수정 — 미실행.
-  남김(보고만): 장식 헬퍼·`AppendHtml` 목록 중첩 중복, 선형 워크(P3), `TextLayout` dispose 미확인(P7).
+  남김(보고만): 장식 헬퍼·`AppendHtml` 목록 중첩 중복, 선형 워크(P3, 측정 먼저).
+  + P7(2026-11-02): Avalonia 12 `TextLayout`은 `IDisposable`(사용자 확인) — 캐시가 버린 레이아웃을 **다음 렌더 끝에** 해제
+  (`_retiredLayouts`). 그 자리에서 해제하지 않는 이유: 같은 인스턴스를 스택 위 호출자가 쓰는 중일 수 있고, 해제된 레이아웃은
+  다른 레이아웃이 재사용하는 풀 버퍼를 읽는다(예외 없이 틀린 좌표). 그린 장면은 글리프 런 IRef를 Clone해 쥐므로 안전(12.1.0 소스
+  확인). 효과 측정: `LayoutCacheProbeTests.E_…`(`RICHEDITOR_PERF=1`) — 차이가 미미하면 되돌릴 것. ⚠ 미실행.
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).

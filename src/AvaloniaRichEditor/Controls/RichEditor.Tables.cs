@@ -65,7 +65,7 @@ public partial class RichEditor
             _tableLayoutCache.Remove(cur);
             if (cur.Parent is InlineTable it && it.Parent is Paragraph host)
             {
-                _layoutCache.Remove(host);
+                RemoveCachedLayout(host);
                 _heightCache.Remove(host); // a trusted pass reads the height without the signature, too
             }
         }
