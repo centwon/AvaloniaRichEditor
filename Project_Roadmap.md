@@ -55,7 +55,7 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   같게. `PerFrameAllocationTests`(1,000 대 4,000문단 프레임 할당 비교). 로컬 확인(2026-11-02): 전체 그린, 수정 되돌리면 새 테스트 빨강(반증).
 - **중복 정리**(2026-11-02, `refactor/dedup-2026-11-02`): 장식 읽기/만들기 4+3벌 → `Documents/RunDecorations`, `AppendHtml`의 목록
   중첩 사본 → `ListNesting`(포트는 이미 공유, 장식은 포트 모델이 bool이라 해당 없음). 출력 불변 — 왕복 고정점·퍼즈로 확인.
-  ⚠ SDK 없이 수정 — 미실행.
+  로컬 확인(2026-11-02): 전체 그린.
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1364** + render **60** 그린(2026-10-17, #67·#68·#70 통합) · 3-OS CI(Windows/Linux/macOS) 그린(같은 PR들).
