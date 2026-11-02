@@ -131,9 +131,9 @@ public class Audit4Tests
         var json = DocumentSerializer.Serialize(TestHelpers.Doc(TestHelpers.Para(new Run { Text = "x" })));
         var future = Regex.Replace(json, "\"Version\"\\s*:\\s*\"[^\"]*\"", "\"Version\":\"3\"");
         Assert.NotEqual(json, future);
-        Assert.ThrowsAny<JsonException>(() => DocumentSerializer.Deserialize(future));
+        Assert.ThrowsAny<JsonException>(() => DocumentSerializer.DeserializeDocument(future));
         // The legacy integer forms still read.
-        DocumentSerializer.Deserialize(Regex.Replace(json, "\"Version\"\\s*:\\s*\"[^\"]*\"", "\"Version\":\"2\""));
+        DocumentSerializer.DeserializeDocument(Regex.Replace(json, "\"Version\"\\s*:\\s*\"[^\"]*\"", "\"Version\":\"2\""));
     }
 
     // ---- commands that change nothing leave no undo step --------------------------------------------

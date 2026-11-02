@@ -1820,13 +1820,6 @@ internal sealed class RtfWriter
     // from the RTF without a word. PNG-encoded here, the same way HTML and JSON export handle it.
     private void WritePict(byte[]? bytes, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, bool inline)
     {
-        // RTF names only PNG and JPEG blips: a GIF/BMP/WebP went out labelled \pngblip and Word/HWP showed it broken.
-        // Anything else is re-encoded to PNG (code review 2026-11-01).
-        if (bytes != null && ImageMime.Detect(bytes) is not ("image/png" or "image/jpeg"))
-        {
-            try { bmp = ImageInfo.Decode(bytes); bytes = null; }
-            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
-        }
         if (bytes == null)
         {
             if (bmp == null) return;

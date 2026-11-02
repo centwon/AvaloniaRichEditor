@@ -27,6 +27,7 @@ public class BlockSelectBeforeDeleteTests
         var before = TestHelpers.Para(new Run { Text = "A" });
         var after = TestHelpers.Para(new Run { Text = "B" });
         var ed = new RichEditor { Document = TestHelpers.Doc(before, block, after) };
+        ed.MarkSaved(); // assigning Document is a change; the presses are what is under test
         return (ed, before, block, after);
     }
 

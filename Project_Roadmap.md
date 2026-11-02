@@ -44,6 +44,8 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   그림 인라인/블록 표지(HTML·RTF), CSS 알파(`ColorUtil` 포트에서), h4–h6, JSON 열거값/점 없는 버전, 빈 undo 3종, 그림 끔이면
   붙여넣기 fetch 안 함, 드롭 파일 한도, 성능(위치 정렬·표 가로 이동 캐시·정규식·런 slice). `Audit4Tests`. ⚠ SDK 없이 수정 — 미실행.
   남김(보고만): 장식 헬퍼·`AppendHtml` 목록 중첩 중복, 선형 워크(P3, 측정 먼저).
+  로컬 실행(2026-11-02) 실패 7건: 테스트 쪽 실수 3(문서 대입=수정됨, 버전 검사는 `DeserializeDocument`만), `\li` 읽기로 작성자 들여쓰기가
+  돌아옴(포트와 같은 기대로 테스트 갱신), RTF의 비PNG/JPEG→PNG 재인코딩이 원본 바이트 보존 계약(`PictureTextOutputTests`)을 깸 → 철회(포트도).
   + **P7 측정 후 기각**(2026-11-02): 캐시가 버린 `TextLayout`(Avalonia 12에서 `IDisposable`)을 다음 렌더 끝에 해제해 봄 →
   4,000문단 창 스크롤 316쪽, 워밍업 뒤 해제 안 함 11.2 ms/쪽·1983 MB 할당·gen0 217 / 해제 10.9 ms/쪽·1958 MB·216 —
   잡음 수준(≈1%). "해제된 레이아웃을 읽으면 예외 없이 틀린 좌표" 위험을 질 가치가 없어 되돌림(커밋 5008d4c를 revert).

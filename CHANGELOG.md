@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type are read by their bytes.
 - **Picture kind**: a large inline picture came back a block and a small block picture came back inline from HTML and
   RTF (the size rule decided). Each writer now marks the kind (`data-are-inline`/`data-are-block`,
-  `{\*\arpicinl}`/`{\*\arpicblk}`); unmarked input keeps the size rule. RTF writes non-PNG/JPEG pictures as PNG.
+  `{\*\arpicinl}`/`{\*\arpicblk}`); unmarked input keeps the size rule.
 - **CSS colours** go through one parser (`ColorUtil`, from the WinUI port): `#RGBA`/`#RRGGBBAA` and `rgba()` alpha are
   read; a fully transparent colour is no colour.
 - **HTML**: `<h4>`–`<h6>` inside a paragraph were not bold or sized (only h1–h3 were).
