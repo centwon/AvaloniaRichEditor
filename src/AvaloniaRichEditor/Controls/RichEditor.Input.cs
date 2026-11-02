@@ -1832,6 +1832,8 @@ public partial class RichEditor
     {
         if (Document == null) return null;
         double yOffset = 0, maxWidth = ContentLayoutWidth;
+        if (BlockStartFromMap(p, maxWidth, out int at) is not null) // the block map (P3): the next block's start
+            return at + 1 < Document.Blocks.Count ? _blockStarts![at + 1] + TopGapOf(Document.Blocks[at + 1]) : null;
         bool found = false;
         foreach (var block in Document.Blocks)
         {
@@ -1847,9 +1849,11 @@ public partial class RichEditor
     private Block? BlockAtY(double y)
     {
         if (Document == null) return null;
-        double yOffset = 0, maxWidth = ContentLayoutWidth;
-        foreach (var block in Document.Blocks)
+        double maxWidth = ContentLayoutWidth;
+        var (from, to, yOffset, _) = BlocksNear(y, maxWidth); // the block map (P3)
+        for (int bi = from; bi <= to; bi++)
         {
+            var block = Document.Blocks[bi];
             yOffset += TopGapOf(block);
             double top = yOffset;
             double h = BlockExtent(block, maxWidth, top, out _);

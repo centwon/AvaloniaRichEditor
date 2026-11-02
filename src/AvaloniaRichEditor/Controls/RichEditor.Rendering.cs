@@ -41,10 +41,20 @@ public partial class RichEditor
     {
         if (Document == null) return 0;
         double yOffset = 0;
+        // The block map (see _blockStarts) records the walk the hit-tests make: PLAIN heights, without the
+        // composition the extent below adds — so it keeps its own running y.
+        int n = Document.Blocks.Count, bi = 0;
+        if (_blockStarts == null || _blockStarts.Length != n + 1) { _blockStarts = new double[n + 1]; _blockMapBlocks = new Block[n]; }
+        double plainY = 0;
         foreach (var block in Document.Blocks)
         {
-            yOffset += TopGapOf(block);
+            _blockStarts[bi] = plainY;
+            _blockMapBlocks![bi++] = block;
+            double gap = TopGapOf(block);
+            yOffset += gap;
+            plainY += gap;
             double h = BlockExtent(block, width, yOffset, out _);
+            plainY += h + block.MarginBottom;
             // While the IME composes, the render walk advances by the caret paragraph's height WITH the
             // preedit spliced in, so the extent has to as well — otherwise the scrollable range stays a
             // line short of what is actually drawn and the composition can't be scrolled to at the end
@@ -55,6 +65,9 @@ public partial class RichEditor
                 h = PreeditAwareLayout(composing, ParagraphWrapWidth(composing, width)).Height;
             yOffset += h + block.MarginBottom;
         }
+        _blockStarts[n] = plainY;
+        _blockMapWidth = width;
+        _blockMapValid = true;
         return yOffset + 40; // a little breathing room at the bottom
     }
 
@@ -64,6 +77,7 @@ public partial class RichEditor
     protected override Size MeasureOverride(Size availableSize)
     {
         base.MeasureOverride(availableSize);
+        _blockMapValid = false; // MeasureContentHeight rebuilds it; a measure that does not walk leaves none (see _blockStarts)
         // No edit pending => content is unchanged since the last build, so the layout/table caches can
         // be trusted here too (mirrors Render). This keeps caret-only moves — NotifyStatus funnels every
         // one through InvalidateMeasure — from re-hashing every paragraph via ParagraphSig. An edit runs
