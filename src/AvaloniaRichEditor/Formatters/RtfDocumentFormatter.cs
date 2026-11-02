@@ -147,7 +147,7 @@ internal sealed class RtfParser
     private readonly string _s;
     private int _i;
 
-    private enum Dest { Normal, Skip, ColorTable, Pict, PageChrome, FieldInst }
+    private enum Dest { Normal, Skip, ColorTable, Pict, PageChrome, FieldInst, FontTable }
 
     private struct State
     {
@@ -156,11 +156,22 @@ internal sealed class RtfParser
         public int Color;         // index into _colors; -1 = default (black)
         public int Highlight;     // index into _colors (\highlightN); -1 = none
         public string? LinkUrl;   // hyperlink applied to runs inside a \fldrslt group; null = none
+        public int Font;          // index into _fontNames (\fN); -1 = default font
         public Dest Dest;
         public int UnicodeSkip;   // chars to swallow after a \uN (set by \ucN)
     }
 
-    private State _st = new() { Color = -1, Highlight = -1, UnicodeSkip = 1 };
+    private State _st = new() { Color = -1, Highlight = -1, Font = -1, UnicodeSkip = 1 };
+
+    // \fonttbl: font index -> family name, so \fN runs keep their font (Word/HWP paste lost every family), plus per-font
+    // \fcharset code pages so CJK bytes — font NAMES like "맑은 고딕" and run text — decode with the right encoding even
+    // when \ansicpg says otherwise. From the WinUI port (code review 2026-11-01: this reader skipped the table).
+    private readonly Dictionary<int, string> _fontNames = new();
+    private readonly Dictionary<int, int> _fontCodePages = new();
+    private readonly Dictionary<int, Encoding> _encCache = new();
+    private int _ftblIndex = -1;
+    private readonly List<byte> _ftblBytes = new();
+    private readonly StringBuilder _ftblName = new();
 
     // \field: the \fldinst instruction is collected here; a HYPERLINK target parsed from it becomes the
     // LinkUrl of the following \fldrslt group's runs (so Word/HWP/own-writer links round-trip). From the WinUI port.
@@ -263,6 +274,7 @@ internal sealed class RtfParser
             else if (_st.Dest == Dest.ColorTable && c == ';') { CloseColorEntry(); _i++; }
             else if (_st.Dest == Dest.Pict) { if (Uri.IsHexDigit(c)) _pictHex.Append(c); _i++; }
             else if (_st.Dest == Dest.FieldInst) { _fldInst.Append(c); _i++; }
+            else if (_st.Dest == Dest.FontTable) { FontTableChar(c); _i++; }
             // Page chrome collects plain characters too — its text is ordinary text, just bound for the
             // header/footer band instead of the body.
             else { if (_st.Dest is Dest.Normal or Dest.PageChrome) AppendByte(c); _i++; }
@@ -349,9 +361,9 @@ internal sealed class RtfParser
         string hex = _s.Substring(_i, 2);
         _i += 2;
         // Header/footer text too: a Word/HWP header in code-page bytes (\'b0\'a1…) came in empty.
-        if (_st.Dest is not (Dest.Normal or Dest.PageChrome)) return;
-        if (byte.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
-            _bytes.Add(b); // decoded with the code page when the byte run is flushed
+        if (!byte.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)) return;
+        if (_st.Dest is Dest.Normal or Dest.PageChrome) _bytes.Add(b); // decoded with the code page when the byte run is flushed
+        else if (_st.Dest == Dest.FontTable) _ftblBytes.Add(b); // CJK font names arrive as \'hh bytes
     }
 
     private void Apply(string w, int? p)
@@ -370,7 +382,55 @@ internal sealed class RtfParser
             case "fs": FlushRun(); _st.FontSize = (p ?? 24) / 2.0; break;
             case "cf": FlushRun(); _st.Color = p ?? -1; break;
             case "highlight": FlushRun(); _st.Highlight = p ?? -1; break;
-            case "plain": FlushRun(); _st.Bold = _st.Italic = _st.Underline = _st.Strike = false; _st.FontSize = 0; _st.Color = -1; _st.Highlight = -1; break;
+            case "plain": FlushRun(); _st.Bold = _st.Italic = _st.Underline = _st.Strike = false; _st.FontSize = 0; _st.Color = -1; _st.Highlight = -1; _st.Font = -1; break;
+
+            // \fN: inside \fonttbl it BEGINS a font definition; in body text it selects that font for the following run.
+            case "f":
+                if (_st.Dest == Dest.FontTable) { CommitFontEntry(); _ftblIndex = p ?? 0; }
+                else if (_st.Dest == Dest.Normal) { FlushRun(); _st.Font = p ?? -1; }
+                break;
+            case "fcharset":
+                if (_st.Dest == Dest.FontTable && _ftblIndex >= 0 && CharsetCodePage(p ?? -1) is { } fcp)
+                    _fontCodePages[_ftblIndex] = fcp;
+                break;
+
+            // Paragraph alignment and left indent (body text only: a header's \qc is the header's) — written by this writer and by Word/HWP, and not read here, so an
+            // RTF round trip (our own included) lost both. From the WinUI port.
+            case "ql": if (_st.Dest == Dest.Normal) _para.TextAlignment = TextAlignment.Left; break;
+            case "qc": if (_st.Dest == Dest.Normal) _para.TextAlignment = TextAlignment.Center; break;
+            case "qr": if (_st.Dest == Dest.Normal) _para.TextAlignment = TextAlignment.Right; break;
+            case "qj": if (_st.Dest == Dest.Normal) _para.TextAlignment = TextAlignment.Justify; break;
+            case "li": if (_st.Dest == Dest.Normal) _para.Indent = Math.Max(0, (p ?? 0) / 15.0); break; // twips -> px
+            // Paragraph shading (Word writes it): indexed like \clcbpat; A == 0 is the colour table's "auto" entry.
+            case "cbpat":
+                if (_st.Dest == Dest.Normal && p is { } shade && shade > 0 && shade < _colors.Count && _colors[shade].A != 0)
+                    _para.Background = new ImmutableSolidColorBrush(_colors[shade]);
+                break;
+
+            // Typographic control words Word emits pervasively (smart quotes, dashes, bullets). Dropped, they lost
+            // characters ("don't" -> "dont"). From the WinUI port.
+            case "rquote": AppendChar('\u2019'); break;
+            case "lquote": AppendChar('\u2018'); break;
+            case "rdblquote": AppendChar('\u201D'); break;
+            case "ldblquote": AppendChar('\u201C'); break;
+            case "emdash": AppendChar('\u2014'); break;
+            case "endash": AppendChar('\u2013'); break;
+            case "bullet": AppendChar('\u2022'); break;
+            case "emspace": AppendChar('\u2003'); break;
+            case "enspace": AppendChar('\u2002'); break;
+            case "qmspace": AppendChar('\u2005'); break;
+
+            // {\*\pn …} — Word's legacy list definition. \* has set the group to Skip (keeping {\pntxtb •} out of the
+            // text), but its control words still reach here. From the WinUI port.
+            // The marker words also sit in Word's section-level {\*\pnseclvlN …} groups, which make no list: taken only
+            // after a \pn (or level word) has made this paragraph one, they no longer leave a stray marker on body text.
+            case "pn": _para.ListType = ListKind.Bullet; _para.ListMarker = ListMarkerStyle.Default; break;
+            case "pnlvlblt": _para.ListType = ListKind.Bullet; break;
+            case "pnlvlbody": _para.ListType = ListKind.Ordered; break;
+            case "pndec": if (_para.ListType != ListKind.None) _para.ListMarker = ListMarkerStyle.Default; break;
+            case "pnlcltr": if (_para.ListType != ListKind.None) _para.ListMarker = ListMarkerStyle.LowerAlpha; break;
+            case "pnucltr": if (_para.ListType != ListKind.None) _para.ListMarker = ListMarkerStyle.UpperAlpha; break;
+            case "pnlcrm": if (_para.ListType != ListKind.None) _para.ListMarker = ListMarkerStyle.LowerRoman; break;
 
             // \field {\*\fldinst HYPERLINK "url"}{\fldrslt text}: read the instruction (overriding the \* skip, like
             // \shppict) and hand the parsed URL to the result group's runs.
@@ -399,6 +459,8 @@ internal sealed class RtfParser
                 break;
             case "pard":
                 _skipMarkerText = false;   // a marker's text never spans a paragraph reset
+                // The paragraph formatting this reader now takes (\q*, \li, \cbpat) is reset with the rest.
+                if (_st.Dest == Dest.Normal) { _para.TextAlignment = TextAlignment.Left; _para.Indent = 0; _para.Background = null; }
                 _paraBottomBorder = false; // a border is paragraph formatting, so the reset clears it
                 _slTwips = 0; _slMult = false; // so is line spacing
                 SetItap(1); break;         // paragraph-property reset; \itap is one of those properties
@@ -519,7 +581,8 @@ internal sealed class RtfParser
             case "margb": case "margbsxn":
                 if (_st.Dest == Dest.Normal && p is int mb) { _marginTwips[3] = mb; ApplyMargins(); } break;
 
-            case "fonttbl": case "stylesheet": case "info": case "pntext": case "themedata":
+            case "fonttbl": _st.Dest = Dest.FontTable; _ftblIndex = -1; _ftblName.Clear(); _ftblBytes.Clear(); break;
+            case "stylesheet": case "info": case "pntext": case "themedata":
             case "datastore": case "xmlnstbl": case "rsidtbl": case "generator": case "listtable":
             case "listoverridetable": case "revtbl":
                 _st.Dest = Dest.Skip; break;
@@ -536,6 +599,9 @@ internal sealed class RtfParser
             case "pict": FlushRun(); _st.Dest = Dest.Pict; _pictHex.Clear(); _pictMime = null; _pictWTwips = _pictHTwips = 0; break;
             case "pngblip": _pictMime = "image/png"; break;
             case "jpegblip": _pictMime = "image/jpeg"; break;
+            case "arpicinl": _nextPictKind = 1; break; // ours: the next picture is inline (see WritePict)
+            case "arpicblk": _nextPictKind = 2; break; // ours: the next picture is a block
+            case "dibitmap": _pictMime = "dib"; break; // raw DIB (no BMP file header); wrapped in FinalizePict
             case "picwgoal": _pictWTwips = p ?? 0; break;
             case "pichgoal": _pictHTwips = p ?? 0; break;
 
@@ -577,6 +643,12 @@ internal sealed class RtfParser
         {
             if (code < 0) code += 65536;
             if (code >= 0 && code <= 0xFFFF) _fldInst.Append((char)code);
+        }
+        else if (_st.Dest == Dest.FontTable)
+        {
+            if (code < 0) code += 65536;
+            FlushFtblBytes();
+            if (code >= 0 && code <= 0xFFFF) _ftblName.Append((char)code); // font names may arrive as \uN too
         }
         // Skip the spell-out fallback that follows a \uN (a plain char or a \'hh each count as one).
         for (int k = 0; k < _st.UnicodeSkip && _i < _s.Length; k++)
@@ -625,9 +697,64 @@ internal sealed class RtfParser
     {
         _cellParMark = -1; // the marked break is no longer at the tail of the pending bytes
         if (_bytes.Count == 0) return;
-        _run.Append(Enc.GetString(_bytes.ToArray()));
+        _run.Append(RunEnc.GetString(_bytes.ToArray()));
         _bytes.Clear();
     }
+
+    // A literal character produced by a control word (\rquote, \emdash, …), after any pending code-page bytes.
+    private void AppendChar(char ch)
+    {
+        if ((_st.Dest != Dest.Normal && _st.Dest != Dest.PageChrome) || _skipMarkerText) return;
+        FlushBytes();
+        _run.Append(ch);
+    }
+
+    // ---- font table (from the WinUI port) ----
+
+    private void FontTableChar(char c)
+    {
+        if (c == ';') { CommitFontEntry(); return; }
+        if (c < 256) _ftblBytes.Add((byte)c);
+        else { FlushFtblBytes(); _ftblName.Append(c); }
+    }
+
+    private void FlushFtblBytes()
+    {
+        if (_ftblBytes.Count == 0) return;
+        var enc = _ftblIndex >= 0 && _fontCodePages.TryGetValue(_ftblIndex, out var cp) ? CachedEnc(cp) : Enc;
+        _ftblName.Append(enc.GetString(_ftblBytes.ToArray()));
+        _ftblBytes.Clear();
+    }
+
+    private void CommitFontEntry()
+    {
+        FlushFtblBytes();
+        if (_ftblIndex >= 0)
+        {
+            string name = _ftblName.ToString().Trim();
+            if (name.Length > 0) _fontNames[_ftblIndex] = name;
+        }
+        _ftblName.Clear();
+        _ftblIndex = -1;
+    }
+
+    // Windows \fcharsetN -> code page, for the CJK/legacy sets that matter here. Null = no override.
+    private static int? CharsetCodePage(int charset) => charset switch
+    {
+        0 => 1252, 128 => 932, 129 => 949, 130 => 1361, 134 => 936, 136 => 950,
+        161 => 1253, 162 => 1254, 163 => 1258, 177 => 1255, 178 => 1256,
+        186 => 1257, 204 => 1251, 222 => 874, 238 => 1250,
+        _ => null,
+    };
+
+    private Encoding CachedEnc(int codepage)
+    {
+        if (!_encCache.TryGetValue(codepage, out var e)) _encCache[codepage] = e = GetEncoding(codepage);
+        return e;
+    }
+
+    // Pending BODY bytes decode with the current font's \fcharset code page when known, else the document's.
+    private Encoding RunEnc => _st.Font >= 0 && _fontCodePages.TryGetValue(_st.Font, out var cp) ? CachedEnc(cp) : Enc;
 
     // ---- page chrome ({\header …} / {\footer …}) ----
 
@@ -789,6 +916,7 @@ internal sealed class RtfParser
             if (bg.A != 0) r.Background = new ImmutableSolidColorBrush(bg);
         }
         r.NavigateUri = _st.LinkUrl; // non-null only inside a \fldrslt with a parsed HYPERLINK
+        if (_st.Font >= 0 && _fontNames.TryGetValue(_st.Font, out var fam) && fam != "Default") r.FontFamily = fam; // "Default": this writer's \f0
         return r;
     }
 
@@ -829,6 +957,7 @@ internal sealed class RtfParser
 
     // True immediately after a block picture was added, while its terminating \par is still pending.
     private bool _imageOwnsNextPar;
+    private int _nextPictKind; // {\*\arpicinl} = 1, {\*\arpicblk} = 2, none = 0 (decide by size)
     // True while the paragraph being read carries a bottom border (\brdrb) — see EndParagraph.
     private bool _paraBottomBorder;
 
@@ -1157,9 +1286,19 @@ internal sealed class RtfParser
     {
         var hex = _pictHex.ToString();
         _pictHex.Clear();
-        if (_pictMime == null || hex.Length < 8) return;
+        int kind = _nextPictKind; _nextPictKind = 0; // taken before any early return, so a dropped picture's marker is not the next one's
+        if (hex.Length < 8) return;
         var bytes = HexToBytes(hex);
         if (bytes == null || bytes.Length == 0) return;
+        // \dibitmap carries a header-less DIB: a BITMAPFILEHEADER makes it a BMP. No blip keyword at all: sniff the
+        // bytes — some writers omit it but embed a decodable picture (WMF/EMF still fail and are dropped). From the port.
+        if (_pictMime == "dib") { bytes = WrapDibAsBmp(bytes); if (bytes == null) return; _pictMime = "image/bmp"; }
+        else if (_pictMime == null)
+        {
+            var (sw, sh) = ImageInfo.GetPixelSize(bytes);
+            if (sw <= 0 || sh <= 0) return;
+            _pictMime = ImageMime.Detect(bytes);
+        }
 
         double w = _pictWTwips > 0 ? _pictWTwips / 15.0 : 0;
         double h = _pictHTwips > 0 ? _pictHTwips / 15.0 : 0;
@@ -1171,12 +1310,13 @@ internal sealed class RtfParser
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
             w = bmp.Size.Width; h = bmp.Size.Height;
         }
-        string mime = ImageMime.Detect(bytes) ?? _pictMime;
+        string mime = ImageMime.Detect(bytes);
 
         // A picture inside a table row belongs to the cell being built. Splicing it out as a block
         // would push the cell's half-built paragraph into the document body — a photo in a Word/HWP
         // table came out beside the table, with the surrounding text reordered. Keep it inline.
-        if ((w < 64 && h < 64) || _curRow != null)
+        bool inlinePic = kind == 1 || (kind != 2 && w < 64 && h < 64);
+        if (inlinePic || _curRow != null)
         {
             var img = new InlineImage { Width = w, Height = h };
             img.SetImageData(bytes, mime, bmp);
@@ -1195,6 +1335,25 @@ internal sealed class RtfParser
             _doc.Blocks.Add(ib);
             _imageOwnsNextPar = true;
         }
+    }
+
+    private static byte[]? WrapDibAsBmp(byte[] dib)
+    {
+        if (dib.Length < 40) return null;
+        int hdr = BitConverter.ToInt32(dib, 0);
+        if (hdr != 40 && hdr != 108 && hdr != 124) return null; // BITMAPINFO/V4/V5 header sizes
+        int bitCount = BitConverter.ToUInt16(dib, 14);
+        int compression = BitConverter.ToInt32(dib, 16);
+        int clrUsed = BitConverter.ToInt32(dib, 32);
+        int palette = bitCount <= 8 ? (clrUsed > 0 ? clrUsed : 1 << bitCount) * 4 : 0;
+        int masks = hdr == 40 && compression == 3 ? 12 : 0; // BI_BITFIELDS masks follow a plain header
+        int offset = 14 + hdr + masks + palette;
+        var bmp = new byte[14 + dib.Length];
+        bmp[0] = (byte)'B'; bmp[1] = (byte)'M';
+        BitConverter.GetBytes(bmp.Length).CopyTo(bmp, 2);
+        BitConverter.GetBytes(offset).CopyTo(bmp, 10);
+        dib.CopyTo(bmp, 14);
+        return bmp;
     }
 
     private static byte[]? HexToBytes(string hex)
@@ -1280,7 +1439,7 @@ internal sealed class RtfWriter
             case TableBlock tb: WriteTable(tb); break;
             case ImageBlock ib when ib.RawBytes != null || ib.Image != null:
                 _body.Append(@"\pard ");
-                WritePict(ib.RawBytes, ib.MimeType, ib.Image, ib.Width, ib.Height);
+                WritePict(ib.RawBytes, ib.MimeType, ib.Image, ib.Width, ib.Height, inline: false);
                 _body.Append(@"\par").Append('\n');
                 break;
             case DividerBlock:
@@ -1465,7 +1624,7 @@ internal sealed class RtfWriter
     {
         if (inline is Run r && !string.IsNullOrEmpty(r.Text)) WriteRun(r);
         else if (inline is InlineImage img && (img.RawBytes != null || img.Image != null))
-            WritePict(img.RawBytes, img.MimeType, img.Image, img.Width, img.Height);
+            WritePict(img.RawBytes, img.MimeType, img.Image, img.Width, img.Height, inline: true);
     }
 
     // A heading's bold and size are on its runs (HeadingStyle), so a run is written as it is. This used to add
@@ -1643,7 +1802,7 @@ internal sealed class RtfWriter
             {
                 if (!first) _body.Append(@"\par ");
                 first = false;
-                WritePict(cib.RawBytes, cib.MimeType, cib.Image, cib.Width, cib.Height);
+                WritePict(cib.RawBytes, cib.MimeType, cib.Image, cib.Width, cib.Height, inline: false);
             }
             else if (blk is DividerBlock)
             {
@@ -1659,7 +1818,7 @@ internal sealed class RtfWriter
     // `bmp` is the fallback for an image built from a Bitmap rather than from encoded bytes (the public
     // ImageBlock.Image / InlineImage.Image setter clears RawBytes): such a picture used to be dropped
     // from the RTF without a word. PNG-encoded here, the same way HTML and JSON export handle it.
-    private void WritePict(byte[]? bytes, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h)
+    private void WritePict(byte[]? bytes, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, bool inline)
     {
         if (bytes == null)
         {
@@ -1673,6 +1832,9 @@ internal sealed class RtfWriter
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); return; }
             mime = "image/png";
         }
+        // Ours: which the picture was, ahead of the \pict other readers see. The reader otherwise goes by size (under 64
+        // px = inline), so an enlarged inline picture came back a block and a small block came back inline.
+        _body.Append(inline ? @"{\*\arpicinl}" : @"{\*\arpicblk}");
         _body.Append(@"{\*\shppict{\pict");
         _body.Append(mime != null && mime.Contains("jpeg", StringComparison.OrdinalIgnoreCase) ? @"\jpegblip" : @"\pngblip");
         if (w > 0) _body.Append($@"\picwgoal{(int)(w * 15)}");

@@ -210,7 +210,7 @@ public partial class RichEditor
         // Inserting is subject to AllowImages/AllowTables (see AdaptToCapabilities); LoadHtml, which opens
         // a document rather than inserting into one, is not.
         var parsed = AdaptToCapabilities(
-            Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowLocalFileImages, AllowRemoteImagesOnPaste),
+            Formatters.HtmlDocumentFormatter.ParseHtml(html, AllowImages && AllowLocalFileImages, AllowImages && AllowRemoteImagesOnPaste),
             out bool emptied);
         if (parsed.Blocks.Count == 0 || emptied) return;
         PushUndo();

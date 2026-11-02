@@ -131,6 +131,10 @@ public partial class RichEditor
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+        // A running DispatcherTimer is rooted, and roots this editor through its Tick handler: an editor taken off the
+        // screen (a closed tab) stayed alive, repainting. Focus restarts the blink when it comes back.
+        _caretTimer.Stop();
+        _layoutPruneTimer?.Stop();
         if (_cullScroller != null)
         {
             _cullScroller.ScrollChanged -= OnHostScrollChanged;

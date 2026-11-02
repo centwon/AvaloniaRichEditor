@@ -254,6 +254,14 @@ public partial class RichEditor
     private void SetListType(ListKind kind, ListMarkerStyle? marker = null)
     {
         if (_caretPosition.Paragraph == null || Document == null || IsReadOnly) return;
+        // A style pick on paragraphs that already are that list, with that marker and no hard line to split,
+        // changes nothing: no undo step that undoes nothing.
+        if (marker is { } m0)
+        {
+            var sel = SelectedParagraphsInOrder();
+            if (sel.Count == 0) sel = new List<Paragraph> { _caretPosition.Paragraph };
+            if (sel.All(p => p.ListType == kind && p.ListMarker == m0 && !p.Inlines.Any(i => i is Run r && r.Text?.Contains('\n') == true))) return;
+        }
         PushUndo();
         // A style pick always turns the list on (never toggles off); a plain bullet/number button toggles.
         bool turningOff = marker == null && _caretPosition.Paragraph.ListType == kind;
@@ -420,7 +428,7 @@ public partial class RichEditor
         {
             HeadingStyle.Retype(p, p.HeadingLevel, level, DefaultFontSize);
             p.HeadingLevel = level;
-        });
+        }, p => level == 0 && p.HeadingLevel == 0); // body to body touches nothing: no undo step that undoes nothing
 
     /// <summary>Toggles blockquote styling (indented, with a quote bar) on every selected paragraph
     /// (the caret paragraph when nothing is selected).</summary>
@@ -472,8 +480,8 @@ public partial class RichEditor
                 foreach (var inl in p.Inlines) if (inl is Run r) styleAction(r);
                 TextRange.CoalesceRuns(p); // styling a whole paragraph can make its runs identical
             }
-            InvalidateMeasure();
             InvalidateVisual();
+            NotifyStatus(); // remeasure + the toolbar's state (see the end of this method)
             return;
         }
         if (_selectionStart != null && _selectionEnd != null && _selectionStart.CompareTo(_selectionEnd) != 0)
@@ -500,8 +508,10 @@ public partial class RichEditor
         // Font size / family change a run's line height, so the measure (block heights + ScrollViewer
         // extent + the viewport used by Draw-culling) must be re-run, not just the paint — otherwise the
         // selection highlight is drawn against the previous size's layout for one frame.
-        InvalidateMeasure();
         InvalidateVisual();
+        // StatusChanged too (NotifyStatus also remeasures): the toolbar follows it, and after a keyboard Ctrl+B/I/U its
+        // buttons kept the old state until the caret next moved — a toolbar click re-synced only by itself.
+        NotifyStatus();
     }
 
     private void ClearFormatting()

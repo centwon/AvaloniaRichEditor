@@ -199,24 +199,22 @@ public partial class RichEditor
     {
         int cols = tb.Columns, rows = tb.Rows;
 
-        if (_trustLayoutCache && _tableLayoutCache.TryGetValue(tb, out var ct) && ct.startX == startX
-            && ct.rowH.Length == rows)
+        if (_trustLayoutCache && _tableLayoutCache.TryGetValue(tb, out var ct) && ct.rowH.Length == rows
+            && ct.layout.ColX.Length == cols + 1)
         {
             // Exact match (same startX AND top): reuse the cached geometry verbatim — zero allocation,
             // the common case in continuous mode across blink/scroll/hover frames.
-            if (ct.top == top) return ct.layout;
-            // Same startX, different top (every frame in page view: pagination measures at continuous y,
-            // render at per-page slice y): the column geometry and the measured row heights are unchanged,
-            // so reuse them and only re-place the rows/anchors at the new top — skips re-measuring cells.
-            var moved = AssembleTableLayout(tb, ct.layout.ColX, ct.rowH, startX, top);
+            if (ct.startX == startX && ct.top == top) return ct.layout;
+            // Moved (every frame in page view: pagination measures at continuous y, render at per-page slice
+            // y; an inline table is measured at 0,0 and hit-tested at its run): the column widths and the
+            // measured row heights do not depend on where the table sits, so reuse them and only re-place
+            // the columns/rows/anchors — skips re-measuring cells. A different startX used to re-measure all.
+            var moved = AssembleTableLayout(tb, ct.startX == startX ? ct.layout.ColX : ColumnEdges(tb, startX), ct.rowH, startX, top);
             _tableLayoutCache[tb] = (startX, top, ct.rowH, moved);
             return moved;
         }
 
-        var colX = new double[cols + 1];
-        colX[0] = startX;
-        for (int c = 0; c < cols; c++)
-            colX[c + 1] = colX[c] + ((c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100);
+        var colX = ColumnEdges(tb, startX);
 
         var rowH = new double[rows];
         for (int r = 0; r < rows; r++) rowH[r] = 20;
@@ -250,6 +248,18 @@ public partial class RichEditor
         if (_tableLayoutCache.Count > 2000) _tableLayoutCache.Clear();
         _tableLayoutCache[tb] = (startX, top, rowH, result);
         return result;
+    }
+
+    // The column edges from `startX` (length Columns+1) — computed alike for a fresh layout and a moved one, so a
+    // re-placed table lands on the very same doubles.
+    private static double[] ColumnEdges(TableBlock tb, double startX)
+    {
+        int cols = tb.Columns;
+        var colX = new double[cols + 1];
+        colX[0] = startX;
+        for (int c = 0; c < cols; c++)
+            colX[c + 1] = colX[c] + ((c < tb.ColumnWidths.Count) ? tb.ColumnWidths[c] : 100);
+        return colX;
     }
 
     // Places the rows at `top` and builds the anchor rects from the (position-independent) measured

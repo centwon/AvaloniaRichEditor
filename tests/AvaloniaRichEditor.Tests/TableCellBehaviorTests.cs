@@ -338,21 +338,27 @@ public class TableCellBehaviorTests
     }
 
     [AvaloniaFact]
-    public void Delete_AtCellParagraphEnd_BeforeNestedTable_RemovesTable()
+    public void Delete_AtCellParagraphEnd_BeforeNestedTable_SelectsThenRemovesTable()
     {
         var (ed, cell, a, _) = CellWithTableBetweenParagraphs();
         PlaceCaret(ed, a, 1); // end of "A", the table is the next block
-        Press(ed, Key.Delete);
+        Press(ed, Key.Delete);   // first press selects it (user decision, 2026-11-01)
+        Assert.Contains(cell.Blocks, x => x is TableBlock);
+        Press(ed, Key.Delete);   // the second deletes it
         Assert.DoesNotContain(cell.Blocks, x => x is TableBlock);
     }
 
     [AvaloniaFact]
-    public void Backspace_AtCellParagraphStart_AfterNestedTable_RemovesTable()
+    public void Backspace_AtCellParagraphStart_AfterNestedTable_SelectsThenRemovesTable()
     {
         var (ed, cell, _, b) = CellWithTableBetweenParagraphs();
         PlaceCaret(ed, b, 0); // start of "B", the table is the previous block
         Press(ed, Key.Back);
+        Assert.Contains(cell.Blocks, x => x is TableBlock);
+        Assert.False(ed.CanUndo); // selecting is not an edit
+        Press(ed, Key.Back);
         Assert.DoesNotContain(cell.Blocks, x => x is TableBlock);
+        Assert.True(ed.CanUndo);
     }
 
     [AvaloniaFact]

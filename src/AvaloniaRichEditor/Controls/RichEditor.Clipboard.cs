@@ -82,7 +82,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                             if (Stale()) return;
                             if (!string.IsNullOrWhiteSpace(html0))
                             {
-                                var hd = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(ExtractHtmlFragment(html0!), AllowLocalFileImages, AllowRemoteImagesOnPaste);
+                                var hd = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(ExtractHtmlFragment(html0!), AllowImages && AllowLocalFileImages, AllowImages && AllowRemoteImagesOnPaste);
                                 if (Stale()) return;
                                 if (HasAnyImage(hd)) parsedRtf = hd;
                             }
@@ -112,7 +112,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 string fragment = ExtractHtmlFragment(html!);
                 // Async: remote images download off the UI thread so a slow network can't freeze
                 // the paste (model build stays on the UI thread inside ParseHtmlAsync).
-                var parsed = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(fragment, AllowLocalFileImages, AllowRemoteImagesOnPaste);
+                var parsed = await Formatters.HtmlDocumentFormatter.ParseHtmlAsync(fragment, AllowImages && AllowLocalFileImages, AllowImages && AllowRemoteImagesOnPaste);
                 if (Stale()) return;
                 if (parsed.Blocks.Count > 0)
                 {
@@ -244,6 +244,9 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             if (string.IsNullOrEmpty(path)) continue;
             try
             {
+                // Bounded as a package's pictures are: a dropped multi-gigabyte file was read whole before the
+                // decoder could refuse it.
+                if (new System.IO.FileInfo(path).Length > DocumentPackage.MaxPictureBytes) continue;
                 InsertImageBytes(System.IO.File.ReadAllBytes(path));
             }
             catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
@@ -366,11 +369,8 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         // The covered paragraphs (TextRange.Covered), in position order: a paragraph holding an inline table an endpoint
         // lies in is taken only on the selected side of it, and an inline table the selection takes whole comes inside
         // its paragraph, not cell by cell (WinUI port's pre-publish audit, 2026-10-18).
-        var parts = new TextRange(s, e).Covered();
-        parts.RemoveAll(c => c.InsideCoveredObject);
+        var parts = new TextRange(s, e).CoveredInPositionOrder(skipCoveredObjects: true);
         if (parts.Count == 0) return null;
-        parts.Sort((a, b) => ReferenceEquals(a.Paragraph, b.Paragraph) ? 0
-            : new TextPointer(a.Paragraph, a.From).CompareTo(new TextPointer(b.Paragraph, b.From)));
 
         var doc = new FlowDocument();
         foreach (var c in parts) doc.Blocks.Add(CloneParagraphRange(c.Paragraph, c.From, c.To));

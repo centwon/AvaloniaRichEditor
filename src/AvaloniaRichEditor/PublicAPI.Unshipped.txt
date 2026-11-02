@@ -1,1 +1,3 @@
 ﻿#nullable enable
+override AvaloniaRichEditor.Controls.RichEditorView.OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
+override AvaloniaRichEditor.Controls.RichEditorView.OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void

@@ -45,6 +45,17 @@ public class TableBlock : Block
     }
 
 
+    // A table with its dimensions set and no cells, widths or spans: for building into. `new TableBlock(r, c)` makes a
+    // cell (with a paragraph and a run) for every slot, which Clone then cleared away — on every undo checkpoint, for
+    // every table. From the WinUI port (code review 2026-11-01).
+    private static TableBlock Skeleton(int rows, int cols)
+    {
+        var tb = new TableBlock(0, 0);
+        tb.Rows = rows;
+        tb.Columns = cols;
+        return tb;
+    }
+
     private void InitializeCells(int rows, int cols)
     {
         for (int c = 0; c < cols; c++)
@@ -508,7 +519,7 @@ public class TableBlock : Block
     public override TextElement Clone()
     {
         EnsureSpanConsistency();
-        var tb = new TableBlock(Rows, Columns);
+        var tb = Skeleton(Rows, Columns);
         tb.Indent = Indent;
         tb.MarginTop = MarginTop;
         tb.MarginBottom = MarginBottom;

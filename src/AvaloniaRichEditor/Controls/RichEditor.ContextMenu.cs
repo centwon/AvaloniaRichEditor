@@ -673,6 +673,7 @@ public partial class RichEditor
         {
             _openContextMenu?.Close();
             if (Document == null || IsReadOnly || targets.Count == 0) return;
+            if (targets.All(cell => (cell.Background as ISolidColorBrush)?.Color == (brush as ISolidColorBrush)?.Color)) return; // already so: no empty undo step
             PushUndo();
             foreach (var cell in targets) cell.Background = brush;
             InvalidateVisual();

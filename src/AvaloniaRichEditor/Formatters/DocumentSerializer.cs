@@ -140,14 +140,20 @@ public static class DocumentSerializer
 
     private const int SupportedMajorVersion = 1;
 
-    // The major of a SemVer "M.m" version; null for the legacy integer form, which has no dot.
+    // The major of a SemVer "M.m" version; null for the legacy integer forms "1" and "2", which have no dot.
+    // A dotless integer past those is no legacy file: it was read as one, so "3" slipped past the refusal.
     private static int? MajorVersion(string? version)
     {
         if (version == null) return null;
         int dot = version.IndexOf('.');
-        return dot > 0 && int.TryParse(version.AsSpan(0, dot), System.Globalization.NumberStyles.None,
-            System.Globalization.CultureInfo.InvariantCulture, out int major) ? major : null;
+        if (!int.TryParse(dot > 0 ? version.AsSpan(0, dot) : version.AsSpan(), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out int major)) return null;
+        return dot < 0 && major <= 2 ? null : major;
     }
+
+    // Enum.TryParse also takes any number ("7") and comma lists, and the model then held a value no switch handles.
+    private static bool TryEnum<T>(string? value, out T result) where T : struct, Enum
+        => Enum.TryParse(value, out result) && Enum.IsDefined(result);
 
     // Thread-free half of Deserialize: JSON parsing + base64 decode only, no model objects. Async
     // loaders run this on a background thread and then build the model with FromDto on the UI
@@ -182,8 +188,8 @@ public static class DocumentSerializer
         if (dto?.PageSetup is { } psd)
             doc.PageSetup = new PageSetup
             {
-                PageSize = Enum.TryParse<Controls.RichEditorPageSize>(psd.PageSize, out var sz) ? sz : Controls.RichEditorPageSize.Continuous,
-                Orientation = Enum.TryParse<Controls.RichEditorPageOrientation>(psd.Orientation, out var or) ? or : Controls.RichEditorPageOrientation.Portrait,
+                PageSize = TryEnum<Controls.RichEditorPageSize>(psd.PageSize, out var sz) ? sz : Controls.RichEditorPageSize.Continuous,
+                Orientation = TryEnum<Controls.RichEditorPageOrientation>(psd.Orientation, out var or) ? or : Controls.RichEditorPageOrientation.Portrait,
                 ShowPageBoundaries = psd.ShowPageBoundaries,
                 Header = psd.Header,
                 Footer = psd.Footer,
@@ -205,8 +211,8 @@ public static class DocumentSerializer
         var d = PageSetup.DefaultMargin;
         var m = new PageMargins(psd.MarginLeft ?? d.Left, psd.MarginTop ?? d.Top,
                                 psd.MarginRight ?? d.Right, psd.MarginBottom ?? d.Bottom);
-        var size = Enum.TryParse<Controls.RichEditorPageSize>(psd.PageSize, out var sz) ? sz : Controls.RichEditorPageSize.Continuous;
-        var orient = Enum.TryParse<Controls.RichEditorPageOrientation>(psd.Orientation, out var or) ? or : Controls.RichEditorPageOrientation.Portrait;
+        var size = TryEnum<Controls.RichEditorPageSize>(psd.PageSize, out var sz) ? sz : Controls.RichEditorPageSize.Continuous;
+        var orient = TryEnum<Controls.RichEditorPageOrientation>(psd.Orientation, out var or) ? or : Controls.RichEditorPageOrientation.Portrait;
         var (w, h) = PageSetup.PaperMillimetres(size, orient);
         return PageSetup.IsUsableMargin(m, w, h) ? m : d;
     }
@@ -438,7 +444,7 @@ public static class DocumentSerializer
                                 para.Background = null;
                             }
                             // Both cell encodings carry it; an unknown or absent value stays Top.
-                            if (cd.VAlign != null && Enum.TryParse<CellVerticalAlignment>(cd.VAlign, out var va))
+                            if (cd.VAlign != null && TryEnum<CellVerticalAlignment>(cd.VAlign, out var va))
                                 cell.VerticalAlignment = va;
                             row.Add(cell);
                         }
@@ -506,10 +512,10 @@ public static class DocumentSerializer
             // The levels RTF reads too. -1 threw out of the HTML writer — so out of every copy — and a million
             // wrote a million <ul> tags (round 35).
             ListLevel = Math.Clamp(d.ListLevel ?? 0, 0, 8),
-            ListType = Enum.TryParse<ListKind>(d.ListType, out var lk) ? lk : (d.IsListItem == true ? ListKind.Bullet : ListKind.None),
-            ListMarker = Enum.TryParse<ListMarkerStyle>(d.ListMarker, out var lm) ? lm : ListMarkerStyle.Default
+            ListType = TryEnum<ListKind>(d.ListType, out var lk) ? lk : (d.IsListItem == true ? ListKind.Bullet : ListKind.None),
+            ListMarker = TryEnum<ListMarkerStyle>(d.ListMarker, out var lm) ? lm : ListMarkerStyle.Default
         };
-        if (Enum.TryParse<TextAlignment>(d.TextAlignment, out var ta)) p.TextAlignment = ta;
+        if (TryEnum<TextAlignment>(d.TextAlignment, out var ta)) p.TextAlignment = ta;
         if (d.Inlines != null)
             foreach (var id in d.Inlines)
             {

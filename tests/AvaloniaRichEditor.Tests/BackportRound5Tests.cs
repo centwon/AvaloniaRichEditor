@@ -277,10 +277,9 @@ public class BackportRound5Tests
             Assert.Equal(ListKind.Bullet, p.ListType);
             Assert.Equal(level, p.ListLevel);   // RTF has no standard place for this; the tag carries it
             Assert.Equal("item", Plain(p));
-            // The gutter must never LEAK into the indent. This reader does not parse \li at all — a
-            // long-standing limitation, so the author's own indent does not come back either — and the
-            // subtraction in StartMarkerText is what keeps the two consistent if it ever starts to.
-            Assert.Equal(0, p.Indent);
+            // The gutter must never LEAK into the indent, and the author's own comes back: \li is read since
+            // 2026-11-01 and StartMarkerText takes the gutter back out (as the WinUI port's test expects).
+            Assert.Equal(indent, p.Indent);
         }
     }
 

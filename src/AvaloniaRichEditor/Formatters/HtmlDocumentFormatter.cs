@@ -84,8 +84,8 @@ namespace AvaloniaRichEditor.Formatters
         // has orphan <tr>/<td> with no wrapping <table>. Wrap it so it's recognized.
         private static HtmlDocument LoadHtmlDoc(ref string html)
         {
-            if (System.Text.RegularExpressions.Regex.IsMatch(html, "<tr[\\s>]", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                && !System.Text.RegularExpressions.Regex.IsMatch(html, "<table", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            if (RxTr.IsMatch(html)
+                && !RxTable.IsMatch(html))
                 html = "<table>" + html + "</table>";
             // No id index: nothing here looks elements up by id, and keeping it makes removing a subtree walk that
             // subtree recursively (HtmlNode.RemoveAllIDforNode) — the very overflow CapDepth exists to prevent.
@@ -298,7 +298,7 @@ namespace AvaloniaRichEditor.Formatters
                     var (bytes, bmp, w, h, alt) = LoadImage(child);
                     if (bmp != null && bytes != null)
                     {
-                        if (w < IconMaxSize && h < IconMaxSize)
+                        if (Attr(child, "data-are-inline") == "1" || (Attr(child, "data-are-block") != "1" && w < IconMaxSize && h < IconMaxSize))
                         {
                             // Small icon/logo -> keep on a text line rather than its own block.
                             var icon = new InlineImage { Width = w, Height = h, AltText = alt };
@@ -534,13 +534,29 @@ namespace AvaloniaRichEditor.Formatters
         {
             string a = Attr(node, "align").ToLowerInvariant();
             var style = Attr(node, "style").ToLowerInvariant();
-            var m = System.Text.RegularExpressions.Regex.Match(style, "text-align\\s*:\\s*(left|center|right|justify)");
+            var m = RxTextAlign.Match(style);
             if (m.Success) a = m.Groups[1].Value;
             return a switch { "center" => TextAlignment.Center, "right" => TextAlignment.Right, "justify" => TextAlignment.Justify, _ => TextAlignment.Left };
         }
 
         // Heading sizes in points (pt), mirroring RichEditor.HeadingFontSize so headings render and
         // round-trip consistently.
+        // Constant patterns, built once: the static Regex calls went through a 15-entry cache that this file's
+        // patterns alone outnumber, so a paste re-parsed them per style attribute.
+        private static readonly System.Text.RegularExpressions.Regex RxTr = new("<tr[\\s>]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        private static readonly System.Text.RegularExpressions.Regex RxTable = new("<table", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        private static readonly System.Text.RegularExpressions.Regex RxTextAlign = new("text-align\\s*:\\s*(left|center|right|justify)");
+        private static readonly System.Text.RegularExpressions.Regex RxCssSpace = new("[ \t\r\n\f\v]+");
+        private static readonly System.Text.RegularExpressions.Regex RxFontWeight = new(@"(?<![\w-])font-weight\s*:\s*([^;]+)");
+        private static readonly System.Text.RegularExpressions.Regex RxUnderline = new("text-decoration[^;]*underline");
+        private static readonly System.Text.RegularExpressions.Regex RxLineThrough = new("text-decoration[^;]*line-through");
+        private static readonly System.Text.RegularExpressions.Regex RxColor = new("(?<![\\w-])color\\s*:\\s*([^;]+)");
+        private static readonly System.Text.RegularExpressions.Regex RxBackground = new("background(?:-color)?\\s*:\\s*([^;]+)");
+        private static readonly System.Text.RegularExpressions.Regex RxFontFamily = new("font-family\\s*:\\s*([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        private static readonly System.Text.RegularExpressions.Regex RxFontSize = new("font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt|rem|em|%)?");
+        private static readonly System.Text.RegularExpressions.Regex RxMarginLeft = new("margin-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+        private static readonly System.Text.RegularExpressions.Regex RxPaddingLeft = new("padding-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+
         private static double HeadingSize(string name, out FontWeight weight)
         {
             switch (name)
@@ -635,7 +651,7 @@ namespace AvaloniaRichEditor.Formatters
         // arrive as a single space and now keep their width.
         private static string CollapseWhitespace(string s)
         {
-            s = System.Text.RegularExpressions.Regex.Replace(s, "[ \t\r\n\f\v]+", " ");
+            s = RxCssSpace.Replace(s, " ");
             return s.Replace(' ', ' ');
         }
 
@@ -913,9 +929,8 @@ namespace AvaloniaRichEditor.Formatters
             if (name == "i" || name == "em") cs = FontStyle.Italic;
             if (name == "u") cunder = true;
             if (name == "s" || name == "strike" || name == "del") cstrike = true;
-            if (name == "h1") { cw = FontWeight.Bold; sz = 20; } // pt, mirrors HeadingSize
-            if (name == "h2") { cw = FontWeight.Bold; sz = 16; }
-            if (name == "h3") { cw = FontWeight.Bold; sz = 14; }
+            // h1..h6 (h4..h6 were missing here, so a heading inside a paragraph lost its bold and size).
+            if (name.Length == 2 && name[0] == 'h' && name[1] is >= '1' and <= '6') { sz = HeadingSize(name, out var hw); cw = hw; }
 
             bool childInLink = inLink || name == "a";
             if (name == "a")
@@ -980,7 +995,7 @@ namespace AvaloniaRichEditor.Formatters
 
             // Scope to the declaration's own value: searching the whole style string made
             // "font-weight:normal;width:600px" bold. A number is compared (>= 600), so 650 works too.
-            var fw = System.Text.RegularExpressions.Regex.Match(s, @"(?<![\w-])font-weight\s*:\s*([^;]+)");
+            var fw = RxFontWeight.Match(s);
             if (fw.Success)
             {
                 string v = fw.Groups[1].Value.Trim();
@@ -995,18 +1010,18 @@ namespace AvaloniaRichEditor.Formatters
                     weight = FontWeight.Normal;
             }
             if (s.Contains("font-style:italic") || s.Contains("font-style: italic")) style = FontStyle.Italic;
-            if (System.Text.RegularExpressions.Regex.IsMatch(s, "text-decoration[^;]*underline")) underline = true;
-            if (System.Text.RegularExpressions.Regex.IsMatch(s, "text-decoration[^;]*line-through")) strike = true;
+            if (RxUnderline.IsMatch(s)) underline = true;
+            if (RxLineThrough.IsMatch(s)) strike = true;
 
             // color: (but not background-color)
-            var m = System.Text.RegularExpressions.Regex.Match(s, "(?<![\\w-])color\\s*:\\s*([^;]+)");
+            var m = RxColor.Match(s);
             if (m.Success)
             {
                 var brush = ParseCssColor(m.Groups[1].Value.Trim());
                 if (brush != null) color = brush;
             }
 
-            var bm = System.Text.RegularExpressions.Regex.Match(s, "background(?:-color)?\\s*:\\s*([^;]+)");
+            var bm = RxBackground.Match(s);
             if (bm.Success)
             {
                 var brush = ParseCssColor(bm.Groups[1].Value.Trim());
@@ -1014,8 +1029,7 @@ namespace AvaloniaRichEditor.Formatters
             }
 
             // font-family: read from the original (non-lowercased) attribute to preserve casing.
-            var famMatch = System.Text.RegularExpressions.Regex.Match(styleAttr, "font-family\\s*:\\s*([^;]+)",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var famMatch = RxFontFamily.Match(styleAttr);
             if (famMatch.Success)
             {
                 // Take the first family from a fallback list and strip quotes, e.g. "'Times New Roman', serif" -> Times New Roman.
@@ -1026,7 +1040,7 @@ namespace AvaloniaRichEditor.Formatters
             // Accept px and pt (external editors/HWP paste often uses pt). The model stores pt, so pt
             // passes through and px (or a bare number) converts px -> pt (×72/96 = ×0.75).
             // em/rem/% are relative (to the inherited size, the 10pt body for rem): read as px, 1.2em came out at 0.9pt.
-            var fm = System.Text.RegularExpressions.Regex.Match(s, "font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt|rem|em|%)?");
+            var fm = RxFontSize.Match(s);
             if (fm.Success && double.TryParse(fm.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out double val) && val > 0)
                 size = fm.Groups[2].Value switch
                 {
@@ -1042,8 +1056,8 @@ namespace AvaloniaRichEditor.Formatters
         private static double ReadIndentPx(HtmlNode node)
         {
             var style = Attr(node, "style").ToLowerInvariant();
-            var m = System.Text.RegularExpressions.Regex.Match(style, "margin-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
-            if (!m.Success) m = System.Text.RegularExpressions.Regex.Match(style, "padding-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
+            var m = RxMarginLeft.Match(style);
+            if (!m.Success) m = RxPaddingLeft.Match(style);
             if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0)
                 return m.Groups[2].Value == "pt" ? v * 96.0 / 72.0 : v;
             return 0;
@@ -1055,7 +1069,7 @@ namespace AvaloniaRichEditor.Formatters
             var style = Attr(node, "style");
             if (!string.IsNullOrEmpty(style))
             {
-                var m = System.Text.RegularExpressions.Regex.Match(style.ToLowerInvariant(), "background(?:-color)?\\s*:\\s*([^;]+)");
+                var m = RxBackground.Match(style.ToLowerInvariant());
                 if (m.Success)
                 {
                     var b = ParseCssColor(m.Groups[1].Value.Trim());
@@ -1066,62 +1080,11 @@ namespace AvaloniaRichEditor.Formatters
             return string.IsNullOrEmpty(bg) ? null : ParseCssColor(bg.Trim());
         }
 
-        // One rgb() channel: "200" is absolute, "78%" is a fraction of 255. False when the token is not a
-        // number at all (the regex lets a bare "." through) or does not fit — never throws.
-        private static bool TryChannel(string s, out byte value)
-        {
-            bool percent = s.EndsWith("%", StringComparison.Ordinal);
-            value = 0;
-            if (!double.TryParse(percent ? s.Substring(0, s.Length - 1) : s,
-                    System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out double n))
-                return false;
-            value = (byte)Math.Clamp((int)Math.Round(percent ? n * 2.55 : n), 0, 255);
-            return true;
-        }
-
+        // CSS colour -> an immutable brush (CLAUDE.md rule 8); a fully transparent one (rgba(…,0), "transparent") is no
+        // colour at all. Parsing is ColorUtil's (alpha, every CSS name, CSS #RRGGBBAA order).
         private static IBrush? ParseCssColor(string value)
-        {
-            value = value.Trim();
-            // Channels accept CSS's two spellings — 0..255 numbers and 0%..100% percentages. Percentages
-            // are legal in the same position and rare from browsers (they serialize computed styles as
-            // integers) but normal in hand-written CSS; `rgb(100%, 0%, 0%)` used to fail the match and
-            // the colour was silently dropped.
-            //
-            // And the channels are TryParse'd, not Parse'd: `\d+` puts no ceiling on the digit run, so
-            // `rgb(99999999999, 0, 0)` threw OverflowException — out of ParseCssColor, out of the walk,
-            // out of ParseHtml itself. A malformed colour in pasted HTML must cost that colour, not the
-            // paste. (Ported from the WinUI peer, which carries this in ColorUtil.)
-            var rgb = System.Text.RegularExpressions.Regex.Match(
-                value, "rgba?\\(\\s*([0-9]*\\.?[0-9]+%?)\\s*,\\s*([0-9]*\\.?[0-9]+%?)\\s*,\\s*([0-9]*\\.?[0-9]+%?)");
-            if (rgb.Success
-                && TryChannel(rgb.Groups[1].Value, out byte r)
-                && TryChannel(rgb.Groups[2].Value, out byte g)
-                && TryChannel(rgb.Groups[3].Value, out byte b))
-            {
-                // Immutable, like the other readers' brushes (CLAUDE.md rule 8): no thread affinity.
-                return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(r, g, b));
-            }
-            if (value.StartsWith("#"))
-            {
-                try { return new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.Parse(value)); }
-                catch (Exception ex) { RichEditorDiagnostics.Report(ex); return null; }
-            }
-            return value switch
-            {
-                "red" => Brushes.Red,
-                "blue" => Brushes.Blue,
-                "green" => Brushes.Green,
-                "black" => Brushes.Black,
-                "white" => Brushes.White,
-                "gray" or "grey" => Brushes.Gray,
-                "orange" => Brushes.Orange,
-                _ => null
-            };
-        }
+            => ColorUtil.Parse(value, css: true) is { A: > 0 } c ? new Avalonia.Media.Immutable.ImmutableSolidColorBrush(c) : null;
 
-        // Maps a list marker style to the closest CSS list-style-type. Dash bullets and the ")" number
-        // suffix have no CSS equivalent and degrade to disc/decimal (HTML export is lossy by design).
         private static string CssListStyle(ListKind kind, ListMarkerStyle marker) => marker switch
         {
             ListMarkerStyle.Circle => "circle",
@@ -1476,7 +1439,7 @@ namespace AvaloniaRichEditor.Formatters
         {
             if (inline is InlineImage im && (im.RawBytes != null || im.Image != null))
             {
-                AppendImgTag(sb, im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height, im.AltText, opensParagraph);
+                AppendImgTag(sb, im.RawBytes, im.MimeType, im.RawBytes == null ? im.Image : null, im.Width, im.Height, im.AltText, opensParagraph, inline: true);
                 return;
             }
             // An inline table has no HTML inline equivalent; emit it as a <table> so its content survives
@@ -1645,7 +1608,7 @@ namespace AvaloniaRichEditor.Formatters
         // a bitmap set without bytes is PNG-encoded as before.
         // `opensParagraph` carries the same meaning as it does for an inline table: this image was the
         // FIRST thing in its paragraph, so on import there is no earlier paragraph of its own to rejoin.
-        private static void AppendImgTag(StringBuilder sb, byte[]? raw, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, string? alt = null, bool opensParagraph = false)
+        private static void AppendImgTag(StringBuilder sb, byte[]? raw, string? mime, Avalonia.Media.Imaging.Bitmap? bmp, double w, double h, string? alt = null, bool opensParagraph = false, bool inline = false)
         {
             byte[] data;
             string m;
@@ -1675,6 +1638,9 @@ namespace AvaloniaRichEditor.Formatters
             // else that understands <img alt>.
             if (!string.IsNullOrEmpty(alt)) sb.Append(" alt=\"").Append(AttrEscape(alt)).Append('"');
             if (opensParagraph) sb.Append(" data-are-opens=\"1\"");
+            // Ours: which the picture was. The reader otherwise decides by size (under 64 px = inline), so an inline
+            // picture made bigger came back a block that split its line, and a small block came back inline.
+            sb.Append(inline ? " data-are-inline=\"1\"" : " data-are-block=\"1\"");
             sb.Append("/>");
         }
 
