@@ -713,8 +713,7 @@ public partial class RichEditor : Control
         if (r == null) return false;
         if (r.TextDecorations == null)
             return loc == TextDecorationLocation.Underline && !string.IsNullOrEmpty(r.NavigateUri);
-        foreach (var d in r.TextDecorations) if (d.Location == loc) return true;
-        return false;
+        return RunDecorations.Has(r.TextDecorations, loc);
     }
 
     // Where text typed at logical offset k goes, and whose character format it takes — the ONE rule for
