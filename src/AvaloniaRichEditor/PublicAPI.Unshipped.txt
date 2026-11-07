@@ -1,3 +1,7 @@
 ﻿#nullable enable
 override AvaloniaRichEditor.Controls.RichEditorView.OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
 override AvaloniaRichEditor.Controls.RichEditorView.OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs! e) -> void
+AvaloniaRichEditor.Controls.RichEditor.HasSelection.get -> bool
+AvaloniaRichEditor.Controls.RichEditor.GetHyperlinkAt(Avalonia.Point point) -> string?
+AvaloniaRichEditor.Controls.RichEditor.TrySetHyperlink(string? url) -> bool
+AvaloniaRichEditor.Controls.RichEditor.TrySetHyperlinkAt(Avalonia.Point point, string? url) -> bool
