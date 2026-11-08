@@ -217,12 +217,19 @@ public partial class RichEditor : Control
             new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Colors.Black));
 
     /// <summary>Foreground brush used for runs that don't specify one (and for list markers that follow
-    /// them). A dark-theme host sets this to a light brush. Default: black.</summary>
+    /// them). A dark-theme host sets this to a light brush. Default: black. Text on white paper — page view with page
+    /// boundaries, printing, PDF — is black regardless, like a word processor's automatic colour.</summary>
     public IBrush DefaultForeground
     {
         get => GetValue(DefaultForegroundProperty);
         set => SetValue(DefaultForegroundProperty, value);
     }
+
+    // The colour of "automatic" text (no Foreground of its own): DefaultForeground on the host's canvas, black on the
+    // white paper — a dark-theme host's light grey drew faint text on the page view's paper and in print (2026-11-09,
+    // as the WinUI control).
+    internal IBrush AutoForeground => _onPaper || PagedChrome ? Brushes.Black : DefaultForeground;
+    private bool _onPaper; // set while a print page (bitmap, PDF, print dialog) is drawn
 
     // Cached system font list. The OS reports family names localized to the UI language (e.g.
     // "맑은 고딕" on Korean Windows), and those names resolve back through the same font manager,
@@ -280,9 +287,10 @@ public partial class RichEditor : Control
     // ~28–39 KB each, 6–9x the document model — 8,000 paragraphs, 236–306 MB of managed heap. And a render
     // trims it back to the LayoutKeep most recently used (TrimLayoutCache), or scrolling to the end would
     // fill it all over again.
-    private sealed class LayoutEntry(long sig, double width, Avalonia.Media.TextFormatting.TextLayout layout)
+    private sealed class LayoutEntry(long sig, double width, IBrush auto, Avalonia.Media.TextFormatting.TextLayout layout)
     {
         public readonly long Sig = sig; public readonly double Width = width;
+        public readonly IBrush Auto = auto; // the AutoForeground baked in — the screen's and the paper's differ
         public readonly Avalonia.Media.TextFormatting.TextLayout Layout = layout;
         public long Stamp; // last use, for TrimLayoutCache
     }
@@ -1474,7 +1482,7 @@ public partial class RichEditor : Control
             size = HeadingFontSize(p.HeadingLevel);
             weight = FontWeight.Bold;
         }
-        var brush = first?.Foreground ?? DefaultForeground;
+        var brush = first?.Foreground ?? AutoForeground;
         var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), PtToPx(size), brush);
         const double gap = 6;
@@ -1610,13 +1618,14 @@ public partial class RichEditor : Control
 
         // Trusted pass (no content change since the last build): skip the signature hash and reuse
         // the same-width cached layout directly. Falls through to the verified path on a width/miss.
-        if (_trustLayoutCache && _layoutCache.TryGetValue(p, out var trusted) && trusted.Width == maxWidth)
+        var auto = AutoForeground;
+        if (_trustLayoutCache && _layoutCache.TryGetValue(p, out var trusted) && trusted.Width == maxWidth && trusted.Auto == auto)
         {
             trusted.Stamp = ++_layoutStamp;
             return trusted.Layout;
         }
         long sig = ParagraphSig(p);
-        if (_layoutCache.TryGetValue(p, out var cached) && cached.Width == maxWidth && cached.Sig == sig)
+        if (_layoutCache.TryGetValue(p, out var cached) && cached.Width == maxWidth && cached.Sig == sig && cached.Auto == auto)
         {
             cached.Stamp = ++_layoutStamp;
             return cached.Layout;
@@ -1634,7 +1643,7 @@ public partial class RichEditor : Control
             // whole document for nothing, and 20,000 cells took 77 s to draw (1.3.0 audit). Doubling keeps it amortized.
             _layoutPruneAt = Math.Max(LayoutPruneCap, 2 * _layoutCache.Count);
         }
-        _layoutCache[p] = new LayoutEntry(sig, maxWidth, layout) { Stamp = ++_layoutStamp };
+        _layoutCache[p] = new LayoutEntry(sig, maxWidth, auto, layout) { Stamp = ++_layoutStamp };
         return layout;
     }
 
@@ -1649,7 +1658,7 @@ public partial class RichEditor : Control
         var defaultFamily = DefaultFontFamily;
         double defaultSize = DefaultFontSize; // pt; kept in pt for the run-size fallback below
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-            new Typeface(defaultFamily), PtToPx(defaultSize), null, DefaultForeground);
+            new Typeface(defaultFamily), PtToPx(defaultSize), null, AutoForeground);
 
         // A heading's look is on its runs (HeadingStyle); the preset here is only for text not typed yet — the
         // composition fallback and the line height of an empty heading.
@@ -1673,7 +1682,7 @@ public partial class RichEditor : Control
                     typeface,
                     PtToPx(size),
                     decos,
-                    r.Foreground ?? DefaultForeground,
+                    r.Foreground ?? AutoForeground,
                     r.Background);
                 segs.Add(new LayoutSeg { Text = r.Text, Props = props });
             }
@@ -1718,12 +1727,12 @@ public partial class RichEditor : Control
             // the IME committed. An empty paragraph has no run to read, hence the heading-aware fallback.
             var fallback = heading
                 ? new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-                    new Typeface(defaultFamily, FontStyle.Normal, FontWeight.Bold), PtToPx(headingSize), null, DefaultForeground)
+                    new Typeface(defaultFamily, FontStyle.Normal, FontWeight.Bold), PtToPx(headingSize), null, AutoForeground)
                 : defaultProps;
             var src = PreeditSourceProps(segs, preeditOffset, fallback);
             var preeditProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                 src.Typeface, src.FontRenderingEmSize, TextDecorations.Underline,
-                src.ForegroundBrush ?? DefaultForeground, src.BackgroundBrush);
+                src.ForegroundBrush ?? AutoForeground, src.BackgroundBrush);
             SplicePreedit(segs, preeditOffset, preeditText!, preeditProps);
         }
 

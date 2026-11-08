@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   view saved and showed pages. Test: `ViewPageBoundaryTests`.
 - Read-only, `ReplaceNext` does nothing and returns `false`, as `ReplaceAll` does. It moved the selection to the next match
   and returned `true` for a replacement that never happened. Test: `ReplaceNextReadOnlyTests`.
+- Text with no colour of its own is black on white paper — page view with page boundaries, printing, PDF — whatever
+  `DefaultForeground` is. A dark-theme host's light grey drew faint text on the paper. `DefaultForeground` still colours
+  the host's own canvas (continuous view). Test: `AutoForegroundOnPaperRenderTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 

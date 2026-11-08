@@ -382,13 +382,14 @@ public partial class RichEditor
             // the screen's scale would print them at screen sharpness.
             double screenScale = _imagePixelScale;
             _imagePixelScale = Math.Max(screenScale, PrintImageDpi / 96.0);
+            _onPaper = true; // automatic text is black on the paper (see AutoForeground)
             try
             {
                 using (ctx.PushClip(clip))
                 using (ctx.PushTransform(Avalonia.Matrix.CreateTranslation(PagePadLeft, PagePadTop - sliceTop)))
                     DrawDocumentBlocks(ctx, contentW, sliceTop, sliceBottom, chrome: false);
             }
-            finally { _imagePixelScale = screenScale; }
+            finally { _imagePixelScale = screenScale; _onPaper = false; }
         }
         DrawPageMarginChrome(ctx, new Rect(0, 0, paperW, paperH), pageIndex, breaks.Count);
     }
