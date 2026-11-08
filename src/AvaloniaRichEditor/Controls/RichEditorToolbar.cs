@@ -214,8 +214,12 @@ public partial class RichEditorToolbar : UserControl
     // A picker's popup takes focus while it is open, so the caret stops being painted and the next
     // keystroke would go to whatever the popup left focused. Hand focus back to the editor on close —
     // the same guarantee the strip's buttons give by refusing focus outright.
-    private Flyout PickerFlyout(Flyout f)
+    // `content`, when given, is built the first time the picker opens: the panels behind the pickers (two 40-swatch
+    // palettes, an 80-cell table grid, the list and spacing menus) were over half of each strip build, built again with
+    // every rebuild and kept alive though most are never opened (2026-11-09).
+    private Flyout PickerFlyout(Flyout f, Func<Control>? content = null)
     {
+        if (content != null) f.Opening += (_, _) => f.Content ??= content();
         f.Closed += (_, _) => Target?.Focus();
         return f;
     }
@@ -296,6 +300,10 @@ public partial class RichEditorToolbar : UserControl
         _tableBtn = _imageBtn = _dividerBtn = _findBtn = null;
         _zoomCombo = _paperCombo = _orientCombo = null; _exportBtn = _importBtn = _printBtn = null;
         _colorSwatch = _highlightSwatch = null; _colorIconHost = _highlightIconHost = null;
+
+        // No target, no strip: the toolbar is hidden then (ApplyFlags) and the target's arrival rebuilds it, so a toolbar
+        // made before its editor is assigned builds once instead of once per property (each build is a whole strip).
+        if (Target == null) { Content = null; ApplyFlags(); return; }
 
         bool ro = Target?.IsReadOnly == true;
         var lvl = EffectiveLevel();
@@ -607,6 +615,8 @@ public partial class RichEditorToolbar : UserControl
             (btn.Flyout as FlyoutBase)?.Hide();
         }
 
+        btn.Flyout = PickerFlyout(new Flyout(), () =>
+        {
         var grid = new UniformGrid { Columns = 8 };
         foreach (var hex in Palette)
         {
@@ -639,7 +649,8 @@ public partial class RichEditorToolbar : UserControl
         hexRow.Children.Add(applyBtn);
         panel.Children.Add(hexRow);
 
-        btn.Flyout = PickerFlyout(new Flyout { Content = panel });
+        return panel;
+        });
         return btn;
     }
 
@@ -670,6 +681,8 @@ public partial class RichEditorToolbar : UserControl
         };
         ToolTip.SetTip(btn, Loc("InsertTable"));
 
+        btn.Flyout = PickerFlyout(new Flyout(), () =>
+        {
         const int rows = 8, cols = 10;
         var cells = new Border[rows, cols];
         var grid = new UniformGrid { Columns = cols, Rows = rows };
@@ -707,7 +720,8 @@ public partial class RichEditorToolbar : UserControl
         var panel = new StackPanel { Spacing = 4 };
         panel.Children.Add(grid);
         panel.Children.Add(label);
-        btn.Flyout = PickerFlyout(new Flyout { Content = panel });
+        return panel;
+        });
         return btn;
     }
 
@@ -776,7 +790,9 @@ public partial class RichEditorToolbar : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
         ToolTip.SetTip(presets, Loc("LineSpacing"));
-        var flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft });
+        Flyout flyout = null!;
+        flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft }, () =>
+        {
         var panel = new StackPanel { MinWidth = 64 };
         foreach (var pct in SpacingPercents)
         {
@@ -792,7 +808,8 @@ public partial class RichEditorToolbar : UserControl
             item.Click += (_, _) => { ApplySpacingPercent(p); flyout.Hide(); };
             panel.Children.Add(item);
         }
-        flyout.Content = panel;
+        return panel;
+        });
         row.Children.Add(presets);   // dropdown before the spinner
         row.Children.Add(steppers);
 
@@ -861,7 +878,9 @@ public partial class RichEditorToolbar : UserControl
             Padding = new Thickness(2, 0), MinWidth = 16, VerticalAlignment = VerticalAlignment.Center,
         };
         ToolTip.SetTip(presets, tip);
-        var flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft });
+        Flyout flyout = null!;
+        flyout = PickerFlyout(new Flyout { Placement = Avalonia.Controls.PlacementMode.BottomEdgeAlignedLeft }, () =>
+        {
         var panel = new StackPanel { MinWidth = 64 };
         foreach (var (style, g) in options)
         {
@@ -876,7 +895,8 @@ public partial class RichEditorToolbar : UserControl
             item.Click += (_, _) => { Target?.SetListStyle(s); flyout.Hide(); };
             panel.Children.Add(item);
         }
-        flyout.Content = panel;
+        return panel;
+        });
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(icon); row.Children.Add(preview); row.Children.Add(presets);

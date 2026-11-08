@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
+
+- A `RichEditorView`'s first frame allocated about 7.8 MB, nearly all of it the toolbar: the strip was built once per
+  property set (constructor, `Target`, `ToolbarLevel`), and every build made the pickers' panels too — two colour
+  palettes, the 80-cell table grid, the list and line-spacing menus — though most are never opened. A toolbar without a
+  `Target` builds no strip now, and each picker's panel is made the first time it opens. `RichEditorToolbar.Palette` is
+  read then, so set it before a colour picker first opens. Test: `ToolbarLazyBuildTests`.
+
 ### Fixed — documents that opened but could not be saved, and an RTF token that emptied a file (2026-11-08)
 
 - HTML numbers were read with `double.TryParse`, which takes `Infinity`, `NaN`, `1e400` and a 400-digit number. Such a

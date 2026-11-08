@@ -83,7 +83,11 @@ public class ToolbarClickInteractionTests : IDisposable
         host.Key(Avalonia.Input.Key.A, Avalonia.Input.RawInputModifiers.Control);
         var colourBtn = Buttons(toolbar).First(b =>
             ToolTip.GetTip(b) is string t && t == RichEditorLocalization.GetString("TextColor"));
-        var panel = (Panel)((Flyout)colourBtn.Flyout!).Content!;
+        // The picker's panel is built the first time it opens (lazy build).
+        var flyout = (Flyout)colourBtn.Flyout!;
+        flyout.ShowAt(colourBtn);
+        host.Pump();
+        var panel = (Panel)flyout.Content!;
         var auto = panel.Children.OfType<Button>().Single(b =>
             Equals(b.Content, RichEditorLocalization.GetString("AutoColor")));
 
