@@ -1812,9 +1812,11 @@ internal sealed class RtfWriter
             }
             else if (blk is DividerBlock)
             {
+                // No per-cell rule, as on the WinUI control (2026-11-09): written as a bottom border with no \pard after it,
+                // the border could run on into the cell's next paragraphs in Word, and this reader ignores borders in a
+                // cell anyway. The break keeps the blocks apart.
                 if (!first) _body.Append(@"\par ");
                 first = false;
-                _body.Append(@"\brdrb\brdrs\brdrw10\brsp20 ");
             }
         }
         return wroteNested;

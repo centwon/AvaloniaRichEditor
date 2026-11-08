@@ -76,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Test: `RtfCellParagraphTests`.
 - RTF: each table row states its definition again right before `\row`, as Word writes it. HWP needs it there, and
   without it dropped the table and pasted the cells as plain lines. Test: `RtfRowDefinitionRepeatTests`.
+- RTF: a divider inside a table cell is no longer written as a bottom border, which had no `\pard` after it and could
+  run on into the cell's next paragraphs in Word. Test: `RtfCellDividerTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
