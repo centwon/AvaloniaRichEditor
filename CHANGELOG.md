@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Page view: a table or picture that moved whole to the next page was still drawn on the previous one — its top edge as a
   1-px line at the page's end and, when selected, its frame across the room it left — and the room acted like the object
   (hovering showed the move cursor). Tests: `PageRoomClickTests`, `PageSliceRenderTests`.
+- Page view: dragging a table row or a picture larger, past the end of its page, made the page flicker — the row height
+  swung back and forth as it moved between pages. The drag's travel is measured on screen now. Test: `RowResizePageViewTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 

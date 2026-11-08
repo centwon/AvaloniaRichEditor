@@ -155,6 +155,11 @@ public partial class RichEditor
         // Page view: all downstream geometry (hit-tests, resize handles, caret placement) lives in
         // document space, so the pointer position is mapped once here. Identity when page view is off.
         var point = MapViewToDoc(e.GetPosition(this));
+        // Resize drags measure the pointer's travel in VIEW space: in page view a row or picture that grows past the page
+        // moves to the next one, the page breaks move with it, and the same screen point maps to another document Y — the
+        // travel measured in document space shrank, the row fitted again and came back, and the next move pushed it over:
+        // the page flickered while dragging (2026-11-08).
+        var surface = e.GetPosition(this);
 
         if (e.GetCurrentPoint(this).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
@@ -192,8 +197,8 @@ public partial class RichEditor
                     _initialImageWidth = h.drawnW > 0 ? h.drawnW : (h.img.Width > 0 ? h.img.Width : 200);
                     _initialImageHeight = h.drawnH > 0 ? h.drawnH : (h.img.Height > 0 ? h.img.Height : 200);
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
-                    _initialImageMouseX = point.X;
-                    _initialImageMouseY = point.Y;
+                    _initialImageMouseX = surface.X;
+                    _initialImageMouseY = surface.Y;
                     _resizeGrip = h.grip;
                     e.Pointer.Capture(this);
                     return;
@@ -212,8 +217,8 @@ public partial class RichEditor
                     _initialImageWidth = h.img.Width > 0 ? h.img.Width : 16;
                     _initialImageHeight = h.img.Height > 0 ? h.img.Height : 16;
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
-                    _initialImageMouseX = point.X;
-                    _initialImageMouseY = point.Y;
+                    _initialImageMouseX = surface.X;
+                    _initialImageMouseY = surface.Y;
                     _resizeGrip = h.grip;
                     e.Pointer.Capture(this);
                     return;
@@ -249,7 +254,7 @@ public partial class RichEditor
                     _isResizingRow = true;
                     _resizingRowTable = b.tb;
                     _resizingRowIndex = b.rowIndex;
-                    _initialMouseY = point.Y;
+                    _initialMouseY = surface.Y;
                     _initialRowHeight = b.height; // current rendered row height (content- or user-driven)
                     e.Pointer.Capture(this);
                     return;
@@ -571,10 +576,11 @@ public partial class RichEditor
         }
 
         var point = MapViewToDoc(e.GetPosition(this)); // document space, same as OnPointerPressed
+        var surface = e.GetPosition(this); // resize drags: travel in view space (see OnPointerPressed)
 
         if (_isResizingInline && _resizingInline != null)
         {
-            var (w, h, moved) = ResizedImageSize(point, 8);
+            var (w, h, moved) = ResizedImageSize(surface, 8);
             if (moved) PushDragUndoOnce(); // the drag really moved -> now it's an edit
             _resizingInline.Width = w;
             _resizingInline.Height = h;
@@ -584,7 +590,7 @@ public partial class RichEditor
 
         if (_isResizingImage && _resizingImage != null)
         {
-            var (w, h, moved) = ResizedImageSize(point, 20);
+            var (w, h, moved) = ResizedImageSize(surface, 20);
             if (moved) PushDragUndoOnce();
             _resizingImage.Width = w;
             _resizingImage.Height = h;
@@ -641,7 +647,7 @@ public partial class RichEditor
 
         if (_isResizingRow && _resizingRowTable != null)
         {
-            double diff = point.Y - _initialMouseY;
+            double diff = surface.Y - _initialMouseY;
             if (diff != 0) PushDragUndoOnce();
             while (_resizingRowTable.RowHeights.Count <= _resizingRowIndex)
                 _resizingRowTable.RowHeights.Add(0);
