@@ -896,14 +896,17 @@ public partial class RichEditor : Control
         // arrowing into an empty inline table from a file threw out of the key handler (round 35).
         for (int i = blocks.Count - 1; i >= 0; i--)
             if (blocks[i] is TableBlock t && !HasGrid(t)) blocks.RemoveAt(i);
+        // One empty run, as an Enter split leaves and as the WinUI control writes: with none, the same document saved as
+        // different JSON in the two controls (2026-11-08).
+        static Paragraph Empty(object parent) => new() { Parent = parent, Inlines = { new Run { Text = "" } } };
         if (blocks.Count == 0 || blocks[0] is not Paragraph)
-            blocks.Insert(0, new Paragraph { Parent = parent });
+            blocks.Insert(0, Empty(parent));
         if (blocks[blocks.Count - 1] is not Paragraph)
-            blocks.Add(new Paragraph { Parent = parent });
+            blocks.Add(Empty(parent));
         for (int i = 0; i < blocks.Count - 1; i++)
         {
             if (blocks[i] is not Paragraph && blocks[i + 1] is not Paragraph)
-                blocks.Insert(i + 1, new Paragraph { Parent = parent });
+                blocks.Insert(i + 1, Empty(parent));
         }
         foreach (var b in blocks)
         {

@@ -941,6 +941,9 @@ internal sealed class RtfParser
             return;
         }
         _paraBottomBorder = false;
+        // A blank line holds one empty run, as the editor's own empty paragraphs do: with none, a blank line the editor
+        // added and saved came back different, and the same document saved as different JSON (2026-11-08).
+        if (_para.Inlines.Count == 0) _para.Inlines.Add(new Run { Text = "" });
         _doc.Blocks.Add(_para);
         _para = new Paragraph();
     }
