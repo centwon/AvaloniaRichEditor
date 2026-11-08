@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A link is drawn link blue unless it has a colour of its own, and always underlined — a struck-through link too. It was
   drawn in the plain text colour, and lost its underline once it carried a strikethrough. The caret format reports the
   link as drawn, so Ctrl+U on any link has nothing to change. Tests: `LinkLookTests`, `CaretFormatReportTests` (updated).
+- `SetLineHeight` clears a proportional `LineSpacing`, and `SetLineSpacing` a fixed `LineHeight`. A fixed height set on a
+  paragraph with a proportional spacing changed nothing on screen and the file kept both. Test: `LineSpacingExclusiveTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 

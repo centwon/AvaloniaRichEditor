@@ -205,13 +205,17 @@ public partial class RichEditor
         => ApplyToSelectedParagraphs(p => p.TextAlignment = align, p => p.TextAlignment == align);
     /// <summary>Sets the absolute line-box height (px) of every selected paragraph ("exactly" spacing).
     /// Prefer <see cref="SetLineSpacing"/> for proportional spacing that scales with font size.</summary>
+    // Setting either form clears the other, as on the WinUI control: a fixed height set on a paragraph with a proportional
+    // spacing changed nothing on screen (the spacing wins) and the file kept both (2026-11-09). Equals: NaN matches NaN.
     public void SetLineHeight(double height)
-        => ApplyToSelectedParagraphs(p => p.LineHeight = height, p => p.LineHeight.Equals(height)); // Equals: NaN matches NaN
+        => ApplyToSelectedParagraphs(p => { p.LineHeight = height; p.LineSpacing = double.NaN; },
+            p => p.LineHeight.Equals(height) && double.IsNaN(p.LineSpacing));
     /// <summary>Sets proportional line spacing on every selected paragraph as HWP % ÷ 100 — line box =
     /// largest font size × <paramref name="multiplier"/> (1.6 = 160%). <see cref="double.NaN"/> clears it
     /// (back to the HWP default 160%).</summary>
     public void SetLineSpacing(double multiplier)
-        => ApplyToSelectedParagraphs(p => p.LineSpacing = multiplier, p => p.LineSpacing.Equals(multiplier));
+        => ApplyToSelectedParagraphs(p => { p.LineSpacing = multiplier; p.LineHeight = double.NaN; },
+            p => p.LineSpacing.Equals(multiplier) && double.IsNaN(p.LineHeight));
     /// <summary>Toggles a bullet list on the selected paragraphs.</summary>
     public void ToggleBullet() { SetListType(ListKind.Bullet); }
     /// <summary>Toggles a numbered list on the selected paragraphs.</summary>
