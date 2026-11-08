@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — documents that opened but could not be saved, and an RTF token that emptied a file (2026-11-08)
+
+- HTML numbers were read with `double.TryParse`, which takes `Infinity`, `NaN`, `1e400` and a 400-digit number. Such a
+  value — in `line-height`, `margin-left`, a `<col width>`, the paragraph-spacing marker — went into the model, and every
+  later JSON or `.flow` save of the document threw. The HTML reader now keeps only finite numbers, after unit conversion
+  too (`1e308pt` is infinite in px).
+- Tables nested more than about 12 deep could not be saved: JSON's default depth is 64, while the HTML reader builds
+  tables as deep as its DOM bound and the RTF reader to 32 levels. Reading and writing now allow a depth of 320.
+- RTF `\sl-2147483648` overflowed `Math.Abs`, and the reader's guard returned an empty document for the whole file.
+- Test: `SaveFailureFixesTests`.
+- A `.flow` package bounded each picture (256 MB) but not their sum: a document referring to many highly compressed
+  pictures inflated without limit. Past 1 GB of pictures the package is now refused as unreadable.
+- Pasting HTML requested every distinct remote picture at once, each up to 256 MB. Only the first 64 are fetched now;
+  the rest are skipped like a failed download.
+- Test: `InputTotalBoundsTests`.
+
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
 - The hit-tests walked the document from its first block on every call: a hover twice per mouse move, a click or

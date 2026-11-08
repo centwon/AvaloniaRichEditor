@@ -36,6 +36,10 @@ namespace AvaloniaRichEditor.Formatters
         // Shared across all parses: a new HttpClient per <img> leaks sockets.
         private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
         private static readonly TimeSpan RemoteImageBudget = TimeSpan.FromSeconds(5);
+        // Only the first this-many distinct remote pictures are fetched; the rest are skipped like a failed fetch. All are
+        // requested at once, each up to MaxPictureBytes, and the pasted page chose how many: a page of a thousand <img>
+        // was a thousand simultaneous downloads (2026-11-08).
+        internal const int MaxRemoteImages = 64;
         // Per-parse flags (set from the parameters below); LoadImage is deeply nested, so these ride
         // on the thread instead of being threaded through every walker.
         [ThreadStatic] private static bool _blockLocalFileImages;
@@ -180,6 +184,7 @@ namespace AvaloniaRichEditor.Formatters
                 .Select(n => Attr(n, "src"))
                 .Where(s => s.StartsWith("http"))
                 .Distinct()
+                .Take(MaxRemoteImages)
                 .ToList();
             if (urls.Count == 0) return result;
 
@@ -618,10 +623,9 @@ namespace AvaloniaRichEditor.Formatters
             if (string.IsNullOrEmpty(v)) return;
             var parts = v.Split(',');
             if (parts.Length != 3) return;
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
-            if (double.TryParse(parts[0], System.Globalization.NumberStyles.Float, inv, out double t)) p.MarginTop = t;
-            if (double.TryParse(parts[1], System.Globalization.NumberStyles.Float, inv, out double b)) p.MarginBottom = b;
-            if (double.TryParse(parts[2], System.Globalization.NumberStyles.Float, inv, out double r)) p.MarginRight = r;
+            if (TryFinite(parts[0], System.Globalization.NumberStyles.Float, out double t)) p.MarginTop = t;
+            if (TryFinite(parts[1], System.Globalization.NumberStyles.Float, out double b)) p.MarginBottom = b;
+            if (TryFinite(parts[2], System.Globalization.NumberStyles.Float, out double r)) p.MarginRight = r;
         }
 
         // CSS line-height into the paragraph: "160%" or a unitless "1.6" is a multiple of the font size —
@@ -631,13 +635,12 @@ namespace AvaloniaRichEditor.Formatters
         {
             var v = ReadStyleValue(node, "line-height")?.Trim();
             if (string.IsNullOrEmpty(v) || v.Equals("normal", StringComparison.OrdinalIgnoreCase)) return;
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
             const System.Globalization.NumberStyles fl = System.Globalization.NumberStyles.Float;
-            if (v.EndsWith("%", StringComparison.Ordinal) && double.TryParse(v[..^1], fl, inv, out var pct) && pct > 0)
+            if (v.EndsWith("%", StringComparison.Ordinal) && TryFinite(v[..^1], fl, out var pct) && pct > 0)
                 p.LineSpacing = pct / 100.0;
-            else if (v.EndsWith("px", StringComparison.OrdinalIgnoreCase) && double.TryParse(v[..^2], fl, inv, out var px) && px > 0)
+            else if (v.EndsWith("px", StringComparison.OrdinalIgnoreCase) && TryFinite(v[..^2], fl, out var px) && px > 0)
                 p.LineHeight = px;
-            else if (double.TryParse(v, fl, inv, out var mult) && mult > 0)
+            else if (TryFinite(v, fl, out var mult) && mult > 0)
                 p.LineSpacing = mult;
         }
 
@@ -876,10 +879,18 @@ namespace AvaloniaRichEditor.Formatters
             return scheme is "javascript" or "vbscript" or "data" ? null : href;
         }
 
+        // double.TryParse takes "Infinity", "NaN" and 1e400 (and so a 400-digit number), and JSON cannot write any of them:
+        // one such value from a pasted page made every later save of the document throw (2026-11-08).
+        private static bool TryFinite(string? s, System.Globalization.NumberStyles style, out double v)
+            => double.TryParse(s, style, System.Globalization.CultureInfo.InvariantCulture, out v) && TryFinite(v, out v);
+        private static bool TryFinite(string? s, out double v)
+            => TryFinite(s, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, out v);
+        private static bool TryFinite(double d, out double v) { v = d; return double.IsFinite(d); }
+
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
         {
             var a = Attr(node, attr);
-            if (double.TryParse(a, System.Globalization.CultureInfo.InvariantCulture, out var v)) return v;
+            if (TryFinite(a, out var v)) return v;
             var style = Attr(node, "style");
             if (!string.IsNullOrEmpty(style))
             {
@@ -887,7 +898,7 @@ namespace AvaloniaRichEditor.Formatters
                 // height, max-width as a size to force. (Code review 2026-11-01.)
                 var m = System.Text.RegularExpressions.Regex.Match(style, "(?<![\\w-])" + cssProp + "\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var px)) return px;
+                if (m.Success && TryFinite(m.Groups[1].Value, out var px)) return px;
             }
             return double.NaN;
         }
@@ -1049,8 +1060,8 @@ namespace AvaloniaRichEditor.Formatters
             var style = Attr(node, "style").ToLowerInvariant();
             var m = RxMarginLeft.Match(style);
             if (!m.Success) m = RxPaddingLeft.Match(style);
-            if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0)
-                return m.Groups[2].Value == "pt" ? v * 96.0 / 72.0 : v;
+            if (m.Success && TryFinite(m.Groups[1].Value, out var v) && v > 0 && TryFinite(m.Groups[2].Value == "pt" ? v * 96.0 / 72.0 : v, out var px))
+                return px;
             return 0;
         }
 

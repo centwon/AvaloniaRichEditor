@@ -965,7 +965,8 @@ internal sealed class RtfParser
         // \slmult is Word's multiple of the natural line (≈1.2 × the size); LineSpacing is HWP's ratio of
         // the size, so ratio = N/240 × 1.2 = N/200 (the writer's inverse).
         if (_slMult) { _para.LineSpacing = _slTwips / 200.0; _para.LineHeight = double.NaN; }
-        else { _para.LineHeight = Math.Abs(_slTwips) / 15.0; _para.LineSpacing = double.NaN; } // "at least" ≈ exact
+        // In double: Math.Abs(int.MinValue) throws, and one \sl-2147483648 emptied the whole document (2026-11-08).
+        else { _para.LineHeight = Math.Abs((double)_slTwips) / 15.0; _para.LineSpacing = double.NaN; } // "at least" ≈ exact
     }
 
     // ---- tables ----
