@@ -1497,7 +1497,8 @@ namespace AvaloniaRichEditor.Formatters
             if (r.FontSize > 0 && System.Math.Abs(r.FontSize - assumed) > 0.01)
                 styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt");
             // <h1>..<h6> is bold to every reader (browsers, Word, this one), so un-bolded heading text says so.
-            if (inHeading && r.FontWeight != FontWeight.Bold) styles.Add("font-weight:normal");
+            // Bold is one bit: SemiBold and up (600+), as on the WinUI control (2026-11-09).
+            if (inHeading && (int)r.FontWeight < 600) styles.Add("font-weight:normal");
             if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
             if (r.Background is ISolidColorBrush bg) styles.Add($"background-color:{CssColor(bg.Color)}");
 
@@ -1514,7 +1515,7 @@ namespace AvaloniaRichEditor.Formatters
             // unrecognized decoration declaration can make Word discard the whole style (losing colour).
             if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline)) t = $"<u>{t}</u>";
             if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough)) t = $"<s>{t}</s>";
-            if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
+            if ((int)r.FontWeight >= 600) t = $"<b>{t}</b>";
             if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
             // The readers drop script links, but a host's SetHyperlink reaches here without passing one — the
             // same check, so no script link leaves in exported or clipboard HTML whatever put it in the document.

@@ -1639,7 +1639,8 @@ internal sealed class RtfWriter
         if (link)
             _body.Append(@"{\field{\*\fldinst{HYPERLINK """).Append(EscapeText(href!.Replace("\"", "%22"))).Append("\"}}{\\fldrslt ");
         _body.Append('{');
-        if (r.FontWeight == FontWeight.Bold) _body.Append(@"\b");
+        // Bold is one bit here: SemiBold and up (600+), as on the WinUI control — ExtraBold/Black went out not bold (2026-11-09).
+        if ((int)r.FontWeight >= 600) _body.Append(@"\b");
         if (r.FontStyle == FontStyle.Italic) _body.Append(@"\i");
         if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline) || link) _body.Append(@"\ul");
         if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough)) _body.Append(@"\strike");

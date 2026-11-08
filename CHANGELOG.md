@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pictures the copy just wrote under `%TEMP%` (as `file:` or `ms-clipboard-file:`). A paste (`ParseHtml`, `ParseHtmlAsync`)
   now takes pictures from `%TEMP%` only; the editor's `LoadHtml`/`InsertHtml` still read no local file, and nothing
   outside `%TEMP%` is read. Test: `TempFilePasteImageTests`.
+- RTF and HTML write a run bold from SemiBold (600) up. Only exactly 700 was written bold, so an ExtraBold or Black run
+  lost its weight entirely in Word or a browser. Test: `BoldFromSemiboldTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
