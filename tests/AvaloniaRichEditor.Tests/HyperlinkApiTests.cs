@@ -59,15 +59,15 @@ public class HyperlinkApiTests
     }
 
     [AvaloniaFact]
-    public void SetHyperlink_LinksTheSelection_AndNullOrEmptyRemovesIt()
+    public void SetHyperlink_LinksTheSelection_Trimmed_AndBlankRemovesIt()
     {
         var ed = Editor();
         Select(ed, 9, 14); // "plain"
 
-        ed.SetHyperlink("https://example.org/");
+        ed.SetHyperlink("  https://example.org/ "); // trimmed, like the WinUI port
         Assert.Equal("https://example.org/", First(ed).Inlines.OfType<Run>().Single(r => r.Text == "plain").NavigateUri);
 
-        ed.SetHyperlink(""); // the unlinked run may merge back into its neighbour, so check by address
+        ed.SetHyperlink("  "); // blank removes it; the unlinked run may merge back into its neighbour, so check by address
         Assert.DoesNotContain(First(ed).Inlines.OfType<Run>(), r => r.NavigateUri is { Length: > 0 } u && u != Url);
     }
 
@@ -102,7 +102,7 @@ public class HyperlinkApiTests
         Select(ed, 9, 14);
         var point = PointOnLink(ed);
 
-        Assert.True(ed.TrySetHyperlinkAt(point, "https://example.org/"));
+        Assert.True(ed.TrySetHyperlinkAt(point, "  https://example.org/ ")); // trimmed
 
         var runs = First(ed).Inlines.OfType<Run>().ToList();
         Assert.Equal("https://example.org/", runs.Single(r => r.Text == "link").NavigateUri);
@@ -114,7 +114,7 @@ public class HyperlinkApiTests
     }
 
     [AvaloniaFact]
-    public void TrySetHyperlinkAt_NullRemovesTheLink_AndReportsNoLinkOrReadOnly()
+    public void TrySetHyperlinkAt_BlankRemovesTheLink_AndReportsNoLinkOrReadOnly()
     {
         var ed = Editor();
         var point = PointOnLink(ed);
@@ -126,7 +126,7 @@ public class HyperlinkApiTests
         Assert.Equal(Url, First(ed).Inlines.OfType<Run>().Single(r => r.Text == "link").NavigateUri);
 
         ed.IsReadOnly = false;
-        Assert.True(ed.TrySetHyperlinkAt(point, null));
+        Assert.True(ed.TrySetHyperlinkAt(point, " "));
         Assert.Null(First(ed).Inlines.OfType<Run>().Single(r => r.Text == "link").NavigateUri);
         Assert.Null(ed.GetHyperlinkAt(point));
     }
