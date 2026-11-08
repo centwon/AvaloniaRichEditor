@@ -27,26 +27,29 @@ public partial class RichEditor
 
     /// <summary>
     ///     Links the selection to <paramref name="url" /> — or, with no selection, the word at the caret, like the
-    ///     other formatting commands. <see langword="null" /> or empty removes the link. Does nothing when the
-    ///     editor is read-only.
+    ///     other formatting commands. The address is trimmed; <see langword="null" />, empty or blank removes the
+    ///     link. Does nothing when the editor is read-only.
     /// </summary>
-    public void SetHyperlink(string? url) => SetHyperlink(string.IsNullOrEmpty(url) ? null : url, null);
+    public void SetHyperlink(string? url) => SetHyperlink(NormalizeLinkUrl(url), null);
 
     /// <summary>
     ///     Changes the target of the link under <paramref name="point" /> to <paramref name="url" />, or removes the
-    ///     link when it is <see langword="null" /> or empty. The selection is left as it is. The point is relative
-    ///     to this editor, as <c>e.GetPosition(editor)</c> gives it.
+    ///     link when it is <see langword="null" />, empty or blank (the address is trimmed). The selection is left
+    ///     as it is. The point is relative to this editor, as <c>e.GetPosition(editor)</c> gives it.
     /// </summary>
     /// <returns><see langword="false" /> when there is no link at that point or the editor is read-only.</returns>
     public bool TrySetHyperlinkAt(Point point, string? url)
     {
         if (Document == null || IsReadOnly) return false;
         if (GetLinkRunAtPoint(MapViewToDoc(point)) is not { NavigateUri.Length: > 0 } run) return false;
-        if (string.IsNullOrEmpty(url)) url = null;
+        url = NormalizeLinkUrl(url);
         if (run.NavigateUri == url) return true; // unchanged: no empty undo step
         PushUndo();
         run.NavigateUri = url;
         InvalidateVisual();
         return true;
     }
+
+    // Same rule as the WinUI port: a blank address removes the link, any other is trimmed.
+    private static string? NormalizeLinkUrl(string? url) => string.IsNullOrWhiteSpace(url) ? null : url.Trim();
 }
