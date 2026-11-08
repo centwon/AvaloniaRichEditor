@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RichEditorView` no longer turns `ShowPageBoundaries` off. Set by code, that counted as the host's page setup: a host
   that also set a paper size by code saved `"ShowPageBoundaries":false` and saw a borderless column, where the WinUI
   view saved and showed pages. Test: `ViewPageBoundaryTests`.
+- Read-only, `ReplaceNext` does nothing and returns `false`, as `ReplaceAll` does. It moved the selection to the next match
+  and returned `true` for a replacement that never happened. Test: `ReplaceNextReadOnlyTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
