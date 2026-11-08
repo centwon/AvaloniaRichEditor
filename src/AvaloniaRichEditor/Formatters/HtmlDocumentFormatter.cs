@@ -555,8 +555,10 @@ namespace AvaloniaRichEditor.Formatters
         private static readonly System.Text.RegularExpressions.Regex RxFontWeight = new(@"(?<![\w-])font-weight\s*:\s*([^;]+)");
         private static readonly System.Text.RegularExpressions.Regex RxUnderline = new("text-decoration[^;]*underline");
         private static readonly System.Text.RegularExpressions.Regex RxLineThrough = new("text-decoration[^;]*line-through");
-        private static readonly System.Text.RegularExpressions.Regex RxColor = new("(?<![\\w-])color\\s*:\\s*([^;]+)");
-        private static readonly System.Text.RegularExpressions.Regex RxBackground = new("background(?:-color)?\\s*:\\s*([^;]+)");
+        // Colour and highlight are read at the start of a declaration only: matched anywhere, a `color:` inside a font family's
+        // quoted name was the text colour (2026-11-08).
+        private static readonly System.Text.RegularExpressions.Regex RxColor = new("(?:^|;)\\s*color\\s*:\\s*([^;]+)");
+        private static readonly System.Text.RegularExpressions.Regex RxBackground = new("(?:^|;)\\s*background(?:-color)?\\s*:\\s*([^;]+)");
         private static readonly System.Text.RegularExpressions.Regex RxFontFamily = new("font-family\\s*:\\s*([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         private static readonly System.Text.RegularExpressions.Regex RxFontSize = new("font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt|rem|em|%)?");
         private static readonly System.Text.RegularExpressions.Regex RxMarginLeft = new("margin-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");

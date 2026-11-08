@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pasting HTML requested every distinct remote picture at once, each up to 256 MB. Only the first 64 are fetched now;
   the rest are skipped like a failed download.
 - Test: `InputTotalBoundsTests`.
+- The RTF writer let a `javascript:` link out (the HTML writer never has), and wrote a `"` in a link's address as it was,
+  ending the field's address there. Script links now go out as plain text; a quote goes out as `%22`.
+- HTML text colour and highlight were matched anywhere in a style, so `color:` inside a quoted font name became the text
+  colour. They are read at the start of a declaration only.
+- Test: `LinkAndFontNameEscapeTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
