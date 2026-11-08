@@ -280,7 +280,7 @@ public partial class RichEditor
                 _selectedBlock = ci.img;
                 _caretBlock = null;
                 CollapseSelectionToCaret();
-                ResetCaretBlink();
+                ResetCaretBlinkInPlace();
                 InvalidateVisual();
                 ArmObjectDrag(ci.img, point, e); // and dragging it (RichEditor.DragBlock.cs)
                 return;
@@ -317,7 +317,7 @@ public partial class RichEditor
             _selectedBlock = clickedImage;
             _caretBlock = null;
             CollapseSelectionToCaret();
-            ResetCaretBlink();
+            ResetCaretBlinkInPlace();
             InvalidateVisual();
             ArmObjectDrag(clickedImage, point, e);
             return;

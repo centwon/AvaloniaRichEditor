@@ -240,6 +240,7 @@ public partial class RichEditor
         var borderTable = nestedEdge == null ? TableLeftOrTopBorderAtPoint(point) : null;
         var block = (Block?)borderTable ?? GetBlockAtPoint(point);
 
+        bool pictureInPlace = false; // a picture menu leaves the caret where it was — see ResetCaretBlinkInPlace
         if (nestedEdge is { } inlineEdge)
         {
             // A nested table's border — inline, or in a cell: the table as a unit, as a click there selects it —
@@ -251,6 +252,7 @@ public partial class RichEditor
         }
         else if (block is ImageBlock ib)
         {
+            pictureInPlace = true;
             _selectedBlock = ib;
             CollapseSelectionToCaret();
             BuildImageMenu(items, ib);
@@ -259,6 +261,7 @@ public partial class RichEditor
         {
             // A block image inside a table cell (P4-2b): GetBlockAtPoint returns the enclosing table, so
             // detect the image via its rendered rect and give it the same image menu as a top-level one.
+            pictureInPlace = true;
             _selectedBlock = cellImg;
             CollapseSelectionToCaret();
             BuildImageMenu(items, cellImg);
@@ -309,7 +312,8 @@ public partial class RichEditor
             BuildCaretMenu(items, point, hasSelection, MenuCellTable(point, hasSelection));
         }
 
-        ResetCaretBlink();
+        if (pictureInPlace) ResetCaretBlinkInPlace();
+        else ResetCaretBlink();
         InvalidateVisual();
 
         if (items.Count == 0) return;

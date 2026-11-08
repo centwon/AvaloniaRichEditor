@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drawing a table with the mouse from the empty area below the last line: the preview started under the pointer, but the
   table went in after the last line, above where it was shown. The preview starts at the content's bottom now.
   Test: `TableDrawEmptyAreaTests`.
+- Clicking (or right-clicking) a picture while the caret was off-screen scrolled the view to the caret, and clicking a table
+  inside a table cell scrolled it to wherever the caret had last been drawn. The view now stays on what was clicked.
+  Test: `PictureClickScrollTests` (the table-in-a-cell case has no headless test).
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 

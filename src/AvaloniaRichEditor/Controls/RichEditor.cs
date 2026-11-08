@@ -513,6 +513,15 @@ public partial class RichEditor : Control
         NotifyStatus();
     }
 
+    // A click (or right-click) on a block picture selects it where it is — under the pointer, on screen — and leaves the
+    // caret where it was. ResetCaretBlink's caret scroll then carried the view to that caret, off-screen as often as not:
+    // clicking a picture sent the view elsewhere (2026-11-08). The caret blink restarts; the view stays on what was clicked.
+    private void ResetCaretBlinkInPlace()
+    {
+        ResetCaretBlink();
+        _bringCaretIntoView = false;
+    }
+
     private void ResetCaretBlink()
     {
         _isCaretVisible = true;

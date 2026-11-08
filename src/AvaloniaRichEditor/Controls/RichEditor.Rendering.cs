@@ -907,6 +907,11 @@ public partial class RichEditor
 
         // After the caret position is known, scroll it into view if it moved off-screen. Posted (not
         // called inline) so it runs after this layout/render pass rather than re-entering it.
+        // Only with a caret placed THIS frame. A selection that fills cells — a table held whole, which a click on a nested
+        // table's border makes — draws no caret, and the scroll then went to wherever the caret had last been drawn:
+        // clicking a table in a cell sent the view elsewhere (2026-11-08). What was clicked is on screen.
+        if (_bringCaretIntoView && blockCaretRect is null && caretPoint is null)
+            _bringCaretIntoView = false;
         if (_bringCaretIntoView)
         {
             _bringCaretIntoView = false;
