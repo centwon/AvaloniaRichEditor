@@ -1,77 +1,52 @@
-using Avalonia;
+﻿using Avalonia;
 using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Controls;
 
 /// <summary>
-///     Public hyperlink / selection helpers. The editor has always rendered links
-///     (<see cref="Run.NavigateUri" />), round-tripped them through HTML and opened them on click,
-///     but hosts could not build their own link UI: selection state, the link hit test and the
-///     "apply link" operation were all private. This partial exposes the minimum surface a host
-///     needs (for example our toolbar button and the click menu in Corkboard).
+///     Public hyperlink / selection helpers, so a host can build its own link UI (a toolbar button, a menu on
+///     a clicked link) instead of relying on the built-in context menu.
 /// </summary>
 public partial class RichEditor
 {
     /// <summary>
-    ///     <see langword="true" /> when the selection covers at least one character.
+    ///     <see langword="true" /> when text, or a block of table cells, is selected.
     ///     A caret with no selection is <see langword="false" />.
     /// </summary>
-    public bool HasSelection =>
-        _selectionStart.Paragraph is not null
-        && _selectionEnd.Paragraph is not null
-        && _selectionStart.CompareTo(_selectionEnd) != 0;
+    public bool HasSelection => HasTextOrCellSelection;
 
     /// <summary>
-    ///     Returns the hyperlink target of the link under <paramref name="point" /> (view coordinates),
-    ///     or <see langword="null" /> when there is no link there.
+    ///     Returns the target of the link under <paramref name="point" />, or <see langword="null" /> when there is
+    ///     no link there. The point is relative to this editor, as <c>e.GetPosition(editor)</c> gives it.
     /// </summary>
     public string? GetHyperlinkAt(Point point)
     {
-        var run = GetLinkRunAtPoint(point);
-        return string.IsNullOrEmpty(run?.NavigateUri) ? null : run!.NavigateUri;
+        var uri = GetLinkRunAtPoint(MapViewToDoc(point))?.NavigateUri;
+        return string.IsNullOrEmpty(uri) ? null : uri;
     }
 
     /// <summary>
-    ///     Applies <paramref name="url" /> to the current selection (or clears the link when it is
-    ///     <see langword="null" /> / empty). Returns <see langword="false" /> when nothing is selected,
-    ///     the document is read-only, or there is no document.
+    ///     Links the selection to <paramref name="url" /> — or, with no selection, the word at the caret, like the
+    ///     other formatting commands. <see langword="null" /> or empty removes the link. Does nothing when the
+    ///     editor is read-only.
     /// </summary>
-    public bool TrySetHyperlink(string? url)
-    {
-        if (Document is null || IsReadOnly || !HasSelection)
-            return false;
-
-        SetHyperlink(url, null);
-        return true;
-    }
+    public void SetHyperlink(string? url) => SetHyperlink(string.IsNullOrEmpty(url) ? null : url, null);
 
     /// <summary>
-    ///     Applies <paramref name="url" /> to the link run under <paramref name="point" /> (or removes it
-    ///     when the url is <see langword="null" /> / empty). The caret is collapsed at the click position
-    ///     first, so an existing selection elsewhere is never modified by mistake.
+    ///     Changes the target of the link under <paramref name="point" /> to <paramref name="url" />, or removes the
+    ///     link when it is <see langword="null" /> or empty. The selection is left as it is. The point is relative
+    ///     to this editor, as <c>e.GetPosition(editor)</c> gives it.
     /// </summary>
     /// <returns><see langword="false" /> when there is no link at that point or the editor is read-only.</returns>
     public bool TrySetHyperlinkAt(Point point, string? url)
     {
-        if (Document is null || IsReadOnly)
-            return false;
-
-        var run = GetLinkRunAtPoint(point);
-        if (run is null)
-            return false;
-
-        var pointer = GetPositionFromPoint(point);
-        if (pointer.Paragraph is null)
-            return false;
-
-        // Collapse the selection at the click position, mirroring a normal click: TextRange-based
-        // edits inside SetHyperlink prefer the selection, so leaving an unrelated selection would
-        // apply the url to the wrong text.
-        _selectionStart = new TextPointer(pointer.Paragraph, pointer.Offset);
-        _selectionEnd = new TextPointer(pointer.Paragraph, pointer.Offset);
-        _caretPosition = new TextPointer(pointer.Paragraph, pointer.Offset);
-
-        SetHyperlink(url, run);
+        if (Document == null || IsReadOnly) return false;
+        if (GetLinkRunAtPoint(MapViewToDoc(point)) is not { NavigateUri.Length: > 0 } run) return false;
+        if (string.IsNullOrEmpty(url)) url = null;
+        if (run.NavigateUri == url) return true; // unchanged: no empty undo step
+        PushUndo();
+        run.NavigateUri = url;
+        InvalidateVisual();
         return true;
     }
 }
