@@ -498,6 +498,12 @@ public partial class RichEditor
         return new Point(doc.X + PagedContentLeftView, doc.Y + (PagedContentTopView(i) - EnsurePageBreaks()[i]));
     }
 
+    // A click below a page's slice — the room a table or picture left when it moved to the next page, the bottom margin, the
+    // gap — is that page's last line. Clamped to the slice's very end it landed in the grab zone of the object that moved
+    // (its top edge sits at the break): the room acted like the table or picture (2026-11-08). Kept clear of every edge grab
+    // zone (±3).
+    private const double BelowSliceInset = 6;
+
     internal Rect MapDocToView(Rect doc)
         => IsPaged ? new Rect(MapDocToView(doc.TopLeft), doc.Size) : doc;
 
@@ -513,6 +519,7 @@ public partial class RichEditor
             // resolve to that page's first/last line instead of bleeding into the neighboring page.
             double sliceLen = i + 1 < br.Count ? br[i + 1] - br[i] - 0.01 : double.MaxValue;
             double local = Math.Clamp(view.Y - ContentTopView(i), 0, sliceLen);
+            if (view.Y - ContentTopView(i) > sliceLen) local = Math.Max(0, sliceLen - BelowSliceInset);
             return new Point(view.X - PageContentOffsetX, br[i] + local);
         }
         // Bare column: pages are content slices separated by NoChromePageGap (heights vary, so search
@@ -521,6 +528,7 @@ public partial class RichEditor
         while (p < br.Count - 1 && view.Y >= PagedContentTopView(p + 1)) p++;
         double len = (p + 1 < br.Count ? br[p + 1] - br[p] : double.MaxValue) - 0.01;
         double loc = Math.Clamp(view.Y - PagedContentTopView(p), 0, len);
+        if (view.Y - PagedContentTopView(p) > len) loc = Math.Max(0, len - BelowSliceInset);
         return new Point(view.X - NoChromeColX, br[p] + loc);
     }
 

@@ -285,7 +285,11 @@ public partial class RichEditor
                     if (cp != null) { caretPoint = cp; caretHeight = ch; }
                     if (bcr != null) blockCaretRect = bcr;
                 }
-                using (context.PushClip(paper))
+                // The picture chrome (frame, handles) may lie outside the content box, so it is clipped to the paper — but only
+                // down to a little past this page's slice: below it is the room a moved object left, or the next page's part
+                // of a split table (2026-11-08).
+                using (context.PushClip(new Rect(paper.X, paper.Y, paper.Width,
+                           Math.Min(paper.Height, clip.Bottom - paper.Y + ChromeOutset))))
                 using (context.PushTransform(Matrix.CreateTranslation(dx, contentBox.Y - sliceTop)))
                     FlushPictureChrome(context);
             }
@@ -332,6 +336,7 @@ public partial class RichEditor
     // after it under a looser clip than the content's, because they lie OUTSIDE the picture — and a picture
     // opening a page sits exactly on the page's content clip, which cut its top border off (2026-09-23).
     private readonly List<Action<DrawingContext>> _pictureChrome = new();
+    private const double ChromeOutset = 8; // a selection frame (2 outside) and its handles past the object's edge
 
     private void FlushPictureChrome(DrawingContext context)
     {
@@ -356,6 +361,10 @@ public partial class RichEditor
     private (Point? caretPoint, double caretHeight, Rect? blockCaretRect) DrawDocumentBlocks(
         DrawingContext context, double maxWidth, double visTop, double visBottom, bool chrome = true)
     {
+        // In page view a table, picture or divider that starts at the slice's end belongs to the next page (it moved there
+        // whole), and one that ends at the slice's top to the previous one. Drawn here — selected, or only touching the edge —
+        // it left its edge as a 1-px line on this page and its selection frame in the room it left (2026-11-08).
+        bool OnOtherPage(double top, double bottom) => IsPaged && (top >= visBottom - 0.5 || bottom <= visTop + 0.5);
         TextPointer? selStart = null, selEnd = null;
         Dictionary<Paragraph, (int From, int To)>? selectedParagraphs = null;
         int selCmp = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
@@ -402,9 +411,10 @@ public partial class RichEditor
                 // Cull check: skip cell draws + resize-handle registration when fully off-screen
                 // (off-screen handles can't be grabbed). Geometry (tl) is still computed above so
                 // yOffset advances identically. A table being edited (caret in a cell) always draws.
-                bool tbVisible = (tableTop + tl.TotalHeight >= visTop && tableTop <= visBottom)
+                bool tbVisible = !OnOtherPage(tableTop, tableTop + tl.TotalHeight)
+                    && ((tableTop + tl.TotalHeight >= visTop && tableTop <= visBottom)
                     || (_caretPosition?.Paragraph?.Parent as TableCell)?.Parent == tb
-                    || ReferenceEquals(tb, _caretBlock) || ReferenceEquals(tb, _selectedBlock);
+                    || ReferenceEquals(tb, _caretBlock) || ReferenceEquals(tb, _selectedBlock));
                 if (!tbVisible)
                 {
                     yOffset = tableTop + tl.TotalHeight + tb.MarginBottom;
@@ -572,8 +582,9 @@ public partial class RichEditor
                 // Cull check before resolving the picture: that decodes it (N6-2), so skipping it means
                 // off-screen images are never decoded at all. yOffset advances by the
                 // declared size, matching MeasureContentHeight's unconditional advance.
-                if ((yOffset + cullHeight < visTop || yOffset > visBottom)
-                    && !ReferenceEquals(img, _caretBlock) && !ReferenceEquals(img, _selectedBlock))
+                if (OnOtherPage(yOffset, yOffset + cullHeight)
+                    || ((yOffset + cullHeight < visTop || yOffset > visBottom)
+                    && !ReferenceEquals(img, _caretBlock) && !ReferenceEquals(img, _selectedBlock)))
                 {
                     yOffset += cullHeight + img.MarginBottom;
                     continue;
@@ -628,7 +639,7 @@ public partial class RichEditor
             else if (block is DividerBlock dv)
             {
                 orderedIndex = 0;
-                if (yOffset + beHeight >= visTop && yOffset <= visBottom)
+                if (yOffset + beHeight >= visTop && yOffset <= visBottom && !OnOtherPage(yOffset, yOffset + beHeight))
                 {
                     double y = yOffset + beHeight / 2; // beHeight == DividerHeight, from BlockExtent
                     context.DrawLine(GrayBorderPen, new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));

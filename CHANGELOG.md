@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Both follow one rule now: the first pasted paragraph joins the text before the caret and the last the text after it; a
   side that is empty takes the format of the pasted paragraph joining it; equal-format runs rejoin and nothing empty is
   left behind; the caret ends after the pasted content. Test: `PasteSpliceRuleTests`.
+- Page view: a table or picture that moved whole to the next page was still drawn on the previous one — its top edge as a
+  1-px line at the page's end and, when selected, its frame across the room it left — and the room acted like the object
+  (hovering showed the move cursor). Tests: `PageRoomClickTests`, `PageSliceRenderTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
