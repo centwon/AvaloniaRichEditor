@@ -43,6 +43,8 @@ namespace AvaloniaRichEditor.Formatters
         // Per-parse flags (set from the parameters below); LoadImage is deeply nested, so these ride
         // on the thread instead of being threaded through every walker.
         [ThreadStatic] private static bool _blockLocalFileImages;
+        // When set, files under %TEMP% still load while local files are blocked — the paste exemption (see ParseHtml).
+        [ThreadStatic] private static bool _allowTempFileImages;
         // When set, remote (http) <img> sources are skipped entirely (no fetch) — the privacy opt-out
         // pasting HTML otherwise issues HTTP requests, e.g. to tracking pixels.
         [ThreadStatic] private static bool _blockRemoteImages;
@@ -52,12 +54,21 @@ namespace AvaloniaRichEditor.Formatters
 
         /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.
         /// When <paramref name="allowLocalFileImages"/> is false, <c>file://</c> image sources are
-        /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).
+        /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>) — EXCEPT files under
+        /// the user's temp directory, which still load: Word and HWP clipboard HTML reference the pictures the copy itself
+        /// just wrote there, and refusing them drops every image pasted from those applications. (The editor's own
+        /// <see cref="Controls.RichEditor.LoadHtml"/> and <see cref="Controls.RichEditor.InsertHtml"/> do not take this exemption.)
         /// Remote (<c>http</c>) images are <b>not</b> loaded: this overload never performs network I/O,
         /// so it cannot stall the calling thread. Use <see cref="ParseHtmlAsync"/> to fetch them.</summary>
         public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
+            => ParseHtml(html, allowLocalFileImages, allowRemoteImages, allowTempFileImages: true);
+
+        // allowTempFileImages: whether files under %TEMP% still load when local files are blocked — the paste exemption,
+        // as the WinUI control's (2026-11-09). The editor's LoadHtml/InsertHtml pass false.
+        internal static FlowDocument ParseHtml(string html, bool allowLocalFileImages, bool allowRemoteImages, bool allowTempFileImages)
         {
             _blockLocalFileImages = !allowLocalFileImages;
+            _allowTempFileImages = allowTempFileImages;
             _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = null; // no prefetch => remote images are skipped, never fetched here
             var doc = LoadHtmlDoc(ref html);
@@ -68,7 +79,11 @@ namespace AvaloniaRichEditor.Formatters
         /// concurrently off the UI thread first, so a slow network can't freeze the UI while pasting
         /// web content. The document model is still built on the calling thread (Avalonia model
         /// objects are thread-affine), so await this from the UI thread.</summary>
-        public static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
+        public static System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
+            => ParseHtmlAsync(html, allowLocalFileImages, allowRemoteImages, allowTempFileImages: true);
+
+        // See the synchronous overload for allowTempFileImages.
+        internal static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages, bool allowRemoteImages, bool allowTempFileImages)
         {
             var doc = LoadHtmlDoc(ref html);
             // Off-thread: network only — no model objects created here. Skip the network entirely when
@@ -78,6 +93,7 @@ namespace AvaloniaRichEditor.Formatters
                 : new System.Collections.Generic.Dictionary<string, byte[]?>();
             // Back on the calling (UI) thread: build the model, reading the prefetched image bytes.
             _blockLocalFileImages = !allowLocalFileImages;
+            _allowTempFileImages = allowTempFileImages;
             _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = prefetched;
             try { return BuildDocument(doc, html); }
@@ -804,9 +820,12 @@ namespace AvaloniaRichEditor.Formatters
                     _prefetchedRemoteImages.TryGetValue(src, out bytes);
                     if (bytes == null) return (null, null, 0, 0, null);
                 }
-                else if (src.StartsWith("file:"))
+                else if (src.StartsWith("file:") || src.StartsWith("ms-clipboard-file:", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (_blockLocalFileImages) return (null, null, 0, 0, null);
+                    // Some clipboard paths REWRITE file:/// references to the ms-clipboard-file: scheme — treat it as file:, or
+                    // every HWP/Word picture reference misses this branch (as the WinUI control, 2026-11-09).
+                    if (src.StartsWith("ms-clipboard-file:", StringComparison.OrdinalIgnoreCase))
+                        src = "file:" + src.Substring("ms-clipboard-file:".Length);
                     var uri = new Uri(src);
                     // A file on ANOTHER machine (file://host/share/…) is a UNC path, and on Windows touching it
                     // opens an SMB connection that offers the user's NTLM credentials to that host — from a
@@ -814,6 +833,10 @@ namespace AvaloniaRichEditor.Formatters
                     // machine's files; a network share is never read (measured: a 21 s connect attempt).
                     if (uri.IsUnc) return (null, null, 0, 0, null);
                     var path = uri.LocalPath;
+                    // Blocked local files still allow %TEMP% for a caller that takes the paste exemption: Word/HWP CF_HTML
+                    // reference the pictures the COPY itself just wrote there. Anything else (a hostile page referencing user
+                    // files) stays blocked.
+                    if (_blockLocalFileImages && !(_allowTempFileImages && IsTempPath(path))) return (null, null, 0, 0, null);
                     if (System.IO.File.Exists(path)) bytes = System.IO.File.ReadAllBytes(path);
                 }
                 if (bytes == null) return (null, null, 0, 0, null);
@@ -888,6 +911,17 @@ namespace AvaloniaRichEditor.Formatters
         private static bool TryFinite(string? s, out double v)
             => TryFinite(s, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, out v);
         private static bool TryFinite(double d, out double v) { v = d; return double.IsFinite(d); }
+
+        private static bool IsTempPath(string path)
+        {
+            try
+            {
+                string temp = System.IO.Path.GetFullPath(System.IO.Path.GetTempPath())
+                    .TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
+                return System.IO.Path.GetFullPath(path).StartsWith(temp, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return false; }
+        }
 
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
         {

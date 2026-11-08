@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   link as drawn, so Ctrl+U on any link has nothing to change. Tests: `LinkLookTests`, `CaretFormatReportTests` (updated).
 - `SetLineHeight` clears a proportional `LineSpacing`, and `SetLineSpacing` a fixed `LineHeight`. A fixed height set on a
   paragraph with a proportional spacing changed nothing on screen and the file kept both. Test: `LineSpacingExclusiveTests`.
+- Pasting from Word or HWP with local file images off kept none of their pictures: their clipboard HTML refers to the
+  pictures the copy just wrote under `%TEMP%` (as `file:` or `ms-clipboard-file:`). A paste (`ParseHtml`, `ParseHtmlAsync`)
+  now takes pictures from `%TEMP%` only; the editor's `LoadHtml`/`InsertHtml` still read no local file, and nothing
+  outside `%TEMP%` is read. Test: `TempFilePasteImageTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
