@@ -1732,8 +1732,11 @@ internal sealed class RtfWriter
                 }
                 _body.Append(depth == 1 ? @"\cell" : @"\nestcell");
             }
+            // The definition again right before \row, as Word writes it: strict readers — HWP among them — need it in
+            // scope at \row, and without it HWP dropped the table and pasted the cells as plain lines (2026-11-09, as the
+            // WinUI control). This reader reads the repeat as a no-op (StartRow keeps the row being built).
             if (depth == 1)
-                _body.Append(@"\row").Append('\n');
+                _body.Append(rowDef).Append(@"\row").Append('\n');
             else
                 // \nesttableprops is ignorable: a reader that doesn't do nested tables still sees the
                 // cell text (ours flattens it into the parent cell), which is why this can't corrupt a

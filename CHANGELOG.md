@@ -74,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RTF: `\par` inside a table cell starts a paragraph, as in the body. It was read as a line break, so a cell's
   paragraphs — from Word, HWP or this library's own RTF — came back as one paragraph and lost their format.
   Test: `RtfCellParagraphTests`.
+- RTF: each table row states its definition again right before `\row`, as Word writes it. HWP needs it there, and
+  without it dropped the table and pasted the cells as plain lines. Test: `RtfRowDefinitionRepeatTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 

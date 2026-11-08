@@ -77,10 +77,11 @@ public class RtfTableExportTests
         var merged = Grid(1, 3);
         merged.MergeCells(0, 0, 0, 1);
 
+        // Counted in the row's FIRST definition: the writer states it again right before \row (HWP needs it there).
         int Boundaries(string rtf) =>
-            System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx").Count;
+            System.Text.RegularExpressions.Regex.Matches(FirstRowDefinition(rtf), @"\\cellx").Count;
         int[] Edges(string rtf) =>
-            System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx(\d+)")
+            System.Text.RegularExpressions.Regex.Matches(FirstRowDefinition(rtf), @"\\cellx(\d+)")
                 .Select(m => int.Parse(m.Groups[1].Value)).ToArray();
 
         string plainRtf = Write(DocOf(plain));
@@ -104,7 +105,17 @@ public class RtfTableExportTests
 
         string rtf = Write(DocOf(merged));
 
-        Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx").Count);
+        // Each row states its definition twice (before its cells and before \row): two \cellx per row, each time.
+        Assert.Equal(8, System.Text.RegularExpressions.Regex.Matches(rtf, @"\\cellx").Count);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(FirstRowDefinition(rtf), @"\\cellx").Count);
+    }
+
+    // From the first \trowd to the first cell's paragraph.
+    private static string FirstRowDefinition(string rtf)
+    {
+        int at = rtf.IndexOf(@"\trowd", System.StringComparison.Ordinal);
+        int end = rtf.IndexOf(@"\pard", at, System.StringComparison.Ordinal);
+        return rtf.Substring(at, end - at);
     }
 
     // ---- cell shading -------------------------------------------------------
