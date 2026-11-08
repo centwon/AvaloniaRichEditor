@@ -71,6 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside `%TEMP%` is read. Test: `TempFilePasteImageTests`.
 - RTF and HTML write a run bold from SemiBold (600) up. Only exactly 700 was written bold, so an ExtraBold or Black run
   lost its weight entirely in Word or a browser. Test: `BoldFromSemiboldTests`.
+- RTF: `\par` inside a table cell starts a paragraph, as in the body. It was read as a line break, so a cell's
+  paragraphs — from Word, HWP or this library's own RTF — came back as one paragraph and lost their format.
+  Test: `RtfCellParagraphTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 

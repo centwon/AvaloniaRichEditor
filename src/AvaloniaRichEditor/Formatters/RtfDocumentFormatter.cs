@@ -695,7 +695,6 @@ internal sealed class RtfParser
 
     private void FlushBytes()
     {
-        _cellParMark = -1; // the marked break is no longer at the tail of the pending bytes
         if (_bytes.Count == 0) return;
         _run.Append(RunEnc.GetString(_bytes.ToArray()));
         _bytes.Clear();
@@ -916,8 +915,20 @@ internal sealed class RtfParser
 
     private void EndParagraph()
     {
-        // Inside a table cell, \par is an intra-cell line break, not a document paragraph.
-        if (_curRow != null) { _bytes.Add(10); _cellParMark = _bytes.Count; return; }
+        // Inside a cell, \par is a real paragraph break, as on the WinUI control (2026-11-09): the model holds several
+        // paragraphs per cell, and folding them into one paragraph with newlines lost each one's format on every
+        // Word/HWP paste and on this library's own RTF round trip.
+        if (_curRow != null)
+        {
+            FlushRun();
+            if (_para.Inlines.Count > 0)
+            {
+                if (!_cellPending.TryGetValue(_itap, out var pending)) _cellPending[_itap] = pending = new List<Block>();
+                pending.Add(_para);
+                _para = new Paragraph();
+            }
+            return;
+        }
         FlushRun();
         FinalizeTable(); // a normal paragraph ends any table that was being built
 
@@ -947,10 +958,6 @@ internal sealed class RtfParser
         _doc.Blocks.Add(_para);
         _para = new Paragraph();
     }
-
-    // Byte count at the moment an intra-cell \par added its line break, so SetItap can tell that break
-    // (structure, see SetItap) from one that came from \line (content). -1 = no such break pending.
-    private int _cellParMark = -1;
 
     // True immediately after a block picture was added, while its terminating \par is still pending.
     private bool _imageOwnsNextPar;
@@ -1063,15 +1070,9 @@ internal sealed class RtfParser
         if (depth == _itap) return;
         if (depth > _itap)
         {
-            // The writer terminates the cell's own paragraph with \par before descending into a nested
-            // table (WriteCellContent.CloseBeforeNested), and this closes that paragraph anyway — so that
-            // break is structure, not content. Kept, it came back as a trailing soft break, which the next
-            // save wrote as \line AND still emitted its own \par: one more blank line inside the cell on
-            // every round trip, without limit. Only the break that \par itself just added is dropped (the
-            // mark is the byte count at that moment), so a soft break the author typed — written as \line
-            // and followed by the structural \par — survives.
-            if (_cellParMark == _bytes.Count && _bytes.Count > 0 && _bytes[^1] == 10)
-                _bytes.RemoveAt(_bytes.Count - 1);
+            // The writer terminates the cell's own paragraph with \par before descending into a nested table
+            // (WriteCellContent.CloseBeforeNested); a cell's \par ends a paragraph (EndParagraph), so that break is
+            // already the paragraph boundary and leaves nothing behind.
             FlushRun();
             if (_para.Inlines.Count > 0)
             {
