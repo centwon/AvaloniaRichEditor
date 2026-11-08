@@ -93,6 +93,17 @@ public partial class RichEditor
     private Point ClampToEditorBounds(Point p)
         => new(Math.Clamp(p.X, 0, Math.Max(0, Bounds.Width)), Math.Clamp(p.Y, 0, Math.Max(0, Bounds.Height)));
 
+    // Where a table drag starts: pressed below the last line, the table goes after it (the caret lands there), so the
+    // rubber band starts at the content's bottom — what it previews is where the table goes. It started under the pointer
+    // and the table went in above it (2026-11-08: the preview follows the result, as on the WinUI control).
+    private Point TableDrawAnchor(Point view)
+    {
+        var p = ClampToEditorBounds(view);
+        var doc = MapViewToDoc(p);
+        double bottom = MeasureContentHeight(IsPaged ? PaperContentWidth : Bounds.Width);
+        return doc.Y <= bottom ? p : MapDocToView(new Point(doc.X, bottom));
+    }
+
     // Also run when the document is replaced (a file opened, an undo/redo swap — the pick belonged to the
     // document being left, and the first click in the new one inserted a table into a file just opened) and
     // when the pointer capture is lost mid-drag (a lost capture is not a release). From the WinUI port's audit
@@ -174,7 +185,7 @@ public partial class RichEditor
         // visible content area — otherwise the preview is clipped while the released size isn't (mismatch).
         if (_pendingTableDraw != null)
         {
-            _tableDrawStart = ClampToEditorBounds(e.GetPosition(this));
+            _tableDrawStart = TableDrawAnchor(e.GetPosition(this));
             _tableDrawCurrent = _tableDrawStart;
             e.Pointer.Capture(this);
             e.Handled = true;

@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (hovering showed the move cursor). Tests: `PageRoomClickTests`, `PageSliceRenderTests`.
 - Page view: dragging a table row or a picture larger, past the end of its page, made the page flicker — the row height
   swung back and forth as it moved between pages. The drag's travel is measured on screen now. Test: `RowResizePageViewTests`.
+- Drawing a table with the mouse from the empty area below the last line: the preview started under the pointer, but the
+  table went in after the last line, above where it was shown. The preview starts at the content's bottom now.
+  Test: `TableDrawEmptyAreaTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
