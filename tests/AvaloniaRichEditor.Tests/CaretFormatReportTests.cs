@@ -98,9 +98,12 @@ public class CaretFormatReportTests
     private static string Look(Run r) => string.Join(" ",
         r.FontWeight == FontWeight.Bold ? "bold" : "-",
         r.FontStyle == FontStyle.Italic ? "italic" : "-",
-        (r.TextDecorations == null ? !string.IsNullOrEmpty(r.NavigateUri) : HasDecoration(r, TextDecorationLocation.Underline)) ? "under" : "-",
+        // A link is drawn underlined whatever else it carries, and link blue without a colour of its own (2026-11-09).
+        (!string.IsNullOrEmpty(r.NavigateUri) || HasDecoration(r, TextDecorationLocation.Underline)) ? "under" : "-",
         HasDecoration(r, TextDecorationLocation.Strikethrough) ? "strike" : "-",
-        $"{r.FontSize}pt", r.FontFamily ?? "(family)", Hex(r.Foreground), Hex(r.Background));
+        $"{r.FontSize}pt", r.FontFamily ?? "(family)",
+        Hex(r.Foreground ?? (string.IsNullOrEmpty(r.NavigateUri) ? null : new SolidColorBrush(Color.FromRgb(0, 0, 255)))),
+        Hex(r.Background));
 
     private static string Look(RichEditor.CaretFormat f) => string.Join(" ",
         f.Bold ? "bold" : "-", f.Italic ? "italic" : "-", f.Underline ? "under" : "-", f.Strike ? "strike" : "-",
@@ -241,17 +244,23 @@ public class CaretFormatReportTests
         Assert.Null(RunAt(Paras(ed)[0], 1).TextDecorations);
     }
 
-    // A link that carries another decoration is NOT drawn underlined, so there the toggle is real.
+    // A link that carries another decoration is drawn underlined too (2026-11-09, the WinUI look; it used to be drawn with
+    // only its strikethrough, and Ctrl+U then set the flag). So, as on a plain link, Ctrl+U has nothing to change. Also: no
+    // colour of its own, so the caret reports link blue.
     [AvaloniaFact]
-    public void CtrlU_OnAStruckLink_Underlines()
+    public void CtrlU_OnAStruckLink_DoesNothing_ItIsUnderlinedAlready()
     {
         var link = Strike("link");
         link.NavigateUri = Url;
         var ed = Editor(Para(link, Plain(" after")));
         Caret(ed, Paras(ed)[0], 2);
-        Assert.False(ed.GetCaretFormat().Underline);
+        var f = ed.GetCaretFormat();
+        Assert.True(f.Underline);
+        Assert.True(f.Strike);
+        Assert.Equal(Color.FromRgb(0, 0, 255), Assert.IsAssignableFrom<ISolidColorBrush>(f.Foreground).Color);
         ed.ToggleUnderline();
-        Assert.True(HasDecoration(RunAt(Paras(ed)[0], 1), TextDecorationLocation.Underline));
+        Assert.False(ed.CanUndo);
+        Assert.False(HasDecoration(RunAt(Paras(ed)[0], 1), TextDecorationLocation.Underline));
     }
 
     [AvaloniaFact]

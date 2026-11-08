@@ -445,10 +445,8 @@ public partial class RichEditor
     public void ToggleStrikethrough() => ToggleDecoration(TextDecorationLocation.Strikethrough);
     /// <summary>Toggles underline on the current selection (or the caret run).</summary>
     public void ToggleUnderline() => ToggleDecoration(TextDecorationLocation.Underline,
-        // A link with no decoration of its own is drawn underlined (BuildTextLayout), and clearing its
-        // underline flag leaves it so; only a link that carries another decoration shows the flag.
-        forced: (r, _) => !string.IsNullOrEmpty(r.NavigateUri)
-                          && (r.TextDecorations == null || r.TextDecorations.All(d => d.Location == TextDecorationLocation.Underline)));
+        // A link is drawn underlined whatever its decorations say (DrawnDecorations), so clearing its flag changes nothing.
+        forced: (r, _) => !string.IsNullOrEmpty(r.NavigateUri));
 
     private void ToggleDecoration(TextDecorationLocation loc, Func<Run, Paragraph, bool>? forced = null)
         => ToggleCharacterFormat(r => HasDeco(r, loc), (r, on) => r.TextDecorations = SetDecoration(r.TextDecorations, loc, on), forced);

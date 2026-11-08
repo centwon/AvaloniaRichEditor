@@ -725,13 +725,21 @@ public partial class RichEditor : Control
         IBrush? Foreground = null, IBrush? Background = null, bool Quote = false, double LineSpacing = 0,
         ListMarkerStyle ListMarker = ListMarkerStyle.Default);
 
+    // As DRAWN: a link is underlined whatever else it carries (DrawnDecorations).
     private static bool HasDeco(Run? r, TextDecorationLocation loc)
-    {
-        if (r == null) return false;
-        if (r.TextDecorations == null)
-            return loc == TextDecorationLocation.Underline && !string.IsNullOrEmpty(r.NavigateUri);
-        return RunDecorations.Has(r.TextDecorations, loc);
-    }
+        => r != null && (loc == TextDecorationLocation.Underline && IsLink(r) || RunDecorations.Has(r.TextDecorations, loc));
+
+    // The look a hyperlink run is drawn with whatever the run itself says, as on the WinUI control: always underlined (with
+    // any strikethrough it also carries), and link blue unless it has a colour of its own — so a link made in the editor and
+    // a pasted one look the same. It was drawn in the plain text colour, and lost its underline once it carried a
+    // strikethrough (2026-11-09). The caret format reports the same, so the toolbar shows what is on screen.
+    private static readonly IBrush LinkBrush = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(0, 0, 255));
+    private static bool IsLink(Run r) => !string.IsNullOrEmpty(r.NavigateUri);
+    private static IBrush? DrawnForeground(Run r) => r.Foreground ?? (IsLink(r) ? LinkBrush : null);
+    private static TextDecorationCollection? DrawnDecorations(Run r)
+        => !IsLink(r) || RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline) ? r.TextDecorations
+         : RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough) ? RunDecorations.Make(true, true)
+         : TextDecorations.Underline;
 
     // Where text typed at logical offset k goes, and whose character format it takes — the ONE rule for
     // insertion (TryInsertTextCore) and for the caret report (CaretFormatRun), so the toolbar shows what
@@ -836,7 +844,7 @@ public partial class RichEditor : Control
             p?.TextAlignment ?? TextAlignment.Left,
             p?.ListType ?? ListKind.None,
             p?.HeadingLevel ?? 0,
-            run?.Foreground,
+            run != null ? DrawnForeground(run) : null, // as drawn: link blue
             run?.Background,
             p?.IsQuote ?? false,
             p?.LineSpacing ?? double.NaN,
@@ -1674,15 +1682,14 @@ public partial class RichEditor : Control
                 var family = string.IsNullOrEmpty(r.FontFamily) ? defaultFamily : new FontFamily(r.FontFamily);
                 var weight = r.FontWeight;
                 var typeface = new Typeface(family, r.FontStyle, weight);
-                TextDecorationCollection? decos = r.TextDecorations;
-                if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
+                TextDecorationCollection? decos = DrawnDecorations(r); // a link: underlined
                 double size = DrawnRunSize(r, defaultSize); // pt
                 if (size > maxRunPt) maxRunPt = size;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,
                     PtToPx(size),
                     decos,
-                    r.Foreground ?? AutoForeground,
+                    DrawnForeground(r) ?? AutoForeground, // a link without its own colour: link blue
                     r.Background);
                 segs.Add(new LayoutSeg { Text = r.Text, Props = props });
             }

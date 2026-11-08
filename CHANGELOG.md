@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Text with no colour of its own is black on white paper — page view with page boundaries, printing, PDF — whatever
   `DefaultForeground` is. A dark-theme host's light grey drew faint text on the paper. `DefaultForeground` still colours
   the host's own canvas (continuous view). Test: `AutoForegroundOnPaperRenderTests`.
+- A link is drawn link blue unless it has a colour of its own, and always underlined — a struck-through link too. It was
+  drawn in the plain text colour, and lost its underline once it carried a strikethrough. The caret format reports the
+  link as drawn, so Ctrl+U on any link has nothing to change. Tests: `LinkLookTests`, `CaretFormatReportTests` (updated).
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
