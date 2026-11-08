@@ -57,6 +57,11 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   ③ RTF `\sl-2147483648`이 `Math.Abs` 오버플로로 문서 전체를 빈 문서로. 반증 3/3(파일별 되돌림).
   + 합계 상한 2건(`InputTotalBoundsTests`, 반증 2/2): `.flow` 그림 합계 1 GB 넘으면 패키지 거부(그림 하나 256 MB는 그대로),
   HTML 붙여넣기 원격 그림은 앞의 서로 다른 주소 64개만 받음(전엔 전부 동시에, 하나당 256 MB까지).
+  + 같은 브랜치(`fix/save-failures-2026-11-08`)에 결함 수정 백포트(2026-11-09, 포트 `fix/backport-1x-2026-11-09`에도 같은 수정):
+  RTF 링크 `"`·스크립트 주소, HTML 글꼴 이름 속 `color:`, 줄 아래 클릭 +1, 정규화 빈 문단·RTF 빈 줄 = 빈 런 하나(두 컨트롤 JSON 통일),
+  여러 문단 붙여넣기 한 규칙(`PasteSpliceRuleTests`), 쪽 보기 넘어간 개체 잔상·빈자리 클릭(`PageRoomClickTests`·`PageSliceRenderTests`),
+  쪽 보기 크기 끌기 깜박임(`RowResizePageViewTests`), 빈 곳 표 그리기 미리보기(`TableDrawEmptyAreaTests`), 그림 클릭 화면 튐
+  (`PictureClickScrollTests`). 모두 반증(수정 빼면 빨강). **실기 확인 필요**: 쪽 보기 세 항목, 셀 안 표 클릭 화면 튐(헤드리스 테스트 없음).
 - **프레임당 할당 = 문서 크기에 비례하던 것 수정**(2026-11-02, `perf/render-cull-text-2026-11-02`): 렌더 루프가 컬링 검사 **전에**
   모든 문단의 `BuildPlain`을 만들었다(4,000문단에서 프레임당 ≈6 MB, 끝까지 스크롤 ≈2 GB). 포트는 이미 목록 표지 경로에서만 만듦 →
   같게. `PerFrameAllocationTests`(1,000 대 4,000문단 프레임 할당 비교). 로컬 확인(2026-11-02): 전체 그린, 수정 되돌리면 새 테스트 빨강(반증).
