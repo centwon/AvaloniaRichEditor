@@ -1998,8 +1998,15 @@ public partial class RichEditor : Control
         foreach (var b in blocks) if (b.Clone() is Block cl) src.Add(cl);
         if (src.Count == 0) return;
 
+        // One rule for both controls (2026-11-08) — the same paste had saved as different JSON in the two: the first pasted
+        // paragraph joins the text before the caret and the last the text after it; a side that is EMPTY takes the format
+        // of the pasted paragraph joining it (a list or heading pasted onto an empty line stays one); runs of equal format
+        // rejoin and nothing empty is left behind; the caret ends after the pasted content.
+        int caretAt = _caretPosition.Offset;
+        bool headEmpty = caretAt == 0, tailEmpty = caretAt >= BuildPlain(p).Length;
+
         // Split the caret paragraph: p keeps the head; tail takes the inlines after the caret (same props).
-        int splitAt = SplitInlinesAt(p, _caretPosition.Offset);
+        int splitAt = SplitInlinesAt(p, caretAt);
         // The tail continues the same paragraph, so it keeps the source's full format (heading level
         // included — unlike Enter, this is a split of one logical paragraph, not a new one).
         var tail = new Paragraph();
@@ -2013,21 +2020,29 @@ public partial class RichEditor : Control
         }
 
         // Merge the first pasted paragraph into the head line.
+        bool headJoined = false;
         if (src[0] is Paragraph fp)
         {
+            headJoined = true;
+            if (headEmpty) { p.CopyFormatFrom(fp); p.Inlines.Clear(); }
             foreach (var inl in fp.Inlines.ToList()) { fp.Inlines.Remove(inl); inl.Parent = p; p.Inlines.Add(inl); }
             src.RemoveAt(0);
+            TidyPasted(p);
         }
         // Merge the last pasted paragraph into the tail (prepended before the original tail text). The
         // caret lands right after that pasted text; otherwise at the start of the tail.
         int caretOff = 0;
+        bool caretInTail = false;
         if (src.Count > 0 && src[^1] is Paragraph lp)
         {
+            if (tailEmpty) { tail.CopyFormatFrom(lp); tail.Inlines.Clear(); }
             var moved = lp.Inlines.ToList();
             int pos = 0;
             foreach (var inl in moved) { lp.Inlines.Remove(inl); inl.Parent = tail; tail.Inlines.Insert(pos++, inl); }
             caretOff = moved.Sum(InlineLen);
             src.RemoveAt(src.Count - 1);
+            TidyPasted(tail);
+            caretInTail = true;
         }
         if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
         if (tail.Inlines.Count == 0) tail.Inlines.Add(new Run { Text = "" });
@@ -2036,12 +2051,38 @@ public partial class RichEditor : Control
         foreach (var b in src) container.Insert(at++, b);
         tail.Parent = p.Parent;
         container.Insert(at, tail);
+        // An empty side left next to a pasted block is not text anyone wrote: drop it, and let the normalization in
+        // UpdateParents put back a paragraph only where a block needs one (the edges, between two blocks).
+        Block? lastBlock = src.Count > 0 ? src[^1] : null;
+        if (!headJoined && BuildPlain(p).Length == 0 && !p.Inlines.Any(i => i is not Run)) container.Remove(p);
+        if (!caretInTail && BuildPlain(tail).Length == 0 && !tail.Inlines.Any(i => i is not Run)) container.Remove(tail);
         UpdateParents(Document);
         if (inCell) InvalidateMeasure(); // the cell grew -> table row height reflows
 
-        _caretPosition = new TextPointer(tail, caretOff);
-        _selectionStart = new TextPointer(tail, caretOff);
-        _selectionEnd = new TextPointer(tail, caretOff);
+        var caretPara = tail;
+        if (!caretInTail && !container.Contains(tail))
+        {
+            // The paragraph after the last pasted block (the normalization guarantees one).
+            caretPara = p;
+            int li = lastBlock != null ? container.IndexOf(lastBlock) : -1;
+            for (int i = li + 1; i < container.Count; i++)
+                if (container[i] is Paragraph after) { caretPara = after; break; }
+            caretOff = 0;
+        }
+        _caretPosition = new TextPointer(caretPara, caretOff);
+        _selectionStart = new TextPointer(caretPara, caretOff);
+        _selectionEnd = new TextPointer(caretPara, caretOff);
+    }
+
+    // A pasted seam: drop empty runs when there is anything else (keep one when there is nothing), rejoin equal-format runs.
+    private static void TidyPasted(Paragraph p)
+    {
+        if (p.Inlines.Any(i => !(i is Run r && string.IsNullOrEmpty(r.Text))))
+            p.Inlines.RemoveAll(i => i is Run r && string.IsNullOrEmpty(r.Text));
+        else if (p.Inlines.Count > 1)
+            p.Inlines.RemoveRange(1, p.Inlines.Count - 1);
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "", Parent = p });
+        TextRange.CoalesceRuns(p);
     }
 
     // Plain after-block splice (the fallback): inserts cloned blocks after the caret's block — into the

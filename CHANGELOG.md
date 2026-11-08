@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one empty run — the same document as different JSON. It holds one empty run now, as an Enter split leaves, and so does a
   blank line read from RTF (which has no way to write an empty run, so a saved blank line came back different).
   Test: `NormalizedParagraphRunTests`.
+- Pasting several paragraphs: a list or heading pasted onto an empty line lost its bullets or heading level, the pasted
+  runs stayed unjoined and a stray empty run was left behind — and the WinUI control saved the same paste differently.
+  Both follow one rule now: the first pasted paragraph joins the text before the caret and the last the text after it; a
+  side that is empty takes the format of the pasted paragraph joining it; equal-format runs rejoin and nothing empty is
+  left behind; the caret ends after the pasted content. Test: `PasteSpliceRuleTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
