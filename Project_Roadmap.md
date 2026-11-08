@@ -62,6 +62,10 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   같은 블록(아니면 예전 탐색). 포트는 이미 같은 맵(`EnsureBlockLayout`). 렌더·쪽 나눔 워크는 번호 누적 때문에 범위 밖.
   `BlockMapTests`(맵 유무 답 동일). 로컬 확인(2026-11-02): 전체 그린. 16,000문단 측정 후: 호버 1 µs, 클릭 6 µs, 화살표+재측정
   7.3 ms(그중 재측정 6.8 ms). 남은 것: 캐럿만 움직여도 NotifyStatus가 측정 전체를 무효화 — 편집 뒤 재측정 경로와 얽혀 따로 판단.
+- **호스트용 링크 API**(2026-11-08, 외부 기여 PR #87 + 메인테이너 수정): `HasSelection`·`GetHyperlinkAt(Point)`·`SetHyperlink(string?)`·
+  `TrySetHyperlinkAt(Point, string?)`. 호스트가 리플렉션 없이 자기 링크 UI를 만들게. 수정: 다른 서식 명령과 같은 모양(선택 없으면
+  캐럿 단어), 셀 블록 선택도 선택, 점은 에디터 좌표 → `MapViewToDoc`(원안은 쪽 보기에서 빗나감), 클릭한 링크 변경이 선택을 지우지 않음.
+  `HyperlinkApiTests`. 로컬 확인(2026-11-08): 빌드 0 warn · unit **1435** 그린, 좌표 변환 되돌리면 쪽 보기 2건 빨강(반증).
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
 - **검증**: 빌드 0 warn · unit **1428** + render **62** 그린(2026-11-07, main `3b57644` = #85까지 로컬 Windows) · 3-OS CI는 각 PR에서.
