@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTML text colour and highlight were matched anywhere in a style, so `color:` inside a quoted font name became the text
   colour. They are read at the start of a declaration only.
 - Test: `LinkAndFontNameEscapeTests`.
+- A click below a paragraph's last line (its bottom margin, a cell's bottom padding) put the caret one character past
+  where the same x on that line does: Avalonia reports any point under a layout as a trailing-half hit. Test:
+  `ClickPastEndOfLineTests.ClickingBelowTheLastLine_LandsWhereTheSameXOnTheLineDoes`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
