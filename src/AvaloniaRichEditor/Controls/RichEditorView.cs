@@ -133,10 +133,6 @@ public partial class RichEditorView : UserControl
         Toolbar.ZoomSetter = ZoomToPercent;
         Toolbar.FitWidthAction = () => SetCurrentValue(FitToWidthProperty, true);
 
-        // View defaults: the editor's own default (Continuous, reflow to width) with no page outline/desk
-        // chrome. A host can still switch to a concrete paper size on Editor / via the toolbar.
-        Editor.ShowPageBoundaries = false;
-
         // Margin (not ScrollViewer padding) gives the editor its breathing room: the content sits
         // inside the LayoutTransformControl's bounds, so it's neither clipped at the edge nor bled
         // over the padding. The right gutter = 12 + the idle scrollbar's ~6px, so content/resize

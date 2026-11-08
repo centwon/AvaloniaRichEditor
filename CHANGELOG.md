@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside a table cell scrolled it to wherever the caret had last been drawn. The view now stays on what was clicked.
   Test: `PictureClickScrollTests` (the table-in-a-cell case has no headless test).
 
+### Changed — the WinUI control's behaviour where the two differed (2026-11-09)
+
+- `RichEditorView` no longer turns `ShowPageBoundaries` off. Set by code, that counted as the host's page setup: a host
+  that also set a paper size by code saved `"ShowPageBoundaries":false` and saw a borderless column, where the WinUI
+  view saved and showed pages. Test: `ViewPageBoundaryTests`.
+
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
 - The hit-tests walked the document from its first block on every call: a hover twice per mouse move, a click or
