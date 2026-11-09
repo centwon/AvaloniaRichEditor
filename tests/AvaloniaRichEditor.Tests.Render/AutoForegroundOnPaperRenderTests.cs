@@ -43,13 +43,16 @@ public class AutoForegroundOnPaperRenderTests
         var handle = GCHandle.Alloc(buf, GCHandleType.Pinned);
         try { bmp.CopyPixels(new PixelRect(0, 0, w, h), handle.AddrOfPinnedObject(), buf.Length, w * 4); }
         finally { handle.Free(); }
+        // The predicates read BGRA. A bitmap's native order is RGBA on some platforms (macOS CI): swap there, or red reads as
+        // blue — black and lime look the same either way, which is why only the red check failed there.
+        if (bmp.Format is { } f && f == Avalonia.Platform.PixelFormats.Rgba8888)
+            for (int o = 0; o + 3 < buf.Length; o += 4) (buf[o], buf[o + 2]) = (buf[o + 2], buf[o]);
         return buf;
     }
 
     private static byte[] Screen(RichEditor ed, double w = 900)
     {
-        // Tall enough for a second line: on macOS the default font is wider and the red run wraps onto it in page view.
-        const int h = 600;
+        const int h = 300;
         ed.Measure(new Size(w, double.PositiveInfinity));
         ed.Arrange(new Rect(0, 0, w, h));
         using var rtb = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(w), h));
