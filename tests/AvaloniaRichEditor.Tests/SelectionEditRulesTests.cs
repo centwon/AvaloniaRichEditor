@@ -104,6 +104,57 @@ public class SelectionEditRulesTests
         Assert.Equal(0, a.ListLevel);
     }
 
+    // ---- inserting keeps what is selected ----------------------------------------------------------------
+
+    [AvaloniaFact]
+    public void InsertTable_OverABackwardsSelection_GoesAtItsEnd()
+    {
+        // The block went in at the caret — the START of a selection made backwards.
+        var p = TestHelpers.Para(new Run { Text = "hello world" });
+        var ed = new RichEditor { Document = TestHelpers.Doc(p), PageSize = RichEditorPageSize.Continuous };
+        Select(ed, p, 8, p, 3);
+        ed.InsertDivider();
+        var blocks = ed.Document!.Blocks;
+        Assert.Equal("hello wo", ((Paragraph)blocks[0]).Text());
+        Assert.IsType<DividerBlock>(blocks[1]);
+        Assert.Equal("rld", ((Paragraph)blocks[2]).Text());
+    }
+
+    [AvaloniaFact]
+    public void InsertTable_WithAPictureSelected_GoesRightAfterIt()
+    {
+        // With a picture selected the block went in where the caret had been before the click.
+        var above = TestHelpers.Para(new Run { Text = "above" });
+        var pic = new ImageBlock { Width = 50, Height = 50 };
+        var ed = new RichEditor
+        {
+            Document = TestHelpers.Doc(above, pic, TestHelpers.Para(new Run { Text = "below" })),
+            PageSize = RichEditorPageSize.Continuous,
+        };
+        PlaceCaret(ed, above, 0);
+        typeof(RichEditor).GetField("_selectedBlock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .SetValue(ed, pic);
+        ed.InsertTable(2, 2);
+        var blocks = ed.Document!.Blocks;
+        // above, the picture, (the paragraph normalization keeps between two blocks), the table, below.
+        Assert.Equal("above,ImageBlock,P,TableBlock,below",
+            string.Join(",", blocks.Select(b => b is Paragraph bp ? (bp.Text().Length > 0 ? bp.Text() : "P") : b.GetType().Name)));
+    }
+
+    [AvaloniaFact]
+    public void InsertInlineTable_OverABackwardsSelection_GoesAtItsEnd_AndKeepsTheText()
+    {
+        var p = TestHelpers.Para(new Run { Text = "hello world" });
+        var ed = new RichEditor { Document = TestHelpers.Doc(p), PageSize = RichEditorPageSize.Continuous };
+        Select(ed, p, 8, p, 3);
+        ed.InsertInlineTable(1, 1);
+        Assert.Equal("hello world", p.Text());
+        int off = 0;
+        foreach (var inl in p.Inlines) { if (inl is InlineTable) break; off += inl is Run r ? r.Text.Length : 1; }
+        Assert.Equal(8, off);
+        Assert.False(ed.HasSelection);
+    }
+
     // ---- "treat as character" inside a cell -----------------------------------------------------------
 
     private static (RichEditor ed, TableCell cell, Paragraph a) CellHolding(Block inner)

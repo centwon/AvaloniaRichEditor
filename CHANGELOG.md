@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Treat as character" works on a table or picture inside a table cell: it becomes inline in a paragraph of that cell, and
   back (it was top-level only; the table menu had no such item for a table in a cell). A picture turned inline is scaled
   down to the line it joins — the cell's content width, and at most 240 — as on the WinUI control.
+- Inserting a table, picture, divider or inline table never removes what is selected: it goes in at the end of a text
+  selection (whichever way it was made — a backwards one put it at the start), or right after a selected picture or
+  table (it went where the caret had been before the click), and the selection is let go of. A paste still replaces the
+  selection.
 
 ### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
 

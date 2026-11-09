@@ -2159,6 +2159,7 @@ public partial class RichEditor : Control
     private void InsertBlockAtCaret(Block b)
     {
         if (Document == null) return;
+        MoveCaretToInsertionPoint();
         bool before = false;
         if (_caretPosition.Paragraph is { Parent: FlowDocument or TableCell } cp)
         {
@@ -2386,6 +2387,31 @@ public partial class RichEditor : Control
             return true;
         }
         return false;
+    }
+
+    // Where an insert (a table, a picture, a divider; a table put in as a character) goes with something selected:
+    // nothing selected is removed — the caret goes to the end of a text selection (in document order, whichever way it
+    // was made), or right after a selected picture or table — and the selection is let go of, as on the WinUI control
+    // (2026-11-09). The block went in wherever the caret was: at the START of a selection made backwards, and, with a
+    // picture or table selected, where the caret had been before the click. A paste replaces the selection instead: its
+    // caller deletes it first.
+    private void MoveCaretToInsertionPoint()
+    {
+        if (_selectedBlock is { } b && BlockListOf(b) is { } list && list.IndexOf(b) is var bi and >= 0)
+        {
+            for (int i = bi + 1; i < list.Count; i++)
+                if (list[i] is Paragraph after) { _caretPosition = new TextPointer(after, 0); break; }
+        }
+        else if (_selectedInline is { } si && si.p.Inlines.Contains(si.img))
+            _caretPosition = new TextPointer(si.p, OffsetOfInline(si.p, si.img) + 1);
+        else if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
+        {
+            var end = _selectionStart.CompareTo(_selectionEnd) > 0 ? _selectionStart : _selectionEnd;
+            _caretPosition = new TextPointer(end.Paragraph, end.Offset);
+        }
+        _selectedBlock = null;
+        _selectedInline = null;
+        CollapseSelectionToCaret();
     }
 
     // Pastes an image as an inline (character-like) image at the caret, splitting the run under it

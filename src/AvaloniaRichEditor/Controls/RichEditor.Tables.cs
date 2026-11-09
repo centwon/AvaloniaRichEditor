@@ -611,6 +611,7 @@ public partial class RichEditor
     public void InsertInlineTable(int rows, int cols)
     {
         if (Document == null || IsReadOnly || !AllowTables) return;
+        MoveCaretToInsertionPoint(); // after a selection, which stays
         if (_caretPosition.Paragraph is not { } p) return;
         if (rows < 1) rows = 1;
         if (cols < 1) cols = 1;
