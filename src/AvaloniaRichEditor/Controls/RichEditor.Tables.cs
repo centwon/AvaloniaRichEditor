@@ -471,6 +471,15 @@ public partial class RichEditor
         var loc = _caretPosition.Paragraph != null ? FindCell(_caretPosition.Paragraph) : null;
         if (loc == null)
         {
+            // Several selected paragraphs: every one of them steps in (out) — a list item a level, any other an indent
+            // step — and nothing is deleted. A list item alone steps its level. The key used to type four spaces over
+            // the selection, so selecting a list and pressing Tab deleted it (as on the WinUI control, 2026-11-09).
+            if (SelectedParagraphsInOrder().Count > 1 || _caretPosition.Paragraph is { IsListItem: true })
+            {
+                ApplyToSelectedParagraphs(p => StepIndent(p, shift), p => !StepIndentChanges(p, shift));
+                InvalidateMeasure(); // the indent moves the wrap width, and so the height
+                return;
+            }
             if (shift) { ShiftTabOutsideTable(); return; }
             if (Document != null) PushUndo();
             // Tab completes the token before it the way a typed space does — auto-link names space, tab
@@ -519,6 +528,18 @@ public partial class RichEditor
             if (Document != null) UpdateParents(Document);
             FocusCell(top.Cells[top.Rows - 1][0].Para);
         }
+    }
+
+    // One Tab step over a whole paragraph: a list item one level deeper (shallower, 0–8), any other paragraph one indent
+    // step (20, 0–400) further in (out).
+    private static int SteppedListLevel(Paragraph p, bool outdent) => System.Math.Clamp(p.ListLevel + (outdent ? -1 : 1), 0, 8);
+    private static double SteppedIndent(Paragraph p, bool outdent) => System.Math.Clamp(p.Indent + (outdent ? -20 : 20), 0, 400);
+    private static bool StepIndentChanges(Paragraph p, bool outdent)
+        => p.IsListItem ? SteppedListLevel(p, outdent) != p.ListLevel : SteppedIndent(p, outdent) != p.Indent;
+    private static void StepIndent(Paragraph p, bool outdent)
+    {
+        if (p.IsListItem) p.ListLevel = SteppedListLevel(p, outdent);
+        else p.Indent = SteppedIndent(p, outdent);
     }
 
     // Shift+Tab outside a table has to undo what Tab did there. Tab types four spaces, so this removes
@@ -605,25 +626,25 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // HWP-style toggle: demote a top-level block table to an inline table anchored on an adjacent
-    // paragraph (mirror of ConvertImageBlockToInline). Top-level only — a table inside a cell is already
-    // a block sibling there, so the menu offers this only for FlowDocument-rooted tables.
+    // HWP-style toggle: demote a block table to an inline table anchored on the paragraph next to it in its OWN list —
+    // the document's, or a cell's for a table nested in a cell (it used to be top-level only; mirror of
+    // ConvertImageBlockToInline).
     internal void ConvertTableBlockToInline(TableBlock tb)
     {
-        if (Document == null) return;
-        int idx = Document.Blocks.IndexOf(tb);
+        if (Document == null || BlockListOf(tb) is not { } list) return;
+        int idx = list.IndexOf(tb);
         if (idx < 0) return;
         Paragraph? anchor = null;
         bool atEnd = true;
-        if (idx > 0 && Document.Blocks[idx - 1] is Paragraph prev) anchor = prev;
+        if (idx > 0 && list[idx - 1] is Paragraph prev) anchor = prev;
         else
-            for (int i = idx + 1; i < Document.Blocks.Count && anchor == null; i++)
-                if (Document.Blocks[i] is Paragraph next) { anchor = next; atEnd = false; }
+            for (int i = idx + 1; i < list.Count && anchor == null; i++)
+                if (list[i] is Paragraph next) { anchor = next; atEnd = false; }
         if (anchor == null) return;
 
         PushUndo();
         var it = new InlineTable { Table = (TableBlock)tb.Clone() };
-        Document.Blocks.Remove(tb);
+        list.Remove(tb);
         if (atEnd) anchor.Inlines.Add(it);
         else anchor.Inlines.Insert(0, it);
         if (ReferenceEquals(_selectedBlock, tb)) _selectedBlock = null;
@@ -639,13 +660,12 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // Reverse of ConvertTableBlockToInline: promote an inline table to a sibling block table after its
-    // host paragraph. Top-level paragraphs only — table cells cannot host block siblings (the menu
-    // disables this inside cells, mirroring the inline-image guard).
+    // Reverse of ConvertTableBlockToInline: promote an inline table to a block table right after its host paragraph, in
+    // the host's own list — a cell's too.
     internal void ConvertInlineTableToBlock(Paragraph host, InlineTable it)
     {
-        if (Document == null) return;
-        int idx = Document.Blocks.IndexOf(host);
+        if (Document == null || BlockListOf(host) is not { } list) return;
+        int idx = list.IndexOf(host);
         if (idx < 0) return;
 
         PushUndo();
@@ -656,7 +676,7 @@ public partial class RichEditor
             || IsWithin(_selectionStart.Paragraph, it.Table) || IsWithin(_selectionEnd.Paragraph, it.Table);
         int off = OffsetOfInline(host, it);
         host.Inlines.Remove(it);
-        Document.Blocks.Insert(idx + 1, tb);
+        list.Insert(idx + 1, tb);
         UpdateParents(Document);
         if (caretInside)
         {

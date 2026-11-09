@@ -68,6 +68,90 @@ public class SelectionEditRulesTests
         Assert.All(ed.Document!.Blocks.OfType<Paragraph>(), p => Assert.Equal(ListKind.Bullet, p.ListType));
     }
 
+    // ---- Tab over paragraphs ------------------------------------------------------------------------
+
+    [AvaloniaFact]
+    public void Tab_OverSeveralParagraphs_IndentsEachAndKeepsTheText()
+    {
+        // The key typed four spaces over the selection, deleting it. Now each paragraph steps in: a list item a level,
+        // any other an indent step; Shift+Tab steps them back.
+        var (ed, a, b) = TwoParagraphs();
+        a.ListType = ListKind.Bullet;
+        Select(ed, a, 1, b, 3);
+        Press(ed, Key.Tab);
+        Assert.Equal("first", a.Text());
+        Assert.Equal("second", b.Text());
+        Assert.Equal(1, a.ListLevel);
+        Assert.Equal(0, a.Indent);
+        Assert.Equal(20, b.Indent);
+
+        Press(ed, Key.Tab, KeyModifiers.Shift);
+        Assert.Equal(0, a.ListLevel);
+        Assert.Equal(0, b.Indent);
+        Assert.Equal("first", a.Text());
+    }
+
+    [AvaloniaFact]
+    public void Tab_OnAListItem_StepsItsLevel()
+    {
+        var (ed, a, _) = TwoParagraphs();
+        a.ListType = ListKind.Ordered;
+        PlaceCaret(ed, a, 2);
+        Press(ed, Key.Tab);
+        Assert.Equal("first", a.Text());
+        Assert.Equal(1, a.ListLevel);
+        Press(ed, Key.Tab, KeyModifiers.Shift);
+        Assert.Equal(0, a.ListLevel);
+    }
+
+    // ---- "treat as character" inside a cell -----------------------------------------------------------
+
+    private static (RichEditor ed, TableCell cell, Paragraph a) CellHolding(Block inner)
+    {
+        var outer = new TableBlock(1, 1);
+        var cell = outer.Cells[0][0];
+        var a = cell.Para;
+        ((Run)a.Inlines[0]).Text = "cell";
+        cell.Blocks.Add(inner);
+        cell.Blocks.Add(TestHelpers.Para(new Run { Text = "" }));
+        var ed = new RichEditor
+        {
+            Document = TestHelpers.Doc(TestHelpers.Para(new Run { Text = "top" }), outer, TestHelpers.Para(new Run { Text = "end" })),
+            PageSize = RichEditorPageSize.Continuous,
+        };
+        return (ed, cell, a);
+    }
+
+    [AvaloniaFact]
+    public void ATableInACell_ConvertsToInline_WithinItsCell_AndBack()
+    {
+        var nested = new TableBlock(1, 1);
+        var (ed, cell, a) = CellHolding(nested);
+        ed.ConvertTableBlockToInline(nested);
+        Assert.DoesNotContain(cell.Blocks, x => x is TableBlock);
+        var it = Assert.Single(a.Inlines.OfType<InlineTable>());
+
+        ed.ConvertInlineTableToBlock(a, it);
+        Assert.DoesNotContain(a.Inlines, i => i is InlineTable);
+        Assert.Single(cell.Blocks.OfType<TableBlock>());
+    }
+
+    [AvaloniaFact]
+    public void APictureInACell_ConvertsToInline_WithinItsCell_CappedToTheCell()
+    {
+        // The conversion was top-level only; and the inline kept the block's size, wider than the cell it joins.
+        var ib = new ImageBlock { Width = 400, Height = 200 };
+        var (ed, cell, a) = CellHolding(ib);
+        ed.ConvertImageBlockToInline(ib);
+        Assert.DoesNotContain(cell.Blocks, x => x is ImageBlock);
+        var im = Assert.Single(a.Inlines.OfType<InlineImage>());
+        Assert.True(im.Width <= 240, $"width {im.Width}");
+        Assert.Equal(im.Width / 2, im.Height, 3);
+
+        ed.ConvertInlineImageToBlock(a, im);
+        Assert.Single(cell.Blocks.OfType<ImageBlock>());
+    }
+
     [AvaloniaFact]
     public void ListToggle_Off_ClearsTheLevelAndTheMarker()
     {

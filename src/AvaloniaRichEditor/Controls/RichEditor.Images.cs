@@ -215,31 +215,33 @@ public partial class RichEditor
         catch (Exception ex) { RichEditorDiagnostics.Report(ex); }
     }
 
-    // HWP-style "글자처럼 취급" (treat as character): demote a block image into an InlineImage,
-    // anchored at the end of the preceding paragraph (NormalizeBlocks guarantees paragraphs around
-    // every block) so it flows with the text as one character.
+    // HWP-style "글자처럼 취급" (treat as character): demote a block image into an InlineImage in the paragraph next to
+    // it in its OWN list — the document's or a cell's (it used to be top-level only) — so it flows with the text as one
+    // character. Capped to the line it joins, as the WinUI control does: a cell's content width inside a table, and 240.
     internal void ConvertImageBlockToInline(ImageBlock ib)
     {
-        if (Document == null) return;
-        int idx = Document.Blocks.IndexOf(ib);
+        if (Document == null || BlockListOf(ib) is not { } list) return;
+        int idx = list.IndexOf(ib);
         if (idx < 0) return;
         Paragraph? anchor = null;
         bool atEnd = true;
-        if (idx > 0 && Document.Blocks[idx - 1] is Paragraph prev) anchor = prev;
+        if (idx > 0 && list[idx - 1] is Paragraph prev) anchor = prev;
         else
-            for (int i = idx + 1; i < Document.Blocks.Count && anchor == null; i++)
-                if (Document.Blocks[i] is Paragraph next) { anchor = next; atEnd = false; }
+            for (int i = idx + 1; i < list.Count && anchor == null; i++)
+                if (list[i] is Paragraph next) { anchor = next; atEnd = false; }
         if (anchor == null) return;
 
         PushUndo();
-        var im = new InlineImage
-        {
-            Width = double.IsNaN(ib.Width) ? (NaturalSize(ib)?.Width ?? 16) : ib.Width,
-            Height = double.IsNaN(ib.Height) ? (NaturalSize(ib)?.Height ?? 16) : ib.Height
-        };
+        double w = double.IsNaN(ib.Width) ? (NaturalSize(ib)?.Width ?? 16) : ib.Width;
+        double h = double.IsNaN(ib.Height) ? (NaturalSize(ib)?.Height ?? 16) : ib.Height;
+        double avail = FindCell(anchor) is { } loc ? CellContentWidth(loc.tb, loc.r, loc.c) - CellParaLeft(anchor)
+            : Bounds.Width > 60 ? ContentLayoutWidth - 40 : 600; // not laid out yet: the same fallback the table sizing uses
+        double maxW = Math.Max(40, Math.Min(avail, 240));
+        if (w > maxW && w > 0) { h *= maxW / w; w = maxW; }
+        var im = new InlineImage { Width = w, Height = h };
         if (ib.RawBytes != null) im.SetImageData(ib.RawBytes, ib.MimeType, ib.CachedBitmap);
         else im.Image = ib.Image;
-        Document.Blocks.Remove(ib);
+        list.Remove(ib);
         if (atEnd) anchor.Inlines.Add(im);
         else anchor.Inlines.Insert(0, im);
         if (_selectedBlock == ib) _selectedBlock = null;
@@ -252,16 +254,25 @@ public partial class RichEditor
         _caretPosition = new TextPointer(anchor, off);
         CollapseSelectionToCaret();
         ResetCaretBlink();
+        InvalidateMeasure(); // a cell's row height follows the picture
         InvalidateVisual();
     }
 
-    // Reverse of ConvertImageBlockToInline: promote an inline image to a sibling ImageBlock after
-    // its paragraph. Top-level paragraphs only — table cells cannot host block siblings, so the
-    // context menu disables this inside cells.
+    // The content width of a cell (its column span less its padding).
+    private static double CellContentWidth(TableBlock tb, int r, int c)
+    {
+        var (cs, _) = tb.SpanOf(r, c);
+        double w = 0;
+        for (int k = c; k < c + cs && k < tb.ColumnWidths.Count; k++) w += tb.ColumnWidths[k];
+        return Math.Max(10, w - 10);
+    }
+
+    // Reverse of ConvertImageBlockToInline: promote an inline image to a block image right after its paragraph, in the
+    // paragraph's own list — a cell's too, since cells hold blocks (it used to be offered at the top level only).
     internal void ConvertInlineImageToBlock(Paragraph p, InlineImage im)
     {
-        if (Document == null) return;
-        int idx = Document.Blocks.IndexOf(p);
+        if (Document == null || BlockListOf(p) is not { } list) return;
+        int idx = list.IndexOf(p);
         if (idx < 0) return;
 
         PushUndo();
@@ -269,7 +280,7 @@ public partial class RichEditor
         if (im.RawBytes != null) ib.SetImageData(im.RawBytes, im.MimeType, im.CachedBitmap);
         else ib.Image = im.Image;
         RemoveInlineImageCharacter(p, im);
-        Document.Blocks.Insert(idx + 1, ib);
+        list.Insert(idx + 1, ib);
         UpdateParents(Document);
         _selectedInline = null;
         _selectedBlock = ib;

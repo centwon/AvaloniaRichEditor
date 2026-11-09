@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - List toggle: a mixed selection turns the list on for every paragraph; only a selection that is all this kind turns it
   off (the caret's paragraph used to decide). Off clears the level and marker style too, not just the kind — a nested
   item kept its indent with no marker. Test: `SelectionEditRulesTests`.
+- Tab over several selected paragraphs steps each one in (Shift+Tab out) — a list item a level, any other paragraph an
+  indent step — instead of typing four spaces over the selection. A list item alone steps its level too.
+- "Treat as character" works on a table or picture inside a table cell: it becomes inline in a paragraph of that cell, and
+  back (it was top-level only; the table menu had no such item for a table in a cell). A picture turned inline is scaled
+  down to the line it joins — the cell's content width, and at most 240 — as on the WinUI control.
 
 ### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
 

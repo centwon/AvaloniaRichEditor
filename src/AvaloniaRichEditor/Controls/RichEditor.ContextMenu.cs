@@ -561,9 +561,8 @@ public partial class RichEditor
             Mi(Loc("ThirdSize"), () => ScaleImageSize(img, 1.0 / 3), HasPicture(img)),
             Mi(Loc("QuarterSize"), () => ScaleImageSize(img, 1.0 / 4), HasPicture(img))));
         // HWP-style toggle: unchecked here (block image); checking it demotes to an inline character.
-        // Disabled for a cell image: block<->inline conversion anchors to top-level paragraphs, which a
-        // cell image doesn't have (mirrors the inline-image menu's guard inside cells).
-        items.Add(CheckItem(Loc("InlineWithText"), false, () => ConvertImageBlockToInline(img), img.Parent is FlowDocument));
+        // A cell image converts too: the inline lands in a paragraph of its own cell.
+        items.Add(CheckItem(Loc("InlineWithText"), false, () => ConvertImageBlockToInline(img), img.Parent is FlowDocument or TableCell));
         items.Add(MarginMenu(img));
         // Accessibility description (HTML alt). Round-trips through JSON/.flow and HTML.
         items.Add(Mi(Loc("AltText"), () => { _ = EditImageAltTextAsync(img, null); }));
@@ -604,9 +603,9 @@ public partial class RichEditor
             Mi(Loc("HalfSize"), () => ScaleInlineImageSize(img, 1.0 / 2), HasPicture(img)),
             Mi(Loc("ThirdSize"), () => ScaleInlineImageSize(img, 1.0 / 3), HasPicture(img)),
             Mi(Loc("QuarterSize"), () => ScaleInlineImageSize(img, 1.0 / 4), HasPicture(img))));
-        // Checked here (inline = treated as a character). Unchecking promotes back to a block image;
-        // disabled inside table cells, which cannot host block siblings.
-        bool canBlock = Document != null && Document.Blocks.IndexOf(p) >= 0;
+        // Checked here (inline = treated as a character). Unchecking promotes back to a block image, in the paragraph's
+        // own list — a cell's too.
+        bool canBlock = Document != null && BlockListOf(p) != null;
         items.Add(CheckItem(Loc("InlineWithText"), true, () => ConvertInlineImageToBlock(p, img), canBlock));
         // Accessibility description (HTML alt). Round-trips through JSON/.flow and HTML.
         items.Add(Mi(Loc("AltText"), () => { _ = EditImageAltTextAsync(null, img); }));
@@ -763,9 +762,9 @@ public partial class RichEditor
         items.Add(r >= 0 && c >= 0 ? BuildCellVAlignSub(tb, r, c) : new MenuItem { Header = Loc("CellVerticalAlign"), IsEnabled = false });
         items.Add(BuildCellBackgroundSub(tb, r, c));
         items.Add(MarginMenu(tb));
-        // HWP-style "treat as character": a top-level block table can become inline; an inline table can
-        // promote back to a block (only when its host paragraph is top-level).
-        if (tb.Parent is FlowDocument)
+        // HWP-style "treat as character": a block table can become inline (a table nested in a cell, within its cell);
+        // an inline table can promote back to a block in its host paragraph's list.
+        if (tb.Parent is FlowDocument or TableCell)
         {
             var asChar = new MenuItem { Header = Loc("InlineWithText"), ToggleType = MenuItemToggleType.CheckBox, IsChecked = false };
             asChar.Click += (_, _) => ConvertTableBlockToInline(tb);
@@ -778,7 +777,7 @@ public partial class RichEditor
                 Header = Loc("InlineWithText"),
                 ToggleType = MenuItemToggleType.CheckBox,
                 IsChecked = true,
-                IsEnabled = Document != null && Document.Blocks.IndexOf(itHost) >= 0,
+                IsEnabled = Document != null && BlockListOf(itHost) != null,
             };
             asChar.Click += (_, _) => ConvertInlineTableToBlock(itHost, itw);
             items.Add(asChar);
