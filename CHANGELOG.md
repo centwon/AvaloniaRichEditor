@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cutting a cell block takes its cells with it: the whole table when all of it is selected, whole rows or whole columns
   when the block spans the table; any other block of cells is emptied, as before. Delete and Backspace on a cell block
   empty it — a table whose cells were all selected was removed.
+- A Ctrl shortcut lets go of a selected picture or table, as on the WinUI control: Ctrl+Delete and Ctrl+Backspace delete
+  it, Ctrl+←/→ go on by a word from right after an inline one, Ctrl+C and Ctrl+X still take it. It stayed selected:
+  Ctrl+A then Delete removed only the object, and Ctrl+Delete deleted a word at the caret, which may have been far away.
 
 ### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
 

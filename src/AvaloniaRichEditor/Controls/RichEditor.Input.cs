@@ -969,6 +969,32 @@ public partial class RichEditor
             if (!nav && !copyOrAll && !cellBlock) { e.Handled = true; return; }
         }
 
+        // A Ctrl chord with an object selected — a picture or an inline or nested table — lets go of it, as on the WinUI
+        // control (2026-11-09): Ctrl+C/X take the object (below); Ctrl+Delete/Backspace delete it, as Delete does;
+        // Ctrl+←/→ go on by a word from right after an inline object; any other chord runs with nothing selected. The
+        // object stayed selected through them: Ctrl+A then Delete removed only the object, and Ctrl+Delete deleted a word
+        // at the caret, which may have been far away.
+        if (ctrl && (_selectedBlock != null || _selectedInline != null || _selectedInlineTable != null)
+            && e.Key != Key.C && !(e.Key == Key.X && !shift))
+        {
+            if (e.Key is Key.Back or Key.Delete) ctrl = false; // the object goes below, as with the plain key
+            else
+            {
+                if (e.Key is Key.Left or Key.Right)
+                {
+                    if (_selectedInline is { } ci && ci.p.Inlines.Contains(ci.img))
+                        _caretPosition = new TextPointer(ci.p, OffsetOfInline(ci.p, ci.img) + 1);
+                    else if (_selectedInlineTable is { } ct && ct.host.Inlines.Contains(ct.it))
+                        _caretPosition = new TextPointer(ct.host, OffsetOfInline(ct.host, ct.it) + 1);
+                    CollapseSelectionToCaret();
+                }
+                _selectedBlock = null;
+                _selectedInline = null;
+                _selectedInlineTable = null;
+                InvalidateVisual();
+            }
+        }
+
         // Block caret in front of an image/table.
         if (_caretBlock != null && !ctrl && !IsReadOnly)
         {

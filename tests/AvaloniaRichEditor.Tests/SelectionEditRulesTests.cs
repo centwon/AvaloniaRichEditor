@@ -291,6 +291,52 @@ public class SelectionEditRulesTests
         }
     }
 
+    // ---- a Ctrl chord with an object selected ------------------------------------------------------------
+
+    private static (RichEditor ed, Paragraph host, Paragraph far) InlineTableAndAFarCaret()
+    {
+        var host = TestHelpers.Para(new Run { Text = "ab" }, new InlineTable { Table = Grid(1, 1) }, new Run { Text = "cd" });
+        var far = TestHelpers.Para(new Run { Text = "far away" });
+        var ed = new RichEditor { Document = TestHelpers.Doc(host, far), PageSize = RichEditorPageSize.Continuous };
+        PlaceCaret(ed, far, 4);
+        SelectTableObject(ed, ((InlineTable)host.Inlines[1]).Table);
+        return (ed, host, far);
+    }
+
+    [AvaloniaFact]
+    public void CtrlDelete_WithAnObjectSelected_DeletesTheObject()
+    {
+        // It deleted a word at the caret, far away, and left the object selected.
+        var (ed, host, far) = InlineTableAndAFarCaret();
+        Press(ed, Key.Delete, KeyModifiers.Control);
+        Assert.DoesNotContain(host.Inlines, i => i is InlineTable);
+        Assert.Equal("far away", far.Text());
+    }
+
+    [AvaloniaFact]
+    public void CtrlA_WithAnObjectSelected_LetsGoOfIt_SoDeleteTakesEverything()
+    {
+        // The object stayed selected: Delete then removed only the object.
+        var img = TestHelpers.Img();
+        var host = TestHelpers.Para(new Run { Text = "ab" }, img, new Run { Text = "cd" });
+        var ed = new RichEditor { Document = TestHelpers.Doc(host, TestHelpers.Para(new Run { Text = "far away" })), PageSize = RichEditorPageSize.Continuous };
+        typeof(RichEditor).GetField("_selectedInline", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .SetValue(ed, ((Paragraph, InlineImage)?)(host, img));
+        Press(ed, Key.A, KeyModifiers.Control);
+        Press(ed, Key.Delete);
+        Assert.Equal("", string.Concat(ed.Document!.Blocks.OfType<Paragraph>().Select(p => p.Text())));
+    }
+
+    [AvaloniaFact]
+    public void CtrlRight_WithAnInlineObjectSelected_GoesOnFromRightAfterIt()
+    {
+        var (ed, host, _) = InlineTableAndAFarCaret();
+        Press(ed, Key.Right, KeyModifiers.Control);
+        var caret = (TextPointer)typeof(RichEditor).GetField("_caretPosition", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(ed)!;
+        Assert.Same(host, caret.Paragraph);
+        Assert.True(caret.Offset > 3, $"offset {caret.Offset}");
+    }
+
     // ---- "treat as character" inside a cell -----------------------------------------------------------
 
     private static (RichEditor ed, TableCell cell, Paragraph a) CellHolding(Block inner)
