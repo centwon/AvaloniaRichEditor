@@ -300,7 +300,28 @@ public partial class RichEditor
         // "Draw table" rubber-band: a dashed rectangle following the cursor (view space, drawn over all
         // content). Only present while a drag is in progress in draw mode.
         if (_tableDrawStart is { } ds && _tableDrawCurrent is { } dc)
-            context.DrawRectangle(AccentFill50, AccentPen2, DrawnTableRect(ds, dc));
+        {
+            var band = DrawnTableRect(ds, dc);
+            context.DrawRectangle(AccentFill50, AccentPen2, band);
+            // The picked grid's cell lines and a "rows × cols" label, as the WinUI control draws them: the preview shows
+            // the table that will go in, not only its outline (2026-11-09).
+            if (_pendingTableDraw is { } pd && band.Width >= 20 && band.Height >= 16)
+            {
+                for (int col = 1; col < pd.cols; col++)
+                {
+                    double x = band.X + band.Width * col / pd.cols;
+                    context.DrawLine(AccentBorderPen, new Point(x, band.Y), new Point(x, band.Bottom));
+                }
+                for (int row = 1; row < pd.rows; row++)
+                {
+                    double y = band.Y + band.Height * row / pd.rows;
+                    context.DrawLine(AccentBorderPen, new Point(band.X, y), new Point(band.Right, y));
+                }
+            }
+            if (_pendingTableDraw is { } label)
+                context.DrawText(new FormattedText($"{label.rows} × {label.cols}", System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, Typeface.Default, 12, AccentBrush), new Point(dc.X + 8, dc.Y + 4));
+        }
         }
         finally
         {
