@@ -124,6 +124,9 @@ public partial class RichEditor : Control
     private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img)> _inlineImageRects = new();
     private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img, ResizeGrip grip)> _inlineHandles = new();
     private (Paragraph p, InlineImage img)? _selectedInline;
+    // An inline table selected as an object — its border clicked or right-clicked, a drop — as the WinUI control's
+    // _selectedInlineTable. It was selected whole as text, and a key typed then emptied its cells (2026-11-09).
+    private (Paragraph host, InlineTable it)? _selectedInlineTable;
     private bool _isResizingInline;
     private InlineImage? _resizingInline;
 
@@ -217,12 +220,19 @@ public partial class RichEditor : Control
             new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Colors.Black));
 
     /// <summary>Foreground brush used for runs that don't specify one (and for list markers that follow
-    /// them). A dark-theme host sets this to a light brush. Default: black.</summary>
+    /// them). A dark-theme host sets this to a light brush. Default: black. Text on white paper — page view with page
+    /// boundaries, printing, PDF — is black regardless, like a word processor's automatic colour.</summary>
     public IBrush DefaultForeground
     {
         get => GetValue(DefaultForegroundProperty);
         set => SetValue(DefaultForegroundProperty, value);
     }
+
+    // The colour of "automatic" text (no Foreground of its own): DefaultForeground on the host's canvas, black on the
+    // white paper — a dark-theme host's light grey drew faint text on the page view's paper and in print (2026-11-09,
+    // as the WinUI control).
+    internal IBrush AutoForeground => _onPaper || PagedChrome ? Brushes.Black : DefaultForeground;
+    private bool _onPaper; // set while a print page (bitmap, PDF, print dialog) is drawn
 
     // Cached system font list. The OS reports family names localized to the UI language (e.g.
     // "맑은 고딕" on Korean Windows), and those names resolve back through the same font manager,
@@ -280,9 +290,10 @@ public partial class RichEditor : Control
     // ~28–39 KB each, 6–9x the document model — 8,000 paragraphs, 236–306 MB of managed heap. And a render
     // trims it back to the LayoutKeep most recently used (TrimLayoutCache), or scrolling to the end would
     // fill it all over again.
-    private sealed class LayoutEntry(long sig, double width, Avalonia.Media.TextFormatting.TextLayout layout)
+    private sealed class LayoutEntry(long sig, double width, IBrush auto, Avalonia.Media.TextFormatting.TextLayout layout)
     {
         public readonly long Sig = sig; public readonly double Width = width;
+        public readonly IBrush Auto = auto; // the AutoForeground baked in — the screen's and the paper's differ
         public readonly Avalonia.Media.TextFormatting.TextLayout Layout = layout;
         public long Stamp; // last use, for TrimLayoutCache
     }
@@ -454,6 +465,7 @@ public partial class RichEditor : Control
         _caretBlock = null;
         _caretBlockAfter = false;
         _selectedInline = null;
+        _selectedInlineTable = null;
         _cellBlockMark = null; // it holds a cell of the document being replaced
         CancelTableDraw();     // an armed "draw table" pick: its first click would insert into the new document
         _pendingCaretStyles = null;
@@ -511,6 +523,15 @@ public partial class RichEditor : Control
         _bringCaretIntoView = true; // the undone edit may be off screen: follow it there, as typing does
         InvalidateVisual();
         NotifyStatus();
+    }
+
+    // A click (or right-click) on a block picture selects it where it is — under the pointer, on screen — and leaves the
+    // caret where it was. ResetCaretBlink's caret scroll then carried the view to that caret, off-screen as often as not:
+    // clicking a picture sent the view elsewhere (2026-11-08). The caret blink restarts; the view stays on what was clicked.
+    private void ResetCaretBlinkInPlace()
+    {
+        ResetCaretBlink();
+        _bringCaretIntoView = false;
     }
 
     private void ResetCaretBlink()
@@ -666,7 +687,7 @@ public partial class RichEditor : Control
              object? obj, Block? caretBlock, bool caretBlockAfter, int cell) _selSnapshot;
     private bool SelectionMovedSinceLastSnapshot()
     {
-        object? obj = (object?)_selectedInline?.img ?? _selectedBlock;
+        object? obj = (object?)_selectedInlineTable?.it ?? (object?)_selectedInline?.img ?? _selectedBlock;
         int cell = MarkedCell() is { } m ? (m.whole ? 2 : 1) : 0;
         var now = (_caretPosition.Paragraph, _caretPosition.Offset,
                    _selectionStart.Paragraph, _selectionStart.Offset,
@@ -708,13 +729,21 @@ public partial class RichEditor : Control
         IBrush? Foreground = null, IBrush? Background = null, bool Quote = false, double LineSpacing = 0,
         ListMarkerStyle ListMarker = ListMarkerStyle.Default);
 
+    // As DRAWN: a link is underlined whatever else it carries (DrawnDecorations).
     private static bool HasDeco(Run? r, TextDecorationLocation loc)
-    {
-        if (r == null) return false;
-        if (r.TextDecorations == null)
-            return loc == TextDecorationLocation.Underline && !string.IsNullOrEmpty(r.NavigateUri);
-        return RunDecorations.Has(r.TextDecorations, loc);
-    }
+        => r != null && (loc == TextDecorationLocation.Underline && IsLink(r) || RunDecorations.Has(r.TextDecorations, loc));
+
+    // The look a hyperlink run is drawn with whatever the run itself says, as on the WinUI control: always underlined (with
+    // any strikethrough it also carries), and link blue unless it has a colour of its own — so a link made in the editor and
+    // a pasted one look the same. It was drawn in the plain text colour, and lost its underline once it carried a
+    // strikethrough (2026-11-09). The caret format reports the same, so the toolbar shows what is on screen.
+    private static readonly IBrush LinkBrush = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Color.FromRgb(0, 0, 255));
+    private static bool IsLink(Run r) => !string.IsNullOrEmpty(r.NavigateUri);
+    private static IBrush? DrawnForeground(Run r) => r.Foreground ?? (IsLink(r) ? LinkBrush : null);
+    private static TextDecorationCollection? DrawnDecorations(Run r)
+        => !IsLink(r) || RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline) ? r.TextDecorations
+         : RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough) ? RunDecorations.Make(true, true)
+         : TextDecorations.Underline;
 
     // Where text typed at logical offset k goes, and whose character format it takes — the ONE rule for
     // insertion (TryInsertTextCore) and for the caret report (CaretFormatRun), so the toolbar shows what
@@ -819,7 +848,7 @@ public partial class RichEditor : Control
             p?.TextAlignment ?? TextAlignment.Left,
             p?.ListType ?? ListKind.None,
             p?.HeadingLevel ?? 0,
-            run?.Foreground,
+            run != null ? DrawnForeground(run) : null, // as drawn: link blue
             run?.Background,
             p?.IsQuote ?? false,
             p?.LineSpacing ?? double.NaN,
@@ -896,14 +925,17 @@ public partial class RichEditor : Control
         // arrowing into an empty inline table from a file threw out of the key handler (round 35).
         for (int i = blocks.Count - 1; i >= 0; i--)
             if (blocks[i] is TableBlock t && !HasGrid(t)) blocks.RemoveAt(i);
+        // One empty run, as an Enter split leaves and as the WinUI control writes: with none, the same document saved as
+        // different JSON in the two controls (2026-11-08).
+        static Paragraph Empty(object parent) => new() { Parent = parent, Inlines = { new Run { Text = "" } } };
         if (blocks.Count == 0 || blocks[0] is not Paragraph)
-            blocks.Insert(0, new Paragraph { Parent = parent });
+            blocks.Insert(0, Empty(parent));
         if (blocks[blocks.Count - 1] is not Paragraph)
-            blocks.Add(new Paragraph { Parent = parent });
+            blocks.Add(Empty(parent));
         for (int i = 0; i < blocks.Count - 1; i++)
         {
             if (blocks[i] is not Paragraph && blocks[i + 1] is not Paragraph)
-                blocks.Insert(i + 1, new Paragraph { Parent = parent });
+                blocks.Insert(i + 1, Empty(parent));
         }
         foreach (var b in blocks)
         {
@@ -1462,7 +1494,7 @@ public partial class RichEditor : Control
             size = HeadingFontSize(p.HeadingLevel);
             weight = FontWeight.Bold;
         }
-        var brush = first?.Foreground ?? DefaultForeground;
+        var brush = first?.Foreground ?? AutoForeground;
         var ft = new FormattedText(m, System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight, new Typeface(family, FontStyle.Normal, weight), PtToPx(size), brush);
         const double gap = 6;
@@ -1598,13 +1630,14 @@ public partial class RichEditor : Control
 
         // Trusted pass (no content change since the last build): skip the signature hash and reuse
         // the same-width cached layout directly. Falls through to the verified path on a width/miss.
-        if (_trustLayoutCache && _layoutCache.TryGetValue(p, out var trusted) && trusted.Width == maxWidth)
+        var auto = AutoForeground;
+        if (_trustLayoutCache && _layoutCache.TryGetValue(p, out var trusted) && trusted.Width == maxWidth && trusted.Auto == auto)
         {
             trusted.Stamp = ++_layoutStamp;
             return trusted.Layout;
         }
         long sig = ParagraphSig(p);
-        if (_layoutCache.TryGetValue(p, out var cached) && cached.Width == maxWidth && cached.Sig == sig)
+        if (_layoutCache.TryGetValue(p, out var cached) && cached.Width == maxWidth && cached.Sig == sig && cached.Auto == auto)
         {
             cached.Stamp = ++_layoutStamp;
             return cached.Layout;
@@ -1622,7 +1655,7 @@ public partial class RichEditor : Control
             // whole document for nothing, and 20,000 cells took 77 s to draw (1.3.0 audit). Doubling keeps it amortized.
             _layoutPruneAt = Math.Max(LayoutPruneCap, 2 * _layoutCache.Count);
         }
-        _layoutCache[p] = new LayoutEntry(sig, maxWidth, layout) { Stamp = ++_layoutStamp };
+        _layoutCache[p] = new LayoutEntry(sig, maxWidth, auto, layout) { Stamp = ++_layoutStamp };
         return layout;
     }
 
@@ -1637,7 +1670,7 @@ public partial class RichEditor : Control
         var defaultFamily = DefaultFontFamily;
         double defaultSize = DefaultFontSize; // pt; kept in pt for the run-size fallback below
         var defaultProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-            new Typeface(defaultFamily), PtToPx(defaultSize), null, DefaultForeground);
+            new Typeface(defaultFamily), PtToPx(defaultSize), null, AutoForeground);
 
         // A heading's look is on its runs (HeadingStyle); the preset here is only for text not typed yet — the
         // composition fallback and the line height of an empty heading.
@@ -1653,15 +1686,14 @@ public partial class RichEditor : Control
                 var family = string.IsNullOrEmpty(r.FontFamily) ? defaultFamily : new FontFamily(r.FontFamily);
                 var weight = r.FontWeight;
                 var typeface = new Typeface(family, r.FontStyle, weight);
-                TextDecorationCollection? decos = r.TextDecorations;
-                if (decos == null && !string.IsNullOrEmpty(r.NavigateUri)) decos = TextDecorations.Underline;
+                TextDecorationCollection? decos = DrawnDecorations(r); // a link: underlined
                 double size = DrawnRunSize(r, defaultSize); // pt
                 if (size > maxRunPt) maxRunPt = size;
                 var props = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                     typeface,
                     PtToPx(size),
                     decos,
-                    r.Foreground ?? DefaultForeground,
+                    DrawnForeground(r) ?? AutoForeground, // a link without its own colour: link blue
                     r.Background);
                 segs.Add(new LayoutSeg { Text = r.Text, Props = props });
             }
@@ -1706,12 +1738,12 @@ public partial class RichEditor : Control
             // the IME committed. An empty paragraph has no run to read, hence the heading-aware fallback.
             var fallback = heading
                 ? new Avalonia.Media.TextFormatting.GenericTextRunProperties(
-                    new Typeface(defaultFamily, FontStyle.Normal, FontWeight.Bold), PtToPx(headingSize), null, DefaultForeground)
+                    new Typeface(defaultFamily, FontStyle.Normal, FontWeight.Bold), PtToPx(headingSize), null, AutoForeground)
                 : defaultProps;
             var src = PreeditSourceProps(segs, preeditOffset, fallback);
             var preeditProps = new Avalonia.Media.TextFormatting.GenericTextRunProperties(
                 src.Typeface, src.FontRenderingEmSize, TextDecorations.Underline,
-                src.ForegroundBrush ?? DefaultForeground, src.BackgroundBrush);
+                src.ForegroundBrush ?? AutoForeground, src.BackgroundBrush);
             SplicePreedit(segs, preeditOffset, preeditText!, preeditProps);
         }
 
@@ -1995,8 +2027,15 @@ public partial class RichEditor : Control
         foreach (var b in blocks) if (b.Clone() is Block cl) src.Add(cl);
         if (src.Count == 0) return;
 
+        // One rule for both controls (2026-11-08) — the same paste had saved as different JSON in the two: the first pasted
+        // paragraph joins the text before the caret and the last the text after it; a side that is EMPTY takes the format
+        // of the pasted paragraph joining it (a list or heading pasted onto an empty line stays one); runs of equal format
+        // rejoin and nothing empty is left behind; the caret ends after the pasted content.
+        int caretAt = _caretPosition.Offset;
+        bool headEmpty = caretAt == 0, tailEmpty = caretAt >= BuildPlain(p).Length;
+
         // Split the caret paragraph: p keeps the head; tail takes the inlines after the caret (same props).
-        int splitAt = SplitInlinesAt(p, _caretPosition.Offset);
+        int splitAt = SplitInlinesAt(p, caretAt);
         // The tail continues the same paragraph, so it keeps the source's full format (heading level
         // included — unlike Enter, this is a split of one logical paragraph, not a new one).
         var tail = new Paragraph();
@@ -2010,21 +2049,29 @@ public partial class RichEditor : Control
         }
 
         // Merge the first pasted paragraph into the head line.
+        bool headJoined = false;
         if (src[0] is Paragraph fp)
         {
+            headJoined = true;
+            if (headEmpty) { p.CopyFormatFrom(fp); p.Inlines.Clear(); }
             foreach (var inl in fp.Inlines.ToList()) { fp.Inlines.Remove(inl); inl.Parent = p; p.Inlines.Add(inl); }
             src.RemoveAt(0);
+            TidyPasted(p);
         }
         // Merge the last pasted paragraph into the tail (prepended before the original tail text). The
         // caret lands right after that pasted text; otherwise at the start of the tail.
         int caretOff = 0;
+        bool caretInTail = false;
         if (src.Count > 0 && src[^1] is Paragraph lp)
         {
+            if (tailEmpty) { tail.CopyFormatFrom(lp); tail.Inlines.Clear(); }
             var moved = lp.Inlines.ToList();
             int pos = 0;
             foreach (var inl in moved) { lp.Inlines.Remove(inl); inl.Parent = tail; tail.Inlines.Insert(pos++, inl); }
             caretOff = moved.Sum(InlineLen);
             src.RemoveAt(src.Count - 1);
+            TidyPasted(tail);
+            caretInTail = true;
         }
         if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "" });
         if (tail.Inlines.Count == 0) tail.Inlines.Add(new Run { Text = "" });
@@ -2033,12 +2080,38 @@ public partial class RichEditor : Control
         foreach (var b in src) container.Insert(at++, b);
         tail.Parent = p.Parent;
         container.Insert(at, tail);
+        // An empty side left next to a pasted block is not text anyone wrote: drop it, and let the normalization in
+        // UpdateParents put back a paragraph only where a block needs one (the edges, between two blocks).
+        Block? lastBlock = src.Count > 0 ? src[^1] : null;
+        if (!headJoined && BuildPlain(p).Length == 0 && !p.Inlines.Any(i => i is not Run)) container.Remove(p);
+        if (!caretInTail && BuildPlain(tail).Length == 0 && !tail.Inlines.Any(i => i is not Run)) container.Remove(tail);
         UpdateParents(Document);
         if (inCell) InvalidateMeasure(); // the cell grew -> table row height reflows
 
-        _caretPosition = new TextPointer(tail, caretOff);
-        _selectionStart = new TextPointer(tail, caretOff);
-        _selectionEnd = new TextPointer(tail, caretOff);
+        var caretPara = tail;
+        if (!caretInTail && !container.Contains(tail))
+        {
+            // The paragraph after the last pasted block (the normalization guarantees one).
+            caretPara = p;
+            int li = lastBlock != null ? container.IndexOf(lastBlock) : -1;
+            for (int i = li + 1; i < container.Count; i++)
+                if (container[i] is Paragraph after) { caretPara = after; break; }
+            caretOff = 0;
+        }
+        _caretPosition = new TextPointer(caretPara, caretOff);
+        _selectionStart = new TextPointer(caretPara, caretOff);
+        _selectionEnd = new TextPointer(caretPara, caretOff);
+    }
+
+    // A pasted seam: drop empty runs when there is anything else (keep one when there is nothing), rejoin equal-format runs.
+    private static void TidyPasted(Paragraph p)
+    {
+        if (p.Inlines.Any(i => !(i is Run r && string.IsNullOrEmpty(r.Text))))
+            p.Inlines.RemoveAll(i => i is Run r && string.IsNullOrEmpty(r.Text));
+        else if (p.Inlines.Count > 1)
+            p.Inlines.RemoveRange(1, p.Inlines.Count - 1);
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "", Parent = p });
+        TextRange.CoalesceRuns(p);
     }
 
     // Plain after-block splice (the fallback): inserts cloned blocks after the caret's block — into the
@@ -2090,6 +2163,7 @@ public partial class RichEditor : Control
     private void InsertBlockAtCaret(Block b)
     {
         if (Document == null) return;
+        MoveCaretToInsertionPoint();
         bool before = false;
         if (_caretPosition.Paragraph is { Parent: FlowDocument or TableCell } cp)
         {
@@ -2319,6 +2393,34 @@ public partial class RichEditor : Control
         return false;
     }
 
+    // Where an insert (a table, a picture, a divider; a table put in as a character) goes with something selected:
+    // nothing selected is removed — the caret goes to the end of a text selection (in document order, whichever way it
+    // was made), or right after a selected picture or table — and the selection is let go of, as on the WinUI control
+    // (2026-11-09). The block went in wherever the caret was: at the START of a selection made backwards, and, with a
+    // picture or table selected, where the caret had been before the click. A paste replaces the selection instead: its
+    // caller deletes it first.
+    private void MoveCaretToInsertionPoint()
+    {
+        if (_selectedBlock is { } b && BlockListOf(b) is { } list && list.IndexOf(b) is var bi and >= 0)
+        {
+            for (int i = bi + 1; i < list.Count; i++)
+                if (list[i] is Paragraph after) { _caretPosition = new TextPointer(after, 0); break; }
+        }
+        else if (_selectedInline is { } si && si.p.Inlines.Contains(si.img))
+            _caretPosition = new TextPointer(si.p, OffsetOfInline(si.p, si.img) + 1);
+        else if (_selectedInlineTable is { } st && st.host.Inlines.Contains(st.it))
+            _caretPosition = new TextPointer(st.host, OffsetOfInline(st.host, st.it) + 1);
+        else if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
+        {
+            var end = _selectionStart.CompareTo(_selectionEnd) > 0 ? _selectionStart : _selectionEnd;
+            _caretPosition = new TextPointer(end.Paragraph, end.Offset);
+        }
+        _selectedBlock = null;
+        _selectedInline = null;
+        _selectedInlineTable = null;
+        CollapseSelectionToCaret();
+    }
+
     // Pastes an image as an inline (character-like) image at the caret, splitting the run under it
     // like text insertion. Used when the clipboard meta says the image was inline when copied.
     private void InsertInlineImageAtCaret(byte[] bytes, double w, double h)
@@ -2367,7 +2469,7 @@ public partial class RichEditor : Control
         // The block caret on a table — its border clicked or right-clicked — holds the table as a unit: Del
         // deletes it, Space indents it. Copy takes it too. With no text selected there was nothing to copy:
         // the menu item was greyed out and Ctrl+C did nothing (live check, 2026-09-13).
-        var caretTable = !textSelected ? _caretBlock as TableBlock : null;
+        var caretTable = !textSelected ? _caretBlock as TableBlock ?? _selectedBlock as TableBlock ?? _selectedInlineTable?.it.Table : null;
         TextRange range;
         if (caretTable != null && WholeTableEnds(caretTable) is { } ends)
             range = new TextRange(new TextPointer(ends.first, 0), new TextPointer(ends.last, GetParagraphLength(ends.last)));

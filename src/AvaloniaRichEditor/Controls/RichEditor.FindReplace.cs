@@ -119,13 +119,15 @@ public partial class RichEditor
     }
 
     /// <summary>Replaces the current selection if it matches <paramref name="query"/>, then advances
-    /// to the next match. Returns <see langword="true"/> if a further match exists.</summary>
+    /// to the next match. Returns <see langword="true"/> if a further match exists; <see langword="false"/>, doing
+    /// nothing, when read-only (like <see cref="ReplaceAll"/> — finding is <see cref="FindNext"/>'s job).</summary>
     public bool ReplaceNext(string query, string replacement, bool matchCase)
     {
-        if (!AllowFindReplace || Document == null || string.IsNullOrEmpty(query)) return false;
+        // Read-only does nothing, as in the WinUI control (this used to run the find half, move the selection and return
+        // true). The bar checks this too, but a host's own find UI calls in directly. 2026-11-09.
+        if (!AllowFindReplace || IsReadOnly || Document == null || string.IsNullOrEmpty(query)) return false;
         var cmp = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        // Read-only: only the find half (the bar checks this too, but a host's own find UI calls in directly).
-        bool selMatches = !IsReadOnly && _selectionStart.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0
+        bool selMatches = _selectionStart.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0
             && string.Equals(new TextRange(_selectionStart, _selectionEnd).GetText(), query, cmp);
         if (selMatches)
         {

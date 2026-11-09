@@ -141,7 +141,8 @@ public class HtmlFormatterTests
         // Minimal valid 1×1 PNG.
         var png = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
-        var path = Path.Combine(Path.GetTempPath(), "are_filegate_" + Guid.NewGuid().ToString("N") + ".png");
+        // Outside %TEMP%: a paste takes pictures from there even with local files off (TempFilePasteImageTests).
+        var path = Path.Combine(AppContext.BaseDirectory, "are_filegate_" + Guid.NewGuid().ToString("N") + ".png");
         File.WriteAllBytes(path, png);
         try
         {

@@ -162,20 +162,57 @@ public partial class RichEditor
         return false;
     }
 
-    // Removes a table held whole — selected whole (a border click, a staged Ctrl+A) or held by the block caret —
-    // for Cut's second half and for Delete. Copy takes THAT table (SelectedWholeTable / the caret's table), so
-    // Cut removes it; Delete removes it too (user decision). The cell-block rule — clear the cells, keep the
-    // grid — left an empty table standing: "cut it, and it is still there" (live check, 2026-09-13), and the
-    // block caret's cut removed nothing. That rule stays for a block of SOME cells. False when no table is held
-    // whole. The caller has pushed the undo checkpoint (DeleteBlock would push a second one). The caret leaves
-    // the removed table — a whole-table selection's caret sits in its last cell.
-    private bool RemoveTableHeldWhole()
+    // Removes a table held as an OBJECT — by the block caret, or selected as one (a nested or inline table's border, a
+    // drop) — for Cut's second half and for Delete. A table whose cells are all selected (a staged Ctrl+A) is a cell
+    // block: Delete empties its cells, Cut takes the cells (CutCellBlock) — as on the WinUI control (2026-11-09; a table
+    // held whole as text went whole for Delete too). False when no table is held as an object. The caller has pushed
+    // the undo checkpoint (DeleteBlock would push a second one).
+    private bool RemoveSelectedTableObject()
     {
         bool textSelected = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
             && _selectionStart.CompareTo(_selectionEnd) != 0;
-        var tb = SelectedWholeTable() ?? (!textSelected ? _caretBlock as TableBlock : null);
+        var tb = textSelected ? null : _caretBlock as TableBlock ?? _selectedBlock as TableBlock ?? _selectedInlineTable?.it.Table;
         if (Document == null || tb == null) return false;
-        _caretBlock = null; _selectedBlock = null;
+        RemoveTable(tb);
+        return true;
+    }
+
+    // Cut's second half for a cell block: the cells go with it — the whole table, whole rows (it spans every column)
+    // or whole columns (it spans every row) — as on the WinUI control (2026-11-09). False for any other rectangle, which
+    // the caller empties, as Delete does: part of a grid cannot leave without moving other cells into its place. The
+    // caller has pushed the undo checkpoint.
+    private bool CutCellBlock()
+    {
+        if (Document == null || CellBlockTable() is not { } tb || SelectedCellRange(tb) is not { } rg) return false;
+        bool allRows = rg.r0 == 0 && rg.r1 == tb.Rows - 1, allCols = rg.c0 == 0 && rg.c1 == tb.Columns - 1;
+        if (!allRows && !allCols) return false;
+        _cellBlockMark = null;
+        if (allRows && allCols) { RemoveTable(tb); return true; }
+        if (allCols)
+        {
+            for (int r = rg.r1; r >= rg.r0; r--) tb.DeleteRow(r);
+            UpdateParents(Document);
+            _caretPosition = new TextPointer(CellCaretTarget(tb, Math.Min(rg.r0, tb.Rows - 1), 0), 0);
+        }
+        else
+        {
+            for (int c = rg.c1; c >= rg.c0; c--) tb.DeleteColumn(c);
+            UpdateParents(Document);
+            _caretPosition = new TextPointer(CellCaretTarget(tb, 0, Math.Min(rg.c0, tb.Columns - 1)), 0);
+        }
+        CollapseSelectionToCaret();
+        DropDetachedObjectSelection();
+        InvalidateMeasure();
+        ResetCaretBlink();
+        InvalidateVisual();
+        return true;
+    }
+
+    // Takes a table out of the document — an inline one out of its host line — and puts the caret where it was.
+    private void RemoveTable(TableBlock tb)
+    {
+        if (Document == null) return;
+        _caretBlock = null; _selectedBlock = null; _selectedInlineTable = null; _cellBlockMark = null;
 
         if (tb.Parent is InlineTable it && it.Parent is Paragraph host)
         {
@@ -195,6 +232,26 @@ public partial class RichEditor
         CollapseSelectionToCaret();
         InvalidateMeasure();
         ResetCaretBlink();
+        InvalidateVisual();
+    }
+
+    // Selects a nested or inline table as an object, leaving the caret where it is — as a click selects a picture.
+    // A nested or inline table's border selected the whole table as text (the cell fill of a staged Ctrl+A), so a key
+    // typed then emptied its cells (as on the WinUI control, 2026-11-09).
+    private bool SelectTableObject(TableBlock tb)
+    {
+        _selectedBlock = null;
+        _selectedInline = null;
+        _selectedInlineTable = null;
+        _caretBlock = null;
+        if (tb.Parent is InlineTable it)
+        {
+            if (it.Parent is not Paragraph host) return false;
+            _selectedInlineTable = (host, it);
+        }
+        else _selectedBlock = tb;
+        CollapseSelectionToCaret();
+        ResetCaretBlinkInPlace();
         InvalidateVisual();
         return true;
     }
@@ -379,6 +436,29 @@ public partial class RichEditor
         var (ecs, ers) = tb.SpanOf(e.r, e.c);
         int r0 = Math.Min(s.r, e.r), c0 = Math.Min(s.c, e.c);
         int r1 = Math.Max(s.r + srs - 1, e.r + ers - 1), c1 = Math.Max(s.c + scs - 1, e.c + ecs - 1);
+        return GrowToMerges(tb, r0, c0, r1, c1);
+    }
+
+    // The cell block's box grown until no merged cell sticks out of it — the box of the two corner cells, grown by
+    // every merge reaching into it, again and again. Growing only by the corner cells' spans let a merge anchored outside
+    // reach in, and the two controls painted, cleared and formatted different cells there (2026-11-09: one rule).
+    private static (int r0, int c0, int r1, int c1) GrowToMerges(TableBlock tb, int r0, int c0, int r1, int c1)
+    {
+        r0 = Math.Max(0, r0); c0 = Math.Max(0, c0);
+        r1 = Math.Min(tb.Rows - 1, r1); c1 = Math.Min(tb.Columns - 1, c1);
+        for (bool grew = true; grew;)
+        {
+            grew = false;
+            for (int r = r0; r <= r1; r++)
+                for (int c = c0; c <= c1; c++)
+                {
+                    var (ar, ac) = tb.AnchorOf(r, c);
+                    var (cs, rs) = tb.SpanOf(ar, ac);
+                    int nr0 = Math.Min(r0, ar), nc0 = Math.Min(c0, ac);
+                    int nr1 = Math.Min(tb.Rows - 1, Math.Max(r1, ar + rs - 1)), nc1 = Math.Min(tb.Columns - 1, Math.Max(c1, ac + cs - 1));
+                    if (nr0 != r0 || nc0 != c0 || nr1 != r1 || nc1 != c1) { (r0, c0, r1, c1) = (nr0, nc0, nr1, nc1); grew = true; }
+                }
+        }
         return (r0, c0, r1, c1);
     }
 
@@ -471,6 +551,15 @@ public partial class RichEditor
         var loc = _caretPosition.Paragraph != null ? FindCell(_caretPosition.Paragraph) : null;
         if (loc == null)
         {
+            // Several selected paragraphs: every one of them steps in (out) — a list item a level, any other an indent
+            // step — and nothing is deleted. A list item alone steps its level. The key used to type four spaces over
+            // the selection, so selecting a list and pressing Tab deleted it (as on the WinUI control, 2026-11-09).
+            if (SelectedParagraphsInOrder().Count > 1 || _caretPosition.Paragraph is { IsListItem: true })
+            {
+                ApplyToSelectedParagraphs(p => StepIndent(p, shift), p => !StepIndentChanges(p, shift));
+                InvalidateMeasure(); // the indent moves the wrap width, and so the height
+                return;
+            }
             if (shift) { ShiftTabOutsideTable(); return; }
             if (Document != null) PushUndo();
             // Tab completes the token before it the way a typed space does — auto-link names space, tab
@@ -519,6 +608,18 @@ public partial class RichEditor
             if (Document != null) UpdateParents(Document);
             FocusCell(top.Cells[top.Rows - 1][0].Para);
         }
+    }
+
+    // One Tab step over a whole paragraph: a list item one level deeper (shallower, 0–8), any other paragraph one indent
+    // step (20, 0–400) further in (out).
+    private static int SteppedListLevel(Paragraph p, bool outdent) => System.Math.Clamp(p.ListLevel + (outdent ? -1 : 1), 0, 8);
+    private static double SteppedIndent(Paragraph p, bool outdent) => System.Math.Clamp(p.Indent + (outdent ? -20 : 20), 0, 400);
+    private static bool StepIndentChanges(Paragraph p, bool outdent)
+        => p.IsListItem ? SteppedListLevel(p, outdent) != p.ListLevel : SteppedIndent(p, outdent) != p.Indent;
+    private static void StepIndent(Paragraph p, bool outdent)
+    {
+        if (p.IsListItem) p.ListLevel = SteppedListLevel(p, outdent);
+        else p.Indent = SteppedIndent(p, outdent);
     }
 
     // Shift+Tab outside a table has to undo what Tab did there. Tab types four spaces, so this removes
@@ -590,6 +691,7 @@ public partial class RichEditor
     public void InsertInlineTable(int rows, int cols)
     {
         if (Document == null || IsReadOnly || !AllowTables) return;
+        MoveCaretToInsertionPoint(); // after a selection, which stays
         if (_caretPosition.Paragraph is not { } p) return;
         if (rows < 1) rows = 1;
         if (cols < 1) cols = 1;
@@ -605,25 +707,25 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // HWP-style toggle: demote a top-level block table to an inline table anchored on an adjacent
-    // paragraph (mirror of ConvertImageBlockToInline). Top-level only — a table inside a cell is already
-    // a block sibling there, so the menu offers this only for FlowDocument-rooted tables.
+    // HWP-style toggle: demote a block table to an inline table anchored on the paragraph next to it in its OWN list —
+    // the document's, or a cell's for a table nested in a cell (it used to be top-level only; mirror of
+    // ConvertImageBlockToInline).
     internal void ConvertTableBlockToInline(TableBlock tb)
     {
-        if (Document == null) return;
-        int idx = Document.Blocks.IndexOf(tb);
+        if (Document == null || BlockListOf(tb) is not { } list) return;
+        int idx = list.IndexOf(tb);
         if (idx < 0) return;
         Paragraph? anchor = null;
         bool atEnd = true;
-        if (idx > 0 && Document.Blocks[idx - 1] is Paragraph prev) anchor = prev;
+        if (idx > 0 && list[idx - 1] is Paragraph prev) anchor = prev;
         else
-            for (int i = idx + 1; i < Document.Blocks.Count && anchor == null; i++)
-                if (Document.Blocks[i] is Paragraph next) { anchor = next; atEnd = false; }
+            for (int i = idx + 1; i < list.Count && anchor == null; i++)
+                if (list[i] is Paragraph next) { anchor = next; atEnd = false; }
         if (anchor == null) return;
 
         PushUndo();
         var it = new InlineTable { Table = (TableBlock)tb.Clone() };
-        Document.Blocks.Remove(tb);
+        list.Remove(tb);
         if (atEnd) anchor.Inlines.Add(it);
         else anchor.Inlines.Insert(0, it);
         if (ReferenceEquals(_selectedBlock, tb)) _selectedBlock = null;
@@ -639,13 +741,12 @@ public partial class RichEditor
         InvalidateVisual();
     }
 
-    // Reverse of ConvertTableBlockToInline: promote an inline table to a sibling block table after its
-    // host paragraph. Top-level paragraphs only — table cells cannot host block siblings (the menu
-    // disables this inside cells, mirroring the inline-image guard).
+    // Reverse of ConvertTableBlockToInline: promote an inline table to a block table right after its host paragraph, in
+    // the host's own list — a cell's too.
     internal void ConvertInlineTableToBlock(Paragraph host, InlineTable it)
     {
-        if (Document == null) return;
-        int idx = Document.Blocks.IndexOf(host);
+        if (Document == null || BlockListOf(host) is not { } list) return;
+        int idx = list.IndexOf(host);
         if (idx < 0) return;
 
         PushUndo();
@@ -656,7 +757,7 @@ public partial class RichEditor
             || IsWithin(_selectionStart.Paragraph, it.Table) || IsWithin(_selectionEnd.Paragraph, it.Table);
         int off = OffsetOfInline(host, it);
         host.Inlines.Remove(it);
-        Document.Blocks.Insert(idx + 1, tb);
+        list.Insert(idx + 1, tb);
         UpdateParents(Document);
         if (caretInside)
         {
@@ -825,10 +926,11 @@ public partial class RichEditor
     // row's cells still name the table as their parent, so a parent chain would call them inside.
     private void DropDetachedObjectSelection()
     {
-        if (_selectedBlock == null && _selectedInline == null) return;
+        if (_selectedBlock == null && _selectedInline == null && _selectedInlineTable == null) return;
         var paras = GetAllParagraphsInOrder();
         if (_selectedBlock is { } blk && !BlockIsIn(blk)) _selectedBlock = null;
         if (_selectedInline is { } si && !(paras.Contains(si.p) && si.p.Inlines.Contains(si.img))) _selectedInline = null;
+        if (_selectedInlineTable is { } st && !(paras.Contains(st.host) && st.host.Inlines.Contains(st.it))) _selectedInlineTable = null;
 
         // A table owns a cell paragraph (TableIsInDocument); any other block lives in the document's list or in
         // a cell, and every cell that is in the document holds a paragraph that is too.

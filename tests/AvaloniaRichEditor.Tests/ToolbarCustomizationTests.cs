@@ -112,17 +112,6 @@ public class ToolbarCustomizationTests
         Assert.Same(palette, RichEditorToolbar.Palette);
     }
 
-    // Entry FORMAT is deliberately not validated: the swatch grid is cosmetic and an unparseable entry
-    // degrades to a fallback swatch, so a typo shows up as a wrong colour rather than a crash.
-    [AvaloniaFact]
-    public void Palette_UnparseableEntryDoesNotThrow()
-    {
-        var original = RichEditorToolbar.Palette;
-        try
-        {
-            RichEditorToolbar.Palette = new[] { "not-a-colour", "#00FF00" };
-            _ = new RichEditorToolbar { Target = new RichEditor() };
-        }
-        finally { RichEditorToolbar.Palette = original; }
-    }
+    // Entry FORMAT is deliberately not validated: an unparseable entry degrades to a fallback swatch. The palette is read
+    // when a picker first opens now, so that is tested there (ToolbarLazyBuildTests.Palette_ReachesTheOpenedPicker).
 }

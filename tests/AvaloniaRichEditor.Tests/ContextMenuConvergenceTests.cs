@@ -168,7 +168,7 @@ public class ContextMenuConvergenceTests
         typeof(RichEditor).GetMethod("BuildTableMenu", NP)!.Invoke(ed, new object?[] { items, tb, tb.Cells[0][0].Para, false });
 
         var labels = items.Select(i => i is Separator ? "—" : (i as MenuItem)?.Header as string ?? i.GetType().Name).ToArray();
-        Assert.Equal(TableMenuLabels(inlineToggle: !nested), labels); // a table in a cell has no 글자처럼 취급
+        Assert.Equal(TableMenuLabels(inlineToggle: true), labels); // a table in a cell converts within its cell too
     }
 
     // Editing inside a cell, 셀 선택 is right in the text menu — just above the "Table" submenu, not only inside it

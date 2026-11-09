@@ -392,41 +392,53 @@ public partial class RichEditorToolbar
                 new FilePickerFileType("Flow package") { Patterns = new[] { "*.flow" } },
                 new FilePickerFileType("HTML document") { Patterns = new[] { "*.html", "*.htm" } },
                 new FilePickerFileType("RTF document") { Patterns = new[] { "*.rtf" } },
+                new FilePickerFileType("PDF document") { Patterns = new[] { "*.pdf" } },
             }
         });
         if (file == null) return;
+        using (var stream = await file.OpenWriteAsync()) await ExportToAsync(file.Name, stream);
+    }
 
-        // Format follows the chosen extension: .flow = ZIP package, .html/.htm = HTML, .rtf = RTF, else JSON.
-        var name = file.Name;
+    // Writes the target in the format its file name names: .flow = ZIP package, .html/.htm = HTML, .rtf = RTF, .pdf = PDF
+    // (as the WinUI view offers, 2026-11-09), else JSON. A PDF cannot be opened again, so it leaves the document modified.
+    internal async Task ExportToAsync(string name, Stream stream)
+    {
+        if (Target?.Document == null) return;
+        if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            Target.SavePdf(stream);
+            return; // not reloadable: the document stays modified
+        }
         if (name.EndsWith(".flow", StringComparison.OrdinalIgnoreCase))
         {
-            using var stream = await file.OpenWriteAsync();
             await Target.SavePackageAsync(stream);
         }
         else if (name.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
         {
             string html = Target.ToHtml();
-            using var stream = await file.OpenWriteAsync();
-            using var writer = new StreamWriter(stream);
+            using var writer = new StreamWriter(stream, leaveOpen: true);
             await writer.WriteAsync(html);
         }
         else if (name.EndsWith(".rtf", StringComparison.OrdinalIgnoreCase))
         {
             string rtf = Target.ToRtf();
-            using var stream = await file.OpenWriteAsync();
             // RTF is ASCII (non-ASCII text is \u-escaped), so Latin-1 keeps the bytes exact.
-            using var writer = new StreamWriter(stream, System.Text.Encoding.Latin1);
+            using var writer = new StreamWriter(stream, System.Text.Encoding.Latin1, leaveOpen: true);
             await writer.WriteAsync(rtf);
         }
         else
         {
             string json = await Target.ToJsonAsync(); // serialize off the UI thread
-            using var stream = await file.OpenWriteAsync();
-            using var writer = new StreamWriter(stream);
+            using var writer = new StreamWriter(stream, leaveOpen: true);
             await writer.WriteAsync(json);
         }
         Target.MarkSaved(); // persisted → clear the modified flag (all export formats here are reloadable)
     }
+
+    internal static readonly FilePickerFileType[] ImportFileTypes =
+    {
+        new("Documents") { Patterns = new[] { "*.flow", "*.json", "*.html", "*.htm", "*.rtf" } },
+    };
 
     private async Task ImportAsync()
     {
@@ -446,6 +458,7 @@ public partial class RichEditorToolbar
         {
             Title = Loc("Import"),
             AllowMultiple = false,
+            FileTypeFilter = ImportFileTypes, // only what Import can read (it listed every file), as the WinUI view
         });
         if (files == null || files.Count == 0) return;
 
@@ -468,6 +481,7 @@ public partial class RichEditorToolbar
         // and threw one away. The format is known from the first few bytes.
         byte[] buf = ms.GetBuffer();
         int len = (int)ms.Length;
+        if (len == 0) return; // an empty file is nothing to import (it reached the JSON reader and was reported as a fault)
         if (len >= 2 && buf[0] == (byte)'P' && buf[1] == (byte)'K')
         {
             await Target.LoadPackageAsync(ms);

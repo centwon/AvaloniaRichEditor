@@ -93,6 +93,17 @@ public partial class RichEditor
     private Point ClampToEditorBounds(Point p)
         => new(Math.Clamp(p.X, 0, Math.Max(0, Bounds.Width)), Math.Clamp(p.Y, 0, Math.Max(0, Bounds.Height)));
 
+    // Where a table drag starts: pressed below the last line, the table goes after it (the caret lands there), so the
+    // rubber band starts at the content's bottom — what it previews is where the table goes. It started under the pointer
+    // and the table went in above it (2026-11-08: the preview follows the result, as on the WinUI control).
+    private Point TableDrawAnchor(Point view)
+    {
+        var p = ClampToEditorBounds(view);
+        var doc = MapViewToDoc(p);
+        double bottom = MeasureContentHeight(IsPaged ? PaperContentWidth : Bounds.Width);
+        return doc.Y <= bottom ? p : MapDocToView(new Point(doc.X, bottom));
+    }
+
     // Also run when the document is replaced (a file opened, an undo/redo swap — the pick belonged to the
     // document being left, and the first click in the new one inserted a table into a file just opened) and
     // when the pointer capture is lost mid-drag (a lost capture is not a release). From the WinUI port's audit
@@ -155,6 +166,11 @@ public partial class RichEditor
         // Page view: all downstream geometry (hit-tests, resize handles, caret placement) lives in
         // document space, so the pointer position is mapped once here. Identity when page view is off.
         var point = MapViewToDoc(e.GetPosition(this));
+        // Resize drags measure the pointer's travel in VIEW space: in page view a row or picture that grows past the page
+        // moves to the next one, the page breaks move with it, and the same screen point maps to another document Y — the
+        // travel measured in document space shrank, the row fitted again and came back, and the next move pushed it over:
+        // the page flickered while dragging (2026-11-08).
+        var surface = e.GetPosition(this);
 
         if (e.GetCurrentPoint(this).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
@@ -169,7 +185,7 @@ public partial class RichEditor
         // visible content area — otherwise the preview is clipped while the released size isn't (mismatch).
         if (_pendingTableDraw != null)
         {
-            _tableDrawStart = ClampToEditorBounds(e.GetPosition(this));
+            _tableDrawStart = TableDrawAnchor(e.GetPosition(this));
             _tableDrawCurrent = _tableDrawStart;
             e.Pointer.Capture(this);
             e.Handled = true;
@@ -192,8 +208,8 @@ public partial class RichEditor
                     _initialImageWidth = h.drawnW > 0 ? h.drawnW : (h.img.Width > 0 ? h.img.Width : 200);
                     _initialImageHeight = h.drawnH > 0 ? h.drawnH : (h.img.Height > 0 ? h.img.Height : 200);
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
-                    _initialImageMouseX = point.X;
-                    _initialImageMouseY = point.Y;
+                    _initialImageMouseX = surface.X;
+                    _initialImageMouseY = surface.Y;
                     _resizeGrip = h.grip;
                     e.Pointer.Capture(this);
                     return;
@@ -212,8 +228,8 @@ public partial class RichEditor
                     _initialImageWidth = h.img.Width > 0 ? h.img.Width : 16;
                     _initialImageHeight = h.img.Height > 0 ? h.img.Height : 16;
                     _imageAspect = _initialImageHeight > 0 ? _initialImageWidth / _initialImageHeight : 1;
-                    _initialImageMouseX = point.X;
-                    _initialImageMouseY = point.Y;
+                    _initialImageMouseX = surface.X;
+                    _initialImageMouseY = surface.Y;
                     _resizeGrip = h.grip;
                     e.Pointer.Capture(this);
                     return;
@@ -221,6 +237,7 @@ public partial class RichEditor
             }
 
         _selectedInline = null; // any other press clears the inline-image selection (may re-set below)
+        _selectedInlineTable = null;
 
         if (!IsReadOnly)
             foreach (var b in _columnBoundaries)
@@ -249,7 +266,7 @@ public partial class RichEditor
                     _isResizingRow = true;
                     _resizingRowTable = b.tb;
                     _resizingRowIndex = b.rowIndex;
-                    _initialMouseY = point.Y;
+                    _initialMouseY = surface.Y;
                     _initialRowHeight = b.height; // current rendered row height (content- or user-driven)
                     e.Pointer.Capture(this);
                     return;
@@ -264,19 +281,18 @@ public partial class RichEditor
                 _selectedBlock = ci.img;
                 _caretBlock = null;
                 CollapseSelectionToCaret();
-                ResetCaretBlink();
+                ResetCaretBlinkInPlace();
                 InvalidateVisual();
                 ArmObjectDrag(ci.img, point, e); // and dragging it (RichEditor.DragBlock.cs)
                 return;
             }
 
-        // A nested table's left/top border — an inline table's, or one in a table cell — selects the whole
-        // table, the cell fill of a staged Ctrl+A, so Ctrl+C copies it (SelectedWholeTable). A top-level
-        // table's border places the block caret instead; a nested table has none (the block caret is
-        // top-level only). The move cursor over the border announces it (OnPointerMoved).
-        if (NestedTableBorderAtPoint(point) is { } inlineEdge && SelectWholeTableForCopy(inlineEdge))
+        // A nested table's left/top border — an inline table's, or one in a table cell — selects the table as an
+        // object (SelectTableObject), as a click selects a picture: Delete removes it, Ctrl+C copies it. A top-level
+        // table's border places the block caret instead; a nested table has none (the block caret is top-level only).
+        // The move cursor over the border announces it (OnPointerMoved).
+        if (NestedTableBorderAtPoint(point) is { } inlineEdge && SelectTableObject(inlineEdge))
         {
-            _selectedBlock = null;
             // The border also grabs it: an inline table moves as the inline it is, a nested one as a block.
             ArmObjectDrag(inlineEdge.Parent as InlineTable ?? (object)inlineEdge, point, e);
             return;
@@ -301,7 +317,7 @@ public partial class RichEditor
             _selectedBlock = clickedImage;
             _caretBlock = null;
             CollapseSelectionToCaret();
-            ResetCaretBlink();
+            ResetCaretBlinkInPlace();
             InvalidateVisual();
             ArmObjectDrag(clickedImage, point, e);
             return;
@@ -571,10 +587,11 @@ public partial class RichEditor
         }
 
         var point = MapViewToDoc(e.GetPosition(this)); // document space, same as OnPointerPressed
+        var surface = e.GetPosition(this); // resize drags: travel in view space (see OnPointerPressed)
 
         if (_isResizingInline && _resizingInline != null)
         {
-            var (w, h, moved) = ResizedImageSize(point, 8);
+            var (w, h, moved) = ResizedImageSize(surface, 8);
             if (moved) PushDragUndoOnce(); // the drag really moved -> now it's an edit
             _resizingInline.Width = w;
             _resizingInline.Height = h;
@@ -584,7 +601,7 @@ public partial class RichEditor
 
         if (_isResizingImage && _resizingImage != null)
         {
-            var (w, h, moved) = ResizedImageSize(point, 20);
+            var (w, h, moved) = ResizedImageSize(surface, 20);
             if (moved) PushDragUndoOnce();
             _resizingImage.Width = w;
             _resizingImage.Height = h;
@@ -641,7 +658,7 @@ public partial class RichEditor
 
         if (_isResizingRow && _resizingRowTable != null)
         {
-            double diff = point.Y - _initialMouseY;
+            double diff = surface.Y - _initialMouseY;
             if (diff != 0) PushDragUndoOnce();
             while (_resizingRowTable.RowHeights.Count <= _resizingRowIndex)
                 _resizingRowTable.RowHeights.Add(0);
@@ -952,6 +969,32 @@ public partial class RichEditor
             if (!nav && !copyOrAll && !cellBlock) { e.Handled = true; return; }
         }
 
+        // A Ctrl chord with an object selected — a picture or an inline or nested table — lets go of it, as on the WinUI
+        // control (2026-11-09): Ctrl+C/X take the object (below); Ctrl+Delete/Backspace delete it, as Delete does;
+        // Ctrl+←/→ go on by a word from right after an inline object; any other chord runs with nothing selected. The
+        // object stayed selected through them: Ctrl+A then Delete removed only the object, and Ctrl+Delete deleted a word
+        // at the caret, which may have been far away.
+        if (ctrl && (_selectedBlock != null || _selectedInline != null || _selectedInlineTable != null)
+            && e.Key != Key.C && !(e.Key == Key.X && !shift))
+        {
+            if (e.Key is Key.Back or Key.Delete) ctrl = false; // the object goes below, as with the plain key
+            else
+            {
+                if (e.Key is Key.Left or Key.Right)
+                {
+                    if (_selectedInline is { } ci && ci.p.Inlines.Contains(ci.img))
+                        _caretPosition = new TextPointer(ci.p, OffsetOfInline(ci.p, ci.img) + 1);
+                    else if (_selectedInlineTable is { } ct && ct.host.Inlines.Contains(ct.it))
+                        _caretPosition = new TextPointer(ct.host, OffsetOfInline(ct.host, ct.it) + 1);
+                    CollapseSelectionToCaret();
+                }
+                _selectedBlock = null;
+                _selectedInline = null;
+                _selectedInlineTable = null;
+                InvalidateVisual();
+            }
+        }
+
         // Block caret in front of an image/table.
         if (_caretBlock != null && !ctrl && !IsReadOnly)
         {
@@ -1011,6 +1054,16 @@ public partial class RichEditor
         if (_selectedInline != null && e.Key != Key.Back && e.Key != Key.Delete && !ctrl)
         {
             _selectedInline = null;
+            InvalidateVisual();
+        }
+        // And an inline table selected as an object, as on the WinUI control: the key then works right after the table
+        // (a letter is typed after it). An edit may have taken it out of the document meanwhile; then it is only let go.
+        if (_selectedInlineTable != null) DropDetachedObjectSelection();
+        if (_selectedInlineTable is { } heldTable && e.Key != Key.Back && e.Key != Key.Delete && !ctrl)
+        {
+            _selectedInlineTable = null;
+            _caretPosition = new TextPointer(heldTable.host, OffsetOfInline(heldTable.host, heldTable.it) + 1);
+            CollapseSelectionToCaret();
             InvalidateVisual();
         }
 
@@ -1078,10 +1131,11 @@ public partial class RichEditor
             }
             // Nothing to cut: no checkpoint. It used to push one anyway — an undo step that undid nothing, and a
             // freshly loaded document marked modified by a bare Ctrl+X.
-            if (!hasTextSel && _caretBlock is not TableBlock && _selectedBlock == null) { e.Handled = true; return; }
+            if (!hasTextSel && _caretBlock is not TableBlock && _selectedBlock == null && _selectedInlineTable == null) { e.Handled = true; return; }
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
-            if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole goes whole
+            // A table held as an object goes whole; a cell block takes whole rows, columns or the table, else is emptied.
+            if (!RemoveSelectedTableObject() && !CutCellBlock()) DeleteSelection();
             ResetCaretBlink(); // remeasure (page breaks, scroll extent) and report the caret, as Backspace does
             e.Handled = true;
             return;
@@ -1141,7 +1195,7 @@ public partial class RichEditor
         // (the blue border), the next one deletes it, as Word and HWP do — one key used to delete a whole table at once
         // (user decision, 2026-11-01). Before the checkpoint below: selecting is not an edit.
         if ((e.Key == Key.Back || e.Key == Key.Delete) && !IsReadOnly && Document != null
-            && _selectedBlock == null && _selectedInline == null && _selectionStart == _selectionEnd
+            && _selectedBlock == null && _selectedInline == null && _selectedInlineTable == null && _selectionStart == _selectionEnd
             && AdjacentPictureOrTable(e.Key == Key.Back) is { } toSelect)
         {
             _selectedBlock = toSelect;
@@ -1156,7 +1210,7 @@ public partial class RichEditor
                 // checkpoint of its own.
                 bool structural = e.Key == Key.Enter
                     || _selectionStart != _selectionEnd
-                    || _selectedBlock != null || _selectedInline != null;
+                    || _selectedBlock != null || _selectedInline != null || _selectedInlineTable != null;
                 bool plainCharDelete = !structural
                     && _caretPosition.Paragraph != null
                     && (e.Key == Key.Back
@@ -1317,6 +1371,13 @@ public partial class RichEditor
             ResetCaretBlink(); e.Handled = true;
             return;
         }
+        else if ((e.Key == Key.Back || e.Key == Key.Delete) && (_selectedInlineTable != null || _selectedBlock is TableBlock)
+                 && Document != null && RemoveSelectedTableObject())
+        {
+            // A table selected as an object deletes as a unit (state was pushed above); the caret goes where it was.
+            e.Handled = true;
+            return;
+        }
         else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedBlock != null && Document != null)
         {
             // A block image/table is selected -> delete it (from the document or its enclosing cell).
@@ -1329,7 +1390,7 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Back)
         {
-            if (_selectionStart != _selectionEnd) { if (!RemoveTableHeldWhole()) DeleteSelection(); } // Backspace: a table held whole goes whole
+            if (_selectionStart != _selectionEnd) DeleteSelection(); // a cell block, all of a table's too, is emptied (HWP)
             else if (_caretPosition.Offset > 0 && _caretPosition.Paragraph is { } bp)
             {
                 int nb = PrevCharBoundary(BuildPlain(bp), _caretPosition.Offset);
@@ -1389,7 +1450,7 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Delete)
         {
-            if (_selectionStart != _selectionEnd) { if (!RemoveTableHeldWhole()) DeleteSelection(); } // Delete: a table held whole goes whole
+            if (_selectionStart != _selectionEnd) DeleteSelection(); // a cell block, all of a table's too, is emptied (HWP)
             else if (_caretPosition.Paragraph is { } dp && _caretPosition.Offset < GetParagraphLength(dp))
                 DeleteLocalText(dp, _caretPosition.Offset,
                     NextCharBoundary(BuildPlain(dp), _caretPosition.Offset) - _caretPosition.Offset);

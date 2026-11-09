@@ -6,6 +6,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — selection and editing rules, the same as the WinUI control's (2026-11-09)
+
+- List toggle: a mixed selection turns the list on for every paragraph; only a selection that is all this kind turns it
+  off (the caret's paragraph used to decide). Off clears the level and marker style too, not just the kind — a nested
+  item kept its indent with no marker. Test: `SelectionEditRulesTests`.
+- Tab over several selected paragraphs steps each one in (Shift+Tab out) — a list item a level, any other paragraph an
+  indent step — instead of typing four spaces over the selection. A list item alone steps its level too.
+- "Treat as character" works on a table or picture inside a table cell: it becomes inline in a paragraph of that cell, and
+  back (it was top-level only; the table menu had no such item for a table in a cell). A picture turned inline is scaled
+  down to the line it joins — the cell's content width, and at most 240 — as on the WinUI control.
+- Inserting a table, picture, divider or inline table never removes what is selected: it goes in at the end of a text
+  selection (whichever way it was made — a backwards one put it at the start), or right after a selected picture or
+  table (it went where the caret had been before the click), and the selection is let go of. A paste still replaces the
+  selection.
+- Several lines of plain text pasted (the plain-text step of a paste, and Ctrl+Shift+V) become a paragraph per line, with
+  the caret paragraph's format and the caret's character format — lines pasted into a list item are list items. They
+  went into one paragraph with line breaks.
+- The border of an inline table, or of a table inside a cell, selects the table as an object, as a picture is selected:
+  a frame shows, Delete removes the table, Ctrl+C copies it, and any other key lets go of it (an inline table's: the key
+  works right after it). It selected all the table's cells as text, so a letter typed then emptied them. A right-click
+  there, and a viewer's, selects it the same way.
+- Cutting a cell block takes its cells with it: the whole table when all of it is selected, whole rows or whole columns
+  when the block spans the table; any other block of cells is emptied, as before. Delete and Backspace on a cell block
+  empty it — a table whose cells were all selected was removed.
+- A Ctrl shortcut lets go of a selected picture or table, as on the WinUI control: Ctrl+Delete and Ctrl+Backspace delete
+  it, Ctrl+←/→ go on by a word from right after an inline one, Ctrl+C and Ctrl+X still take it. It stayed selected:
+  Ctrl+A then Delete removed only the object, and Ctrl+Delete deleted a word at the caret, which may have been far away.
+- A cell block grows over a merged cell reaching into it from outside, and over whatever that brings in, so no merge
+  sticks out of it: painting, clearing, formatting and merging all take the grown block. It was the box of its two
+  corner cells, and Delete cleared such a merge but not the cells beside it in the rows it spans.
+
+### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
+
+- A `RichEditorView`'s first frame allocated about 7.8 MB, nearly all of it the toolbar: the strip was built once per
+  property set (constructor, `Target`, `ToolbarLevel`), and every build made the pickers' panels too — two colour
+  palettes, the 80-cell table grid, the list and line-spacing menus — though most are never opened. A toolbar without a
+  `Target` builds no strip now, and each picker's panel is made the first time it opens. `RichEditorToolbar.Palette` is
+  read then, so set it before a colour picker first opens. Test: `ToolbarLazyBuildTests`.
+
+### Fixed — documents that opened but could not be saved, and an RTF token that emptied a file (2026-11-08)
+
+- HTML numbers were read with `double.TryParse`, which takes `Infinity`, `NaN`, `1e400` and a 400-digit number. Such a
+  value — in `line-height`, `margin-left`, a `<col width>`, the paragraph-spacing marker — went into the model, and every
+  later JSON or `.flow` save of the document threw. The HTML reader now keeps only finite numbers, after unit conversion
+  too (`1e308pt` is infinite in px).
+- Tables nested more than about 12 deep could not be saved: JSON's default depth is 64, while the HTML reader builds
+  tables as deep as its DOM bound and the RTF reader to 32 levels. Reading and writing now allow a depth of 320.
+- RTF `\sl-2147483648` overflowed `Math.Abs`, and the reader's guard returned an empty document for the whole file.
+- Test: `SaveFailureFixesTests`.
+- A `.flow` package bounded each picture (256 MB) but not their sum: a document referring to many highly compressed
+  pictures inflated without limit. Past 1 GB of pictures the package is now refused as unreadable.
+- Pasting HTML requested every distinct remote picture at once, each up to 256 MB. Only the first 64 are fetched now;
+  the rest are skipped like a failed download.
+- Test: `InputTotalBoundsTests`.
+- The RTF writer let a `javascript:` link out (the HTML writer never has), and wrote a `"` in a link's address as it was,
+  ending the field's address there. Script links now go out as plain text; a quote goes out as `%22`.
+- HTML text colour and highlight were matched anywhere in a style, so `color:` inside a quoted font name became the text
+  colour. They are read at the start of a declaration only.
+- Test: `LinkAndFontNameEscapeTests`.
+- A click below a paragraph's last line (its bottom margin, a cell's bottom padding) put the caret one character past
+  where the same x on that line does: Avalonia reports any point under a layout as a trailing-half hit. Test:
+  `ClickPastEndOfLineTests.ClickingBelowTheLastLine_LandsWhereTheSameXOnTheLineDoes`.
+- The paragraph the editor keeps before, after and between tables was saved with no runs, where the WinUI control saves
+  one empty run — the same document as different JSON. It holds one empty run now, as an Enter split leaves, and so does a
+  blank line read from RTF (which has no way to write an empty run, so a saved blank line came back different).
+  Test: `NormalizedParagraphRunTests`.
+- Pasting several paragraphs: a list or heading pasted onto an empty line lost its bullets or heading level, the pasted
+  runs stayed unjoined and a stray empty run was left behind — and the WinUI control saved the same paste differently.
+  Both follow one rule now: the first pasted paragraph joins the text before the caret and the last the text after it; a
+  side that is empty takes the format of the pasted paragraph joining it; equal-format runs rejoin and nothing empty is
+  left behind; the caret ends after the pasted content. Test: `PasteSpliceRuleTests`.
+- Page view: a table or picture that moved whole to the next page was still drawn on the previous one — its top edge as a
+  1-px line at the page's end and, when selected, its frame across the room it left — and the room acted like the object
+  (hovering showed the move cursor). Tests: `PageRoomClickTests`, `PageSliceRenderTests`.
+- Page view: dragging a table row or a picture larger, past the end of its page, made the page flicker — the row height
+  swung back and forth as it moved between pages. The drag's travel is measured on screen now. Test: `RowResizePageViewTests`.
+- Drawing a table with the mouse from the empty area below the last line: the preview started under the pointer, but the
+  table went in after the last line, above where it was shown. The preview starts at the content's bottom now.
+  Test: `TableDrawEmptyAreaTests`.
+- The table-drawing preview shows the picked grid's cell lines and a "rows × cols" label, as the WinUI control's does; it
+  was one plain rectangle. Test: `TableDrawPreviewRenderTests`.
+- Clicking (or right-clicking) a picture while the caret was off-screen scrolled the view to the caret, and clicking a table
+  inside a table cell scrolled it to wherever the caret had last been drawn. The view now stays on what was clicked.
+  Test: `PictureClickScrollTests` (the table-in-a-cell case has no headless test).
+
+### Changed — the WinUI control's behaviour where the two differed (2026-11-09)
+
+- `RichEditorView` no longer turns `ShowPageBoundaries` off. Set by code, that counted as the host's page setup: a host
+  that also set a paper size by code saved `"ShowPageBoundaries":false` and saw a borderless column, where the WinUI
+  view saved and showed pages. Test: `ViewPageBoundaryTests`.
+- Read-only, `ReplaceNext` does nothing and returns `false`, as `ReplaceAll` does. It moved the selection to the next match
+  and returned `true` for a replacement that never happened. Test: `ReplaceNextReadOnlyTests`.
+- Text with no colour of its own is black on white paper — page view with page boundaries, printing, PDF — whatever
+  `DefaultForeground` is. A dark-theme host's light grey drew faint text on the paper. `DefaultForeground` still colours
+  the host's own canvas (continuous view). Test: `AutoForegroundOnPaperRenderTests`.
+- A link is drawn link blue unless it has a colour of its own, and always underlined — a struck-through link too. It was
+  drawn in the plain text colour, and lost its underline once it carried a strikethrough. The caret format reports the
+  link as drawn, so Ctrl+U on any link has nothing to change. Tests: `LinkLookTests`, `CaretFormatReportTests` (updated).
+- `SetLineHeight` clears a proportional `LineSpacing`, and `SetLineSpacing` a fixed `LineHeight`. A fixed height set on a
+  paragraph with a proportional spacing changed nothing on screen and the file kept both. Test: `LineSpacingExclusiveTests`.
+- Pasting from Word or HWP with local file images off kept none of their pictures: their clipboard HTML refers to the
+  pictures the copy just wrote under `%TEMP%` (as `file:` or `ms-clipboard-file:`). A paste (`ParseHtml`, `ParseHtmlAsync`)
+  now takes pictures from `%TEMP%` only; the editor's `LoadHtml`/`InsertHtml` still read no local file, and nothing
+  outside `%TEMP%` is read. Test: `TempFilePasteImageTests`.
+- RTF and HTML write a run bold from SemiBold (600) up. Only exactly 700 was written bold, so an ExtraBold or Black run
+  lost its weight entirely in Word or a browser. Test: `BoldFromSemiboldTests`.
+- RTF: `\par` inside a table cell starts a paragraph, as in the body. It was read as a line break, so a cell's
+  paragraphs — from Word, HWP or this library's own RTF — came back as one paragraph and lost their format.
+  Test: `RtfCellParagraphTests`.
+- RTF: each table row states its definition again right before `\row`, as Word writes it. HWP needs it there, and
+  without it dropped the table and pasted the cells as plain lines. Test: `RtfRowDefinitionRepeatTests`.
+- RTF: a divider inside a table cell is no longer written as a bottom border, which had no `\pard` after it and could
+  run on into the cell's next paragraphs in Word. Test: `RtfCellDividerTests`.
+- The toolbar's Export offers PDF, as the WinUI view's does; saving a PDF leaves the document marked modified, since a PDF
+  cannot be opened again. Import lists only the files it can read (`.flow`, `.json`, `.html`, `.htm`, `.rtf`), and an empty
+  file is nothing to import (it was reported as a JSON fault). Test: `ViewExportImportTests`.
+
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
 - The hit-tests walked the document from its first block on every call: a hover twice per mouse move, a click or

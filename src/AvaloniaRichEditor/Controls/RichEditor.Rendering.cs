@@ -285,7 +285,11 @@ public partial class RichEditor
                     if (cp != null) { caretPoint = cp; caretHeight = ch; }
                     if (bcr != null) blockCaretRect = bcr;
                 }
-                using (context.PushClip(paper))
+                // The picture chrome (frame, handles) may lie outside the content box, so it is clipped to the paper — but only
+                // down to a little past this page's slice: below it is the room a moved object left, or the next page's part
+                // of a split table (2026-11-08).
+                using (context.PushClip(new Rect(paper.X, paper.Y, paper.Width,
+                           Math.Min(paper.Height, clip.Bottom - paper.Y + ChromeOutset))))
                 using (context.PushTransform(Matrix.CreateTranslation(dx, contentBox.Y - sliceTop)))
                     FlushPictureChrome(context);
             }
@@ -296,7 +300,28 @@ public partial class RichEditor
         // "Draw table" rubber-band: a dashed rectangle following the cursor (view space, drawn over all
         // content). Only present while a drag is in progress in draw mode.
         if (_tableDrawStart is { } ds && _tableDrawCurrent is { } dc)
-            context.DrawRectangle(AccentFill50, AccentPen2, DrawnTableRect(ds, dc));
+        {
+            var band = DrawnTableRect(ds, dc);
+            context.DrawRectangle(AccentFill50, AccentPen2, band);
+            // The picked grid's cell lines and a "rows × cols" label, as the WinUI control draws them: the preview shows
+            // the table that will go in, not only its outline (2026-11-09).
+            if (_pendingTableDraw is { } pd && band.Width >= 20 && band.Height >= 16)
+            {
+                for (int col = 1; col < pd.cols; col++)
+                {
+                    double x = band.X + band.Width * col / pd.cols;
+                    context.DrawLine(AccentBorderPen, new Point(x, band.Y), new Point(x, band.Bottom));
+                }
+                for (int row = 1; row < pd.rows; row++)
+                {
+                    double y = band.Y + band.Height * row / pd.rows;
+                    context.DrawLine(AccentBorderPen, new Point(band.X, y), new Point(band.Right, y));
+                }
+            }
+            if (_pendingTableDraw is { } label)
+                context.DrawText(new FormattedText($"{label.rows} × {label.cols}", System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight, Typeface.Default, 12, AccentBrush), new Point(dc.X + 8, dc.Y + 4));
+        }
         }
         finally
         {
@@ -332,6 +357,7 @@ public partial class RichEditor
     // after it under a looser clip than the content's, because they lie OUTSIDE the picture — and a picture
     // opening a page sits exactly on the page's content clip, which cut its top border off (2026-09-23).
     private readonly List<Action<DrawingContext>> _pictureChrome = new();
+    private const double ChromeOutset = 8; // a selection frame (2 outside) and its handles past the object's edge
 
     private void FlushPictureChrome(DrawingContext context)
     {
@@ -356,6 +382,10 @@ public partial class RichEditor
     private (Point? caretPoint, double caretHeight, Rect? blockCaretRect) DrawDocumentBlocks(
         DrawingContext context, double maxWidth, double visTop, double visBottom, bool chrome = true)
     {
+        // In page view a table, picture or divider that starts at the slice's end belongs to the next page (it moved there
+        // whole), and one that ends at the slice's top to the previous one. Drawn here — selected, or only touching the edge —
+        // it left its edge as a 1-px line on this page and its selection frame in the room it left (2026-11-08).
+        bool OnOtherPage(double top, double bottom) => IsPaged && (top >= visBottom - 0.5 || bottom <= visTop + 0.5);
         TextPointer? selStart = null, selEnd = null;
         Dictionary<Paragraph, (int From, int To)>? selectedParagraphs = null;
         int selCmp = _selectionStart.Paragraph != null && _selectionEnd.Paragraph != null
@@ -402,9 +432,10 @@ public partial class RichEditor
                 // Cull check: skip cell draws + resize-handle registration when fully off-screen
                 // (off-screen handles can't be grabbed). Geometry (tl) is still computed above so
                 // yOffset advances identically. A table being edited (caret in a cell) always draws.
-                bool tbVisible = (tableTop + tl.TotalHeight >= visTop && tableTop <= visBottom)
+                bool tbVisible = !OnOtherPage(tableTop, tableTop + tl.TotalHeight)
+                    && ((tableTop + tl.TotalHeight >= visTop && tableTop <= visBottom)
                     || (_caretPosition?.Paragraph?.Parent as TableCell)?.Parent == tb
-                    || ReferenceEquals(tb, _caretBlock) || ReferenceEquals(tb, _selectedBlock);
+                    || ReferenceEquals(tb, _caretBlock) || ReferenceEquals(tb, _selectedBlock));
                 if (!tbVisible)
                 {
                     yOffset = tableTop + tl.TotalHeight + tb.MarginBottom;
@@ -572,8 +603,9 @@ public partial class RichEditor
                 // Cull check before resolving the picture: that decodes it (N6-2), so skipping it means
                 // off-screen images are never decoded at all. yOffset advances by the
                 // declared size, matching MeasureContentHeight's unconditional advance.
-                if ((yOffset + cullHeight < visTop || yOffset > visBottom)
-                    && !ReferenceEquals(img, _caretBlock) && !ReferenceEquals(img, _selectedBlock))
+                if (OnOtherPage(yOffset, yOffset + cullHeight)
+                    || ((yOffset + cullHeight < visTop || yOffset > visBottom)
+                    && !ReferenceEquals(img, _caretBlock) && !ReferenceEquals(img, _selectedBlock)))
                 {
                     yOffset += cullHeight + img.MarginBottom;
                     continue;
@@ -628,7 +660,7 @@ public partial class RichEditor
             else if (block is DividerBlock dv)
             {
                 orderedIndex = 0;
-                if (yOffset + beHeight >= visTop && yOffset <= visBottom)
+                if (yOffset + beHeight >= visTop && yOffset <= visBottom && !OnOtherPage(yOffset, yOffset + beHeight))
                 {
                     double y = yOffset + beHeight / 2; // beHeight == DividerHeight, from BlockExtent
                     context.DrawLine(GrayBorderPen, new Point(listIndent, y), new Point(Math.Max(listIndent + 1, maxWidth - 10), y));
@@ -852,6 +884,13 @@ public partial class RichEditor
                 cellSelected: inBlock, cellRangeActive: cellBlock != null, selectedParagraphs, selStart, selEnd,
                 ref caretPoint, ref caretHeight);
         }
+        // A nested or inline table selected as an object: the frame a selected top-level table has.
+        if (chrome && (ReferenceEquals(tb, _selectedBlock) || ReferenceEquals(_selectedInlineTable?.it.Table, tb)))
+        {
+            var frame = new Rect(startX, top, tl.TableWidth, tl.TotalHeight);
+            context.FillRectangle(AccentFill50, frame);
+            context.DrawRectangle(null, AccentPen2, frame);
+        }
         // Resize handles on the physical grid lines (document coordinates), shared with the top-level
         // resize path — the handlers key off the TableBlock, so nested tables resize identically. The
         // outer-right edge adjusts the nested table's total width; the resize handler clamps it to the
@@ -896,6 +935,11 @@ public partial class RichEditor
 
         // After the caret position is known, scroll it into view if it moved off-screen. Posted (not
         // called inline) so it runs after this layout/render pass rather than re-entering it.
+        // Only with a caret placed THIS frame. A selection that fills cells — a table held whole, which a click on a nested
+        // table's border makes — draws no caret, and the scroll then went to wherever the caret had last been drawn:
+        // clicking a table in a cell sent the view elsewhere (2026-11-08). What was clicked is on screen.
+        if (_bringCaretIntoView && blockCaretRect is null && caretPoint is null)
+            _bringCaretIntoView = false;
         if (_bringCaretIntoView)
         {
             _bringCaretIntoView = false;

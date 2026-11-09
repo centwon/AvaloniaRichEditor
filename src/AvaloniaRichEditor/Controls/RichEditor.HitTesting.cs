@@ -578,9 +578,14 @@ public partial class RichEditor
     // lets the caret be drawn at the end of the line that was actually clicked. Off a wrap boundary it
     // costs nothing — both edges are the same place — so it is set for any trailing-half click rather
     // than only at boundaries (the WinUI peer does the same).
+    // A point below the layout, pulled up onto its last line. Avalonia's HitTestPoint reports any point under the layout
+    // with IsTrailing set, whatever its x, and the callers read IsTrailing as "the trailing half of a character" (+1): a
+    // click under a paragraph, left of its text, put the caret after the first character (2026-11-08).
+    private static Point IntoLayout(Point p, double height) => p.Y < height ? p : new Point(p.X, Math.Max(0, height - 0.5));
+
     private (int Index, bool AtLineEnd) HitTestIndex(Avalonia.Media.TextFormatting.TextLayout layout, Point localPoint, Paragraph p)
     {
-        var hit = layout.HitTestPoint(localPoint);
+        var hit = layout.HitTestPoint(IntoLayout(localPoint, layout.Height));
         int idx = hit.TextPosition + (hit.IsTrailing ? 1 : 0);
         // Affinity is set ONLY by the clamp below, not by every trailing-half click. Measured: zeroing a
         // trailing-click flag changed no test, because the only click that reaches a wrap boundary is one
@@ -643,7 +648,7 @@ public partial class RichEditor
 
         int at = _caretPosition.Offset, len = _preeditText!.Length;
         var composed = BuildTextLayout(p, width, at, _preeditText);
-        var hit = composed.HitTestPoint(localPoint);
+        var hit = composed.HitTestPoint(IntoLayout(localPoint, composed.Height));
         int display = hit.TextPosition + (hit.IsTrailing ? 1 : 0);
         int logical = display <= at ? display
                     : display >= at + len ? display - len

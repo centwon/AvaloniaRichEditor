@@ -10,7 +10,10 @@ using AvaloniaRichEditor.Documents;
 
 namespace AvaloniaRichEditor.Formatters;
 
-[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+// MaxDepth, read and write alike: the default 64 holds about 12 nested tables, but the HTML reader builds them as deep as
+// its DOM bound (JSON depth 258 measured, inline tables) and the RTF reader to 32 levels (164) — such a document opened
+// and every save of it threw. 320 holds those and 63 nested block tables (measured to render), 2026-11-08.
+[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, MaxDepth = 320,
     Converters = new[] { typeof(FiniteDoubleConverter) })]
 [JsonSerializable(typeof(FlowDocumentDto))]
 internal partial class DocumentJsonContext : JsonSerializerContext
@@ -21,7 +24,7 @@ internal partial class DocumentJsonContext : JsonSerializerContext
     // JSON can still be embedded in a page. Not indented: indentation was half of every document. (2026-10-01)
     internal static DocumentJsonContext Wire { get; } = new(new JsonSerializerOptions
     {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, MaxDepth = 320,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All),
     });
 }

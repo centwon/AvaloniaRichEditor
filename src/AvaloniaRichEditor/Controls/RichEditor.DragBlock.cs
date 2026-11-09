@@ -209,11 +209,12 @@ public partial class RichEditor
     }
 
     // The dropped object ends up as a click on it would leave it: a picture selected, a top-level table under
-    // the block caret, a nested or inline table selected whole. The caret goes just after it.
+    // the block caret, a nested or inline table selected as an object. The caret goes just after it.
     private void SelectDropped(object obj)
     {
         _selectedBlock = null;
         _selectedInline = null;
+        _selectedInlineTable = null;
         _caretBlock = null;
         _caretBlockAfter = false;
         if (obj is Block b && BlockListOf(b) is { } list && list.IndexOf(b) is int bi and >= 0
@@ -230,8 +231,8 @@ public partial class RichEditor
         {
             case ImageBlock ib: _selectedBlock = ib; break;
             case TableBlock tb when tb.Parent is FlowDocument: _caretBlock = tb; break;
-            case TableBlock tb: SelectWholeTableForCopy(tb); break;
-            case InlineTable it: SelectWholeTableForCopy(it.Table); break;
+            case TableBlock tb: _selectedBlock = tb; break; // a nested table, selected as an object
+            case InlineTable it when it.Parent is Paragraph ih: _selectedInlineTable = (ih, it); break;
             case InlineImage ii when ii.Parent is Paragraph ip: _selectedInline = (ip, ii); break;
         }
         InvalidateMeasure();

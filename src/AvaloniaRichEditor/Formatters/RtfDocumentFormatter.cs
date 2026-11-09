@@ -695,7 +695,6 @@ internal sealed class RtfParser
 
     private void FlushBytes()
     {
-        _cellParMark = -1; // the marked break is no longer at the tail of the pending bytes
         if (_bytes.Count == 0) return;
         _run.Append(RunEnc.GetString(_bytes.ToArray()));
         _bytes.Clear();
@@ -916,8 +915,20 @@ internal sealed class RtfParser
 
     private void EndParagraph()
     {
-        // Inside a table cell, \par is an intra-cell line break, not a document paragraph.
-        if (_curRow != null) { _bytes.Add(10); _cellParMark = _bytes.Count; return; }
+        // Inside a cell, \par is a real paragraph break, as on the WinUI control (2026-11-09): the model holds several
+        // paragraphs per cell, and folding them into one paragraph with newlines lost each one's format on every
+        // Word/HWP paste and on this library's own RTF round trip.
+        if (_curRow != null)
+        {
+            FlushRun();
+            if (_para.Inlines.Count > 0)
+            {
+                if (!_cellPending.TryGetValue(_itap, out var pending)) _cellPending[_itap] = pending = new List<Block>();
+                pending.Add(_para);
+                _para = new Paragraph();
+            }
+            return;
+        }
         FlushRun();
         FinalizeTable(); // a normal paragraph ends any table that was being built
 
@@ -941,13 +952,12 @@ internal sealed class RtfParser
             return;
         }
         _paraBottomBorder = false;
+        // A blank line holds one empty run, as the editor's own empty paragraphs do: with none, a blank line the editor
+        // added and saved came back different, and the same document saved as different JSON (2026-11-08).
+        if (_para.Inlines.Count == 0) _para.Inlines.Add(new Run { Text = "" });
         _doc.Blocks.Add(_para);
         _para = new Paragraph();
     }
-
-    // Byte count at the moment an intra-cell \par added its line break, so SetItap can tell that break
-    // (structure, see SetItap) from one that came from \line (content). -1 = no such break pending.
-    private int _cellParMark = -1;
 
     // True immediately after a block picture was added, while its terminating \par is still pending.
     private bool _imageOwnsNextPar;
@@ -965,7 +975,8 @@ internal sealed class RtfParser
         // \slmult is Word's multiple of the natural line (≈1.2 × the size); LineSpacing is HWP's ratio of
         // the size, so ratio = N/240 × 1.2 = N/200 (the writer's inverse).
         if (_slMult) { _para.LineSpacing = _slTwips / 200.0; _para.LineHeight = double.NaN; }
-        else { _para.LineHeight = Math.Abs(_slTwips) / 15.0; _para.LineSpacing = double.NaN; } // "at least" ≈ exact
+        // In double: Math.Abs(int.MinValue) throws, and one \sl-2147483648 emptied the whole document (2026-11-08).
+        else { _para.LineHeight = Math.Abs((double)_slTwips) / 15.0; _para.LineSpacing = double.NaN; } // "at least" ≈ exact
     }
 
     // ---- tables ----
@@ -1059,15 +1070,9 @@ internal sealed class RtfParser
         if (depth == _itap) return;
         if (depth > _itap)
         {
-            // The writer terminates the cell's own paragraph with \par before descending into a nested
-            // table (WriteCellContent.CloseBeforeNested), and this closes that paragraph anyway — so that
-            // break is structure, not content. Kept, it came back as a trailing soft break, which the next
-            // save wrote as \line AND still emitted its own \par: one more blank line inside the cell on
-            // every round trip, without limit. Only the break that \par itself just added is dropped (the
-            // mark is the byte count at that moment), so a soft break the author typed — written as \line
-            // and followed by the structural \par — survives.
-            if (_cellParMark == _bytes.Count && _bytes.Count > 0 && _bytes[^1] == 10)
-                _bytes.RemoveAt(_bytes.Count - 1);
+            // The writer terminates the cell's own paragraph with \par before descending into a nested table
+            // (WriteCellContent.CloseBeforeNested); a cell's \par ends a paragraph (EndParagraph), so that break is
+            // already the paragraph boundary and leaves nothing behind.
             FlushRun();
             if (_para.Inlines.Count > 0)
             {
@@ -1628,13 +1633,17 @@ internal sealed class RtfWriter
     {
         // Hyperlink as a real field: {\field{\*\fldinst{HYPERLINK "url"}}{\fldrslt {...}}} — Word/HWP then keep the
         // target address (the bare \ul form only looked like a link). From the WinUI port.
-        bool link = !string.IsNullOrEmpty(r.NavigateUri);
+        // A script link does not leave, whatever put it in the document — the HTML writer's rule — and a quote would end the
+        // field's address early (Word reads what follows as switches; this reader cut the address there). 2026-11-08.
+        string? href = string.IsNullOrEmpty(r.NavigateUri) ? null : HtmlDocumentFormatter.SafeHref(r.NavigateUri);
+        bool link = href != null;
         if (link)
-            _body.Append(@"{\field{\*\fldinst{HYPERLINK """).Append(EscapeText(r.NavigateUri!)).Append("\"}}{\\fldrslt ");
+            _body.Append(@"{\field{\*\fldinst{HYPERLINK """).Append(EscapeText(href!.Replace("\"", "%22"))).Append("\"}}{\\fldrslt ");
         _body.Append('{');
-        if (r.FontWeight == FontWeight.Bold) _body.Append(@"\b");
+        // Bold is one bit here: SemiBold and up (600+), as on the WinUI control — ExtraBold/Black went out not bold (2026-11-09).
+        if ((int)r.FontWeight >= 600) _body.Append(@"\b");
         if (r.FontStyle == FontStyle.Italic) _body.Append(@"\i");
-        if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline) || !string.IsNullOrEmpty(r.NavigateUri)) _body.Append(@"\ul");
+        if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline) || link) _body.Append(@"\ul");
         if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough)) _body.Append(@"\strike");
         int f = FontIndex(r.FontFamily);
         if (f > 0) _body.Append($@"\f{f}");
@@ -1723,8 +1732,11 @@ internal sealed class RtfWriter
                 }
                 _body.Append(depth == 1 ? @"\cell" : @"\nestcell");
             }
+            // The definition again right before \row, as Word writes it: strict readers — HWP among them — need it in
+            // scope at \row, and without it HWP dropped the table and pasted the cells as plain lines (2026-11-09, as the
+            // WinUI control). This reader reads the repeat as a no-op (StartRow keeps the row being built).
             if (depth == 1)
-                _body.Append(@"\row").Append('\n');
+                _body.Append(rowDef).Append(@"\row").Append('\n');
             else
                 // \nesttableprops is ignorable: a reader that doesn't do nested tables still sees the
                 // cell text (ours flattens it into the parent cell), which is why this can't corrupt a
@@ -1800,9 +1812,11 @@ internal sealed class RtfWriter
             }
             else if (blk is DividerBlock)
             {
+                // No per-cell rule, as on the WinUI control (2026-11-09): written as a bottom border with no \pard after it,
+                // the border could run on into the cell's next paragraphs in Word, and this reader ignores borders in a
+                // cell anyway. The break keeps the blocks apart.
                 if (!first) _body.Append(@"\par ");
                 first = false;
-                _body.Append(@"\brdrb\brdrs\brdrw10\brsp20 ");
             }
         }
         return wroteNested;

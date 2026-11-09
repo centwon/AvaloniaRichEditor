@@ -125,17 +125,14 @@ public partial class RichEditorView : UserControl
     {
         // The View is the full host, so its toolbar carries everything: page/zoom + file actions.
         Editor.ViewMode = RichEditorViewMode.Page; // the view shows pages; a bare editor reflows
-        Toolbar = new RichEditorToolbar { Target = Editor, ToolbarLevel = ToolbarLevel.Maximum };
+        // Level before Target: a toolbar without a target builds no strip, so the strip is built once, at Maximum.
+        Toolbar = new RichEditorToolbar { ToolbarLevel = ToolbarLevel.Maximum, Target = Editor };
         // Zoom is view-level here (a LayoutTransform around the editor), so the toolbar's zoom combo is
         // driven through these hooks rather than the editor directly.
         Toolbar.ZoomGetter = () => ZoomFactor;
         Toolbar.IsFitWidthGetter = () => FitToWidth;
         Toolbar.ZoomSetter = ZoomToPercent;
         Toolbar.FitWidthAction = () => SetCurrentValue(FitToWidthProperty, true);
-
-        // View defaults: the editor's own default (Continuous, reflow to width) with no page outline/desk
-        // chrome. A host can still switch to a concrete paper size on Editor / via the toolbar.
-        Editor.ShowPageBoundaries = false;
 
         // Margin (not ScrollViewer padding) gives the editor its breathing room: the content sits
         // inside the LayoutTransformControl's bounds, so it's neither clipped at the edge nor bled

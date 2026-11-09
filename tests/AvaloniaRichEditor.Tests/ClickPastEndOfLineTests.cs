@@ -135,4 +135,22 @@ public class ClickPastEndOfLineTests
         var (ed, _) = OneLine("");
         Assert.Equal(0, Hit(ed, 280, 8).Offset);
     }
+
+    // Below the last line: Avalonia reports any point under the layout with IsTrailing set, whatever its x, and
+    // TextPosition + IsTrailing put the caret one character on — clicking under a line, left of its text, landed after
+    // its first character. A point below the paragraph answers as the same x on its last line does (2026-11-08).
+    [AvaloniaTheory]
+    [InlineData(2)]   // left of the text
+    [InlineData(40)]
+    [InlineData(75)]
+    public void ClickingBelowTheLastLine_LandsWhereTheSameXOnTheLineDoes(double x)
+    {
+        var p = new Paragraph { MarginBottom = 40 };
+        p.Inlines.Add(new Run { Text = "hello world" });
+        var doc = new FlowDocument();
+        doc.Blocks.Clear();
+        doc.Blocks.Add(p);
+        var ed = Editor(doc);
+        Assert.Equal(Hit(ed, x, 8).Offset, Hit(ed, x, 30).Offset);
+    }
 }

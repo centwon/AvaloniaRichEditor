@@ -36,9 +36,15 @@ namespace AvaloniaRichEditor.Formatters
         // Shared across all parses: a new HttpClient per <img> leaks sockets.
         private static readonly System.Net.Http.HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
         private static readonly TimeSpan RemoteImageBudget = TimeSpan.FromSeconds(5);
+        // Only the first this-many distinct remote pictures are fetched; the rest are skipped like a failed fetch. All are
+        // requested at once, each up to MaxPictureBytes, and the pasted page chose how many: a page of a thousand <img>
+        // was a thousand simultaneous downloads (2026-11-08).
+        internal const int MaxRemoteImages = 64;
         // Per-parse flags (set from the parameters below); LoadImage is deeply nested, so these ride
         // on the thread instead of being threaded through every walker.
         [ThreadStatic] private static bool _blockLocalFileImages;
+        // When set, files under %TEMP% still load while local files are blocked — the paste exemption (see ParseHtml).
+        [ThreadStatic] private static bool _allowTempFileImages;
         // When set, remote (http) <img> sources are skipped entirely (no fetch) — the privacy opt-out
         // pasting HTML otherwise issues HTTP requests, e.g. to tracking pixels.
         [ThreadStatic] private static bool _blockRemoteImages;
@@ -48,12 +54,21 @@ namespace AvaloniaRichEditor.Formatters
 
         /// <summary>Parses an HTML string into a <see cref="FlowDocument"/>.
         /// When <paramref name="allowLocalFileImages"/> is false, <c>file://</c> image sources are
-        /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>).
+        /// skipped instead of read from disk (see <see cref="Controls.RichEditor.AllowLocalFileImages"/>) — EXCEPT files under
+        /// the user's temp directory, which still load: Word and HWP clipboard HTML reference the pictures the copy itself
+        /// just wrote there, and refusing them drops every image pasted from those applications. (The editor's own
+        /// <see cref="Controls.RichEditor.LoadHtml"/> and <see cref="Controls.RichEditor.InsertHtml"/> do not take this exemption.)
         /// Remote (<c>http</c>) images are <b>not</b> loaded: this overload never performs network I/O,
         /// so it cannot stall the calling thread. Use <see cref="ParseHtmlAsync"/> to fetch them.</summary>
         public static FlowDocument ParseHtml(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
+            => ParseHtml(html, allowLocalFileImages, allowRemoteImages, allowTempFileImages: true);
+
+        // allowTempFileImages: whether files under %TEMP% still load when local files are blocked — the paste exemption,
+        // as the WinUI control's (2026-11-09). The editor's LoadHtml/InsertHtml pass false.
+        internal static FlowDocument ParseHtml(string html, bool allowLocalFileImages, bool allowRemoteImages, bool allowTempFileImages)
         {
             _blockLocalFileImages = !allowLocalFileImages;
+            _allowTempFileImages = allowTempFileImages;
             _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = null; // no prefetch => remote images are skipped, never fetched here
             var doc = LoadHtmlDoc(ref html);
@@ -64,7 +79,11 @@ namespace AvaloniaRichEditor.Formatters
         /// concurrently off the UI thread first, so a slow network can't freeze the UI while pasting
         /// web content. The document model is still built on the calling thread (Avalonia model
         /// objects are thread-affine), so await this from the UI thread.</summary>
-        public static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
+        public static System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages = true, bool allowRemoteImages = true)
+            => ParseHtmlAsync(html, allowLocalFileImages, allowRemoteImages, allowTempFileImages: true);
+
+        // See the synchronous overload for allowTempFileImages.
+        internal static async System.Threading.Tasks.Task<FlowDocument> ParseHtmlAsync(string html, bool allowLocalFileImages, bool allowRemoteImages, bool allowTempFileImages)
         {
             var doc = LoadHtmlDoc(ref html);
             // Off-thread: network only — no model objects created here. Skip the network entirely when
@@ -74,6 +93,7 @@ namespace AvaloniaRichEditor.Formatters
                 : new System.Collections.Generic.Dictionary<string, byte[]?>();
             // Back on the calling (UI) thread: build the model, reading the prefetched image bytes.
             _blockLocalFileImages = !allowLocalFileImages;
+            _allowTempFileImages = allowTempFileImages;
             _blockRemoteImages = !allowRemoteImages;
             _prefetchedRemoteImages = prefetched;
             try { return BuildDocument(doc, html); }
@@ -180,6 +200,7 @@ namespace AvaloniaRichEditor.Formatters
                 .Select(n => Attr(n, "src"))
                 .Where(s => s.StartsWith("http"))
                 .Distinct()
+                .Take(MaxRemoteImages)
                 .ToList();
             if (urls.Count == 0) return result;
 
@@ -550,8 +571,10 @@ namespace AvaloniaRichEditor.Formatters
         private static readonly System.Text.RegularExpressions.Regex RxFontWeight = new(@"(?<![\w-])font-weight\s*:\s*([^;]+)");
         private static readonly System.Text.RegularExpressions.Regex RxUnderline = new("text-decoration[^;]*underline");
         private static readonly System.Text.RegularExpressions.Regex RxLineThrough = new("text-decoration[^;]*line-through");
-        private static readonly System.Text.RegularExpressions.Regex RxColor = new("(?<![\\w-])color\\s*:\\s*([^;]+)");
-        private static readonly System.Text.RegularExpressions.Regex RxBackground = new("background(?:-color)?\\s*:\\s*([^;]+)");
+        // Colour and highlight are read at the start of a declaration only: matched anywhere, a `color:` inside a font family's
+        // quoted name was the text colour (2026-11-08).
+        private static readonly System.Text.RegularExpressions.Regex RxColor = new("(?:^|;)\\s*color\\s*:\\s*([^;]+)");
+        private static readonly System.Text.RegularExpressions.Regex RxBackground = new("(?:^|;)\\s*background(?:-color)?\\s*:\\s*([^;]+)");
         private static readonly System.Text.RegularExpressions.Regex RxFontFamily = new("font-family\\s*:\\s*([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         private static readonly System.Text.RegularExpressions.Regex RxFontSize = new("font-size\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt|rem|em|%)?");
         private static readonly System.Text.RegularExpressions.Regex RxMarginLeft = new("margin-left\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(px|pt)?");
@@ -618,10 +641,9 @@ namespace AvaloniaRichEditor.Formatters
             if (string.IsNullOrEmpty(v)) return;
             var parts = v.Split(',');
             if (parts.Length != 3) return;
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
-            if (double.TryParse(parts[0], System.Globalization.NumberStyles.Float, inv, out double t)) p.MarginTop = t;
-            if (double.TryParse(parts[1], System.Globalization.NumberStyles.Float, inv, out double b)) p.MarginBottom = b;
-            if (double.TryParse(parts[2], System.Globalization.NumberStyles.Float, inv, out double r)) p.MarginRight = r;
+            if (TryFinite(parts[0], System.Globalization.NumberStyles.Float, out double t)) p.MarginTop = t;
+            if (TryFinite(parts[1], System.Globalization.NumberStyles.Float, out double b)) p.MarginBottom = b;
+            if (TryFinite(parts[2], System.Globalization.NumberStyles.Float, out double r)) p.MarginRight = r;
         }
 
         // CSS line-height into the paragraph: "160%" or a unitless "1.6" is a multiple of the font size —
@@ -631,13 +653,12 @@ namespace AvaloniaRichEditor.Formatters
         {
             var v = ReadStyleValue(node, "line-height")?.Trim();
             if (string.IsNullOrEmpty(v) || v.Equals("normal", StringComparison.OrdinalIgnoreCase)) return;
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
             const System.Globalization.NumberStyles fl = System.Globalization.NumberStyles.Float;
-            if (v.EndsWith("%", StringComparison.Ordinal) && double.TryParse(v[..^1], fl, inv, out var pct) && pct > 0)
+            if (v.EndsWith("%", StringComparison.Ordinal) && TryFinite(v[..^1], fl, out var pct) && pct > 0)
                 p.LineSpacing = pct / 100.0;
-            else if (v.EndsWith("px", StringComparison.OrdinalIgnoreCase) && double.TryParse(v[..^2], fl, inv, out var px) && px > 0)
+            else if (v.EndsWith("px", StringComparison.OrdinalIgnoreCase) && TryFinite(v[..^2], fl, out var px) && px > 0)
                 p.LineHeight = px;
-            else if (double.TryParse(v, fl, inv, out var mult) && mult > 0)
+            else if (TryFinite(v, fl, out var mult) && mult > 0)
                 p.LineSpacing = mult;
         }
 
@@ -799,9 +820,12 @@ namespace AvaloniaRichEditor.Formatters
                     _prefetchedRemoteImages.TryGetValue(src, out bytes);
                     if (bytes == null) return (null, null, 0, 0, null);
                 }
-                else if (src.StartsWith("file:"))
+                else if (src.StartsWith("file:") || src.StartsWith("ms-clipboard-file:", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (_blockLocalFileImages) return (null, null, 0, 0, null);
+                    // Some clipboard paths REWRITE file:/// references to the ms-clipboard-file: scheme — treat it as file:, or
+                    // every HWP/Word picture reference misses this branch (as the WinUI control, 2026-11-09).
+                    if (src.StartsWith("ms-clipboard-file:", StringComparison.OrdinalIgnoreCase))
+                        src = "file:" + src.Substring("ms-clipboard-file:".Length);
                     var uri = new Uri(src);
                     // A file on ANOTHER machine (file://host/share/…) is a UNC path, and on Windows touching it
                     // opens an SMB connection that offers the user's NTLM credentials to that host — from a
@@ -809,6 +833,10 @@ namespace AvaloniaRichEditor.Formatters
                     // machine's files; a network share is never read (measured: a 21 s connect attempt).
                     if (uri.IsUnc) return (null, null, 0, 0, null);
                     var path = uri.LocalPath;
+                    // Blocked local files still allow %TEMP% for a caller that takes the paste exemption: Word/HWP CF_HTML
+                    // reference the pictures the COPY itself just wrote there. Anything else (a hostile page referencing user
+                    // files) stays blocked.
+                    if (_blockLocalFileImages && !(_allowTempFileImages && IsTempPath(path))) return (null, null, 0, 0, null);
                     if (System.IO.File.Exists(path)) bytes = System.IO.File.ReadAllBytes(path);
                 }
                 if (bytes == null) return (null, null, 0, 0, null);
@@ -876,10 +904,29 @@ namespace AvaloniaRichEditor.Formatters
             return scheme is "javascript" or "vbscript" or "data" ? null : href;
         }
 
+        // double.TryParse takes "Infinity", "NaN" and 1e400 (and so a 400-digit number), and JSON cannot write any of them:
+        // one such value from a pasted page made every later save of the document throw (2026-11-08).
+        private static bool TryFinite(string? s, System.Globalization.NumberStyles style, out double v)
+            => double.TryParse(s, style, System.Globalization.CultureInfo.InvariantCulture, out v) && TryFinite(v, out v);
+        private static bool TryFinite(string? s, out double v)
+            => TryFinite(s, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, out v);
+        private static bool TryFinite(double d, out double v) { v = d; return double.IsFinite(d); }
+
+        private static bool IsTempPath(string path)
+        {
+            try
+            {
+                string temp = System.IO.Path.GetFullPath(System.IO.Path.GetTempPath())
+                    .TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
+                return System.IO.Path.GetFullPath(path).StartsWith(temp, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) { RichEditorDiagnostics.Report(ex); return false; }
+        }
+
         private static double ReadPx(HtmlNode node, string attr, string cssProp)
         {
             var a = Attr(node, attr);
-            if (double.TryParse(a, System.Globalization.CultureInfo.InvariantCulture, out var v)) return v;
+            if (TryFinite(a, out var v)) return v;
             var style = Attr(node, "style");
             if (!string.IsNullOrEmpty(style))
             {
@@ -887,7 +934,7 @@ namespace AvaloniaRichEditor.Formatters
                 // height, max-width as a size to force. (Code review 2026-11-01.)
                 var m = System.Text.RegularExpressions.Regex.Match(style, "(?<![\\w-])" + cssProp + "\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)px",
                     System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var px)) return px;
+                if (m.Success && TryFinite(m.Groups[1].Value, out var px)) return px;
             }
             return double.NaN;
         }
@@ -1049,8 +1096,8 @@ namespace AvaloniaRichEditor.Formatters
             var style = Attr(node, "style").ToLowerInvariant();
             var m = RxMarginLeft.Match(style);
             if (!m.Success) m = RxPaddingLeft.Match(style);
-            if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0)
-                return m.Groups[2].Value == "pt" ? v * 96.0 / 72.0 : v;
+            if (m.Success && TryFinite(m.Groups[1].Value, out var v) && v > 0 && TryFinite(m.Groups[2].Value == "pt" ? v * 96.0 / 72.0 : v, out var px))
+                return px;
             return 0;
         }
 
@@ -1450,7 +1497,8 @@ namespace AvaloniaRichEditor.Formatters
             if (r.FontSize > 0 && System.Math.Abs(r.FontSize - assumed) > 0.01)
                 styles.Add($"font-size:{r.FontSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}pt");
             // <h1>..<h6> is bold to every reader (browsers, Word, this one), so un-bolded heading text says so.
-            if (inHeading && r.FontWeight != FontWeight.Bold) styles.Add("font-weight:normal");
+            // Bold is one bit: SemiBold and up (600+), as on the WinUI control (2026-11-09).
+            if (inHeading && (int)r.FontWeight < 600) styles.Add("font-weight:normal");
             if (r.Foreground is ISolidColorBrush fg) styles.Add($"color:{CssColor(fg.Color)}");
             if (r.Background is ISolidColorBrush bg) styles.Add($"background-color:{CssColor(bg.Color)}");
 
@@ -1467,7 +1515,7 @@ namespace AvaloniaRichEditor.Formatters
             // unrecognized decoration declaration can make Word discard the whole style (losing colour).
             if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Underline)) t = $"<u>{t}</u>";
             if (RunDecorations.Has(r.TextDecorations, TextDecorationLocation.Strikethrough)) t = $"<s>{t}</s>";
-            if (r.FontWeight == FontWeight.Bold) t = $"<b>{t}</b>";
+            if ((int)r.FontWeight >= 600) t = $"<b>{t}</b>";
             if (r.FontStyle == FontStyle.Italic) t = $"<i>{t}</i>";
             // The readers drop script links, but a host's SetHyperlink reaches here without passing one — the
             // same check, so no script link leaves in exported or clipboard HTML whatever put it in the document.

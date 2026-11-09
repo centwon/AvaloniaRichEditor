@@ -26,6 +26,14 @@ public class ViewerTableCopyTests
     // The table holding the active cell block — what the renderer fills (the table shown selected) — or null.
     private static TableBlock? BlockTable(RichEditor ed) => (TableBlock?)typeof(RichEditor).GetMethod("CellBlockTable", NP)!.Invoke(ed, null);
 
+    // An inline table selected as an object (_selectedInlineTable), or null.
+    private static TableBlock? SelectedInlineTable(RichEditor ed)
+        => (((Paragraph host, InlineTable it)?)typeof(RichEditor).GetField("_selectedInlineTable", NP)!.GetValue(ed))?.it.Table;
+
+    // A nested or inline table taken by its border: selected as an object (2026-11-09; it selected the table's cells, and a
+    // key typed then emptied them).
+    private static TableBlock? Taken(InteractionHost host) => host.SelectedBlock as TableBlock ?? SelectedInlineTable(host.Editor);
+
     // A table held whole by its border names no cell: the cell items are greyed, as in the WinUI port (user decision,
     // 2026-09-14). They took the cell nearest the border — acting on a cell nobody chose.
     [AvaloniaFact]
@@ -321,8 +329,8 @@ public class ViewerTableCopyTests
         Assert.NotSame(MoveCursor, host.Editor.Cursor);
     }
 
-    // A click on it selects the whole table — in the editor and in a viewer alike, since an inline table has
-    // no block caret to place — and Ctrl+C copies that table.
+    // A click on it selects the table as an object — in a cell or inline, in the editor and in a viewer alike (it
+    // selected the table's cells until 2026-11-09) — and Ctrl+C copies that table.
     [AvaloniaTheory]
     [InlineData("inline", false)]
     [InlineData("inline", true)]
@@ -336,8 +344,8 @@ public class ViewerTableCopyTests
         host.Editor.IsReadOnly = readOnly;
 
         host.Click(OnInlineLeftBorder(r));
-        Assert.NotNull(BlockTable(host.Editor));
-        Assert.Same(inner, BlockTable(host.Editor));
+        Assert.Same(inner, where == "cell" ? host.SelectedBlock : SelectedInlineTable(host.Editor));
+        Assert.Null(BlockTable(host.Editor)); // not its cells
 
         ClearClipboard();
         host.Key(Key.C, RawInputModifiers.Control);
@@ -502,11 +510,11 @@ public class ViewerTableCopyTests
         var both = new Point(r.Left - 2, r.Top + 6); // 2 from the target's left edge, 3 from the one around it
 
         host.Click(both);
-        Assert.Same(target, BlockTable(host.Editor));
+        Assert.Same(target, Taken(host));
         Assert.Null(host.CaretBlock);
 
         host.Click(both, MouseButton.Right);
-        Assert.Same(target, BlockTable(host.Editor));
+        Assert.Same(target, Taken(host));
         Assert.Null(host.CaretBlock);
     }
 }
