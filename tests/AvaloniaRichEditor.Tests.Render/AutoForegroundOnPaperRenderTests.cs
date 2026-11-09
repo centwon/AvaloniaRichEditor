@@ -48,7 +48,8 @@ public class AutoForegroundOnPaperRenderTests
 
     private static byte[] Screen(RichEditor ed, double w = 900)
     {
-        const int h = 300;
+        // Tall enough for a second line: on macOS the default font is wider and the red run wraps onto it in page view.
+        const int h = 600;
         ed.Measure(new Size(w, double.PositiveInfinity));
         ed.Arrange(new Rect(0, 0, w, h));
         using var rtb = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(w), h));
