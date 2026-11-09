@@ -62,6 +62,12 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   여러 문단 붙여넣기 한 규칙(`PasteSpliceRuleTests`), 쪽 보기 넘어간 개체 잔상·빈자리 클릭(`PageRoomClickTests`·`PageSliceRenderTests`),
   쪽 보기 크기 끌기 깜박임(`RowResizePageViewTests`), 빈 곳 표 그리기 미리보기(`TableDrawEmptyAreaTests`), 그림 클릭 화면 튐
   (`PictureClickScrollTests`). 모두 반증(수정 빼면 빨강). **실기 확인 필요**: 쪽 보기 세 항목, 셀 안 표 클릭 화면 튐(헤드리스 테스트 없음).
+  + WinUI와 다르던 동작 맞춤(2026-11-09, 같은 브랜치): View 쪽 경계 끄지 않음, 읽기 전용 ReplaceNext, 흰 종이 자동 글자색(포트도),
+  링크 모양, 줄 높이·줄 간격 상호 배타, 붙여넣기 %TEMP% 그림·`ms-clipboard-file:`, 굵게 600+, RTF 셀 `\par`=문단·행 정의 2회·셀 구분선
+  안 씀, 툴바 지연 생성(포트는 피커만 — 대상 없는 툴바 생략은 포트 하네스 UI 스레드를 멈춰 뺌), 내보내기 PDF·가져오기 필터·빈 파일.
+  **남은 묶음(미착수)**: 선택·편집 규칙 — Ctrl로 개체 놓기, 인라인 표 테두리=개체 선택, 셀 블록 잘라내기·지우기, 병합 셀 선택 확장,
+  여러 줄 평문=문단마다, 넣기가 선택을 안 지움, 목록 토글, 여러 문단 Tab, 셀 안 "글자처럼 취급"(KanuDoc d7b670c·c46c45a·69a2775·
+  5a4434f·7e8abc0·0c0ee23, 두 레포 모두).
 - **프레임당 할당 = 문서 크기에 비례하던 것 수정**(2026-11-02, `perf/render-cull-text-2026-11-02`): 렌더 루프가 컬링 검사 **전에**
   모든 문단의 `BuildPlain`을 만들었다(4,000문단에서 프레임당 ≈6 MB, 끝까지 스크롤 ≈2 GB). 포트는 이미 목록 표지 경로에서만 만듦 →
   같게. `PerFrameAllocationTests`(1,000 대 4,000문단 프레임 할당 비교). 로컬 확인(2026-11-02): 전체 그린, 수정 되돌리면 새 테스트 빨강(반증).
