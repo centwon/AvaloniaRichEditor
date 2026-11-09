@@ -436,6 +436,29 @@ public partial class RichEditor
         var (ecs, ers) = tb.SpanOf(e.r, e.c);
         int r0 = Math.Min(s.r, e.r), c0 = Math.Min(s.c, e.c);
         int r1 = Math.Max(s.r + srs - 1, e.r + ers - 1), c1 = Math.Max(s.c + scs - 1, e.c + ecs - 1);
+        return GrowToMerges(tb, r0, c0, r1, c1);
+    }
+
+    // The cell block's box grown until no merged cell sticks out of it — the box of the two corner cells, grown by
+    // every merge reaching into it, again and again. Growing only by the corner cells' spans let a merge anchored outside
+    // reach in, and the two controls painted, cleared and formatted different cells there (2026-11-09: one rule).
+    private static (int r0, int c0, int r1, int c1) GrowToMerges(TableBlock tb, int r0, int c0, int r1, int c1)
+    {
+        r0 = Math.Max(0, r0); c0 = Math.Max(0, c0);
+        r1 = Math.Min(tb.Rows - 1, r1); c1 = Math.Min(tb.Columns - 1, c1);
+        for (bool grew = true; grew;)
+        {
+            grew = false;
+            for (int r = r0; r <= r1; r++)
+                for (int c = c0; c <= c1; c++)
+                {
+                    var (ar, ac) = tb.AnchorOf(r, c);
+                    var (cs, rs) = tb.SpanOf(ar, ac);
+                    int nr0 = Math.Min(r0, ar), nc0 = Math.Min(c0, ac);
+                    int nr1 = Math.Min(tb.Rows - 1, Math.Max(r1, ar + rs - 1)), nc1 = Math.Min(tb.Columns - 1, Math.Max(c1, ac + cs - 1));
+                    if (nr0 != r0 || nc0 != c0 || nr1 != r1 || nc1 != c1) { (r0, c0, r1, c1) = (nr0, nc0, nr1, nc1); grew = true; }
+                }
+        }
         return (r0, c0, r1, c1);
     }
 

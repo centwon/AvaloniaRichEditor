@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Ctrl shortcut lets go of a selected picture or table, as on the WinUI control: Ctrl+Delete and Ctrl+Backspace delete
   it, Ctrl+←/→ go on by a word from right after an inline one, Ctrl+C and Ctrl+X still take it. It stayed selected:
   Ctrl+A then Delete removed only the object, and Ctrl+Delete deleted a word at the caret, which may have been far away.
+- A cell block grows over a merged cell reaching into it from outside, and over whatever that brings in, so no merge
+  sticks out of it: painting, clearing, formatting and merging all take the grown block. It was the box of its two
+  corner cells, and Delete cleared such a merge but not the cells beside it in the rows it spans.
 
 ### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
 

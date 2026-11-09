@@ -291,6 +291,26 @@ public class SelectionEditRulesTests
         }
     }
 
+    // A merged cell reaching into a cell block from outside it: the block grows over the whole merge, and whatever that
+    // brings in. The block was the box of its two corner cells only, and Delete cleared the merge but not the cells
+    // beside it in the rows it spans — the WinUI control cleared neither.
+    [AvaloniaFact]
+    public void ACellBlock_GrowsOverAMergeReachingIntoIt()
+    {
+        var t = Grid(3, 3);
+        t.SetSpan(0, 1, 1, 2); // (0,1) merged down over (1,1)
+        var ed = new RichEditor
+        {
+            Document = TestHelpers.Doc(TestHelpers.Para(new Run { Text = "before" }), t, TestHelpers.Para(new Run { Text = "after" })),
+            PageSize = RichEditorPageSize.Continuous,
+        };
+        Select(ed, t.Cells[1][0].Para, 0, t.Cells[1][2].Para, 1);
+        Press(ed, Key.Delete);
+        foreach (var (r, c) in new[] { (0, 0), (0, 1), (0, 2), (1, 0), (1, 2) })
+            Assert.Equal("", t.Cells[r][c].Para.Text());
+        Assert.Equal("g", t.Cells[2][0].Para.Text());
+    }
+
     // ---- a Ctrl chord with an object selected ------------------------------------------------------------
 
     private static (RichEditor ed, Paragraph host, Paragraph far) InlineTableAndAFarCaret()
