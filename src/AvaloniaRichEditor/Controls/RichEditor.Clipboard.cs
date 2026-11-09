@@ -162,9 +162,45 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         if (!string.IsNullOrEmpty(text))
         {
             PushUndo();
-            TypeText(text);
+            InsertPlainText(text);
             ResetCaretBlink(); // caret sits at the end of the pasted text — scroll it into view
         }
+    }
+
+    // Plain text from the clipboard: one line goes in as typed text; several become paragraphs, one per line, with the
+    // caret paragraph's format and the caret's character format (PlainLineParagraphs, then the paste splice) — so lines
+    // pasted into a list item are list items. They went into one paragraph with line breaks, where the WinUI control
+    // made paragraphs (2026-11-09). The caller pushed the undo step.
+    private void InsertPlainText(string text)
+    {
+        if (text.Contains('\r')) text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        if (!text.Contains('\n') || Document == null || IsReadOnly) { TypeText(text); return; }
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+        if (_caretPosition.Paragraph is not { } p) return;
+        InsertBlocksAtCaret(PlainLineParagraphs(text, p, _caretPosition.Offset));
+    }
+
+    // Plain text of several lines as paragraphs to splice in at the caret: one per line, each with the format of the
+    // paragraph the caret is in and the character format typing there would use (TypingSource; an empty heading's
+    // preset) — so lines pasted into a list item are list items, as in Word. A link at the caret does not carry over.
+    // One rule for both controls (2026-11-09).
+    private static List<Block> PlainLineParagraphs(string text, Paragraph caretParagraph, int offset)
+    {
+        var (src, _, _, _) = TypingSource(caretParagraph, offset);
+        var blocks = new List<Block>();
+        foreach (var line in text.Split('\n'))
+        {
+            var p = new Paragraph();
+            p.CopyFormatFrom(caretParagraph);
+            var run = src != null ? (Run)src.Clone() : new Run();
+            if (src == null && HeadingStyle.IsHeading(caretParagraph.HeadingLevel)) HeadingStyle.ApplyPreset(run, caretParagraph.HeadingLevel);
+            run.Text = line;
+            run.NavigateUri = null;
+            run.Parent = p;
+            p.Inlines.Add(run);
+            blocks.Add(p);
+        }
+        return blocks;
     }
 
     // Ctrl+Shift+V: pastes the clipboard's plain text only, ignoring rich/HTML/image formats
@@ -182,7 +218,7 @@ public partial class RichEditor  // doc comment lives on the primary declaration
         // As PasteFromClipboardAsync: the await can outlast a document swap or a switch to read-only.
         if (!ReferenceEquals(Document, pasteInto) || IsReadOnly) return;
         PushUndo();
-        TypeText(text);
+        InsertPlainText(text);
         ResetCaretBlink();
     }
 

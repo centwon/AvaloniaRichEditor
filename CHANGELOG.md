@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selection (whichever way it was made — a backwards one put it at the start), or right after a selected picture or
   table (it went where the caret had been before the click), and the selection is let go of. A paste still replaces the
   selection.
+- Several lines of plain text pasted (the plain-text step of a paste, and Ctrl+Shift+V) become a paragraph per line, with
+  the caret paragraph's format and the caret's character format — lines pasted into a list item are list items. They
+  went into one paragraph with line breaks.
 
 ### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
 

@@ -155,6 +155,37 @@ public class SelectionEditRulesTests
         Assert.False(ed.HasSelection);
     }
 
+    // ---- several lines of plain text pasted ----------------------------------------------------------------
+
+    private static void PastePlain(RichEditor ed, string text)
+        => typeof(RichEditor).GetMethod("InsertPlainText", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(ed, new object[] { text });
+
+    [AvaloniaFact]
+    public void PlainLines_BecomeParagraphs()
+    {
+        // They went into one paragraph with line breaks.
+        var p = TestHelpers.Para(new Run { Text = "Hello World" });
+        var ed = new RichEditor { Document = TestHelpers.Doc(p), PageSize = RichEditorPageSize.Continuous };
+        PlaceCaret(ed, p, 6);
+        PastePlain(ed, "A1\r\nB2");
+        Assert.Equal(new[] { "Hello A1", "B2World" }, ed.Document!.Blocks.OfType<Paragraph>().Select(x => x.Text()));
+    }
+
+    [AvaloniaFact]
+    public void PlainLines_IntoAListItem_AreListItems_WithTheCaretsCharacterFormat()
+    {
+        var p = new Paragraph { ListType = ListKind.Bullet };
+        p.Inlines.Add(new Run { Text = "item one", FontWeight = Avalonia.Media.FontWeight.Bold });
+        var ed = new RichEditor { Document = TestHelpers.Doc(p), PageSize = RichEditorPageSize.Continuous };
+        PlaceCaret(ed, p, 4);
+        PastePlain(ed, "x\ny\nz");
+        var paras = ed.Document!.Blocks.OfType<Paragraph>().ToList();
+        Assert.Equal(new[] { "itemx", "y", "z one" }, paras.Select(x => x.Text()));
+        Assert.All(paras, x => Assert.Equal(ListKind.Bullet, x.ListType));
+        Assert.All(paras.SelectMany(x => x.Inlines.OfType<Run>()), r => Assert.Equal(Avalonia.Media.FontWeight.Bold, r.FontWeight));
+    }
+
     // ---- "treat as character" inside a cell -----------------------------------------------------------
 
     private static (RichEditor ed, TableCell cell, Paragraph a) CellHolding(Block inner)
