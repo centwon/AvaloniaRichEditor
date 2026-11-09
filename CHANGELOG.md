@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without it dropped the table and pasted the cells as plain lines. Test: `RtfRowDefinitionRepeatTests`.
 - RTF: a divider inside a table cell is no longer written as a bottom border, which had no `\pard` after it and could
   run on into the cell's next paragraphs in Word. Test: `RtfCellDividerTests`.
+- The toolbar's Export offers PDF, as the WinUI view's does; saving a PDF leaves the document marked modified, since a PDF
+  cannot be opened again. Import lists only the files it can read (`.flow`, `.json`, `.html`, `.htm`, `.rtf`), and an empty
+  file is nothing to import (it was reported as a JSON fault). Test: `ViewExportImportTests`.
 
 ### Performance — hover, click and arrow keys no longer walk the whole document (P3, 2026-11-02)
 
