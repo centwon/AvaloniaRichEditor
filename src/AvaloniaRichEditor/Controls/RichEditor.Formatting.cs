@@ -236,15 +236,20 @@ public partial class RichEditor
         // No list anywhere in it: no undo step that undoes nothing (see ApplyToSelectedParagraphs).
         if (targets.All(p => p.ListType == ListKind.None && p.ListMarker == ListMarkerStyle.Default && p.ListLevel == 0)) return;
         PushUndo();
-        foreach (var p in targets)
-        {
-            p.ListType = ListKind.None;
-            p.ListMarker = ListMarkerStyle.Default;
-            p.ListLevel = 0;
-        }
+        foreach (var p in targets) ClearList(p);
         UpdateParents(Document);
         InvalidateMeasure(); // the list gutter moves the wrap width, and so the height
         InvalidateVisual();
+    }
+
+    // Turning a list off clears the WHOLE list state, not just the kind: a level left behind keeps indenting the
+    // paragraph (the gutter is added by level, whatever the kind), and a marker style left behind came back if the
+    // paragraph became a list again.
+    private static void ClearList(Paragraph p)
+    {
+        p.ListType = ListKind.None;
+        p.ListMarker = ListMarkerStyle.Default;
+        p.ListLevel = 0;
     }
 
     // The list kind a marker style belongs to (number formats -> Ordered, everything else -> Bullet).
@@ -267,30 +272,34 @@ public partial class RichEditor
             if (sel.All(p => p.ListType == kind && p.ListMarker == m0 && !p.Inlines.Any(i => i is Run r && r.Text?.Contains('\n') == true))) return;
         }
         PushUndo();
-        // A style pick always turns the list on (never toggles off); a plain bullet/number button toggles.
-        bool turningOff = marker == null && _caretPosition.Paragraph.ListType == kind;
+        // Every selected paragraph at any depth (just the caret's when there's no selection). One rule for the
+        // direction, as on the WinUI control: a style pick always turns the list on; the plain bullet/number toggle
+        // turns it on unless EVERY selected paragraph already has this kind (the caret's paragraph used to decide, so
+        // a mixed selection could lose its bullets). Off clears the whole list state (ClearList), not just the kind.
+        var selected = SelectedParagraphsInOrder();
+        if (selected.Count == 0) selected.Add(_caretPosition.Paragraph);
+        bool turningOff = marker == null && selected.All(p => p.ListType == kind);
         void ApplyMarker(Paragraph par) { if (marker.HasValue) par.ListMarker = marker.Value; }
 
-        // Apply to every selected paragraph (just the caret's when there's no selection). Only
-        // top-level ones can take the hard-line splitting path below — it splices Document.Blocks —
-        // so paragraphs living in a table cell are toggled in place here, however many are selected.
-        var targets = new List<Paragraph>();
-        foreach (var p in SelectedParagraphsInOrder())
+        if (turningOff)
         {
-            if (Document.Blocks.Contains(p)) { targets.Add(p); continue; }
-            p.ListType = turningOff ? ListKind.None : kind;
-            ApplyMarker(p);
-        }
-        if (targets.Count == 0)
-        {
+            foreach (var p in selected) ClearList(p);
+            UpdateParents(Document);
             InvalidateMeasure(); // the list gutter moves the wrap width, and so the height
             InvalidateVisual();
             return;
         }
-        if (turningOff)
+        // Only top-level paragraphs can take the hard-line splitting path below — it splices Document.Blocks —
+        // so paragraphs living in a table cell are set in place here, however many are selected.
+        var targets = new List<Paragraph>();
+        foreach (var p in selected)
         {
-            foreach (var tp in targets) tp.ListType = ListKind.None;
-            UpdateParents(Document);
+            if (Document.Blocks.Contains(p)) { targets.Add(p); continue; }
+            p.ListType = kind;
+            ApplyMarker(p);
+        }
+        if (targets.Count == 0)
+        {
             InvalidateMeasure(); // the list gutter moves the wrap width, and so the height
             InvalidateVisual();
             return;

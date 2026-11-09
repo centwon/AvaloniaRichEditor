@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — selection and editing rules, the same as the WinUI control's (2026-11-09)
+
+- List toggle: a mixed selection turns the list on for every paragraph; only a selection that is all this kind turns it
+  off (the caret's paragraph used to decide). Off clears the level and marker style too, not just the kind — a nested
+  item kept its indent with no marker. Test: `SelectionEditRulesTests`.
+
 ### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
 
 - A `RichEditorView`'s first frame allocated about 7.8 MB, nearly all of it the toolbar: the strip was built once per
