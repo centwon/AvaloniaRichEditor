@@ -237,6 +237,7 @@ public partial class RichEditor
             }
 
         _selectedInline = null; // any other press clears the inline-image selection (may re-set below)
+        _selectedInlineTable = null;
 
         if (!IsReadOnly)
             foreach (var b in _columnBoundaries)
@@ -286,13 +287,12 @@ public partial class RichEditor
                 return;
             }
 
-        // A nested table's left/top border — an inline table's, or one in a table cell — selects the whole
-        // table, the cell fill of a staged Ctrl+A, so Ctrl+C copies it (SelectedWholeTable). A top-level
-        // table's border places the block caret instead; a nested table has none (the block caret is
-        // top-level only). The move cursor over the border announces it (OnPointerMoved).
-        if (NestedTableBorderAtPoint(point) is { } inlineEdge && SelectWholeTableForCopy(inlineEdge))
+        // A nested table's left/top border — an inline table's, or one in a table cell — selects the table as an
+        // object (SelectTableObject), as a click selects a picture: Delete removes it, Ctrl+C copies it. A top-level
+        // table's border places the block caret instead; a nested table has none (the block caret is top-level only).
+        // The move cursor over the border announces it (OnPointerMoved).
+        if (NestedTableBorderAtPoint(point) is { } inlineEdge && SelectTableObject(inlineEdge))
         {
-            _selectedBlock = null;
             // The border also grabs it: an inline table moves as the inline it is, a nested one as a block.
             ArmObjectDrag(inlineEdge.Parent as InlineTable ?? (object)inlineEdge, point, e);
             return;
@@ -1030,6 +1030,16 @@ public partial class RichEditor
             _selectedInline = null;
             InvalidateVisual();
         }
+        // And an inline table selected as an object, as on the WinUI control: the key then works right after the table
+        // (a letter is typed after it). An edit may have taken it out of the document meanwhile; then it is only let go.
+        if (_selectedInlineTable != null) DropDetachedObjectSelection();
+        if (_selectedInlineTable is { } heldTable && e.Key != Key.Back && e.Key != Key.Delete && !ctrl)
+        {
+            _selectedInlineTable = null;
+            _caretPosition = new TextPointer(heldTable.host, OffsetOfInline(heldTable.host, heldTable.it) + 1);
+            CollapseSelectionToCaret();
+            InvalidateVisual();
+        }
 
         if (TryCellBlockKey(e.Key, shift, ctrl, alt)) { e.Handled = true; return; }
 
@@ -1095,10 +1105,11 @@ public partial class RichEditor
             }
             // Nothing to cut: no checkpoint. It used to push one anyway — an undo step that undid nothing, and a
             // freshly loaded document marked modified by a bare Ctrl+X.
-            if (!hasTextSel && _caretBlock is not TableBlock && _selectedBlock == null) { e.Handled = true; return; }
+            if (!hasTextSel && _caretBlock is not TableBlock && _selectedBlock == null && _selectedInlineTable == null) { e.Handled = true; return; }
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
-            if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole goes whole
+            // A table held as an object goes whole; a cell block takes whole rows, columns or the table, else is emptied.
+            if (!RemoveSelectedTableObject() && !CutCellBlock()) DeleteSelection();
             ResetCaretBlink(); // remeasure (page breaks, scroll extent) and report the caret, as Backspace does
             e.Handled = true;
             return;
@@ -1158,7 +1169,7 @@ public partial class RichEditor
         // (the blue border), the next one deletes it, as Word and HWP do — one key used to delete a whole table at once
         // (user decision, 2026-11-01). Before the checkpoint below: selecting is not an edit.
         if ((e.Key == Key.Back || e.Key == Key.Delete) && !IsReadOnly && Document != null
-            && _selectedBlock == null && _selectedInline == null && _selectionStart == _selectionEnd
+            && _selectedBlock == null && _selectedInline == null && _selectedInlineTable == null && _selectionStart == _selectionEnd
             && AdjacentPictureOrTable(e.Key == Key.Back) is { } toSelect)
         {
             _selectedBlock = toSelect;
@@ -1173,7 +1184,7 @@ public partial class RichEditor
                 // checkpoint of its own.
                 bool structural = e.Key == Key.Enter
                     || _selectionStart != _selectionEnd
-                    || _selectedBlock != null || _selectedInline != null;
+                    || _selectedBlock != null || _selectedInline != null || _selectedInlineTable != null;
                 bool plainCharDelete = !structural
                     && _caretPosition.Paragraph != null
                     && (e.Key == Key.Back
@@ -1334,6 +1345,13 @@ public partial class RichEditor
             ResetCaretBlink(); e.Handled = true;
             return;
         }
+        else if ((e.Key == Key.Back || e.Key == Key.Delete) && (_selectedInlineTable != null || _selectedBlock is TableBlock)
+                 && Document != null && RemoveSelectedTableObject())
+        {
+            // A table selected as an object deletes as a unit (state was pushed above); the caret goes where it was.
+            e.Handled = true;
+            return;
+        }
         else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedBlock != null && Document != null)
         {
             // A block image/table is selected -> delete it (from the document or its enclosing cell).
@@ -1346,7 +1364,7 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Back)
         {
-            if (_selectionStart != _selectionEnd) { if (!RemoveTableHeldWhole()) DeleteSelection(); } // Backspace: a table held whole goes whole
+            if (_selectionStart != _selectionEnd) DeleteSelection(); // a cell block, all of a table's too, is emptied (HWP)
             else if (_caretPosition.Offset > 0 && _caretPosition.Paragraph is { } bp)
             {
                 int nb = PrevCharBoundary(BuildPlain(bp), _caretPosition.Offset);
@@ -1406,7 +1424,7 @@ public partial class RichEditor
         }
         else if (e.Key == Key.Delete)
         {
-            if (_selectionStart != _selectionEnd) { if (!RemoveTableHeldWhole()) DeleteSelection(); } // Delete: a table held whole goes whole
+            if (_selectionStart != _selectionEnd) DeleteSelection(); // a cell block, all of a table's too, is emptied (HWP)
             else if (_caretPosition.Paragraph is { } dp && _caretPosition.Offset < GetParagraphLength(dp))
                 DeleteLocalText(dp, _caretPosition.Offset,
                     NextCharBoundary(BuildPlain(dp), _caretPosition.Offset) - _caretPosition.Offset);

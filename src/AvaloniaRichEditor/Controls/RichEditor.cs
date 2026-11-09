@@ -124,6 +124,9 @@ public partial class RichEditor : Control
     private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img)> _inlineImageRects = new();
     private readonly List<(Avalonia.Rect rect, Paragraph p, InlineImage img, ResizeGrip grip)> _inlineHandles = new();
     private (Paragraph p, InlineImage img)? _selectedInline;
+    // An inline table selected as an object — its border clicked or right-clicked, a drop — as the WinUI control's
+    // _selectedInlineTable. It was selected whole as text, and a key typed then emptied its cells (2026-11-09).
+    private (Paragraph host, InlineTable it)? _selectedInlineTable;
     private bool _isResizingInline;
     private InlineImage? _resizingInline;
 
@@ -462,6 +465,7 @@ public partial class RichEditor : Control
         _caretBlock = null;
         _caretBlockAfter = false;
         _selectedInline = null;
+        _selectedInlineTable = null;
         _cellBlockMark = null; // it holds a cell of the document being replaced
         CancelTableDraw();     // an armed "draw table" pick: its first click would insert into the new document
         _pendingCaretStyles = null;
@@ -683,7 +687,7 @@ public partial class RichEditor : Control
              object? obj, Block? caretBlock, bool caretBlockAfter, int cell) _selSnapshot;
     private bool SelectionMovedSinceLastSnapshot()
     {
-        object? obj = (object?)_selectedInline?.img ?? _selectedBlock;
+        object? obj = (object?)_selectedInlineTable?.it ?? (object?)_selectedInline?.img ?? _selectedBlock;
         int cell = MarkedCell() is { } m ? (m.whole ? 2 : 1) : 0;
         var now = (_caretPosition.Paragraph, _caretPosition.Offset,
                    _selectionStart.Paragraph, _selectionStart.Offset,
@@ -2404,6 +2408,8 @@ public partial class RichEditor : Control
         }
         else if (_selectedInline is { } si && si.p.Inlines.Contains(si.img))
             _caretPosition = new TextPointer(si.p, OffsetOfInline(si.p, si.img) + 1);
+        else if (_selectedInlineTable is { } st && st.host.Inlines.Contains(st.it))
+            _caretPosition = new TextPointer(st.host, OffsetOfInline(st.host, st.it) + 1);
         else if (_selectionStart.Paragraph != null && _selectionEnd.Paragraph != null && _selectionStart.CompareTo(_selectionEnd) != 0)
         {
             var end = _selectionStart.CompareTo(_selectionEnd) > 0 ? _selectionStart : _selectionEnd;
@@ -2411,6 +2417,7 @@ public partial class RichEditor : Control
         }
         _selectedBlock = null;
         _selectedInline = null;
+        _selectedInlineTable = null;
         CollapseSelectionToCaret();
     }
 
@@ -2462,7 +2469,7 @@ public partial class RichEditor : Control
         // The block caret on a table — its border clicked or right-clicked — holds the table as a unit: Del
         // deletes it, Space indents it. Copy takes it too. With no text selected there was nothing to copy:
         // the menu item was greyed out and Ctrl+C did nothing (live check, 2026-09-13).
-        var caretTable = !textSelected ? _caretBlock as TableBlock : null;
+        var caretTable = !textSelected ? _caretBlock as TableBlock ?? _selectedBlock as TableBlock ?? _selectedInlineTable?.it.Table : null;
         TextRange range;
         if (caretTable != null && WholeTableEnds(caretTable) is { } ends)
             range = new TextRange(new TextPointer(ends.first, 0), new TextPointer(ends.last, GetParagraphLength(ends.last)));

@@ -863,6 +863,13 @@ public partial class RichEditor
                 cellSelected: inBlock, cellRangeActive: cellBlock != null, selectedParagraphs, selStart, selEnd,
                 ref caretPoint, ref caretHeight);
         }
+        // A nested or inline table selected as an object: the frame a selected top-level table has.
+        if (chrome && (ReferenceEquals(tb, _selectedBlock) || ReferenceEquals(_selectedInlineTable?.it.Table, tb)))
+        {
+            var frame = new Rect(startX, top, tl.TableWidth, tl.TotalHeight);
+            context.FillRectangle(AccentFill50, frame);
+            context.DrawRectangle(null, AccentPen2, frame);
+        }
         // Resize handles on the physical grid lines (document coordinates), shared with the top-level
         // resize path — the handlers key off the TableBlock, so nested tables resize identically. The
         // outer-right edge adjusts the nested table's total width; the resize handler clamps it to the

@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Several lines of plain text pasted (the plain-text step of a paste, and Ctrl+Shift+V) become a paragraph per line, with
   the caret paragraph's format and the caret's character format — lines pasted into a list item are list items. They
   went into one paragraph with line breaks.
+- The border of an inline table, or of a table inside a cell, selects the table as an object, as a picture is selected:
+  a frame shows, Delete removes the table, Ctrl+C copies it, and any other key lets go of it (an inline table's: the key
+  works right after it). It selected all the table's cells as text, so a letter typed then emptied them. A right-click
+  there, and a viewer's, selects it the same way.
+- Cutting a cell block takes its cells with it: the whole table when all of it is selected, whole rows or whole columns
+  when the block spans the table; any other block of cells is emptied, as before. Delete and Backspace on a cell block
+  empty it — a table whose cells were all selected was removed.
 
 ### Performance — the toolbar builds once, its pickers when first opened (2026-11-09)
 

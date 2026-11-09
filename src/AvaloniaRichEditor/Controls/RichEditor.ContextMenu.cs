@@ -221,8 +221,9 @@ public partial class RichEditor
             // shows — so Copy takes the table, and the viewer can see that it will. Copy acts on the text
             // selection, which is empty after a right-click: it was greyed out, and a viewer had no way to
             // take a table. The border band (partly outside the grid) counts as the table. From the WinUI peer.
+            // A nested or inline table is selected as an object, as a click on its border selects it.
             if (!hasSelection && (NestedTableBorderAtPoint(point) ?? TableLeftOrTopBorderAtPoint(point) ?? ContextMenuTargetTable(point)) is { } roTable)
-                hasSelection = SelectWholeTableForCopy(roTable);
+                hasSelection = roTable.Parent is FlowDocument ? SelectWholeTableForCopy(roTable) : SelectTableObject(roTable);
 
             var roItems = new List<Control> { Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(RichEditorShortcutId.Copy)), Mi(Loc("SelectAll"), SelectAll, icon: RichEditorIcon.SelectAll, gesture: RichEditorShortcuts.Gesture(RichEditorShortcutId.SelectAll)) };
             var roMenu = NewContextMenu();
@@ -244,11 +245,10 @@ public partial class RichEditor
         if (nestedEdge is { } inlineEdge)
         {
             // A nested table's border — inline, or in a cell: the table as a unit, as a click there selects it —
-            // the whole-table selection and the table's own menu (Copy takes it; 표 삭제, and 글자처럼 취급 for
-            // an inline one). The band lies partly outside the grid, where the surrounding text's menu came up.
-            _selectedBlock = null;
-            SelectWholeTableForCopy(inlineEdge);
-            BuildTableMenu(items, inlineEdge, null, hasSelection: true);
+            // selected as an object, and the table's own menu (Copy takes it; 표 삭제, and 글자처럼 취급). The band lies
+            // partly outside the grid, where the surrounding text's menu came up.
+            SelectTableObject(inlineEdge);
+            BuildTableMenu(items, inlineEdge, null, hasSelection: false);
         }
         else if (block is ImageBlock ib)
         {
@@ -377,15 +377,16 @@ public partial class RichEditor
         }
     }
 
-    // `canCopy`: Copy, Cut and Delete have something to act on without a text selection — the block caret's
-    // table (Cut and Delete remove it: RemoveTableHeldWhole).
+    // `canCopy`: Copy, Cut and Delete have something to act on without a text selection — the block caret's table, or
+    // a table selected as an object (Cut and Delete remove it: RemoveSelectedTableObject). A cell block's Cut takes
+    // whole rows, columns or the table (CutCellBlock); its Delete empties the cells.
     private void AddClipboardItems(List<Control> items, bool hasSelection, bool canCopy = false)
     {
         items.Add(Mi(Loc("Cut"), () =>
         {
             if (Document != null) PushUndo();
             CopySelectionToClipboard();
-            if (!RemoveTableHeldWhole()) DeleteSelection(); // the menu's cut: a table held whole goes whole
+            if (!RemoveSelectedTableObject() && !CutCellBlock()) DeleteSelection(); // as Ctrl+X
             ResetCaretBlink(); // remeasure and report the caret, as the keyboard's delete does
         }, hasSelection || canCopy, RichEditorIcon.Cut, RichEditorShortcuts.Gesture(RichEditorShortcutId.Cut)));
         items.Add(Mi(Loc("Copy"), CopySelectionToClipboard, hasSelection || canCopy, RichEditorIcon.Copy, RichEditorShortcuts.Gesture(RichEditorShortcutId.Copy)));
@@ -393,7 +394,7 @@ public partial class RichEditor
         items.Add(Mi(Loc("Delete"), () =>
         {
             if (Document != null) PushUndo();
-            if (!RemoveTableHeldWhole()) DeleteSelection(); // a table held whole is deleted, not emptied
+            if (!RemoveSelectedTableObject()) DeleteSelection(); // an object goes; a cell block is emptied
             ResetCaretBlink();
         }, hasSelection || canCopy, RichEditorIcon.Delete));
     }
@@ -620,7 +621,8 @@ public partial class RichEditor
 
     private void BuildTableMenu(List<Control> items, TableBlock tb, Paragraph? cell, bool hasSelection)
     {
-        AddClipboardItems(items, hasSelection, canCopy: ReferenceEquals(_caretBlock, tb));
+        AddClipboardItems(items, hasSelection, canCopy: ReferenceEquals(_caretBlock, tb) || ReferenceEquals(_selectedBlock, tb)
+            || ReferenceEquals(_selectedInlineTable?.it.Table, tb));
         items.Add(new Separator());
         items.Add(SelectCellItem(cell));
         items.Add(new Separator());

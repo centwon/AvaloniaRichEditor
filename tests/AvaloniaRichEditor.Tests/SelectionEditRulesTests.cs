@@ -186,6 +186,111 @@ public class SelectionEditRulesTests
         Assert.All(paras.SelectMany(x => x.Inlines.OfType<Run>()), r => Assert.Equal(Avalonia.Media.FontWeight.Bold, r.FontWeight));
     }
 
+    // ---- an inline table selected as an object; cutting a cell block ---------------------------------------
+
+    private static void Type(RichEditor ed, string text)
+        => ed.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = text });
+
+    private static TableBlock Grid(int rows, int cols)
+    {
+        var t = new TableBlock(rows, cols);
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+                ((Run)t.Cells[r][c].Para.Inlines[0]).Text = ((char)('a' + r * cols + c)).ToString();
+        return t;
+    }
+
+    private static void SelectTableObject(RichEditor ed, TableBlock tb)
+        => typeof(RichEditor).GetMethod("SelectTableObject", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(ed, new object[] { tb });
+
+    private static (RichEditor ed, Paragraph host, TableBlock t) InlineTableLine()
+    {
+        var t = Grid(2, 2);
+        var host = TestHelpers.Para(new Run { Text = "ab" }, new InlineTable { Table = t }, new Run { Text = "cd" });
+        var ed = new RichEditor { Document = TestHelpers.Doc(host), PageSize = RichEditorPageSize.Continuous };
+        PlaceCaret(ed, host, 0);
+        return (ed, host, t);
+    }
+
+    [AvaloniaFact]
+    public void AnInlineTableSelectedAsAnObject_TypesAfterIt_AndKeepsItsCells()
+    {
+        // The border selected all the table's cells as text, so a letter typed then emptied them.
+        var (ed, host, t) = InlineTableLine();
+        SelectTableObject(ed, t);
+        Press(ed, Key.Z);
+        Type(ed, "Z");
+        Assert.Equal("abZcd", host.Text());
+        Assert.Equal("a", t.Cells[0][0].Para.Text());
+        Assert.Equal("d", t.Cells[1][1].Para.Text());
+    }
+
+    [AvaloniaFact]
+    public void AnInlineTableSelectedAsAnObject_DeletesWhole()
+    {
+        var (ed, host, _) = InlineTableLine();
+        SelectTableObject(ed, ((InlineTable)host.Inlines[1]).Table);
+        Press(ed, Key.Delete);
+        Assert.DoesNotContain(host.Inlines, i => i is InlineTable);
+        Assert.Equal("abcd", host.Text());
+    }
+
+    [AvaloniaFact]
+    public void DeletingAWholeTablesCells_EmptiesThem_AndKeepsTheTable()
+    {
+        // A staged Ctrl+A's whole-table selection is a cell block: Delete empties it (HWP). It removed the table.
+        var t = Grid(2, 2);
+        var ed = new RichEditor
+        {
+            Document = TestHelpers.Doc(TestHelpers.Para(new Run { Text = "before" }), t, TestHelpers.Para(new Run { Text = "after" })),
+            PageSize = RichEditorPageSize.Continuous,
+        };
+        Select(ed, t.Cells[0][0].Para, 0, t.Cells[1][1].Para, 1);
+        Press(ed, Key.Delete);
+        Assert.Contains(ed.Document!.Blocks, b => ReferenceEquals(b, t));
+        Assert.All(new[] { (0, 0), (0, 1), (1, 0), (1, 1) }, rc => Assert.Equal("", t.Cells[rc.Item1][rc.Item2].Para.Text()));
+    }
+
+    // Cut used to empty the cells of a part of a table and remove a whole one: whole rows and whole columns now go with
+    // the cut too, as on the WinUI control; any other rectangle is still emptied.
+    [AvaloniaTheory]
+    [InlineData(1, 0, 1, 2, "rows")]
+    [InlineData(0, 2, 2, 2, "columns")]
+    [InlineData(0, 0, 2, 2, "table")]
+    [InlineData(0, 0, 1, 1, "contents")]
+    public void CuttingACellBlock_TakesWholeRowsColumnsOrTheTable(int r0, int c0, int r1, int c1, string kind)
+    {
+        var t = Grid(3, 3);
+        var ed = new RichEditor
+        {
+            Document = TestHelpers.Doc(TestHelpers.Para(new Run { Text = "before" }), t, TestHelpers.Para(new Run { Text = "after" })),
+            PageSize = RichEditorPageSize.Continuous,
+        };
+        Select(ed, t.Cells[r0][c0].Para, 0, t.Cells[r1][c1].Para, 1);
+        Press(ed, Key.X, KeyModifiers.Control);
+        switch (kind)
+        {
+            case "rows":
+                Assert.Equal(2, t.Rows);
+                Assert.Equal("g", t.Cells[1][0].Para.Text());
+                break;
+            case "columns":
+                Assert.Equal(2, t.Columns);
+                Assert.Equal("b", t.Cells[0][1].Para.Text());
+                break;
+            case "table":
+                Assert.DoesNotContain(ed.Document!.Blocks, b => b is TableBlock);
+                break;
+            default:
+                Assert.Equal((3, 3), (t.Rows, t.Columns));
+                Assert.Equal("", t.Cells[0][0].Para.Text());
+                Assert.Equal("", t.Cells[1][1].Para.Text());
+                Assert.Equal("c", t.Cells[0][2].Para.Text());
+                break;
+        }
+    }
+
     // ---- "treat as character" inside a cell -----------------------------------------------------------
 
     private static (RichEditor ed, TableCell cell, Paragraph a) CellHolding(Block inner)
