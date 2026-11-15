@@ -71,7 +71,15 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   인라인 표·셀 안 표 테두리=개체 선택(`_selectedInlineTable`), 셀 블록 잘라내기=표·온 행·온 열째, Delete는 비우기만, 개체 고른 채
   Ctrl 조합은 선택을 풂(Ctrl+Delete=개체 지움), 셀 블록이 걸친 병합 전체로 넓어짐. 옛 동작을 고정하던 테스트 고침: 메뉴 수렴 1(셀 안
   표에도 글자처럼 취급), `ViewerTableCopyTests` 6(테두리=개체 선택). **실기 확인 필요**: 인라인·셀 안 표 테두리 클릭의 파란 틀과
-  그 뒤 키, 셀 블록 Ctrl+X, 여러 문단 Tab. 남은 차이: 블록 캐럿(최상위 표 테두리)은 그대로(구조 변경이라 KanuDoc만).
+  그 뒤 키, 셀 블록 Ctrl+X, 여러 문단 Tab. 남은 차이: 블록 캐럿(최상위 표 테두리)은 그대로.
+  + 편집·표 정합성 및 드래그 텍스트 이동/복사(2026-11-15, `EditingAndTableImprovementsTests`): ① Undo/Redo 뒤 `_editRun` 초기화
+  (Redo 직후 타이핑이 이전 단계에 합쳐져 Redo 상태가 유실되던 결함). ② 다중 문단 셀 병합 시 문단·블록 순서 보존, 병합/분할 뒤
+  `InvalidateTableChain`·`InvalidateMeasure` 및 인라인 표 `ParagraphSig`/`BlockSig`에 병합(`ColSpans`/`RowSpans`)·세로 정렬 반영.
+  ③ 한 셀 안 여러 문단 선택 복사(`CaptureBlockStructure`) 시 문단 구조·목록 서식 보존. ④ TSV 붙여넣기 빈 줄 제거, 표 셀 안 TSV
+  붙여넣기 시 중첩 표 대신 기존 표 셀 채우기(행 자동 추가). ⑤ 표 중첩 32단 상한(`TableNesting`), 비유한(`NaN`/`Infinity`) 숫자 JSON
+  직렬화 방어, HTML 글꼴 이름 `;` 제거. ⑥ `DeleteLocalText` 빈 런 불변식·인라인 개체 삭제 후 인접 런 병합·블록 삭제(`RemoveBlockToGap`)
+  정합성·`CellBlockAsTable` 미지정 행 높이 생략. ⑦ 선택된 텍스트 마우스 드래그 이동/복사(`RichEditor.DragText.cs`, Ctrl=복사) 및
+  표 그리기(`TableDrawRoom`) 본문 폭 상한. 모두 수정 전 빨강 확인.
 - **프레임당 할당 = 문서 크기에 비례하던 것 수정**(2026-11-02, `perf/render-cull-text-2026-11-02`): 렌더 루프가 컬링 검사 **전에**
   모든 문단의 `BuildPlain`을 만들었다(4,000문단에서 프레임당 ≈6 MB, 끝까지 스크롤 ≈2 GB). 포트는 이미 목록 표지 경로에서만 만듦 →
   같게. `PerFrameAllocationTests`(1,000 대 4,000문단 프레임 할당 비교). 로컬 확인(2026-11-02): 전체 그린, 수정 되돌리면 새 테스트 빨강(반증).

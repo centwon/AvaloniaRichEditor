@@ -148,11 +148,10 @@ public partial class RichEditor  // doc comment lives on the primary declaration
             return;
         }
 
-        // 5. Tab-separated text (e.g. Excel/HWP cells copied without HTML) -> rebuild as a table.
+        // 5. Tab-separated text (e.g. Excel/HWP cells copied without HTML) -> fill cells when inside a table, else rebuild as a table.
         if (AllowTables && !string.IsNullOrEmpty(text) && LooksTabular(text))
         {
             PushUndo();
-            if (_selectionStart != _selectionEnd) DeleteSelection();
             InsertTableFromTsv(text);
             ResetCaretBlink(); // table lands just after the caret block — scroll there
             return;
@@ -244,7 +243,29 @@ public partial class RichEditor  // doc comment lives on the primary declaration
     {
         if (Document == null) return;
         var lines = new List<string>(text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'));
-        while (lines.Count > 1 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        lines.RemoveAll(l => l.Length == 0);
+        if (lines.Count == 0) return;
+
+        // When pasting inside a table (either with a cell block selected or the caret in a cell), fill the
+        // existing table's cells starting at the target anchor cell (growing rows at the bottom if needed)
+        // rather than nesting a new table inside the cell.
+        if (CellBlockTable() is { } blockTb && SelectedCellRange(blockTb) is { } rg)
+        {
+            FillTableCellsFromTsv(blockTb, rg.r0, rg.c0, lines);
+            return;
+        }
+        if (_caretPosition.Paragraph is { } cp && FindCell(cp) is { } loc)
+        {
+            FillTableCellsFromTsv(loc.tb, loc.r, loc.c, lines);
+            return;
+        }
+
+        if (_selectionStart != _selectionEnd) DeleteSelection();
+        if (!TableNesting.CanInsertAt(_caretPosition.Paragraph))
+        {
+            InsertPlainText(text);
+            return;
+        }
 
         int cols = 1;
         foreach (var l in lines) cols = Math.Max(cols, l.Split('\t').Length);
@@ -262,6 +283,63 @@ public partial class RichEditor  // doc comment lives on the primary declaration
                 ((Run)tb.Cells[r][c].Para.Inlines[0]).Text = c < parts.Length ? parts[c] : "";
         }
         InsertBlockAtCaret(tb);
+    }
+
+    private void FillTableCellsFromTsv(TableBlock tb, int startRow, int startCol, List<string> lines)
+    {
+        var (r0, c0) = tb.AnchorOf(startRow, startCol);
+        Paragraph? lastPara = null;
+        int r = r0;
+        for (int li = 0; li < lines.Count; li++)
+        {
+            while (r >= tb.Rows) tb.InsertRow(tb.Rows);
+            var parts = lines[li].Split('\t');
+            int c = c0;
+            for (int pi = 0; pi < parts.Length && c < tb.Columns; pi++)
+            {
+                var (ar, ac) = tb.AnchorOf(r, c);
+                var (cs, _) = tb.SpanOf(ar, ac);
+                if (ar == r)
+                {
+                    var cell = tb.Cells[ar][ac];
+                    SetCellTextPreservingFormat(cell, parts[pi]);
+                    lastPara = cell.Para;
+                }
+                c = ac + Math.Max(1, cs);
+            }
+            r++;
+        }
+        _cellBlockMark = null;
+        UpdateParents(Document!);
+        InvalidateTableChain(tb);
+        InvalidateMeasure();
+        InvalidateVisual();
+        if (lastPara != null)
+        {
+            int len = GetParagraphLength(lastPara);
+            _caretPosition = new TextPointer(lastPara, len);
+            CollapseSelectionToCaret();
+            MarkTextChanged();
+            NotifyStatus();
+        }
+    }
+
+    private static void SetCellTextPreservingFormat(TableCell cell, string val)
+    {
+        Paragraph? firstPara = null;
+        foreach (var b in cell.Blocks) if (b is Paragraph fp) { firstPara = fp; break; }
+        var (srcRun, _, _, _) = firstPara != null ? TypingSource(firstPara, 0) : (null, -1, 0, false);
+        var p = new Paragraph { Parent = cell };
+        if (firstPara != null) p.CopyFormatFrom(firstPara);
+        var run = srcRun != null ? (Run)srcRun.Clone() : new Run();
+        if (srcRun == null && HeadingStyle.IsHeading(p.HeadingLevel))
+            HeadingStyle.ApplyPreset(run, p.HeadingLevel);
+        run.Text = val;
+        run.NavigateUri = null;
+        run.Parent = p;
+        p.Inlines.Add(run);
+        cell.Blocks.Clear();
+        cell.Blocks.Add(p);
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)

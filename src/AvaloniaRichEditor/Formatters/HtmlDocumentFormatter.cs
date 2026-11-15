@@ -165,6 +165,7 @@ namespace AvaloniaRichEditor.Formatters
             var flowDoc = new FlowDocument();
             var root = doc.DocumentNode.Descendants("body").FirstOrDefault() ?? doc.DocumentNode;
             WalkBlocks(root, flowDoc);
+            TableNesting.Flatten(flowDoc.Blocks, TableNesting.Max);
 
             if (flowDoc.Blocks.Count == 0)
             {
@@ -1486,7 +1487,7 @@ namespace AvaloniaRichEditor.Formatters
             var styles = new System.Collections.Generic.List<string>();
             // Quote the family name: a multi-word value (e.g. Times New Roman) unquoted is invalid CSS,
             // and Word/HWP then drop the ENTIRE style declaration — taking size/colour with it.
-            if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:'{AttrEscape(r.FontFamily).Replace("'", "")}'");
+            if (!string.IsNullOrEmpty(r.FontFamily)) styles.Add($"font-family:'{AttrEscape(r.FontFamily).Replace("'", "").Replace(";", "")}'");
             // Size in pt, not px: Word/HWP clipboard import ignores px font-size (a well-known quirk) but
             // honours pt. The model already stores pt, so emit it directly — when it differs from what the
             // reader assumes for this element: the body default, or inside <h1>..<h6> the heading's size, which

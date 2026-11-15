@@ -482,6 +482,7 @@ public partial class RichEditor : Control
         _dragUndoPending = false;
         _isSelecting = false;
         CancelObjectDrag(); // a release would drop the old document's object into the new one
+        CancelTextDrag();
 
         // Registries rebuilt on the next render; clearing them now releases the old blocks immediately.
         _columnBoundaries.Clear();
@@ -513,6 +514,9 @@ public partial class RichEditor : Control
         if (Document == null) return;
         var state = redo ? _undoManager.Redo(Document, _caretPosition) : _undoManager.Undo(Document, _caretPosition);
         if (state == null) return;
+        _editRun = EditRunKind.None;
+        CancelObjectDrag();
+        CancelTextDrag();
         SwapInHistoryState(state.Value.Document);
         UpdateParents(Document);
         _caretPosition = _undoManager.GetPointerFromGlobalIndex(Document, state.Value.CaretGlobalIndex);
@@ -1178,7 +1182,7 @@ public partial class RichEditor : Control
             range.Delete();
 
             _caretPosition = new TextPointer(range.Start.Paragraph, range.Start.Offset);
-            if (Document != null) NormalizeBlocks(Document);
+            if (Document != null) UpdateParents(Document);
             MarkTextChanged();
         }
 
@@ -1215,6 +1219,7 @@ public partial class RichEditor : Control
             }
             pos = segEnd;
         }
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "", Parent = p });
         TextRange.CoalesceRuns(p); // a removed run can leave equal-format neighbours adjacent
     }
 
@@ -1557,15 +1562,7 @@ public partial class RichEditor : Control
                     // has to invalidate the host paragraph's cached layout. Fold in the table's dimensions
                     // and a recursive signature of every cell paragraph (covers text edits at any depth).
                     Mix(13);
-                    Mix(it.Table.Rows);
-                    Mix(it.Table.Columns);
-                    foreach (var w in it.Table.ColumnWidths) MixWide(BitConverter.DoubleToInt64Bits(w));
-                    foreach (var rh in it.Table.RowHeights) MixWide(BitConverter.DoubleToInt64Bits(rh));
-                    // Every block a cell holds, not just its paragraphs: a block image, divider or
-                    // nested table in there sizes the cell too, so leaving them out served the host
-                    // paragraph's cached layout at the old box after such a block changed.
-                    foreach (var (_, _, cell) in it.Table.LogicalCells())
-                        foreach (var b in cell.Blocks) MixWide(BlockSig(b));
+                    MixWide(BlockSig(it.Table));
                 }
             }
             return h;
@@ -1595,8 +1592,17 @@ public partial class RichEditor : Control
                     Mix(41); Mix(tb.Rows); Mix(tb.Columns);
                     foreach (var w in tb.ColumnWidths) Mix(BitConverter.DoubleToInt64Bits(w));
                     foreach (var rh in tb.RowHeights) Mix(BitConverter.DoubleToInt64Bits(rh));
+                    for (int r = 0; r < tb.Rows; r++)
+                        for (int c = 0; c < tb.Columns; c++)
+                        {
+                            Mix(r < tb.ColSpans.Count && c < tb.ColSpans[r].Count ? tb.ColSpans[r][c] : 1);
+                            Mix(r < tb.RowSpans.Count && c < tb.RowSpans[r].Count ? tb.RowSpans[r][c] : 1);
+                        }
                     foreach (var (_, _, cell) in tb.LogicalCells())
+                    {
+                        Mix((int)cell.VerticalAlignment);
                         foreach (var cb in cell.Blocks) Mix(BlockSig(cb));
+                    }
                     return h;
                 default: return 43;
             }
@@ -2025,6 +2031,7 @@ public partial class RichEditor : Control
         // Clone the sources so callers' lists (e.g. the internal clipboard) stay reusable.
         var src = new List<Block>(blocks.Count);
         foreach (var b in blocks) if (b.Clone() is Block cl) src.Add(cl);
+        TableNesting.Flatten(src, TableNesting.Max - TableNesting.DepthAt(p));
         if (src.Count == 0) return;
 
         // One rule for both controls (2026-11-08) — the same paste had saved as different JSON in the two: the first pasted
@@ -2121,10 +2128,12 @@ public partial class RichEditor : Control
     {
         if (Document == null) return;
         var (container, at) = BlockInsertTarget(blocks);
+        var src = new List<Block>(blocks.Count);
+        foreach (var b in blocks) if (b.Clone() is Block cl) src.Add(cl);
+        TableNesting.Flatten(src, TableNesting.Max - TableNesting.DepthAt(_caretPosition.Paragraph));
         Paragraph? lastPara = null;
-        foreach (var b in blocks)
+        foreach (var cl in src)
         {
-            if (b.Clone() is not Block cl) continue;
             container.Insert(at++, cl);
             if (cl is Paragraph bp) lastPara = bp;
             else if (cl is TableBlock tbb && tbb.Rows > 0 && tbb.Columns > 0) lastPara = tbb.LogicalCells().Select(x => x.cell.Para).LastOrDefault() ?? tbb.Cells[tbb.Rows - 1][tbb.Columns - 1].Para;
@@ -2164,6 +2173,7 @@ public partial class RichEditor : Control
     {
         if (Document == null) return;
         MoveCaretToInsertionPoint();
+        if (!TableNesting.Fits(_caretPosition.Paragraph, b)) return;
         bool before = false;
         if (_caretPosition.Paragraph is { Parent: FlowDocument or TableCell } cp)
         {
@@ -2244,6 +2254,8 @@ public partial class RichEditor : Control
         // A table has a cell. A negative size overflowed an array in the next Measure, and a zero one put an
         // empty grid in the document for the caret walks to fall over (round 35).
         if (rows < 1 || cols < 1) return;
+        MoveCaretToInsertionPoint();
+        if (!TableNesting.CanInsertAt(_caretPosition.Paragraph)) return;
         PushUndo();
         // The (rows, cols) constructor builds Cells, ColumnWidths and the span grids together, all
         // consistent. (An object initializer that rebuilt Cells alone would desync the span grids.)
@@ -2552,17 +2564,26 @@ public partial class RichEditor : Control
     private List<Block>? CaptureBlockStructure(TextRange range)
     {
         if (Document == null) return null;
+        if (ReferenceEquals(range.Start.Paragraph, range.End.Paragraph)) return null;
         var startTop = range.Start.Paragraph != null ? FindTopLevelBlock(range.Start.Paragraph) : null;
         var endTop = range.End.Paragraph != null ? FindTopLevelBlock(range.End.Paragraph) : null;
         if (startTop == null || endTop == null) return null;
 
-        // A selection entirely within a single table cell is intra-cell text, not a table copy. Both
-        // endpoints resolve to the same enclosing TableBlock (hasNonParagraph below would otherwise clone
-        // the WHOLE table), so fall to the run/inline clipboard and capture only the cell content.
-        if (ReferenceEquals(startTop, endTop) && startTop is TableBlock
-            && FindCell(range.Start.Paragraph!) is { } sc && FindCell(range.End.Paragraph!) is { } ec
+        // A selection entirely within a single table cell: if it spans multiple paragraphs/blocks inside that cell,
+        // capture the trimmed block slice of the cell itself (rather than cloning the enclosing table or flattening
+        // the paragraphs onto one line via the inline run clipboard).
+        if (FindCell(range.Start.Paragraph!) is { } sc && FindCell(range.End.Paragraph!) is { } ec
             && sc.tb == ec.tb && sc.r == ec.r && sc.c == ec.c)
-            return null;
+        {
+            var cellBlocks = sc.tb.Cells[sc.r][sc.c].Blocks;
+            var startCellBlock = FindBlockInList(cellBlocks, range.Start.Paragraph!);
+            var endCellBlock = FindBlockInList(cellBlocks, range.End.Paragraph!);
+            if (startCellBlock == null || endCellBlock == null) return null;
+            int csi = cellBlocks.IndexOf(startCellBlock);
+            int cei = cellBlocks.IndexOf(endCellBlock);
+            if (csi < 0 || cei < 0 || csi > cei) return null;
+            return TrimBlockSlice(cellBlocks, csi, cei, range);
+        }
 
         int si = Document.Blocks.IndexOf(startTop);
         int ei = Document.Blocks.IndexOf(endTop);
@@ -2572,20 +2593,31 @@ public partial class RichEditor : Control
         bool hasNonParagraph = false;
         for (int k = si; k <= ei; k++)
             if (!(Document.Blocks[k] is Paragraph)) { hasNonParagraph = true; break; }
+        bool touchesInlineTable = !ReferenceEquals(startTop, range.Start.Paragraph)
+            || !ReferenceEquals(endTop, range.End.Paragraph);
 
-        if (!spansMultiple && !hasNonParagraph) return null; // plain inline selection
+        if (!spansMultiple && !hasNonParagraph && !touchesInlineTable) return null; // plain inline selection
 
-        // The end blocks are trimmed to what the selection covers (TextRange.Covered) — what Delete removes. The end
-        // paragraphs were cloned whole once (2026-10-15); after that a table an endpoint lies in was still cloned whole
-        // while Delete cleared only its covered cells, and the paragraph holding an inline table an endpoint lies in
-        // was taken from its start or to its end (WinUI port's pre-publish audit, 2026-10-18: a cut pasted back more
-        // than it took). The blocks strictly between are whole, as Delete removes them whole.
+        return TrimBlockSlice(Document.Blocks, si, ei, range);
+    }
+
+    private static Block? FindBlockInList(IList<Block> list, TextElement element)
+    {
+        for (TextElement? cur = element; cur != null; cur = cur.Parent as TextElement)
+            if (cur is Block b && list.Contains(b)) return b;
+        return null;
+    }
+
+    private static List<Block>? TrimBlockSlice(IList<Block> list, int si, int ei, TextRange range)
+    {
+        // The end blocks are trimmed to what the selection covers (TextRange.Covered) — what Delete removes.
+        // The blocks strictly between are whole, as Delete removes them whole.
         var spans = new Dictionary<Paragraph, (int From, int To)>();
         foreach (var c in range.Covered()) spans[c.Paragraph] = (c.From, c.To);
         var blocks = new List<Block>();
         for (int k = si; k <= ei; k++)
         {
-            var b = Document.Blocks[k];
+            var b = list[k];
             bool between = k > si && k < ei;
             if (!between && b is Paragraph para)
             {
@@ -2768,23 +2800,27 @@ public partial class RichEditor : Control
     {
         if (Document == null) return;
         PushUndo();
-        IList<Block> container = b.Parent is TableCell cell ? cell.Blocks : Document.Blocks;
-        int idx = container.IndexOf(b);
-        // A table deleted from its menu usually holds the caret (the right-click put it in a cell) or the selection
-        // (its border held it whole). Left there, the keys typed next went into a paragraph no longer in the document.
         bool caretInside = IsWithin(_caretPosition.Paragraph, b)
             || IsWithin(_selectionStart.Paragraph, b) || IsWithin(_selectionEnd.Paragraph, b);
+        RemoveBlockToGap(b, placeCaretAtGap: caretInside);
+        InvalidateVisual();
+    }
+
+    private void RemoveBlockToGap(Block b, bool placeCaretAtGap = true)
+    {
+        if (Document == null) return;
+        IList<Block> container = b.Parent is TableCell cell ? cell.Blocks : Document.Blocks;
+        int idx = container.IndexOf(b);
         RemoveBlockAnywhere(b);
-        _selectedBlock = null;
+        if (ReferenceEquals(_selectedBlock, b)) _selectedBlock = null;
         if (ReferenceEquals(_caretBlock, b)) _caretBlock = null;
         UpdateParents(Document); // NormalizeBlocks (top level) + re-wire; a cell keeps its paragraph invariant
-        if (caretInside)
+        if (placeCaretAtGap)
         {
             PlaceCaretAtGap(container, idx);
             CollapseSelectionToCaret();
         }
         InvalidateMeasure();     // a cell shrank -> the table's row height reflows
-        InvalidateVisual();
     }
 
     // Whether `e` is `ancestor` or lies inside it (a cell paragraph of a table, at any depth).

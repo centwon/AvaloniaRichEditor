@@ -128,12 +128,13 @@ public partial class RichEditor
     {
         if (GetPositionFromPoint(MapViewToDoc(startView)).Paragraph is { } p && FindCell(p) is { } loc)
         {
-            var (cs, _) = loc.tb.SpanOf(loc.r, loc.c);
+            var (ar, ac) = loc.tb.AnchorOf(loc.r, loc.c);
+            var (cs, _) = loc.tb.SpanOf(ar, ac);
             double w = 0;
-            for (int k = loc.c; k < loc.c + cs && k < loc.tb.ColumnWidths.Count; k++) w += loc.tb.ColumnWidths[k];
+            for (int k = ac; k < ac + cs && k < loc.tb.ColumnWidths.Count; k++) w += loc.tb.ColumnWidths[k];
             return Math.Max(20, w - 10);
         }
-        return double.PositiveInfinity;
+        return Bounds.Width > 60 || IsPaged ? Math.Max(20, ContentLayoutWidth - 20) : double.PositiveInfinity;
     }
 
     // The rectangle a drag has drawn, no wider than the table can be — what the preview shows is what inserts.
@@ -147,6 +148,7 @@ public partial class RichEditor
     private void InsertTableDrawn(int rows, int cols, double totalWidth, double totalHeight)
     {
         if (Document == null || IsReadOnly || !AllowTables || rows < 1 || cols < 1) return; // see InsertTable
+        if (!TableNesting.CanInsertAt(_caretPosition.Paragraph)) return;
         PushUndo();
         var tb = new TableBlock(rows, cols);
         double w = Math.Max(20, totalWidth / cols);
@@ -346,6 +348,16 @@ public partial class RichEditor
             // (unified with the WinUI port, 2026-09-13).
         }
         _selectedBlock = null;
+
+        if (CanArmTextDragAt(point, e.ClickCount, e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+        {
+            _selectedInline = null;
+            _selectedInlineTable = null;
+            _caretBlock = null;
+            ArmTextDragAt(point);
+            e.Pointer.Capture(this);
+            return;
+        }
 
         _caretPosition = GetPositionFromPoint(point);
         _selectionStart = new TextPointer(_caretPosition.Paragraph, _caretPosition.Offset);
@@ -671,6 +683,7 @@ public partial class RichEditor
         }
 
         if (_dragObject != null) { DragObjectMoved(point, e.KeyModifiers.HasFlag(KeyModifiers.Control)); return; }
+        if (_dragTextArmed) { DragTextMoved(point, e.KeyModifiers.HasFlag(KeyModifiers.Control)); return; }
 
         if (_isSelecting)
         {
@@ -775,6 +788,7 @@ public partial class RichEditor
         _isResizingRow = false; _resizingRowTable = null;
         _isSelecting = false;
         CancelObjectDrag(); // cancelled, not dropped: a lost capture is not a release
+        CancelTextDrag();
         if (_tableDrawStart != null) CancelTableDraw(); // likewise: abandoned, not inserted
     }
 
@@ -814,6 +828,13 @@ public partial class RichEditor
         {
             FinishObjectDrag(e.KeyModifiers.HasFlag(KeyModifiers.Control));
             e.Pointer.Capture(null); // after the drag is cleared, so OnPointerCaptureLost finds nothing live
+            return;
+        }
+
+        if (_dragTextArmed)
+        {
+            FinishTextDrag(MapViewToDoc(e.GetPosition(this)), e.KeyModifiers.HasFlag(KeyModifiers.Control));
+            e.Pointer.Capture(null);
             return;
         }
 
@@ -934,7 +955,7 @@ public partial class RichEditor
         bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
 
         // Ctrl pressed mid-drag makes the drop a copy: the "+" appears now, not at the next pointer move.
-        if (e.Key is Key.LeftCtrl or Key.RightCtrl && _dragObjectActive) OnDragModifierChanged(true);
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl && DropPreviewActive) OnDragModifierChanged(true);
 
         // A bare modifier press is the first half of a chord (Shift+Tab, Ctrl+B) — nothing below acts on
         // one, and letting it fall through counted it as "some other key": it dismissed the block caret
@@ -1022,8 +1043,8 @@ public partial class RichEditor
                 PushUndo();
                 var blk = _caretBlock; _caretBlock = null;
                 MoveCaretToBlockNeighbor(blk, before: true);
-                Document.Blocks.Remove(blk);
-                NormalizeBlocks(Document);
+                RemoveBlockToGap(blk, placeCaretAtGap: false);
+                CollapseSelectionToCaret();
                 ResetCaretBlink(); InvalidateVisual(); e.Handled = true; return;
             }
             if (e.Key is Key.Left or Key.Up or Key.Right or Key.Down)
@@ -1381,10 +1402,10 @@ public partial class RichEditor
         else if ((e.Key == Key.Back || e.Key == Key.Delete) && _selectedBlock != null && Document != null)
         {
             // A block image/table is selected -> delete it (from the document or its enclosing cell).
-            RemoveBlockAnywhere(_selectedBlock);
-            _selectedBlock = null;
-            UpdateParents(Document);
-            InvalidateMeasure();
+            var blk = _selectedBlock;
+            bool caretInside = IsWithin(_caretPosition.Paragraph, blk)
+                || IsWithin(_selectionStart.Paragraph, blk) || IsWithin(_selectionEnd.Paragraph, blk);
+            RemoveBlockToGap(blk, placeCaretAtGap: caretInside);
             ResetCaretBlink(); e.Handled = true;
             return;
         }

@@ -218,19 +218,17 @@ public partial class RichEditor
         {
             int off = OffsetOfInline(host, it);
             host.Inlines.Remove(it);
+            if (host.Inlines.Count == 0) host.Inlines.Add(new Run { Text = "", Parent = host });
+            TextRange.CoalesceRuns(host);
             UpdateParents(Document);
             _caretPosition = new TextPointer(host, off);
+            CollapseSelectionToCaret();
+            InvalidateMeasure();
         }
         else
         {
-            IList<Block> container = tb.Parent is TableCell cell ? cell.Blocks : Document.Blocks;
-            int idx = container.IndexOf(tb);
-            RemoveBlockAnywhere(tb);
-            UpdateParents(Document); // a paragraph now borders the gap (top level); a cell keeps one
-            PlaceCaretAtGap(container, idx);
+            RemoveBlockToGap(tb, placeCaretAtGap: true);
         }
-        CollapseSelectionToCaret();
-        InvalidateMeasure();
         ResetCaretBlink();
         InvalidateVisual();
     }
@@ -381,7 +379,12 @@ public partial class RichEditor
         for (int c = 0; c < cols; c++)
             if (rg.c0 + c < tb.ColumnWidths.Count) sub.ColumnWidths[c] = tb.ColumnWidths[rg.c0 + c];
         if (tb.RowHeights.Count > rg.r1)
-            for (int r = rg.r0; r <= rg.r1; r++) sub.RowHeights.Add(tb.RowHeights[r]);
+        {
+            bool anyPositive = false;
+            for (int r = rg.r0; r <= rg.r1; r++) if (tb.RowHeights[r] > 0) { anyPositive = true; break; }
+            if (anyPositive)
+                for (int r = rg.r0; r <= rg.r1; r++) sub.RowHeights.Add(tb.RowHeights[r]);
+        }
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < cols; c++)
             {
@@ -693,6 +696,7 @@ public partial class RichEditor
         if (Document == null || IsReadOnly || !AllowTables) return;
         MoveCaretToInsertionPoint(); // after a selection, which stays
         if (_caretPosition.Paragraph is not { } p) return;
+        if (!TableNesting.CanInsertAt(p)) return;
         if (rows < 1) rows = 1;
         if (cols < 1) cols = 1;
         PushUndo();
@@ -721,7 +725,7 @@ public partial class RichEditor
         else
             for (int i = idx + 1; i < list.Count && anchor == null; i++)
                 if (list[i] is Paragraph next) { anchor = next; atEnd = false; }
-        if (anchor == null) return;
+        if (anchor == null || !TableNesting.Fits(anchor, tb)) return;
 
         PushUndo();
         var it = new InlineTable { Table = (TableBlock)tb.Clone() };
@@ -757,6 +761,8 @@ public partial class RichEditor
             || IsWithin(_selectionStart.Paragraph, it.Table) || IsWithin(_selectionEnd.Paragraph, it.Table);
         int off = OffsetOfInline(host, it);
         host.Inlines.Remove(it);
+        if (host.Inlines.Count == 0) host.Inlines.Add(new Run { Text = "", Parent = host });
+        TextRange.CoalesceRuns(host);
         list.Insert(idx + 1, tb);
         UpdateParents(Document);
         if (caretInside)
@@ -779,6 +785,8 @@ public partial class RichEditor
         int off = OffsetOfInline(host, it);
         PushUndo();
         host.Inlines.Remove(it);
+        if (host.Inlines.Count == 0) host.Inlines.Add(new Run { Text = "", Parent = host });
+        TextRange.CoalesceRuns(host);
         if (ReferenceEquals(_selectedBlock, it.Table)) _selectedBlock = null;
         UpdateParents(Document);
         _caretPosition = new TextPointer(host, off);
