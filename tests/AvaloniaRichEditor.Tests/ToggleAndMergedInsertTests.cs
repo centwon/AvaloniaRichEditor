@@ -88,7 +88,7 @@ public class ToggleAndMergedInsertTests
         typeof(RichEditor).GetMethod("AddTableStructureItems", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(ed, new object?[] { items, tb, cellPara, false });
         var below = items.OfType<MenuItem>()
-            .Single(m => m.Header is "Insert Row Below" or "아래에 행 삽입");
+            .Single(m => (string?)m.Header == RichEditorLocalization.GetString("InsertRowBelow"));
         below.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
 
         Assert.Equal(4, tb.Rows);

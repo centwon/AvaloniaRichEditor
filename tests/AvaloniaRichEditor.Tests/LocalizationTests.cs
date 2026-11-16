@@ -1,9 +1,10 @@
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 
 namespace AvaloniaRichEditor.Tests;
 
-// RichEditorLocalization: built-in ko/en tables, per-key English fallback, and third-party
+// RichEditorLocalization: built-in ko/en/es tables, per-key English fallback, and third-party
 // language registration (merge semantics). Language is process-global state, so every test
 // restores it in a finally block.
 public class LocalizationTests
@@ -18,6 +19,30 @@ public class LocalizationTests
             Assert.Equal("복사", RichEditorLocalization.GetString("Copy"));
             RichEditorLocalization.Language = "en";
             Assert.Equal("Copy", RichEditorLocalization.GetString("Copy"));
+        }
+        finally { RichEditorLocalization.Language = saved; }
+    }
+
+    // A built-in table missing a key silently shows English in that menu item; extra keys are typos.
+    [Theory]
+    [InlineData("ko")]
+    [InlineData("es")]
+    public void BuiltInLanguage_HasSameKeysAsEnglish(string language)
+    {
+        var en = RichEditorLocalization.Tables["en"].Keys;
+        var other = RichEditorLocalization.Tables[language].Keys;
+        Assert.Empty(en.Except(other));
+        Assert.Empty(other.Except(en));
+    }
+
+    [Fact]
+    public void Spanish_IsBuiltIn()
+    {
+        var saved = RichEditorLocalization.Language;
+        try
+        {
+            RichEditorLocalization.Language = "es";
+            Assert.Equal("Copiar", RichEditorLocalization.GetString("Copy"));
         }
         finally { RichEditorLocalization.Language = saved; }
     }

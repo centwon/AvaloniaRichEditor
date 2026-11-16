@@ -6,7 +6,7 @@ namespace AvaloniaRichEditor;
 
 /// <summary>
 /// Key-based UI strings for the editor's built-in chrome (context menus, toolbar, dialogs).
-/// Korean and English ship in-box; the language is picked from the OS UI culture at startup.
+/// Korean, English and Spanish ship in-box; the language is picked from the OS UI culture at startup.
 /// Hosts can switch via <see cref="Language"/> or add/override languages with <see cref="Register"/>:
 /// <code>
 /// RichEditorLocalization.Register("ja", new Dictionary&lt;string, string&gt; { ["Copy"] = "コピー", ... });
@@ -17,7 +17,7 @@ namespace AvaloniaRichEditor;
 /// </summary>
 public static class RichEditorLocalization
 {
-    private static readonly Dictionary<string, Dictionary<string, string>> Tables = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly Dictionary<string, Dictionary<string, string>> Tables = new(StringComparer.OrdinalIgnoreCase)
     {
         ["en"] = new()
         {
@@ -314,6 +314,154 @@ public static class RichEditorLocalization
             ["Print"] = "인쇄",
             ["PageCountFormat"] = "{0}페이지",
             ["ImageLimitWarning"] = "⚠ 이미지 {0}개 — 권장 {1}개 초과 (성능 저하 가능)",
+        },
+        ["es"] = new()
+        {
+            // Clipboard / editing
+            ["Cut"] = "Cortar",
+            ["Copy"] = "Copiar",
+            ["Paste"] = "Pegar",
+            ["Delete"] = "Eliminar",
+            ["SelectAll"] = "Seleccionar todo",
+            ["Undo"] = "Deshacer",
+            ["Redo"] = "Rehacer",
+            // Character formatting
+            ["CharacterFormat"] = "Fuente",
+            ["ParagraphFormat"] = "Párrafo",
+            ["FontSizeIncrease"] = "Más grande",
+            ["FontSizeDecrease"] = "Más pequeño",
+            ["Bold"] = "Negrita",
+            ["Italic"] = "Cursiva",
+            ["Underline"] = "Subrayado",
+            ["Strikethrough"] = "Tachado",
+            ["FontSize"] = "Tamaño de fuente",
+            ["TextColor"] = "Color de texto",
+            ["Highlight"] = "Resaltado",
+            ["FontFamily"] = "Fuente",
+            ["ClearFormatting"] = "Borrar formato",
+            ["ColorBlack"] = "Negro",
+            ["ColorRed"] = "Rojo",
+            ["ColorBlue"] = "Azul",
+            ["ColorGreen"] = "Verde",
+            ["ColorGray"] = "Gris",
+            ["HighlightYellow"] = "Amarillo",
+            ["HighlightGreen"] = "Verde claro",
+            ["HighlightPink"] = "Rosa",
+            ["HighlightSkyBlue"] = "Azul cielo",
+            ["HighlightNone"] = "Ninguno",
+            ["NoHighlight"] = "Sin resaltado",
+            ["AutoColor"] = "Automático (predeterminado)",
+            ["Apply"] = "Aplicar",
+            ["FormatPainter"] = "Copiar formato",
+            ["FormatPainterTip"] = "Copiar formato (selecciona el origen, haz clic y luego selecciona el destino)",
+            // Paragraph formatting
+            ["Paragraph"] = "Párrafo",
+            ["ParagraphStyle"] = "Estilo de párrafo",
+            ["Alignment"] = "Alineación",
+            ["AlignLeft"] = "Izquierda",
+            ["AlignCenter"] = "Centro",
+            ["AlignRight"] = "Derecha",
+            ["AlignJustify"] = "Justificar",
+            ["List"] = "Lista",
+            ["BulletList"] = "Lista con viñetas",
+            ["NumberedList"] = "Lista numerada",
+            ["CellBackground"] = "Fondo de celda…",
+            ["BulletStyle"] = "Estilo de viñeta",
+            ["NumberStyle"] = "Estilo de numeración",
+            ["Heading"] = "Título",
+            ["Heading1"] = "Título 1",
+            ["Heading2"] = "Título 2",
+            ["Heading3"] = "Título 3",
+            ["Heading4"] = "Título 4",
+            ["Heading5"] = "Título 5",
+            ["Heading6"] = "Título 6",
+            ["BodyText"] = "Normal",
+            ["Quote"] = "Cita",
+            ["Indent"] = "Sangría",
+            ["IndentIncrease"] = "Aumentar sangría",
+            ["IndentDecrease"] = "Disminuir sangría",
+            ["Margin"] = "Margen",
+            ["MarginTop"] = "Margen superior",
+            ["MarginAuto"] = "Automático (una línea)",
+            ["MarginBottom"] = "Margen inferior",
+            ["MarginLeft"] = "Margen izquierdo",
+            ["MarginRight"] = "Margen derecho",
+            ["LineSpacing"] = "Interlineado",
+            // Links
+            ["Hyperlink"] = "Hipervínculo",
+            ["OpenLink"] = "Abrir enlace",
+            ["EditLink"] = "Editar enlace...",
+            ["RemoveLink"] = "Quitar enlace",
+            ["InsertLink"] = "Insertar enlace...",
+            ["CopyLink"] = "Copiar enlace",
+            // Insert
+            ["InsertTable"] = "Insertar tabla",
+            ["InsertImage"] = "Insertar imagen...",
+            ["InsertDivider"] = "Insertar línea divisoria",
+            ["DragToSelectSize"] = "Arrastra para elegir el tamaño",
+            // Images
+            ["ImageSize"] = "Tamaño",
+            ["OriginalSize"] = "Tamaño original",
+            ["HalfSize"] = "Tamaño 1/2",
+            ["ThirdSize"] = "Tamaño 1/3",
+            ["QuarterSize"] = "Tamaño 1/4",
+            ["ReplaceImage"] = "Cambiar imagen...",
+            ["SaveImageAs"] = "Guardar como...",
+            ["AltText"] = "Texto alternativo...",
+            ["CellVerticalAlign"] = "Alineación vertical de celda",
+            ["VAlignTop"] = "Arriba",
+            ["VAlignCenter"] = "En medio",
+            ["VAlignBottom"] = "Abajo",
+            ["SelectImage"] = "Seleccionar imagen",
+            ["InlineWithText"] = "En línea con el texto",
+            ["SaveImage"] = "Guardar imagen",
+            // Tables
+            ["SelectCell"] = "Seleccionar celda",
+            ["InsertRowAbove"] = "Insertar fila arriba",
+            ["InsertRowBelow"] = "Insertar fila abajo",
+            ["DeleteRow"] = "Eliminar fila",
+            ["InsertColumnLeft"] = "Insertar columna a la izquierda",
+            ["InsertColumnRight"] = "Insertar columna a la derecha",
+            ["DeleteColumn"] = "Eliminar columna",
+            ["MergeCells"] = "Combinar celdas",
+            ["UnmergeCells"] = "Separar celdas",
+            ["DeleteTable"] = "Eliminar tabla",
+            ["TableOps"] = "Tabla",
+            // Dialogs
+            ["OK"] = "Aceptar",
+            ["Cancel"] = "Cancelar",
+            // Find / replace + status
+            ["Find"] = "Buscar",
+            ["FindNext"] = "Siguiente",
+            ["FindPrevious"] = "Anterior",
+            ["Replace"] = "Reemplazar",
+            ["ReplaceAll"] = "Reemplazar todo",
+            ["MatchCase"] = "Coincidir mayúsculas y minúsculas",
+            ["ToggleReplace"] = "Mostrar u ocultar Reemplazar",
+            ["NotFound"] = "No se encontró",
+            ["ReplacedFormat"] = "Reemplazados: {0}",
+            ["StatusFormat"] = "Caracteres {0}   Palabras {1}   Lín {2}, Col {3}",
+            // Page / zoom (RichEditorView chrome)
+            ["Fit"] = "Ajustar",
+            ["ZoomTip"] = "Zoom de la vista (Ctrl+rueda, Ctrl+0 = ajustar)",
+            ["PaperContinuous"] = "Continuo",
+            ["PaperTip"] = "Tamaño de papel (Continuo = se ajusta al ancho)",
+            ["PageOutline"] = "Contorno",
+            ["OrientPortrait"] = "Vertical",
+            ["OrientLandscape"] = "Horizontal",
+            ["OrientationTip"] = "Orientación de la página",
+            ["MarginNarrowest"] = "Muy estrecho 5 mm",
+            ["MarginNarrow"] = "Estrecho 10 mm",
+            ["MarginNormal"] = "Normal 15 mm",
+            ["MarginWide"] = "Ancho 20 mm",
+            ["MarginWidest"] = "Muy ancho 30 mm",
+            ["MarginTip"] = "Márgenes de página, en milímetros (la franja donde van el encabezado y el pie de página)",
+            // File actions (RichEditorView)
+            ["Export"] = "Exportar (JSON / .flow / HTML)",
+            ["Import"] = "Importar",
+            ["Print"] = "Imprimir",
+            ["PageCountFormat"] = "{0} página(s)",
+            ["ImageLimitWarning"] = "{0} imágenes: supera las {1} recomendadas y puede volverse lento",
         },
     };
 
