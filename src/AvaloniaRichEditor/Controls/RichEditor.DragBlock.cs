@@ -88,16 +88,19 @@ public partial class RichEditor
         if (wasActive) { Cursor = IbeamCursor; InvalidateVisual(); }
     }
 
+    private bool DropPreviewActive => _dragObjectActive || _dragTextActive;
+
     // Ctrl pressed or let go mid-drag: the "+" follows it, and so does whether the point is a valid drop at
     // all (a copy may go into its own cells, a move may not).
     private void OnDragModifierChanged(bool copy)
     {
         if (_dragObjectActive) DragObjectMoved(_dragObjectLast, copy);
+        else if (_dragTextActive) DragTextMoved(_dragTextLast, copy);
     }
 
     private void OnDragKeyUp(object? sender, KeyEventArgs e)
     {
-        if (e.Key is Key.LeftCtrl or Key.RightCtrl && _dragObjectActive) OnDragModifierChanged(false);
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl && DropPreviewActive) OnDragModifierChanged(false);
     }
 
     /// <summary>Whether <paramref name="obj"/> may be dropped at <paramref name="at"/>. A MOVE may not land
@@ -106,8 +109,9 @@ public partial class RichEditor
     internal static bool CanDropObject(object obj, TextPointer at, bool copy)
     {
         if (at.Paragraph is not { } p) return false;
-        if (copy) return true;
         var table = obj switch { TableBlock tb => tb, InlineTable it => it.Table, _ => null };
+        if (table != null && TableNesting.DepthAt(p) + TableNesting.Height(table) > TableNesting.Max) return false;
+        if (copy) return true;
         if (table == null) return true;
         for (object? n = p.Parent; n is TextElement te; n = te.Parent)
             if (ReferenceEquals(te, table)) return false;
@@ -245,11 +249,15 @@ public partial class RichEditor
     private void DrawDropPreview(DrawingContext context, Paragraph p, Avalonia.Media.TextFormatting.TextLayout layout,
         double px, double py)
     {
-        if (!_dragObjectActive || _dropPreview is not { } dp || !ReferenceEquals(dp.Paragraph, p)) return;
+        if (!DropPreviewActive || _dropPreview is not { } dp || !ReferenceEquals(dp.Paragraph, p)) return;
         int off = Math.Clamp(dp.Offset, 0, GetParagraphLength(p));
         var cr = CaretRectIn(layout, p, off, off, dp.AtLineEnd);
+        DrawDropCaret(context, px + cr.X, py + cr.Y, cr.Height > 0 ? cr.Height : 16);
+    }
+
+    private void DrawDropCaret(DrawingContext context, double x, double top, double h)
+    {
         var pen = _dropCaretPen ??= new Pen(Brushes.Gray, 2);
-        double x = px + cr.X, top = py + cr.Y, h = cr.Height > 0 ? cr.Height : 16;
         context.DrawLine(pen, new Point(x, top), new Point(x, top + h));
         if (_dragCopy)
         {

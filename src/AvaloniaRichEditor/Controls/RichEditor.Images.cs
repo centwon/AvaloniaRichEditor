@@ -291,10 +291,15 @@ public partial class RichEditor
     private void DeleteInlineImage(Paragraph p, InlineImage img)
     {
         if (Document == null) return;
+        int off = OffsetOfInline(p, img);
         PushUndo();
         RemoveInlineImageCharacter(p, img);
         if (_selectedInline is { } s && ReferenceEquals(s.img, img)) _selectedInline = null;
+        UpdateParents(Document);
+        _caretPosition = new TextPointer(p, off);
+        CollapseSelectionToCaret();
         InvalidateMeasure(); // the line box loses the picture's height
+        ResetCaretBlink();
         InvalidateVisual();
     }
 
@@ -305,6 +310,8 @@ public partial class RichEditor
     {
         int off = OffsetOfInline(p, img);
         p.Inlines.Remove(img);
+        if (p.Inlines.Count == 0) p.Inlines.Add(new Run { Text = "", Parent = p });
+        TextRange.CoalesceRuns(p);
         TextPointer Back(TextPointer t) => ReferenceEquals(t.Paragraph, p) && t.Offset > off ? new TextPointer(p, t.Offset - 1) : t;
         _caretPosition = Back(_caretPosition);
         _selectionStart = Back(_selectionStart);

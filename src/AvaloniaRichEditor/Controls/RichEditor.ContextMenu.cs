@@ -746,7 +746,10 @@ public partial class RichEditor
             if (Document != null) PushUndo();
             tb.MergeCells(g.r0, g.c0, g.r1, g.c1);
             if (Document != null) UpdateParents(Document);
-            FocusCell(tb.Cells[g.r0][g.c0].Para);
+            var (ar, ac) = tb.AnchorOf(g.r0, g.c0);
+            if (!SelectCellContents(tb.Cells[ar][ac])) FocusCell(tb.Cells[ar][ac].Para);
+            InvalidateTableChain(tb);
+            InvalidateMeasure();
             InvalidateVisual();
         }, canMerge, RichEditorIcon.MergeCells));
         bool canUnmerge = r >= 0 && c >= 0 && (tb.SpanOf(r, c).cs > 1 || tb.SpanOf(r, c).rs > 1);
@@ -755,7 +758,9 @@ public partial class RichEditor
             if (Document != null) PushUndo();
             tb.UnmergeCell(r, c);
             if (Document != null) UpdateParents(Document);
-            FocusCell(tb.Cells[r][c].Para);
+            if (!SelectCellContents(tb.Cells[r][c])) FocusCell(tb.Cells[r][c].Para);
+            InvalidateTableChain(tb);
+            InvalidateMeasure();
             InvalidateVisual();
         }, canUnmerge, RichEditorIcon.UnmergeCells));
         items.Add(new Separator());
