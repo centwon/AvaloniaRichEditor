@@ -151,7 +151,7 @@ for a full editor host.
   lists, line spacing `Ctrl+1/5/2`, indent, font size, and more
 - Per-object right-click context menus (HWP-style, reflecting the caret's state; a slim
   `ShowFormattingMenu = false` default keeps rich formatting on the toolbar)
-- Built-in **localization** (Korean and English, host-extensible) for menus, toolbar, and dialogs
+- Built-in **localization** (Korean, English and Spanish, host-extensible) for menus, toolbar, and dialogs
 
 ## Documentation
 
