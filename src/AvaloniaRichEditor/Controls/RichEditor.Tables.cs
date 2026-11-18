@@ -378,13 +378,11 @@ public partial class RichEditor
         var sub = new TableBlock(rows, cols);
         for (int c = 0; c < cols; c++)
             if (rg.c0 + c < tb.ColumnWidths.Count) sub.ColumnWidths[c] = tb.ColumnWidths[rg.c0 + c];
-        if (tb.RowHeights.Count > rg.r1)
-        {
-            bool anyPositive = false;
-            for (int r = rg.r0; r <= rg.r1; r++) if (tb.RowHeights[r] > 0) { anyPositive = true; break; }
-            if (anyPositive)
-                for (int r = rg.r0; r <= rg.r1; r++) sub.RowHeights.Add(tb.RowHeights[r]);
-        }
+        // Row heights only when one of these rows has one set; rows past the (sparse) list are 0 — as the port.
+        bool anyPositive = false;
+        for (int r = rg.r0; r <= rg.r1; r++) if (r < tb.RowHeights.Count && tb.RowHeights[r] > 0) { anyPositive = true; break; }
+        if (anyPositive)
+            for (int r = rg.r0; r <= rg.r1; r++) sub.RowHeights.Add(r < tb.RowHeights.Count ? tb.RowHeights[r] : 0);
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < cols; c++)
             {

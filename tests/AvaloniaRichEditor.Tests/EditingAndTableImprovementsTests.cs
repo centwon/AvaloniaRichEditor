@@ -233,6 +233,20 @@ public class EditingAndTableImprovementsTests
         Assert.Empty(sub.RowHeights);
     }
 
+    // Row heights listed for only the first rows (the rest unset): a set height in the block was dropped with the
+    // rest. Kept now, the unlisted rows as 0 — as the WinUI port's TableBlock.Extract.
+    [Fact]
+    public void CellBlockAsTable_WithRowHeightsShorterThanTheBlock_KeepsTheSetHeight()
+    {
+        var tb = new TableBlock(2, 2);
+        tb.RowHeights.Add(40);
+
+        var method = typeof(RichEditor).GetMethod("CellBlockAsTable", NPS)!;
+        var sub = (TableBlock)method.Invoke(null, new object[] { tb, (0, 0, 1, 1) })!;
+
+        Assert.Equal(new[] { 40.0, 0.0 }, sub.RowHeights);
+    }
+
     // ---- B8: TSV paste inside a table cell fills existing table cells instead of nesting a table ----
 
     [AvaloniaFact]
