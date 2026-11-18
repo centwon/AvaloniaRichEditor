@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — built-in Spanish (2026-11-17)
+
+- `RichEditorLocalization` has a Spanish (`es`) table for every key (contributed in #91), and a test that each built-in
+  table has exactly the English table's keys. Two terms were corrected after review: the character-format command is
+  "Formato de fuente" (it read "Fuente", the same as the font-name box), and the image-count warning carries the ⚠ the
+  other languages show.
+
 ### Changed — selection and editing rules, the same as the WinUI control's (2026-11-09)
 
 - List toggle: a mixed selection turns the list on for every paragraph; only a selection that is all this kind turns it
