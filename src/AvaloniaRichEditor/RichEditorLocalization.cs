@@ -326,7 +326,7 @@ public static class RichEditorLocalization
             ["Undo"] = "Deshacer",
             ["Redo"] = "Rehacer",
             // Character formatting
-            ["CharacterFormat"] = "Fuente",
+            ["CharacterFormat"] = "Formato de fuente",
             ["ParagraphFormat"] = "Párrafo",
             ["FontSizeIncrease"] = "Más grande",
             ["FontSizeDecrease"] = "Más pequeño",
@@ -461,7 +461,7 @@ public static class RichEditorLocalization
             ["Import"] = "Importar",
             ["Print"] = "Imprimir",
             ["PageCountFormat"] = "{0} página(s)",
-            ["ImageLimitWarning"] = "{0} imágenes: supera las {1} recomendadas y puede volverse lento",
+            ["ImageLimitWarning"] = "⚠ {0} imágenes: supera las {1} recomendadas y puede volverse lento",
         },
     };
 
