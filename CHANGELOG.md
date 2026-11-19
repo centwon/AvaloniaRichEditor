@@ -6,12 +6,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a copied cell block kept no row heights when the table's list was short (2026-11-18)
+
+- A cell block copied or cut as a table dropped every set row height when the table's `RowHeights` did not
+  reach the block's last row. Rows past the list now count as unset (0) and any set height is kept, the WinUI control's
+  rule (#95). Test: `EditingAndTableImprovementsTests.CellBlockAsTable_WithRowHeightsShorterThanTheBlock_KeepsTheSetHeight`.
+
 ### Added — built-in Spanish (2026-11-17)
 
 - `RichEditorLocalization` has a Spanish (`es`) table for every key (contributed in #91), and a test that each built-in
   table has exactly the English table's keys. Two terms were corrected after review: the character-format command is
   "Formato de fuente" (it read "Fuente", the same as the font-name box), and the image-count warning carries the ⚠ the
   other languages show.
+
+### Added — drag selected text to move it, Ctrl to copy (2026-11-17)
+
+- Pressing inside a text selection and dragging moves the text to where it is dropped, or copies it with Ctrl held (the
+  drop caret shows a "+"); the dropped text is left selected and the move is one undo step. Several paragraphs move as
+  paragraphs. A press that does not move places the caret on release, as a click did. Dropping inside the selection
+  does nothing; a selection across table cells is not dragged as text (#92).
+- A TSV (Excel) paste with the caret in a table cell fills that table's cells from the caret's cell, adding rows as
+  needed, instead of putting a new table inside the cell. Blank lines between pasted rows are dropped (#92).
+- Tests: `EditingAndTableImprovementsTests`.
+
+### Fixed — undo after redo, merged cells, nesting depth, saving (2026-11-17)
+
+- Typing right after Redo joined the redone step, so one Undo took back both the typing and the redo. It starts a step of
+  its own now.
+- Merging cells that held several paragraphs, pictures or tables kept them in cell order (they could come out shuffled);
+  merging or splitting cells, and changing a cell's vertical alignment, remeasures the table — an inline table's too.
+- Copying several paragraphs inside one cell kept them as paragraphs, with their list format; they came out as one.
+- Tables nest at most 32 deep, as the RTF reader already allowed: inserting a table deeper does nothing (and leaves no
+  undo step), pasting there pastes plain text, and HTML read deeper is flattened into its cells' content. Any document
+  the editor holds can now be saved.
+- JSON saving writes no infinite or NaN number: a margin is left out, a column width becomes 100, a row height 0. It threw.
+- HTML export takes `;` out of a font name, which ended the `style` declaration early.
+- Deleting text keeps one empty run in an emptied paragraph, and deleting an inline picture joins the same-format runs
+  on its two sides.
+- Drawing a table with the mouse at the top level is no wider than the text area.
+- Tests: `EditingAndTableImprovementsTests`, each red before its fix (#92).
 
 ### Changed — selection and editing rules, the same as the WinUI control's (2026-11-09)
 
@@ -51,6 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   palettes, the 80-cell table grid, the list and line-spacing menus — though most are never opened. A toolbar without a
   `Target` builds no strip now, and each picker's panel is made the first time it opens. `RichEditorToolbar.Palette` is
   read then, so set it before a colour picker first opens. Test: `ToolbarLazyBuildTests`.
+
+### Added — a link API for hosts (2026-11-08)
+
+- `RichEditor.HasSelection`, `GetHyperlinkAt(Point)`, `SetHyperlink(string?)` and `TrySetHyperlinkAt(Point, string?)`, so a
+  host can build its own link UI without reflection (contributed in #87). `SetHyperlink` works like the other format
+  commands: on the selection (a cell block counts), or the caret's word when nothing is selected. Points are in the
+  editor's coordinates, page view included. Changing a clicked link keeps the selection.
+- An address of only whitespace removes the link; any other is trimmed — the WinUI control's rule (#89).
+- Test: `HyperlinkApiTests`.
 
 ### Fixed — documents that opened but could not be saved, and an RTF token that emptied a file (2026-11-08)
 
