@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `RichEditor.IsDocumentEmpty`, for a host's own UI (2026-11-20)
+
+- A bindable direct property (`IsDocumentEmptyProperty`), true while the document holds only paragraphs with no
+  characters; a table, picture, divider or inline object is content, and so is whitespace. It is updated after every
+  edit, undo and redo, when the `Document` is replaced, and on `NotifyDocumentChanged()` — after the edit, not on the
+  next frame, so an editor that is not drawn keeps it current too ([#97](https://github.com/centwon/AvaloniaRichEditor/issues/97)).
+  Test: `IsDocumentEmptyTests`.
+
 ### Fixed — a copied cell block kept no row heights when the table's list was short (2026-11-18)
 
 - A cell block copied or cut as a table dropped every set row height when the table's `RowHeights` did not
