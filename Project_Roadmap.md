@@ -17,6 +17,12 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
 - **main** = `8d837b5`(#95, 2026-11-18). 열린 PR 없음. 1.3.0 뒤 병합: #85(블록 맵 히트테스트) · #87·#89(호스트 링크 API·주소 규칙) ·
   #90(KanuDoc 결함 백포트·WinUI 동작 맞추기, 11-10) · #91·#93·#94(스페인어, 11-17~18) · #92(편집·표 정합성, 11-17) · #95(셀 블록 행 높이, 11-18).
   아래 항목은 전부 미릴리스(게시 여부·시점은 사용자 몫). 다음 판을 1.3.1로 적어 왔으나 #87이 공개 API를 더해 SemVer로는 1.4.0.
+- **`RichEditor.IsDocumentEmpty`**(2026-11-20, 이슈 #97, `feat/is-document-empty`): 호스트가 빈 문서일 때 자기 UI를 끄도록 바인딩용
+  DirectProperty. 정의 = 글자 없는 문단만(표·그림·구분선·인라인 개체·공백은 내용). 요청은 `FlowDocument.IsEmpty`였으나 모델에 변경
+  알림이 없어 `RichEditor`에 둠. 갱신: 편집은 `SetModified(true)`에서 게시(IsModified 보고와 같은 방식 — Render를 기다리지 않아
+  그려지지 않은 편집기도 맞음), 문서 교체(undo/redo 포함)는 즉시. 이슈 답글에서 "다음 판에 넣음"이라 약속함.
+  `IsDocumentEmptyTests` 9건, 반증: 편집 훅 빼면 3건·교체 훅 빼면 6건 빨강. unit **1558** 그린(로컬 Windows).
+  **같은 이름으로 넣을 곳**: WinUIRichEditor 1.x, KanuDoc(두 컨트롤).
 - **셀 블록 복사의 행 높이**(2026-11-18, PR #95): `CellBlockAsTable`이 원래 표의 `RowHeights`가 블록 끝 행까지 닿지 않으면 정해진
   높이까지 통째로 버렸다 → 목록 밖 행은 0, 정해진 높이가 하나라도 있으면 씀(포트 `TableBlock.Extract`와 같은 규칙). 반증 있음.
 - **스페인어 현지화**(2026-11-17, 외부 기여 PR #91 + #93·#94 용어 수정): 모든 키의 `es` 표, 내장 표마다 영어 표와 키가 같은지 검사하는 테스트.

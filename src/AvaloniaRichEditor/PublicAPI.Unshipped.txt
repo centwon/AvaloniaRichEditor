@@ -5,3 +5,5 @@ AvaloniaRichEditor.Controls.RichEditor.HasSelection.get -> bool
 AvaloniaRichEditor.Controls.RichEditor.GetHyperlinkAt(Avalonia.Point point) -> string?
 AvaloniaRichEditor.Controls.RichEditor.SetHyperlink(string? url) -> void
 AvaloniaRichEditor.Controls.RichEditor.TrySetHyperlinkAt(Avalonia.Point point, string? url) -> bool
+AvaloniaRichEditor.Controls.RichEditor.IsDocumentEmpty.get -> bool
+static readonly AvaloniaRichEditor.Controls.RichEditor.IsDocumentEmptyProperty -> Avalonia.DirectProperty<AvaloniaRichEditor.Controls.RichEditor!, bool>!

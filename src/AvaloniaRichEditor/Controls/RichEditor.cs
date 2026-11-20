@@ -402,6 +402,7 @@ public partial class RichEditor : Control
             SyncPageSetupOnDocumentChanged(); // apply the loaded doc's page setup to the page properties
             _textChangedPending = true; // wholesale content swap
             SetModified(true);          // a raw Document assignment is a change; Load*/Clear reset it below
+            UpdateIsDocumentEmpty();    // at once: the new document is complete (undo/redo swap through here too)
             DocumentChanged?.Invoke(this, EventArgs.Empty);
             InvalidateMeasure();
             InvalidateVisual();
@@ -595,6 +596,7 @@ public partial class RichEditor : Control
     // edit) and MarkSaved clears the flag before the posted report runs, which then has nothing to say.
     private void SetModified(bool value)
     {
+        if (value) PostEmptyCheck(); // every edit passes here, at its start
         if (IsModified == value) return;
         IsModified = value;
         if (_modifiedReportPosted) return;
@@ -610,6 +612,34 @@ public partial class RichEditor : Control
         _modifiedReported = IsModified;
         IsModifiedChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>Defines the <see cref="IsDocumentEmpty"/> property.</summary>
+    public static readonly DirectProperty<RichEditor, bool> IsDocumentEmptyProperty =
+        AvaloniaProperty.RegisterDirect<RichEditor, bool>(nameof(IsDocumentEmpty), o => o.IsDocumentEmpty);
+
+    private bool _isDocumentEmpty = true;
+
+    /// <summary>True when the document holds only paragraphs with no characters. A table, picture, divider or
+    /// inline object is content, and so is whitespace. Updated after every edit (undo and redo included), when the
+    /// <see cref="Document"/> is replaced, and on <see cref="NotifyDocumentChanged"/>; a host that edits the model
+    /// directly calls that to have it re-read.</summary>
+    public bool IsDocumentEmpty
+    {
+        get => _isDocumentEmpty;
+        private set => SetAndRaise(IsDocumentEmptyProperty, ref _isDocumentEmpty, value);
+    }
+
+    // An edit is flagged at its start (see SetModified), so the check is posted to run after the command, like the
+    // IsModified report — not from Render, as TextChanged is: an editor that is not drawn still keeps it current.
+    private bool _emptyCheckPosted;
+    private void PostEmptyCheck()
+    {
+        if (_emptyCheckPosted) return;
+        _emptyCheckPosted = true;
+        Dispatcher.UIThread.Post(() => { _emptyCheckPosted = false; UpdateIsDocumentEmpty(); });
+    }
+
+    private void UpdateIsDocumentEmpty() => IsDocumentEmpty = Document == null || IsEmptyContent(Document);
 
     // Set by any edit; flushed (as TextChanged) from Render, off the render stack, so handlers see the
     // already-mutated document and can't re-enter the render pass. Also flips the IsModified flag.
