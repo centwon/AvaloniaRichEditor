@@ -212,7 +212,9 @@ internal static class PdfFontSubsetter
             foreach (Match pair in Regex.Matches(block.Groups[1].Value, @"<([0-9A-Fa-f]+)>\s*<[0-9A-Fa-f]*>"))
                 glyphs.Add(int.Parse(pair.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture));
         foreach (Match block in Regex.Matches(cmap, @"beginbfrange(.*?)endbfrange", RegexOptions.Singleline))
-            foreach (Match range in Regex.Matches(block.Groups[1].Value, @"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>"))
+            // Each match takes the whole line, <lo> <hi> and its <dst> or [<dst> …]: left over, a <dst> paired with the
+            // next line's <lo> as a range, keeping nearly the whole font — or overflowing int.Parse past two units.
+            foreach (Match range in Regex.Matches(block.Groups[1].Value, @"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(?:<[^>]*>|\[[^\]]*\])"))
             {
                 int lo = int.Parse(range.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
                 int hi = int.Parse(range.Groups[2].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);

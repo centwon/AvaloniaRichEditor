@@ -10,13 +10,19 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
 
 ---
 
-## ✅ 현재 상태 (2026-11-18)
+## ✅ 현재 상태 (2026-11-22)
 
 - **게시**: `v1.3.0`(2026-10-17) — nuget.org. 이력: 0.9.0(07-12) → 1.0.0(07-31, API 동결) → 1.1.0(08-08) →
   1.2.0/1.2.1(09-08) → 1.3.0(10-17).
 - **main** = `8d837b5`(#95, 2026-11-18). 열린 PR 없음. 1.3.0 뒤 병합: #85(블록 맵 히트테스트) · #87·#89(호스트 링크 API·주소 규칙) ·
   #90(KanuDoc 결함 백포트·WinUI 동작 맞추기, 11-10) · #91·#93·#94(스페인어, 11-17~18) · #92(편집·표 정합성, 11-17) · #95(셀 블록 행 높이, 11-18).
   아래 항목은 전부 미릴리스(게시 여부·시점은 사용자 몫). 다음 판을 1.3.1로 적어 왔으나 #87이 공개 API를 더해 SemVer로는 1.4.0.
+- **`SavePdf` 글꼴이 거의 통째로 남던 것 수정**(2026-11-22, `claude/pdf-subset-bfrange-21064a`, 미병합): ToUnicode `bfrange` 줄
+  `<lo> <hi> <dst>`를 두 값씩 읽어 `<dst> <다음 줄 lo>`가 글리프 범위가 됐다 → 정규식이 줄 전체(배열 dst 포함)를 먹게.
+  크기(바이트, `v1.3.0`의 추리기 코드는 수정 전과 같음): 한글 세 문단 6,959,570 → 28,772 · 30문단 7,403,671 → 238,984 ·
+  영문 한 줄 55,662 → 8,930. 문서 8종에서 수정 전·후·안 추린 PDF의 픽셀과 추출 글자 동일(MuPDF·PDFium). 세 단위 이상 dst의
+  `OverflowException`은 단위 테스트로만 재현(잰 문서엔 그런 줄 없음). 기존 테스트가 놓친 까닭: 그 문서는 `bfrange` 0줄.
+  `VectorPdfTests`에 7건, 수정 되돌리면 6건 빨강(1건은 대조군). unit **1558** · render **72** 그린(로컬 Windows, Release).
 - **`RichEditor.IsDocumentEmpty`**(2026-11-20, 이슈 #97, `feat/is-document-empty`): 호스트가 빈 문서일 때 자기 UI를 끄도록 바인딩용
   DirectProperty. 정의 = 글자 없는 문단만(표·그림·구분선·인라인 개체·공백은 내용). 요청은 `FlowDocument.IsEmpty`였으나 모델에 변경
   알림이 없어 `RichEditor`에 둠. 갱신: 편집은 `SetModified(true)`에서 게시(IsModified 보고와 같은 방식 — Render를 기다리지 않아
@@ -113,8 +119,8 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   (`NormalizeLinkUrl`, 되돌리면 3건 빨강).
 - **1.3.0에 넣은 데이터 손실 수정**(2026-10-15, 사용자 결정): 범위 밖 숫자(`1e400`) 읽기 거부, 인라인 표를 담은 제목·문단의
   HTML 서식 손실, 표를 건넌 복사가 끝 문단을 통째로 가져오던 것. `DataLossFixesTests`·`DataLossFixesEditorTests`, 모두 수정 전 빨강 확인.
-- **검증**: unit **1549** 그린(2026-11-18, main `8d837b5` = #95까지 로컬 Windows, render는 이번에 안 돌림) ·
-  render **62** 그린(2026-11-07, `3b57644`) · 3-OS CI는 각 PR에서.
+- **검증**: unit **1558** · render **72** 그린(2026-11-22, `2150f6b` + `SavePdf` 글꼴 수정, 로컬 Windows Release) ·
+  3-OS CI는 각 PR에서.
 - **레이아웃 캐시 = 화면에 있는 것만** (2026-09-30): 측정·페이지 나눔·지나가는 워크는 높이 캐시를 읽고, 렌더 뒤 LRU 256개로 트림.
   8,000문단 270 → 39 MB. 대가: 다시 화면에 들어온 문단은 재셰이핑(2,000문단 스크롤 +4 ms/쪽). 퍼즈에 **높이 오라클**
   (편집한 편집기 = 새 편집기 측정 높이)이 생겨 목록 토글 측정 누락·서명 해시 상쇄를 잡았다. 포트 대조(2026-11-08): 서명 상쇄는
@@ -245,6 +251,7 @@ WinUI 1.x는 별도로 정한다.
   무의존성(PBKDF2 600k = 124ms). **미결**: Argon2id용 의존성 1개 수용 여부.
 - 단락 경계 넘는 Find(줄바꿈 포함 검색어만, 실사용 극저) · HWP/XLS(구) 붙여넣기 · blockquote/중첩 목록 깊이 정밀화
 - 인라인 객체 공통 추상(`InlineObject`) — 세 번째 인라인 타입이 실제로 생기면
+- `SavePdf`: TTC 글꼴은 통째로 남는다 — `PdfFontSubsetter`가 `ttcf`를 건너뜀, `bfrange` 결함과 다른 원인(11-22 실측: 바탕 한 줄 7,056,933바이트)
 - **2.0 후보: 모델이 자기 불변식을 지키기** — `Paragraph.Inlines`·`TableCell.Blocks`를 알림 컬렉션으로, 넣을 때 `Parent` 연결·뺄 때 해제,
   문서가 변경 이벤트 하나를 올림 → 편집기는 그것만 듣는다. 공개 타입 변경이라 1.x 불가(10-17 결정). 그때 `NotifyDocumentChanged`는 호환용으로 남는다.
 - 의도적 보류(측정상 저가치): 델타 Undo · `ComputePageBreaks` 캐시 · HTML `HasBlockOrMedia` O(n²) · `ReplaceAll` O(N²) · G1 P2(BlockBox 캐싱)

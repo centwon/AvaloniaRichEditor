@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a saved PDF carried nearly whole fonts (2026-11-22)
+
+- `SavePdf` embedded most of a font whenever its ToUnicode map had more than one `bfrange` line in a block: the lines
+  were read two values at a time, so a destination and the next line's start passed for a range of glyphs to keep.
+  Measured on Windows: three paragraphs of Korean in Malgun Gothic 6,959,570 → 28,772 bytes, thirty paragraphs
+  7,403,671 → 238,984, one line of English in Inter 55,662 → 8,930. Pages render and their text extracts as before.
+- The same misreading threw on a destination of three or more UTF-16 units, which would have left every font in the
+  file whole (reproduced on the map reader; none of the measured documents had such a line).
+- Not changed: a font that comes from a TrueType collection (`.ttc`) is still embedded whole.
+- Tests: `VectorPdfTests.ToUnicodeRanges_GiveOnlyTheirSourceGlyphs`, `AFontWithToUnicodeRanges_KeepsOnlyTheShownOutlines`,
+  `AFewKoreanParagraphs_StaySmall` (Windows), each red before the fix.
+
 ### Added — `RichEditor.IsDocumentEmpty`, for a host's own UI (2026-11-20)
 
 - A bindable direct property (`IsDocumentEmptyProperty`), true while the document holds only paragraphs with no
