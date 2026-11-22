@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -22,6 +23,11 @@ namespace AvaloniaRichEditor.Formatters;
 // a glyph list: Skia leaves out glyphs whose width equals /DW (Malgun's Hangul, all 1000, never appear)
 // and writes runs of equal width as c1 c2 w ranges that span glyphs never shown — reading /W kept 72
 // outlines of Inter for a dozen used (measured).
+//
+// A font out of a collection (.ttc) arrives as the whole file, and nothing in the PDF numbers the face: a viewer
+// draws the first, so Nirmala UI Bold printed with the regular's outlines (measured 2026-11-22). The descriptor's
+// FontName is that face's PostScript name (each of the 48 faces installed on a Windows 11 matched itself alone),
+// so the subset is cut from the face of that name and is a plain font. With no such face, or two, it is left.
 //
 // Scope, deliberately narrow: the shape Skia writes (one classic xref section, direct lengths, Flate
 // streams). Anything else is left exactly as it came — a larger file, never a broken one.
@@ -83,6 +89,7 @@ internal static class PdfFontSubsetter
         var fontFileOfType0 = new Dictionary<int, int>();
         var cmapOfType0 = new Dictionary<int, int>();
         var used = new Dictionary<int, HashSet<int>>(); // font file object → glyph ids
+        var nameOfFile = new Dictionary<int, string?>(); // font file object → FontName; null when descriptors differ
         foreach (var o in objects)
         {
             if (!Has(o.Dict, @"/Subtype\s*/Type0")) continue;
@@ -91,6 +98,8 @@ internal static class PdfFontSubsetter
             if (Ref(cidFont.Dict, @"/FontDescriptor\s+(\d+)\s+0\s+R") is not int fd || !byNumber.TryGetValue(fd, out var descriptor)) continue;
             if (Ref(descriptor.Dict, @"/FontFile2\s+(\d+)\s+0\s+R") is not int ff || !byNumber.ContainsKey(ff)) continue;
             fontFileOfType0[o.Number] = ff;
+            string? name = Regex.Match(descriptor.Dict, @"/FontName\s*/([^\s/<>\[\]()]+)") is { Success: true } fn ? fn.Groups[1].Value : null;
+            nameOfFile[ff] = !nameOfFile.TryGetValue(ff, out var other) || other == name ? name : null;
             if (!used.ContainsKey(ff)) used[ff] = new HashSet<int> { 0 }; // .notdef always
             if (Ref(o.Dict, @"/ToUnicode\s+(\d+)\s+0\s+R") is int tu) cmapOfType0[o.Number] = tu;
         }
@@ -121,8 +130,12 @@ internal static class PdfFontSubsetter
         {
             var o = byNumber[ff];
             if (!Has(o.Dict, @"/Filter\s*/FlateDecode") || InflateBytes(pdf, o) is not byte[] program) continue;
-            if (program.Length < 12 || (program[0] == 't' && program[1] == 't' && program[2] == 'c' && program[3] == 'f')) continue;
-            if (HarfBuzz.Subset(program, glyphs) is not byte[] subset || subset.Length >= program.Length) continue;
+            if (program.Length < 12) continue;
+            bool collection = program.AsSpan(0, 4).SequenceEqual("ttcf"u8);
+            int face = collection ? FaceIndex(program, nameOfFile[ff]) : 0;
+            if (face < 0) continue;
+            if (HarfBuzz.Subset(program, face, glyphs) is not byte[] subset) continue;
+            if (!collection && subset.Length >= program.Length) continue; // a collection goes whatever it saves: the wrong face shows
             byte[] packed = Deflate(subset);
             string dict = Regex.Replace(o.Dict, @"/Length\s+\d+", "/Length " + packed.Length.ToString(CultureInfo.InvariantCulture));
             dict = Regex.Replace(dict, @"/Length1\s+\d+", "/Length1 " + subset.Length.ToString(CultureInfo.InvariantCulture));
@@ -222,6 +235,47 @@ internal static class PdfFontSubsetter
             }
     }
 
+    // The only face of a collection with this PostScript name (name ID 6, in any of its records), or -1.
+    private static int FaceIndex(byte[] font, string? fontName)
+    {
+        if (fontName == null) return -1;
+        string wanted = fontName.Substring(fontName.IndexOf('+') + 1); // past the "ABCDEF+" tag
+        try
+        {
+            int found = -1;
+            for (int i = 0, count = I32(font, 8); i < count; i++)
+            {
+                if (!HasPostScriptName(font, I32(font, 12 + i * 4), wanted)) continue;
+                if (found >= 0) return -1;
+                found = i;
+            }
+            return found;
+        }
+        catch (ArgumentOutOfRangeException) { return -1; } // a damaged collection: this font stays, the others are still cut
+    }
+
+    private static bool HasPostScriptName(byte[] font, int face, string wanted)
+    {
+        for (int t = 0, tables = U16(font, face + 4); t < tables; t++)
+        {
+            int entry = face + 12 + t * 16;
+            if (!font.AsSpan(entry, 4).SequenceEqual("name"u8)) continue;
+            int table = I32(font, entry + 8);
+            int strings = table + U16(font, table + 4);
+            for (int k = 0, records = U16(font, table + 2); k < records; k++)
+            {
+                int r = table + 6 + k * 12;
+                if (U16(font, r + 6) != 6) continue;
+                var encoding = U16(font, r) == 1 ? Latin1 : Encoding.BigEndianUnicode; // platform 1 (Mac) is one byte a character
+                if (encoding.GetString(font.AsSpan(strings + U16(font, r + 10), U16(font, r + 8))) == wanted) return true;
+            }
+        }
+        return false;
+    }
+
+    private static int U16(byte[] b, int at) => BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(at, 2));
+    private static int I32(byte[] b, int at) => BinaryPrimitives.ReadInt32BigEndian(b.AsSpan(at, 4));
+
     // The codes shown in a content stream: a small tokenizer that follows the font selected by Tf and reads
     // the 2-byte codes of every hex string (Skia writes glyph ids as <hhhh…>, alone or inside TJ arrays).
     private static void CollectShownGlyphs(string content, Dictionary<string, int> fontByName, Func<int, HashSet<int>> glyphsOf)
@@ -291,20 +345,29 @@ internal static class PdfFontSubsetter
         // blank there (measured 2026-09-15: Hangul on the Ubuntu CI runner, which has no CJK font).
         private const uint RetainGids = 0x2 | 0x40 | 0x200;
         private const int MemoryModeDuplicate = 0;
+        // Tables nothing reads go: the page holds shaped glyph ids and the font is a CIDFontType2 with an Identity map, so
+        // neither the layout tables nor cmap have a use. Both have to go. Re-packing GDEF for a sparse set of a big CJK
+        // font makes hb_subset 8.3.1 fail, which left the font whole (measured: YaHei UI, JhengHei UI); without GDEF it
+        // gets as far as cmap, and re-packing that for a set of thousands fails too or, worse, reads through a null
+        // pointer — an access violation, which kills the process (measured: YaHei with 9,971 different characters).
+        private const int DropTableTagSet = 3; // HB_SUBSET_SETS_DROP_TABLE_TAG
+        private static readonly uint[] UnusedTables = { 0x47444546, 0x47535542, 0x47504F53, 0x636D6170 }; // GDEF, GSUB, GPOS, cmap
 
-        public static byte[]? Subset(byte[] font, HashSet<int> glyphs)
+        public static byte[]? Subset(byte[] font, int index, HashSet<int> glyphs)
         {
             IntPtr blob = IntPtr.Zero, face = IntPtr.Zero, input = IntPtr.Zero, sub = IntPtr.Zero, outBlob = IntPtr.Zero;
             var pin = GCHandle.Alloc(font, GCHandleType.Pinned);
             try
             {
                 blob = hb_blob_create(pin.AddrOfPinnedObject(), (uint)font.Length, MemoryModeDuplicate, IntPtr.Zero, IntPtr.Zero);
-                face = hb_face_create(blob, 0);
+                face = hb_face_create(blob, (uint)index);
                 input = hb_subset_input_create_or_fail();
                 if (face == IntPtr.Zero || input == IntPtr.Zero) return null;
                 hb_subset_input_set_flags(input, RetainGids);
                 var set = hb_subset_input_glyph_set(input);
                 foreach (int g in glyphs) hb_set_add(set, (uint)g);
+                var dropped = hb_subset_input_set(input, DropTableTagSet);
+                foreach (uint tag in UnusedTables) hb_set_add(dropped, tag);
                 sub = hb_subset_or_fail(face, input);
                 if (sub == IntPtr.Zero) return null;
                 outBlob = hb_face_reference_blob(sub);
@@ -330,6 +393,7 @@ internal static class PdfFontSubsetter
         [DllImport(Lib)] private static extern IntPtr hb_subset_input_create_or_fail();
         [DllImport(Lib)] private static extern void hb_subset_input_set_flags(IntPtr input, uint flags);
         [DllImport(Lib)] private static extern IntPtr hb_subset_input_glyph_set(IntPtr input);
+        [DllImport(Lib)] private static extern IntPtr hb_subset_input_set(IntPtr input, int setType);
         [DllImport(Lib)] private static extern void hb_set_add(IntPtr set, uint codepoint);
         [DllImport(Lib)] private static extern IntPtr hb_subset_or_fail(IntPtr face, IntPtr input);
         [DllImport(Lib)] private static extern IntPtr hb_face_reference_blob(IntPtr face);

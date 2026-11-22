@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -321,7 +322,9 @@ public class VectorPdfTests
         Assert.True(shown.Count >= 2, "fonts shown: " + string.Join(", ", shown.Keys));
         foreach (var (font, glyphs) in shown)
         {
-            var lost = glyphs.Where(g => Outline(before[font], g) > 0 && Outline(after[font], g) == 0).ToList();
+            if (font.Length == 0) continue; // Type3 (CFF and synthetic bold): no BaseFont and no program, nothing is subset
+            var drawn = DrawnFace(before[font], font);
+            var lost = glyphs.Where(g => Outline(drawn, g) > 0 && Outline(after[font], g) == 0).ToList();
             Assert.True(lost.Count == 0, $"{font}: glyphs {string.Join(",", lost)} lost their outlines");
         }
     }
@@ -346,7 +349,7 @@ public class VectorPdfTests
         var harfBuzz = typeof(RichEditor).Assembly.GetType("AvaloniaRichEditor.Formatters.PdfFontSubsetter")!
             .GetNestedType("HarfBuzz", BindingFlags.NonPublic)!;
         var cut = (byte[]?)harfBuzz.GetMethod("Subset", BindingFlags.Public | BindingFlags.Static)!
-            .Invoke(null, new object[] { inter, new HashSet<int> { 0 } });
+            .Invoke(null, new object[] { inter, 0, new HashSet<int> { 0 } });
 
         Assert.NotNull(cut);
         Assert.True(Outline(cut!, 0) > 0, ".notdef lost its outline — a missing character's box prints as a blank");
@@ -431,7 +434,7 @@ public class VectorPdfTests
         Assert.NotEmpty(shown);
         foreach (var (font, glyphs) in shown)
         {
-            var needed = (byte[])harfBuzz.Invoke(null, new object[] { before[font], new HashSet<int>(glyphs) { 0 } })!;
+            var needed = (byte[])harfBuzz.Invoke(null, new object[] { DrawnFace(before[font], font), 0, new HashSet<int>(glyphs) { 0 } })!;
             int most = GlyphStats(needed).outlined, kept = GlyphStats(after[font]).outlined;
             Assert.True(kept <= most, $"{font}: {kept} outlines kept, {most} needed for the glyphs shown");
         }
@@ -457,5 +460,205 @@ public class VectorPdfTests
         Assert.Contains(FontPrograms(objs).Keys, name => name.Contains("Malgun"));
         Assert.True(BfRangeLines(objs) >= 2, "fewer than two bfrange lines — the premise failed");
         Assert.True(pdf.Length < 100_000, $"PDF is {pdf.Length:N0} bytes (measured 28,772 subset to the glyphs used, 6,959,570 before)");
+    }
+
+    private static MethodInfo SubsetterMethod(string name) =>
+        typeof(RichEditor).Assembly.GetType("AvaloniaRichEditor.Formatters.PdfFontSubsetter")!
+            .GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    // ---- font collections (.ttc) --------------------------------------------------------------------
+
+    private static bool IsCollection(byte[] program) => Encoding.ASCII.GetString(program, 0, 4) == "ttcf";
+
+    // A .ttc of whole fonts: the header, then each font with its table offsets moved to where it lies.
+    private static byte[] Collection(params byte[][] fonts)
+    {
+        static void Put(byte[] b, int o, long v) => BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(o), (uint)v);
+        int at = 12 + 4 * fonts.Length;
+        var all = new byte[at + fonts.Sum(f => (f.Length + 3) & ~3)];
+        Encoding.ASCII.GetBytes("ttcf").CopyTo(all, 0);
+        Put(all, 4, 0x00010000);
+        Put(all, 8, fonts.Length);
+        for (int i = 0; i < fonts.Length; i++)
+        {
+            Put(all, 12 + 4 * i, at);
+            fonts[i].CopyTo(all, at);
+            for (int t = 0, n = U16(fonts[i], 4); t < n; t++)
+                Put(all, at + 12 + 16 * t + 8, U32(fonts[i], 12 + 16 * t + 8) + at);
+            at += (fonts[i].Length + 3) & ~3;
+        }
+        return all;
+    }
+
+    // The same PDF with one font program replaced, as Skia would have written it for a font out of a collection.
+    private static byte[] WithProgram(byte[] pdf, string font, byte[] program)
+    {
+        var objs = Objects(pdf);
+        var type0 = objs.Values.First(o => o.Dict.Contains("/Subtype /Type0") && o.Dict.Contains("/BaseFont /" + font)).Dict;
+        int file = Ref(objs[Ref(objs[Ref(type0, "/DescendantFonts")!.Value].Dict, "/FontDescriptor")!.Value].Dict, "/FontFile2")!.Value;
+        using var packed = new MemoryStream();
+        using (var z = new ZLibStream(packed, CompressionLevel.Fastest, leaveOpen: true)) z.Write(program);
+        string dict = Regex.Replace(objs[file].Dict, @"/Length \d+", $"/Length {packed.Length}");
+        objs[file] = (Regex.Replace(dict, @"/Length1 \d+", $"/Length1 {program.Length}"), packed.ToArray());
+
+        using var ms = new MemoryStream();
+        void Put(string s) => ms.Write(Encoding.Latin1.GetBytes(s));
+        Put("%PDF-1.4\n");
+        string xref = $"xref\n0 {objs.Count + 1}\n0000000000 65535 f \n";
+        foreach (var (number, (body, data)) in objs.OrderBy(o => o.Key))
+        {
+            xref += $"{ms.Position:D10} 00000 n \n";
+            Put($"{number} 0 obj\n{body.Trim()}\n");
+            if (data != null) { Put("stream\n"); ms.Write(data); Put("\nendstream\n"); }
+            Put("endobj\n");
+        }
+        long start = ms.Position;
+        string t = Latin(pdf);
+        int trailer = t.LastIndexOf("trailer", StringComparison.Ordinal);
+        Put(xref + t.Substring(trailer, t.LastIndexOf("startxref", StringComparison.Ordinal) - trailer) + $"startxref\n{start}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // The face a collection's text was drawn with, as a plain font (the helpers above read one): its directory put in
+    // front of the file. The fallback font of a test document is the OS's choice, and it can be a collection.
+    private static byte[] DrawnFace(byte[] program, string font)
+    {
+        if (!IsCollection(program)) return program;
+        int face = (int)SubsetterMethod("FaceIndex").Invoke(null, new object[] { program, font })!;
+        Assert.True(face >= 0, $"{font}: no single face of that name in its collection");
+        int directory = (int)U32(program, 12 + 4 * face), tables = U16(program, directory + 4), size = 12 + 16 * tables;
+        var plain = new byte[size + program.Length];
+        Array.Copy(program, directory, plain, 0, size);
+        program.CopyTo(plain, size);
+        for (int t = 0; t < tables; t++)
+        {
+            int offset = 12 + 16 * t + 8;
+            BinaryPrimitives.WriteUInt32BigEndian(plain.AsSpan(offset), U32(plain, offset) + (uint)size);
+        }
+        return plain;
+    }
+
+    // Skia embeds a collection as the whole file and nowhere says which face it drew with, so a viewer takes the
+    // first: Nirmala UI Bold printed with the regular's outlines (measured 2026-11-22). The face is the one whose
+    // PostScript name is the descriptor's FontName, and what it is cut to is what that font alone is cut to.
+    [AvaloniaTheory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void ACollection_IsCutToTheFaceTheTextWasDrawnWith(int position)
+    {
+        var ed = new RichEditor { DefaultFontFamily = Inter };
+        ed.LoadHtml("<p>regular text <b>Bold Text</b></p>");
+        var whole = (byte[])typeof(RichEditor).GetMethod("RenderVectorPdf", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ed, null)!;
+        var programs = FontPrograms(Objects(whole));
+        string bold = programs.Keys.Single(k => k.EndsWith("Inter-Bold")), regular = programs.Keys.Single(k => k.EndsWith("Inter-Regular"));
+        var faces = position == 0 ? new[] { programs[bold], programs[regular] } : new[] { programs[regular], programs[bold] };
+
+        var subset = SubsetterMethod("Subset");
+        var alone = FontPrograms(Objects((byte[])subset.Invoke(null, new object[] { whole })!))[bold];
+        var cut = FontPrograms(Objects((byte[])subset.Invoke(null, new object[] { WithProgram(whole, bold, Collection(faces)) })!))[bold];
+        Assert.False(IsCollection(cut), "the collection was embedded whole");
+        Assert.Equal(alone, cut);
+    }
+
+    // No face of that name, or two: which one was drawn with cannot be told, and a guess could print other glyphs.
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ACollectionWhoseFaceCannotBeTold_IsLeftAsItCame(bool twice)
+    {
+        var ed = new RichEditor { DefaultFontFamily = Inter };
+        ed.LoadHtml("<p>regular text <b>Bold Text</b></p>");
+        var whole = (byte[])typeof(RichEditor).GetMethod("RenderVectorPdf", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ed, null)!;
+        var programs = FontPrograms(Objects(whole));
+        string bold = programs.Keys.Single(k => k.EndsWith("Inter-Bold")), regular = programs.Keys.Single(k => k.EndsWith("Inter-Regular"));
+        var collection = twice ? Collection(programs[bold], programs[bold]) : Collection(programs[regular], programs[regular]);
+
+        var after = FontPrograms(Objects((byte[])SubsetterMethod("Subset").Invoke(null, new object[] { WithProgram(whole, bold, collection) })!));
+        Assert.Equal(collection, after[bold]);
+        Assert.True(after[regular].Length < programs[regular].Length / 2, "the other font was not cut");
+    }
+
+    [AvaloniaTheory]
+    [InlineData("Batang")]
+    [InlineData("Gulim")]
+    public void ADocumentInACollectionFont_IsASmallPdf(string family)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows() && File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), family == "Batang" ? "batang.ttc" : "gulim.ttc")), "needs Windows' Korean collections");
+        var ed = new RichEditor { DefaultFontFamily = new FontFamily(family) };
+        ed.LoadHtml("<p>가나다라마바사아자차카타파하</p><p>오늘 회의에서는 다음 분기의 예산과 일정을 정했습니다.</p>");
+        using var ms = new MemoryStream();
+        ed.SavePdf(ms);
+        var pdf = ms.ToArray();
+        var programs = FontPrograms(Objects(pdf));
+        Assert.Contains(programs.Keys, k => k.EndsWith("+" + family));
+        Assert.DoesNotContain(programs, p => IsCollection(p.Value));
+        Assert.True(pdf.Length < 200_000, $"PDF is {pdf.Length:N0} bytes");
+    }
+
+    // The real case behind the rule: a face that is not the collection's first and has outlines of its own.
+    [AvaloniaFact]
+    public void NirmalaBold_IsCutFromTheBoldFace()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows() && File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "Nirmala.ttc")), "needs Windows' Nirmala.ttc");
+        var ed = new RichEditor { DefaultFontFamily = new FontFamily("Nirmala UI") };
+        ed.LoadHtml("<p><b>हिन्दी bold</b></p>");
+        using var ms = new MemoryStream();
+        ed.SavePdf(ms);
+
+        var program = FontPrograms(Objects(ms.ToArray())).Single(p => p.Key.EndsWith("+NirmalaUI-Bold")).Value;
+        Assert.False(IsCollection(program), "the collection was embedded whole");
+        Assert.True((bool)SubsetterMethod("HasPostScriptName").Invoke(null, new object[] { program, 0, "NirmalaUI-Bold" })!, "cut from another face");
+        Assert.True(program.Length < 300_000, $"the font is {program.Length:N0} bytes");
+    }
+
+    // hb_subset (8.3.1, the one shipped) gives up re-packing GDEF for a sparse set of a big CJK font, and the font
+    // then stayed whole. Layout tables have no use in a PDF — the page holds shaped glyph ids — so they are dropped.
+    [AvaloniaFact]
+    public void ASparseSetOfABigFont_IsStillCut()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "YuGothM.ttc");
+        Assert.SkipUnless(OperatingSystem.IsWindows() && File.Exists(path), "needs Windows' Yu Gothic");
+        var collection = File.ReadAllBytes(path);
+        var glyphs = new HashSet<int>(Enumerable.Range(0, 24000).Where(g => g % 7 == 0));
+        var cut = Cut(collection, 1, glyphs);
+        Assert.True(cut != null, "hb_subset failed, so the font would be embedded whole");
+        Assert.True(cut!.Length < collection.Length / 2, $"{cut.Length:N0} of {collection.Length:N0} bytes left");
+    }
+
+    private static byte[]? Cut(byte[] font, int face, IEnumerable<int> glyphs) =>
+        (byte[]?)typeof(RichEditor).Assembly.GetType("AvaloniaRichEditor.Formatters.PdfFontSubsetter")!
+            .GetNestedType("HarfBuzz", BindingFlags.NonPublic)!.GetMethod("Subset", BindingFlags.Public | BindingFlags.Static)!
+            .Invoke(null, new object[] { font, face, new HashSet<int>(glyphs) { 0 } });
+
+    private static bool HasTable(byte[] ttf, string tag) =>
+        Enumerable.Range(0, U16(ttf, 4)).Any(i => Encoding.ASCII.GetString(ttf, 12 + i * 16, 4) == tag);
+
+    // A CIDFontType2 with an Identity map is read by glyph id, so its character map is dead weight like the layout
+    // tables, and a dangerous one: see the test below. On every OS, with the bundled font.
+    [AvaloniaFact]
+    public void ASubset_CarriesNoCharacterMap()
+    {
+        var ed = new RichEditor { DefaultFontFamily = Inter };
+        ed.LoadHtml("<p>office text</p>");
+        using var ms = new MemoryStream();
+        ed.SavePdf(ms);
+        var programs = FontPrograms(Objects(ms.ToArray()));
+        Assert.NotEmpty(programs);
+        Assert.DoesNotContain(programs, p => HasTable(p.Value, "cmap"));
+    }
+
+    // With GDEF gone hb_subset 8.3.1 got as far as re-packing cmap, and for this set it reads through a null pointer:
+    // an access violation, which no catch stops. A document of some ten thousand different characters in YaHei killed
+    // the process on SavePdf (measured 2026-11-22). Dropping cmap is what avoids it, so that is asserted first — a
+    // regression is then a red test rather than a dead test host.
+    [AvaloniaFact]
+    public void AHugeSetOfABigFont_DoesNotCrashHarfBuzz()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msyh.ttc");
+        Assert.SkipUnless(OperatingSystem.IsWindows() && File.Exists(path), "needs Windows' Microsoft YaHei");
+        var collection = File.ReadAllBytes(path);
+        Assert.False(HasTable(Cut(collection, 0, new[] { 1 })!, "cmap"), "cmap is kept, so the set below would crash the process");
+        var cut = Cut(collection, 0, Enumerable.Range(0, 30000).Where(g => g % 3 == 0));
+        Assert.True(cut != null, "hb_subset failed, so the font would be embedded whole");
     }
 }
