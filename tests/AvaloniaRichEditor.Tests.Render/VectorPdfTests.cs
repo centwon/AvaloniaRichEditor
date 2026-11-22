@@ -322,6 +322,7 @@ public class VectorPdfTests
         Assert.True(shown.Count >= 2, "fonts shown: " + string.Join(", ", shown.Keys));
         foreach (var (font, glyphs) in shown)
         {
+            if (font.Length == 0) continue; // Type3 (CFF and synthetic bold): no BaseFont and no program, nothing is subset
             var drawn = DrawnFace(before[font], font);
             var lost = glyphs.Where(g => Outline(drawn, g) > 0 && Outline(after[font], g) == 0).ToList();
             Assert.True(lost.Count == 0, $"{font}: glyphs {string.Join(",", lost)} lost their outlines");
