@@ -385,4 +385,77 @@ public class VectorPdfTests
         var raster = ms.ToArray();
         Assert.Same(raster, subset.Invoke(null, new object[] { raster }));
     }
+
+    // ---- ToUnicode ranges (2026-11-22) ---------------------------------------------------------------
+
+    // A bfrange line is <lo> <hi> <dst>, or <lo> <hi> [<dst> …]. Reading two values a match took <dst> and the next
+    // line's <lo> for a range, and a destination of three UTF-16 units overflowed int.Parse. The test document above
+    // has no bfrange at all, which is why the tests above never met it.
+    [Theory]
+    [InlineData("<0003> <0005> <0041>", new[] { 3, 4, 5 })] // the control: one line was always read right
+    [InlineData("<0003> <0005> <0041>\n<0100> <0101> <0061>\n<0200> <0200> <AC00>", new[] { 3, 4, 5, 0x100, 0x101, 0x200 })]
+    [InlineData("<0003> <0005> [<0041> <0042> <0043>]\n<0100> <0101> <0061>", new[] { 3, 4, 5, 0x100, 0x101 })]
+    [InlineData("<0003> <0005> [<0041>\n<0042>\n<0043>]\n<0100> <0101> <0061>", new[] { 3, 4, 5, 0x100, 0x101 })]
+    [InlineData("<0003> <0003> <006600660069>\n<0100> <0101> <0061>", new[] { 3, 0x100, 0x101 })]
+    public void ToUnicodeRanges_GiveOnlyTheirSourceGlyphs(string lines, int[] expected)
+    {
+        var glyphs = new HashSet<int>();
+        typeof(RichEditor).Assembly.GetType("AvaloniaRichEditor.Formatters.PdfFontSubsetter")!
+            .GetMethod("AddCMapSources", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, new object[] { $"1 beginbfrange\n{lines}\nendbfrange\n", glyphs });
+        Assert.Equal(expected, glyphs.OrderBy(g => g));
+    }
+
+    private static int BfRangeLines(Dictionary<int, (string Dict, byte[]? Data)> objs) => objs.Values
+        .Where(o => o.Data != null && o.Dict.Contains("FlateDecode") && !o.Dict.Contains("/Length1"))
+        .SelectMany(o => Regex.Matches(Latin(Inflate(o.Data!)), @"beginbfrange(.*?)endbfrange", RegexOptions.Singleline))
+        .Sum(block => block.Groups[1].Value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length);
+
+    // A document whose ToUnicode has ranges, with the bundled font so it runs on every OS: each font keeps no more
+    // outlines than subsetting it to the glyphs the page shows does.
+    [AvaloniaFact]
+    public void AFontWithToUnicodeRanges_KeepsOnlyTheShownOutlines()
+    {
+        var ed = new RichEditor { DefaultFontFamily = Inter };
+        ed.LoadHtml("<p>ABCDEFGHIJKLM abcdefghijklm 0123456789 nopqrstuvwxyz</p>");
+        var whole = (byte[])typeof(RichEditor).GetMethod("RenderVectorPdf", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(ed, null)!;
+        var subsetter = typeof(RichEditor).Assembly.GetType("AvaloniaRichEditor.Formatters.PdfFontSubsetter")!;
+        var subset = (byte[])subsetter.GetMethod("Subset", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object[] { whole })!;
+
+        var objs = Objects(whole);
+        Assert.True(BfRangeLines(objs) >= 2, "fewer than two bfrange lines — the premise failed");
+        var harfBuzz = subsetter.GetNestedType("HarfBuzz", BindingFlags.NonPublic)!.GetMethod("Subset", BindingFlags.Public | BindingFlags.Static)!;
+        var before = FontPrograms(objs);
+        var after = FontPrograms(Objects(subset));
+        var shown = ShownGlyphs(objs);
+        Assert.NotEmpty(shown);
+        foreach (var (font, glyphs) in shown)
+        {
+            var needed = (byte[])harfBuzz.Invoke(null, new object[] { before[font], new HashSet<int>(glyphs) { 0 } })!;
+            int most = GlyphStats(needed).outlined, kept = GlyphStats(after[font]).outlined;
+            Assert.True(kept <= most, $"{font}: {kept} outlines kept, {most} needed for the glyphs shown");
+        }
+    }
+
+    private static readonly string MalgunFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "malgun.ttf");
+
+    // The size that was seen: a few paragraphs of Korean in Malgun Gothic, regular and bold, carried nearly all of
+    // both fonts.
+    [AvaloniaFact]
+    public void AFewKoreanParagraphs_StaySmall()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows() && File.Exists(MalgunFile), "needs Windows' Malgun Gothic");
+        var ed = new RichEditor { DefaultFontFamily = new FontFamily("Malgun Gothic") };
+        ed.LoadHtml("<p>가나다라마바사아자차카타파하</p>"
+            + "<p>오늘 회의에서는 다음 분기의 예산과 일정을 정했습니다. 각 부서는 금요일까지 계획서를 제출해 주시기 바랍니다.</p>"
+            + "<p><b>문의: 총무과 02-1234-5678, 담당자에게 연락</b></p>");
+        using var ms = new MemoryStream();
+        ed.SavePdf(ms);
+        var pdf = ms.ToArray();
+
+        var objs = Objects(pdf);
+        Assert.Contains(FontPrograms(objs).Keys, name => name.Contains("Malgun"));
+        Assert.True(BfRangeLines(objs) >= 2, "fewer than two bfrange lines — the premise failed");
+        Assert.True(pdf.Length < 100_000, $"PDF is {pdf.Length:N0} bytes (measured 28,772 subset to the glyphs used, 6,959,570 before)");
+    }
 }
