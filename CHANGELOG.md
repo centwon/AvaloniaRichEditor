@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a font from a TrueType collection: the whole file in the PDF, and the wrong face (2026-11-22)
+
+- `SavePdf` embedded a collection (`.ttc`: Batang, Gulim, Microsoft YaHei, …) as the whole file. It is now cut to the
+  glyphs used, as a plain font of the face the text was drawn with. Measured on Windows, three paragraphs of Korean:
+  Batang 7,057,619 → 25,322 bytes, Gulim 5,192,554 → 15,797; thirty paragraphs: Batang 7,058,947 → 20,819, Gulim
+  5,193,723 → 14,746 (the same sentence repeated, so fewer different glyphs).
+- A PDF cannot say which face of a collection it means and viewers draw the first, so Nirmala UI and Nirmala Text Bold
+  and Semilight showed the regular's outlines. The face is found by the PostScript name the PDF carries. Of the 48
+  collection faces installed here each found itself; those four now match their own outlines, and the other 44 render
+  as before (MuPDF, PDFium). A collection in which that name is missing or appears twice is left as it came.
+- Every subset font now leaves out `GDEF`, `GSUB`, `GPOS` and `cmap`, which a font addressed by glyph id does not use.
+  With the first, HarfBuzz 8.3.1 failed on large sparse CJK sets and the font stayed whole; with only the layout tables
+  gone, re-packing `cmap` crashed the process (an access violation) for a document of 9,971 different characters in
+  Microsoft YaHei, which now saves in 4,316,223 bytes (12,546,661 whole). Other fonts shrink a little too (three
+  paragraphs in Malgun Gothic, regular and bold: 28,772 → 27,923); 358 installed non-collection fonts render and
+  extract as before.
+- A visible difference: a subset carries no embedded bitmap strikes, so at small zoom Windows' built-in PDF engine
+  draws Batang, Gulim or MS Gothic from outlines where it showed the bitmaps of the whole collection.
+- Tests: `VectorPdfTests.ACollection_IsCutToTheFaceTheTextWasDrawnWith`, `ACollectionWhoseFaceCannotBeTold_IsLeftAsItCame`,
+  `ASubset_CarriesNoCharacterMap`, and on Windows `ADocumentInACollectionFont_IsASmallPdf`,
+  `NirmalaBold_IsCutFromTheBoldFace`, `ASparseSetOfABigFont_IsStillCut`, `AHugeSetOfABigFont_DoesNotCrashHarfBuzz`.
+
 ### Fixed — a saved PDF carried nearly whole fonts (2026-11-22)
 
 - `SavePdf` embedded most of a font whenever its ToUnicode map had more than one `bfrange` line in a block: the lines
@@ -14,7 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   7,403,671 → 238,984, one line of English in Inter 55,662 → 8,930. Pages render and their text extracts as before.
 - The same misreading threw on a destination of three or more UTF-16 units, which would have left every font in the
   file whole (reproduced on the map reader; none of the measured documents had such a line).
-- Not changed: a font that comes from a TrueType collection (`.ttc`) is still embedded whole.
 - Tests: `VectorPdfTests.ToUnicodeRanges_GiveOnlyTheirSourceGlyphs`, `AFontWithToUnicodeRanges_KeepsOnlyTheShownOutlines`,
   `AFewKoreanParagraphs_StaySmall` (Windows), each red before the fix.
 

@@ -18,6 +18,16 @@ WPF `RichTextBox`/`FlowDocument`를 **순수 C# + Avalonia `TextLayout`**로 바
   #90(KanuDoc 결함 백포트·WinUI 동작 맞추기, 11-10) · #91·#93·#94(스페인어, 11-17~18) · #92(편집·표 정합성, 11-17) · #95(셀 블록 행 높이, 11-18).
   이어서 #96(로드맵·CHANGELOG, 11-19) · #98(`IsDocumentEmpty`, 11-20) · #99(`SavePdf` 글꼴 크기, 11-22).
   아래 항목은 전부 미릴리스(게시 여부·시점은 사용자 몫). 다음 판을 1.3.1로 적어 왔으나 #87이 공개 API를 더해 SemVer로는 1.4.0.
+- **`SavePdf` TTC 글꼴 수정**(2026-11-22, `claude/pdf-ttc-face-1f901f`, 미병합): TTC가 파일째 들어가고 뷰어가 0번 면으로 그리던 것 →
+  FontName = PostScript 이름(ID 6)인 면이 하나면 그 면으로 추림, 못 정하면 그대로. 크기(바이트): 한글 세 문단 바탕 7,057,619 → 25,322 ·
+  굴림 5,192,554 → 15,797. 설치된 48면 전부 자기 면을 찾고, Nirmala UI·Text의 굵게·세미라이트 4면이 자기 윤곽으로 바로잡힘.
+  나머지 44면·비 TTC 358글꼴은 픽셀·추출 글자 동일(MuPDF·PDFium).
+  ⚠ **추릴 때 `GDEF`·`GSUB`·`GPOS`·`cmap`은 넷을 같이 뺀다 — `cmap`을 되살리지 말 것**: HarfBuzz 8.3.1은 GDEF가 있으면 큰 CJK
+  집합에서 실패(통째로 남음), 레이아웃 표만 빼면 `cmap`을 다시 싸다 접근 위반으로 **프로세스가 죽는다**(YaHei 서로 다른 9,971자
+  문서의 `SavePdf`로 재현, catch 불가). 넷을 빼면 글꼴·글리프 집합 4,310조합에서 접근 위반 0, 실패 3(Cambria Math의 인위적 집합).
+  추린 글꼴엔 비트맵 스트라이크가 없어 Windows 내장 PDF 엔진의 작은 배율에서 바탕·굴림이 윤곽으로 그려진다.
+  `VectorPdfTests`에 10건, 수정 되돌리면 8건 빨강(2건은 대조군). unit **1558** · render **82** 그린(로컬 Windows, Release).
+  macOS·Linux에서는 아직 안 돌림.
 - **`SavePdf` 글꼴이 거의 통째로 남던 것 수정**(2026-11-22, PR #99로 병합): ToUnicode `bfrange` 줄
   `<lo> <hi> <dst>`를 두 값씩 읽어 `<dst> <다음 줄 lo>`가 글리프 범위가 됐다 → 정규식이 줄 전체(배열 dst 포함)를 먹게.
   크기(바이트, `v1.3.0`의 추리기 코드는 수정 전과 같음): 한글 세 문단 6,959,570 → 28,772 · 30문단 7,403,671 → 238,984 ·
@@ -252,7 +262,6 @@ WinUI 1.x는 별도로 정한다.
   무의존성(PBKDF2 600k = 124ms). **미결**: Argon2id용 의존성 1개 수용 여부.
 - 단락 경계 넘는 Find(줄바꿈 포함 검색어만, 실사용 극저) · HWP/XLS(구) 붙여넣기 · blockquote/중첩 목록 깊이 정밀화
 - 인라인 객체 공통 추상(`InlineObject`) — 세 번째 인라인 타입이 실제로 생기면
-- `SavePdf`: TTC 글꼴은 통째로 남는다 — `PdfFontSubsetter`가 `ttcf`를 건너뜀, `bfrange` 결함과 다른 원인(11-22 실측: 바탕 한 줄 7,056,933바이트)
 - **2.0 후보: 모델이 자기 불변식을 지키기** — `Paragraph.Inlines`·`TableCell.Blocks`를 알림 컬렉션으로, 넣을 때 `Parent` 연결·뺄 때 해제,
   문서가 변경 이벤트 하나를 올림 → 편집기는 그것만 듣는다. 공개 타입 변경이라 1.x 불가(10-17 결정). 그때 `NotifyDocumentChanged`는 호환용으로 남는다.
 - 의도적 보류(측정상 저가치): 델타 Undo · `ComputePageBreaks` 캐시 · HTML `HasBlockOrMedia` O(n²) · `ReplaceAll` O(N²) · G1 P2(BlockBox 캐싱)
